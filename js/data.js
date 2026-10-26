@@ -49,29 +49,270 @@
 
 // ----------------------------------------------------------------
 // CHAVES DO LOCALSTORAGE
-// Nomes versionados para evitar conflitos com dados de versões antigas.
+// Nomes versionados para carregar a base de dados real da planilha.
 // ----------------------------------------------------------------
 
 /** Chave dos lançamentos pontuais (ganhos de renda e gastos variáveis). */
-const STORAGE_ENTRIES = 'gastopro_entries_clean_v1';
+const STORAGE_ENTRIES = 'gastopro_entries_real_v2';
 
 /** Chave dos templates de gastos fixos recorrentes. */
-const STORAGE_TEMPLATES = 'gastopro_fixed_templates_v1';
+const STORAGE_TEMPLATES = 'gastopro_templates_real_v2';
 
-/** Chave do perfil do usuário (nome e foto em Base64). */
-const STORAGE_PROFILE = 'gastopro_user_profile_v2';
+/** Chave do perfil do usuário. */
+const STORAGE_PROFILE = 'gastopro_profile_real_v2';
 
 // ----------------------------------------------------------------
-// LIMPEZA DE CHAVES LEGADAS
-// Remove entradas de versões anteriores de desenvolvimento para
-// evitar que dados corrompidos ou obsoletos interfiram no app.
+// BASE DE DADOS REAL EXTRAÍDA DA PLANILHA (Controle Mensal Aylton.xlsx)
 // ----------------------------------------------------------------
-try {
-  // Remove chaves de versões legadas de desenvolvimento
-  localStorage.removeItem('gastopro_entries_v1');
-  localStorage.removeItem('gastopro_entries_v2');
-} catch (e) {
-  // Silencioso: pode falhar em contextos sem localStorage (ex: modo privado restrito)
+
+/** Templates de Gastos Fixos Recorrentes e Dívidas reais da planilha */
+const INITIAL_REAL_TEMPLATES = [
+  // 1. Gastos Fixos Recorrentes
+  {
+    id: 'fix-saude-isabella',
+    desc: 'Plano de saúde – Isabella',
+    amount: 480.00,
+    category: 'Saúde',
+    type: 'fixed',
+    isDebt: false,
+    active: true,
+    startMonth: '2026-11',
+    endMonth: null,
+    day: '05',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-jiujitsu-kimura',
+    desc: 'Jiu Jitsu – Kimura',
+    amount: 120.00,
+    category: 'Esporte',
+    type: 'fixed',
+    isDebt: false,
+    active: true,
+    startMonth: '2026-11',
+    endMonth: null,
+    day: '05',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-academia-kitfit',
+    desc: 'Academia – KitFit',
+    amount: 200.00,
+    category: 'Esporte',
+    type: 'fixed',
+    isDebt: false,
+    active: true,
+    startMonth: '2026-11',
+    endMonth: null,
+    day: '05',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-cartao-credito',
+    desc: 'Cartão de crédito (média)',
+    amount: 850.00,
+    category: 'Cartão de crédito',
+    type: 'fixed',
+    isDebt: false,
+    active: true,
+    startMonth: '2026-11',
+    endMonth: null,
+    day: '05',
+    paidMonths: {}
+  },
+
+  // 2. Dívidas & Parcelamentos: Faculdade UNINTER
+  {
+    id: 'fix-uninter-pend-1',
+    desc: 'UNINTER – Pendência 1',
+    amount: 293.85,
+    category: 'Faculdade UNINTER',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2026-11',
+    endMonth: '2026-11',
+    day: '09',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-uninter-pend-2',
+    desc: 'UNINTER – Pendência 2',
+    amount: 230.00,
+    category: 'Faculdade UNINTER',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2026-11',
+    endMonth: '2026-11',
+    day: '09',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-uninter-mens-1',
+    desc: 'UNINTER – Mensalidades Dez/26 a Jan/28',
+    amount: 293.85,
+    category: 'Faculdade UNINTER',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2026-12',
+    endMonth: '2028-01',
+    day: '09',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-uninter-mens-2',
+    desc: 'UNINTER – Mensalidades Fev/28 a Jul/28',
+    amount: 241.37,
+    category: 'Faculdade UNINTER',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2028-02',
+    endMonth: '2028-07',
+    day: '09',
+    paidMonths: {}
+  },
+
+  // 3. Dívidas & Parcelamentos: Shopee Empréstimo
+  {
+    id: 'fix-shopee-emp-1',
+    desc: 'Shopee Empréstimo – parcelas 8 a 11',
+    amount: 99.38,
+    category: 'Shopee Empréstimo',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2026-11',
+    endMonth: '2027-02',
+    day: '10',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-shopee-emp-2',
+    desc: 'Shopee Empréstimo – parcela 12',
+    amount: 99.43,
+    category: 'Shopee Empréstimo',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2027-03',
+    endMonth: '2027-03',
+    day: '10',
+    paidMonths: {}
+  },
+
+  // 4. Dívidas & Parcelamentos: Shopee Parcelado
+  {
+    id: 'fix-shopee-parc-1',
+    desc: 'Shopee Parcelado – parcela 1',
+    amount: 588.99,
+    category: 'Shopee Parcelado',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2026-11',
+    endMonth: '2026-11',
+    day: '20',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-shopee-parc-2',
+    desc: 'Shopee Parcelado – parcela 2',
+    amount: 516.51,
+    category: 'Shopee Parcelado',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2026-12',
+    endMonth: '2026-12',
+    day: '20',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-shopee-parc-3',
+    desc: 'Shopee Parcelado – parcela 3',
+    amount: 516.52,
+    category: 'Shopee Parcelado',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2027-01',
+    endMonth: '2027-01',
+    day: '20',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-shopee-parc-4',
+    desc: 'Shopee Parcelado – parcelas 4 a 10',
+    amount: 156.39,
+    category: 'Shopee Parcelado',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2027-02',
+    endMonth: '2027-08',
+    day: '20',
+    paidMonths: {}
+  },
+  {
+    id: 'fix-shopee-parc-5',
+    desc: 'Shopee Parcelado – parcela 11',
+    amount: 156.41,
+    category: 'Shopee Parcelado',
+    type: 'fixed',
+    isDebt: true,
+    active: true,
+    startMonth: '2027-09',
+    endMonth: '2027-09',
+    day: '20',
+    paidMonths: {}
+  }
+];
+
+/** Gera a lista de receitas programadas para os meses do fluxo (R$ 2.710,00/mês) */
+function generateRealInitialEntries() {
+  const months = [
+    '2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04',
+    '2027-05', '2027-06', '2027-07', '2027-08', '2027-09', '2027-10',
+    '2027-11', '2027-12', '2028-01', '2028-02', '2028-03', '2028-04',
+    '2028-05', '2028-06', '2028-07'
+  ];
+  const list = [];
+  months.forEach(m => {
+    list.push({
+      id: `rec-03-${m}`,
+      month: m,
+      type: 'income',
+      desc: 'Receita – dia 03',
+      amount: 160.00,
+      category: 'Receita',
+      paid: true,
+      date: `${m}-03`
+    });
+    list.push({
+      id: `rec-07-${m}`,
+      month: m,
+      type: 'income',
+      desc: 'Receita – 7º dia útil',
+      amount: 1700.00,
+      category: 'Receita',
+      paid: true,
+      date: `${m}-07`
+    });
+    list.push({
+      id: `rec-15-${m}`,
+      month: m,
+      type: 'income',
+      desc: 'Receita – dia 15',
+      amount: 850.00,
+      category: 'Receita',
+      paid: true,
+      date: `${m}-15`
+    });
+  });
+  return list;
 }
 
 /**
@@ -79,40 +320,36 @@ try {
  * @description
  * Singleton de persistência de dados do GastoPro.
  * Centraliza todas as operações de CRUD no localStorage.
- *
- * ROTEAMENTO POR PREFIXO DE ID:
- *   - IDs começando com "fix-"   → são templates de gastos fixos recorrentes.
- *   - IDs começando com "entry-" → são lançamentos pontuais (ganhos/variáveis).
- * Esse padrão é usado em update(), delete() e togglePaid() para direcionar
- * cada operação à lista correta automaticamente.
  */
 const FinanceData = {
 
   // ================================================================
   // LEITURA E ESCRITA DE LANÇAMENTOS PONTUAIS
-  // Ganhos de renda (salário, extra) e gastos variáveis do dia a dia.
   // ================================================================
 
   /**
    * Lê todos os lançamentos pontuais do localStorage.
-   * Aplica purga automática de resíduos de dados de teste (dev).
+   * Inicializa com os dados reais da planilha se ainda não existirem.
    *
-   * @returns {Array<Object>} Lista de lançamentos, ou [] se vazia/corrompida.
+   * @returns {Array<Object>} Lista de lançamentos.
    */
   getEntries() {
     try {
       const stored = localStorage.getItem(STORAGE_ENTRIES);
-      if (!stored) return [];
+      if (!stored) {
+        const initial = generateRealInitialEntries();
+        this.saveEntries(initial);
+        return initial;
+      }
       return JSON.parse(stored);
     } catch (e) {
-      console.error('[GastoPro] Erro ao ler lançamentos do localStorage:', e);
-      return [];
+      console.error('[GastoPro] Erro ao ler lançamentos:', e);
+      return generateRealInitialEntries();
     }
   },
 
   /**
    * Persiste a lista completa de lançamentos pontuais.
-   * Sobrescreve qualquer lista existente na chave STORAGE_ENTRIES.
    *
    * @param {Array<Object>} entries - Array de lançamentos a salvar.
    */
@@ -130,24 +367,26 @@ const FinanceData = {
 
   // ================================================================
   // LEITURA E ESCRITA DE TEMPLATES DE GASTOS FIXOS RECORRENTES
-  // Templates diferem de lançamentos: eles se repetem automaticamente
-  // em todos os meses dentro do período startMonth → endMonth.
   // ================================================================
 
   /**
    * Lê todos os templates de gastos fixos do localStorage.
-   * Aplica a mesma purga de resíduos de teste que getEntries().
+   * Inicializa com os dados reais da planilha se ainda não existirem.
    *
-   * @returns {Array<Object>} Lista de templates, ou [] se vazia/corrompida.
+   * @returns {Array<Object>} Lista de templates.
    */
   getTemplates() {
     try {
       const stored = localStorage.getItem(STORAGE_TEMPLATES);
-      if (!stored) return [];
+      if (!stored) {
+        const initial = INITIAL_REAL_TEMPLATES;
+        this.saveTemplates(initial);
+        return initial;
+      }
       return JSON.parse(stored);
     } catch (e) {
-      console.error('[GastoPro] Erro ao ler templates fixos do localStorage:', e);
-      return [];
+      console.error('[GastoPro] Erro ao ler templates fixos:', e);
+      return INITIAL_REAL_TEMPLATES;
     }
   },
 
@@ -506,7 +745,7 @@ const FinanceData = {
    * @returns {{ name: string, avatar: string|null }} Perfil do usuário.
    */
   getProfile() {
-    const defaultProfile = { name: '', avatar: null };
+    const defaultProfile = { name: 'Aylton Alberto', email: 'desenvolvedor.aylton@gmail.com', avatar: null };
     try {
       const stored = localStorage.getItem(STORAGE_PROFILE);
       // Mescla com o default para garantir novos campos em versões futuras
