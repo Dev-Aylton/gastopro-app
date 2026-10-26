@@ -1,0 +1,25 @@
+﻿# Dependencias
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema Operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Build
+dist/
+build/
+
+# Variaveis de ambiente
+.env
+.env.local

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GastoPro — Test Runner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* -------------------------------------------------------
+       Test Runner: página de execução da suite de testes.
+       Abre este arquivo no navegador para rodar todos os testes.
+       ------------------------------------------------------- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0b0e14;
+      color: #e2e8f0;
+      padding: 2rem;
+      min-height: 100vh;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #6366f1;
+      margin-bottom: 0.25rem;
+    }
+
+    .subtitle {
+      color: #64748b;
+      font-size: 0.9rem;
+      margin-bottom: 2rem;
+    }
+
+    /* Painel de resumo dos resultados */
+    .summary-panel {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .summary-card {
+      background: #151a26;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      min-width: 140px;
+      text-align: center;
+    }
+
+    .summary-card .num {
+      font-size: 2.2rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .summary-card .lbl {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-top: 0.25rem;
+    }
+
+    .num-total  { color: #94a3b8; }
+    .num-pass   { color: #10b981; }
+    .num-fail   { color: #ef4444; }
+
+    /* Status banner */
+    .status-banner {
+      padding: 1rem 1.5rem;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 1rem;
+      margin-bottom: 2rem;
+      display: none;
+    }
+
+    .status-banner.all-pass {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #10b981;
+    }
+
+    .status-banner.has-fail {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #ef4444;
+    }
+
+    /* Seção de falhas */
+    h2 { font-size: 1rem; font-weight: 600; color: #94a3b8; margin-bottom: 1rem; }
+
+    #failList { display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .fail-card {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: 8px;
+      padding: 0.875rem 1rem;
+    }
+
+    .fail-test  { font-weight: 600; color: #fca5a5; margin-bottom: 0.35rem; }
+    .fail-error { font-family: monospace; font-size: 0.8rem; color: #94a3b8; }
+
+    /* Rodapé de instruções */
+    .footer-tip {
+      margin-top: 2.5rem;
+      padding: 1rem;
+      background: #151a26;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      color: #64748b;
+      line-height: 1.6;
+    }
+
+    .loading-msg { color: #64748b; font-style: italic; }
+  </style>
+</head>
+<body>
+
+  <h1>🧪 GastoPro — Test Runner</h1>
+  <p class="subtitle">Abre este arquivo no navegador. Os testes rodam automaticamente ao carregar a página.</p>
+
+  <!-- Resumo dos resultados (preenchido pelo JS) -->
+  <div class="summary-panel">
+    <div class="summary-card">
+      <div class="num num-total" id="numTotal">—</div>
+      <div class="lbl">Total</div>
+    </div>
+    <div class="summary-card">
+      <div class="num num-pass" id="numPass">—</div>
+      <div class="lbl">✅ Aprovados</div>
+    </div>
+    <div class="summary-card">
+      <div class="num num-fail" id="numFail">—</div>
+      <div class="lbl">❌ Reprovados</div>
+    </div>
+  </div>
+
+  <!-- Banner de status geral -->
+  <div class="status-banner" id="statusBanner"></div>
+
+  <!-- Lista de falhas (se houver) -->
+  <div id="failSection" style="display:none">
+    <h2>🔍 Testes Reprovados:</h2>
+    <div id="failList"></div>
+  </div>
+
+  <p class="loading-msg" id="loadingMsg">⏳ Executando testes... verifique o Console (F12) para detalhes completos.</p>
+
+  <div class="footer-tip">
+    💡 <strong>Como usar:</strong> Abra este arquivo no Google Chrome ou Edge via Live Server (VS Code) ou duplo clique.
+    Todos os resultados detalhados também aparecem no <strong>Console do Navegador (F12)</strong> com ✅/❌ por teste.
+    <br /><br />
+    ⚠️ <strong>Isolamento:</strong> Os testes usam um mock do localStorage — seus dados reais do GastoPro <strong>não são afetados</strong>.
+  </div>
+
+  <!--
+    ORDEM DE CARREGAMENTO OBRIGATÓRIA:
+    1. data.js    — Define FinanceData (necessário para os testes)
+    2. app.js     — Define formatCurrency, escapeHtml, etc. (necessário para os testes)
+    3. gastopro.test.js — Suite de testes (usa as funções acima)
+  -->
+  <script src="../js/data.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="gastopro.test.js"></script>
+
+  <script>
+    /* -------------------------------------------------------
+       Atualiza a interface com os resultados após os testes.
+       Aguarda o evento 'load' que o gastopro.test.js dispara
+       ao chamar printTestReport() no final da execução.
+       ------------------------------------------------------- */
+    window.addEventListener('load', () => {
+      // Aguarda um tick para garantir que printTestReport() já rodou
+      setTimeout(() => {
+        const results = window.GastoProTestResults;
+        if (!results) return;
+
+        // Preenche os números de resumo
+        document.getElementById('numTotal').textContent = results.total;
+        document.getElementById('numPass').textContent  = results.passed;
+        document.getElementById('numFail').textContent  = results.failed;
+
+        // Exibe o banner de status geral
+        const banner = document.getElementById('statusBanner');
+        banner.style.display = 'block';
+
+        if (results.failed === 0) {
+          banner.className = 'status-banner all-pass';
+          banner.textContent = '🎉 Todos os testes passaram! App está 100% funcional.';
+        } else {
+          banner.className = 'status-banner has-fail';
+          banner.textContent = `⚠️ ${results.failed} teste(s) reprovado(s). Veja abaixo.`;
+        }
+
+        // Exibe seção de falhas detalhadas (se houver)
+        if (results.errors && results.errors.length > 0) {
+          const failSection = document.getElementById('failSection');
+          const failList    = document.getElementById('failList');
+          failSection.style.display = 'block';
+
+          results.errors.forEach(err => {
+            const card = document.createElement('div');
+            card.className = 'fail-card';
+            card.innerHTML = `
+              <div class="fail-test">❌ ${err.test}</div>
+              <div class="fail-error">→ ${err.error}</div>
+            `;
+            failList.appendChild(card);
+          });
+        }
+
+        // Remove a mensagem de carregamento
+        const loadMsg = document.getElementById('loadingMsg');
+        if (loadMsg) loadMsg.remove();
+      }, 100);
+    });
+  </script>
+
+</body>
+</html>

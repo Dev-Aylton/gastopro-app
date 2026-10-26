@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <!-- Content Security Policy: restringe fontes de scripts, estilos e conexões -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self';
+             script-src 'self' https://cdn.jsdelivr.net;
+             style-src 'self' https://fonts.googleapis.com https://cdnjs.cloudflare.com 'unsafe-inline';
+             font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:;
+             img-src 'self' data: blob:;
+             connect-src 'none';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GastoPro — Controle de Gastos & Saúde Financeira</title>
+  <meta name="description"
+    content="GastoPro: controle financeiro pessoal profissional com Dashboard de Saúde Financeira, Ganhos e Gastos integrados." />
+  <meta name="theme-color" content="#0b0e14" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="GastoPro" />
+  <link rel="icon" type="image/jpeg" href="assets/logo.jpg" />
+  <link rel="apple-touch-icon" href="assets/logo.jpg" />
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
+
+  <!-- FontAwesome Icons — integrity (SRI) garante que o arquivo não foi adulterado no CDN -->
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer" />
+
+  <!-- Chart.js — integrity (SRI) garante que o arquivo não foi adulterado no CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
+    integrity="sha512-ZwR1/gSZM3ai6vCdI+LVF1zSq/5HznD3ZSTk7kajkaj4D292NLuduDCO1c/NT8Id+jE58KYLKT7hXnbtryGmMg=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"></script>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+
+<body>
+
+  <div class="app-shell">
+
+    <!-- Overlay para fechar sidebar no mobile ao clicar fora -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- ==========================================
+         MENU LATERAL (SIDEBAR)
+         ========================================== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <div class="brand">
+          <img src="assets/logo.jpg" alt="Logo GastoPro" class="brand-logo-img" />
+          <div class="brand-text">
+            <h2>GastoPro</h2>
+            <span>Gestão Financeira</span>
+          </div>
+        </div>
+        <button class="sidebar-close-btn" id="closeSidebarBtn" title="Fechar Menu">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <!-- Botão 1: Home / Dashboard -->
+        <button class="nav-item active" data-view="dashboard" id="navDashboard">
+          <i class="fa-solid fa-chart-pie"></i>
+          <span>Dashboard & Saúde</span>
+        </button>
+
+        <!-- Botão 2: Ganhos do Mês -->
+        <button class="nav-item" data-view="incomes" id="navIncomes">
+          <i class="fa-solid fa-hand-holding-dollar"></i>
+          <span>Ganhos do Mês</span>
+          <span class="nav-badge text-success" id="sidebarIncomeCount">3</span>
+        </button>
+
+        <!-- Botão 3: Gastos do Mês -->
+        <button class="nav-item" data-view="expenses" id="navExpenses">
+          <i class="fa-solid fa-receipt"></i>
+          <span>Gastos do Mês</span>
+          <span class="nav-badge text-danger" id="sidebarExpenseCount">8</span>
+        </button>
+      </nav>
+    </aside>
+
+    <!-- ==========================================
+         ÁREA PRINCIPAL DE CONTEÚDO
+         ========================================== -->
+    <div class="main-content">
+
+      <!-- Topbar Header -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle-btn" id="menuToggleBtn" title="Alternar Menu">
+            <i class="fa-solid fa-bars"></i>
+          </button>
+          <h2 class="view-title" id="currentViewTitle">Dashboard Geral</h2>
+        </div>
+
+        <!-- Seletor de Mês com Mini Calendário Popover -->
+        <div class="month-selector-bar" id="monthSelectorBar">
+          <button id="prevMonthBtn" class="btn-icon" title="Mês anterior">
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+
+          <button class="current-month-display" id="monthPickerTrigger" title="Clique para abrir o calendário de meses">
+            <i class="fa-regular fa-calendar text-primary"></i>
+            <span id="currentMonthLabel">Novembro 2026</span>
+            <i class="fa-solid fa-chevron-down caret-icon"></i>
+          </button>
+
+          <button id="nextMonthBtn" class="btn-icon" title="Próximo mês">
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+
+          <!-- POPOVER CALENDÁRIO DE MESES -->
+          <div class="month-picker-popover" id="monthPickerPopover">
+            <div class="picker-year-nav">
+              <button class="btn-icon btn-sm" id="pickerPrevYearBtn" title="Ano anterior">
+                <i class="fa-solid fa-chevron-left"></i>
+              </button>
+              <strong id="pickerYearDisplay">2026</strong>
+              <button class="btn-icon btn-sm" id="pickerNextYearBtn" title="Próximo ano">
+                <i class="fa-solid fa-chevron-right"></i>
+              </button>
+            </div>
+
+            <div class="picker-months-grid" id="pickerMonthsGrid">
+              <!-- Renderizado dinamicamente -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Topbar Right: Saldo + Foto/Avatar do Usuário -->
+        <div class="topbar-right">
+          <div class="topbar-summary">
+            <span class="topbar-label">Saldo do Mês:</span>
+            <span class="topbar-value" id="topbarBalance">R$ 0,00</span>
+          </div>
+
+          <button class="user-avatar-btn" id="userMenuBtn" title="Menu do Usuário">
+            <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" class="user-avatar-sm" id="topbarAvatarImg" />
+          </button>
+        </div>
+      </header>
+
+      <!-- ==========================================
+           DRAWER LATERAL DO USUÁRIO (DIREITA)
+           ========================================== -->
+      <div class="profile-drawer-overlay" id="profileDrawerOverlay"></div>
+      <aside class="profile-drawer" id="profileDrawer">
+        <div class="drawer-header">
+          <h3>Painel do Usuário</h3>
+          <button class="drawer-close-btn" id="closeDrawerBtn">&times;</button>
+        </div>
+
+        <div class="drawer-body">
+          <!-- Card de Identificação e Edição de Perfil -->
+          <div class="drawer-user-card">
+            <div class="drawer-avatar-wrapper" id="changeAvatarBtn" title="Clique para fazer upload da sua foto">
+              <div class="drawer-user-avatar">
+                <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" id="drawerAvatarImg" />
+              </div>
+              <div class="avatar-camera-badge"><i class="fa-solid fa-camera"></i></div>
+            </div>
+            <input type="file" id="avatarFileInput" accept="image/*" style="display: none;" />
+
+            <div class="drawer-user-info">
+              <div class="profile-name-edit-row">
+                <input type="text" id="profileNameInput" class="profile-name-input" value="" placeholder="Escreva seu nome..." />
+                <button type="button" id="saveProfileNameBtn" class="btn-save-name" title="Salvar Nome">
+                  <i class="fa-solid fa-check"></i>
+                </button>
+              </div>
+
+              <p class="drawer-storage-status">
+                <i class="fa-solid fa-shield-halved text-success"></i> Armazenamento Local Seguro
+              </p>
+            </div>
+          </div>
+
+          <!-- Seção de Ações de Dados -->
+          <div class="drawer-section">
+            <span class="drawer-section-title">Gerenciamento de Dados</span>
+
+            <button id="exportBtn" class="drawer-action-btn" title="Baixar Backup">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-download text-primary"></i>
+              </div>
+              <div class="action-text">
+                <strong>Baixar Backup</strong>
+                <span>Salvar cópia dos seus dados no PC</span>
+              </div>
+            </button>
+
+            <button id="clearDataBtn" class="drawer-action-btn btn-danger-action" title="Zerar todos os lançamentos">
+              <div class="action-icon bg-danger-soft">
+                <i class="fa-solid fa-trash-can text-danger"></i>
+              </div>
+              <div class="action-text">
+                <strong>Reset</strong>
+                <span>Limpar todos os dados e começar do zero</span>
+              </div>
+            </button>
+          </div>
+
+          <!-- Dica de Privacidade -->
+          <div class="drawer-tip">
+            <i class="fa-solid fa-lock text-success"></i>
+            <p>Seus dados financeiros ficam salvos exclusivamente no seu navegador com privacidade total.</p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CONTAINER DAS TELAS COM TRANSIÇÃO SUAVE -->
+      <div class="views-wrapper">
+
+        <!-- ====================================================
+             TELA 1: HOME / DASHBOARD & SAÚDE FINANCEIRA
+             ==================================================== -->
+        <section class="view-section active" id="view-dashboard">
+
+          <!-- KPIs do Mês -->
+          <div class="kpi-grid">
+            <!-- Total Recebido -->
+            <div class="kpi-card income-card" onclick="switchToView('incomes')" title="Clique para gerenciar ganhos">
+              <div class="kpi-header">
+                <span class="kpi-title"><i class="fa-solid fa-arrow-down"></i> Total Recebido</span>
+                <span class="badge badge-success" id="incomeCount">0 entradas</span>
+              </div>
+              <div class="kpi-value text-success" id="totalIncomeDisplay">R$ 0,00</div>
+              <span class="kpi-caption">Clique para ver e editar ganhos</span>
+            </div>
+
+            <!-- Gastos Fixos -->
+            <div class="kpi-card fixed-card" onclick="switchToView('expenses')" title="Clique para gerenciar gastos">
+              <div class="kpi-header">
+                <span class="kpi-title"><i class="fa-solid fa-house-lock"></i> Gastos Fixos</span>
+                <span class="badge badge-warning" id="fixedPercentage">0%</span>
+              </div>
+              <div class="kpi-value text-warning" id="totalFixedDisplay">R$ 0,00</div>
+              <span class="kpi-caption" id="fixedPaidStatus">Contas essenciais do mês</span>
+            </div>
+
+            <!-- Gastos do Mês -->
+            <div class="kpi-card variable-card" onclick="switchToView('expenses')" title="Clique para gerenciar gastos">
+              <div class="kpi-header">
+                <span class="kpi-title"><i class="fa-solid fa-bag-shopping"></i> Gastos Variáveis</span>
+                <span class="badge badge-danger" id="variablePercentage">0%</span>
+              </div>
+              <div class="kpi-value text-danger" id="totalVariableDisplay">R$ 0,00</div>
+              <span class="kpi-caption">Alimentação, lazer, compras</span>
+            </div>
+
+            <!-- Saldo Livre / Sobra -->
+            <div class="kpi-card balance-card highlight-card">
+              <div class="kpi-header">
+                <span class="kpi-title"><i class="fa-solid fa-piggy-bank"></i> Saldo / Sobra</span>
+                <span class="badge" id="healthBadge">Excelente</span>
+              </div>
+              <div class="kpi-value" id="balanceDisplay">R$ 0,00</div>
+              <span class="kpi-caption" id="dailyBudgetDisplay">Disponível para poupar</span>
+            </div>
+          </div>
+
+          <!-- Diagnóstico de Saúde Financeira -->
+          <div class="health-banner" id="healthBanner">
+            <div class="health-content">
+              <div class="health-status-icon" id="healthStatusIcon">
+                <i class="fa-solid fa-heart-pulse"></i>
+              </div>
+              <div class="health-info">
+                <h3 id="healthTitle">Diagnóstico do seu mês</h3>
+                <p id="healthDescription">Você está comprometendo suas finanças de forma equilibrada.</p>
+              </div>
+            </div>
+
+            <!-- Barra 50/30/20 -->
+            <div class="health-bars-wrapper">
+              <div class="progress-labels">
+                <span><span class="dot dot-fixed"></span> Fixos: <strong id="lblPctFixed">0%</strong> (ideal: até
+                  50%)</span>
+                <span><span class="dot dot-var"></span> Variáveis: <strong id="lblPctVar">0%</strong> (ideal: até
+                  30%)</span>
+                <span><span class="dot dot-save"></span> Sobra: <strong id="lblPctSave">0%</strong> (ideal: 20%+)</span>
+              </div>
+              <div class="multi-progress-bar">
+                <div class="bar-segment bar-fixed" id="barFixed" style="width: 0%"></div>
+                <div class="bar-segment bar-variable" id="barVariable" style="width: 0%"></div>
+                <div class="bar-segment bar-savings" id="barSavings" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Centro de Dívidas & Quitação -->
+          <div class="debt-summary-panel">
+            <div class="debt-header">
+              <div class="debt-title">
+                <i class="fa-solid fa-flag-checkered text-warning"></i>
+                <div>
+                  <h3>Centro de Dívidas & Previsão de Quitação</h3>
+                  <span>Acompanhamento de parcelamentos, empréstimos e quitações</span>
+                </div>
+              </div>
+              <div class="debt-total-badge">
+                Saldo Devedor Total: <strong id="totalDebtRemaining">R$ 0,00</strong>
+              </div>
+            </div>
+
+            <div class="debt-cards-grid" id="debtCardsGrid">
+              <!-- Renderizado dinamicamente -->
+            </div>
+          </div>
+
+          <!-- Gráfico de Distribuição -->
+          <div class="panel-box">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-purple-soft"><i class="fa-solid fa-chart-pie"></i></div>
+                <div>
+                  <h2>Composição dos Gastos do Mês</h2>
+                  <p>Distribuição de despesas por categoria</p>
+                </div>
+              </div>
+            </div>
+            <div class="chart-wrapper">
+              <canvas id="categoryChart"></canvas>
+              <div id="chartEmptyMessage" class="chart-empty" style="display: none;">
+                <i class="fa-solid fa-chart-simple"></i>
+                <p>Nenhum gasto lançado neste mês ainda.</p>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+
+        <!-- ====================================================
+             TELA 2: GANHOS DO MÊS (VER, INSERIR, ALTERAR, EXCLUIR)
+             ==================================================== -->
+        <section class="view-section" id="view-incomes">
+
+          <div class="view-header-card bg-green-gradient">
+            <div class="view-header-info">
+              <div class="view-icon-badge"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+              <div>
+                <h2>Ganhos do Mês</h2>
+                <p>Veja, adicione, altere ou exclua qualquer receita de <span class="badge-month-label">Novembro
+                    2026</span></p>
+              </div>
+            </div>
+            <div class="view-header-total">
+              <span class="total-caption">Total de Ganhos:</span>
+              <span class="total-big text-white" id="incomesPageTotal">R$ 0,00</span>
+            </div>
+          </div>
+
+          <!-- Formulário Rápido de Novo Ganho -->
+          <div class="panel-box">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-green-soft"><i class="fa-solid fa-plus"></i></div>
+                <div>
+                  <h3>Adicionar Novo Ganho</h3>
+                  <p>Salário, adiantamento, rendas extras ou reembolsos</p>
+                </div>
+              </div>
+            </div>
+
+            <form id="incomeForm" class="form-grid-5">
+              <div>
+                <label>Descrição</label>
+                <input type="text" id="incomeDesc" placeholder="Ex: Salário / Freela" required />
+              </div>
+
+              <div>
+                <label>Valor (R$)</label>
+                <div class="input-currency-wrapper">
+                  <span class="prefix">R$</span>
+                  <input type="number" step="0.01" min="0" id="incomeAmount" placeholder="0,00" required />
+                </div>
+              </div>
+
+              <div>
+                <label>Categoria</label>
+                <select id="incomeCategory">
+                  <option value="Salário">💼 Salário</option>
+                  <option value="Adiantamento">📅 Adiantamento</option>
+                  <option value="Extra">✨ Renda Extra</option>
+                  <option value="Investimentos">📈 Rendimentos</option>
+                  <option value="Outros">💵 Outros Ganhos</option>
+                </select>
+              </div>
+
+              <div>
+                <label>Data do Recebimento</label>
+                <input type="date" id="incomeDate" required />
+              </div>
+
+              <div class="form-btn-align">
+                <button type="submit" class="btn-primary w-100">
+                  <i class="fa-solid fa-plus"></i> Inserir Ganho
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Lista Gerenciável de Ganhos -->
+          <div class="panel-box">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-green-soft"><i class="fa-solid fa-list-check"></i></div>
+                <div>
+                  <h3>Lista de Ganhos Registrados</h3>
+                  <p>Clique em <strong>Editar</strong> para alterar valor ou descrição</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="items-cards-list" id="incomesListDetailed">
+              <!-- Renderizado dinamicamente -->
+            </div>
+          </div>
+
+        </section>
+
+
+        <!-- ====================================================
+             TELA 3: GASTOS DO MÊS (VER, INSERIR, ALTERAR, EXCLUIR)
+             ==================================================== -->
+        <section class="view-section" id="view-expenses">
+
+          <div class="view-header-card bg-red-gradient">
+            <div class="view-header-info">
+              <div class="view-icon-badge"><i class="fa-solid fa-receipt"></i></div>
+              <div>
+                <h2>Gastos do Mês</h2>
+                <p>Controle completo de contas fixas, dívidas e gastos variáveis de <span
+                    class="badge-month-label">Novembro 2026</span></p>
+              </div>
+            </div>
+            <div class="view-header-total">
+              <span class="total-caption">Total de Gastos:</span>
+              <span class="total-big text-white" id="expensesPageTotal">R$ 0,00</span>
+            </div>
+          </div>
+
+          <!-- Formulário Rápido de Novo Gasto -->
+          <div class="panel-box">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-red-soft"><i class="fa-solid fa-plus"></i></div>
+                <div>
+                  <h3>Adicionar Novo Gasto</h3>
+                  <p>Cadastre despesas fixas ou gastos do dia a dia</p>
+                </div>
+              </div>
+            </div>
+
+            <form id="expenseForm" class="form-grid-6">
+              <div>
+                <label>Descrição do Gasto</label>
+                <input type="text" id="expenseDesc" placeholder="Ex: Supermercado / Aluguel" required />
+              </div>
+
+              <div>
+                <label>Valor (R$)</label>
+                <div class="input-currency-wrapper">
+                  <span class="prefix">R$</span>
+                  <input type="number" step="0.01" min="0" id="expenseAmount" placeholder="0,00" required />
+                </div>
+              </div>
+
+              <div>
+                <label>Tipo de Gasto</label>
+                <select id="expenseType" required>
+                  <option value="fixed">🔒 Gasto Fixo Contínuo</option>
+                  <option value="debt">💳 Dívida / Empréstimo / Parcela</option>
+                  <option value="variable">🛒 Variável / Dia a dia</option>
+                </select>
+              </div>
+
+              <div id="expenseEndMonthWrapper" style="display: none;">
+                <label>Mês Final (Quitação)</label>
+                <input type="month" id="expenseEndMonth" placeholder="Ex: 2027-12" />
+              </div>
+
+              <div>
+                <label>Categoria</label>
+                <select id="expenseCategory">
+                  <option value="Moradia">🏠 Moradia & Aluguel</option>
+                  <option value="Contas">💡 Contas (Luz, Net, etc)</option>
+                  <option value="Saúde">🏥 Saúde & Remédios</option>
+                  <option value="Esporte">🥋 Esporte & Academia</option>
+                  <option value="Cartão de crédito">💳 Cartão de Crédito</option>
+                  <option value="Alimentação">🍽️ Alimentação / Mercado</option>
+                  <option value="Transporte">🚗 Transporte / Combustível</option>
+                  <option value="Educação">🎓 Educação & Cursos</option>
+                  <option value="Empréstimo">💳 Empréstimo & Financiamento</option>
+                  <option value="Parcelamento">📦 Compras Parceladas</option>
+                  <option value="Lazer">🍿 Lazer & Passeios</option>
+                  <option value="Outros">📦 Outros Gastos</option>
+                </select>
+              </div>
+
+              <div>
+                <label>Data do Gasto</label>
+                <input type="date" id="expenseDate" required />
+              </div>
+
+              <div class="form-btn-align">
+                <button type="submit" class="btn-danger w-100">
+                  <i class="fa-solid fa-plus"></i> Inserir Gasto
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Filtros de Visualização -->
+          <div class="filter-tabs-row">
+            <div class="filter-buttons">
+              <button class="filter-btn active" data-filter="all">Todos os Gastos</button>
+              <button class="filter-btn" data-filter="fixed">🔒 Fixos & Dívidas</button>
+              <button class="filter-btn" data-filter="variable">🛒 Variáveis</button>
+            </div>
+            <div class="expenses-subtotals">
+              <span>Fixos: <strong class="text-warning" id="subtotalFixedLabel">R$ 0,00</strong></span>
+              <span>Variáveis: <strong class="text-danger" id="subtotalVarLabel">R$ 0,00</strong></span>
+            </div>
+          </div>
+
+          <!-- Lista Gerenciável de Gastos -->
+          <div class="panel-box">
+            <div class="items-cards-list" id="expensesListDetailed">
+              <!-- Renderizado dinamicamente -->
+            </div>
+          </div>
+
+        </section>
+
+      </div> <!-- /views-wrapper -->
+
+      <!-- ==========================================
+           RODAPÉ (FOOTER)
+           ========================================== -->
+      <footer class="app-footer">
+        <div class="footer-container">
+          <div class="footer-top">
+            <div class="footer-brand">
+              <img src="assets/logo.jpg" alt="Logo GastoPro" class="footer-logo-img" />
+              <div>
+                <h4>GastoPro</h4>
+                <p>Gestão Financeira & Saúde Orçamentária Pessoal</p>
+              </div>
+            </div>
+            <div class="footer-security-badge">
+              <i class="fa-solid fa-shield-halved text-success"></i>
+              <span>Seus dados ficam 100% seguros e salvos localmente no seu dispositivo.</span>
+            </div>
+          </div>
+
+          <div class="footer-divider"></div>
+
+          <div class="footer-bottom">
+            <div class="footer-author">
+              <i class="fa-solid fa-code text-primary"></i>
+              <span>Criado e desenvolvido por <strong>Aylton Alberto</strong> &bull; ADS</span>
+            </div>
+            <div class="footer-meta">
+              <span>GastoPro &copy; 2026 &bull; Todos os direitos reservados</span>
+              <span class="badge badge-version">v2.4 Pro</span>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+    </div> <!-- /main-content -->
+
+  </div> <!-- /app-shell -->
+
+
+  <!-- ====================================================
+       MODAL DE EDIÇÃO / ALTERAÇÃO
+       ==================================================== -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="editModalTitle">Alterar Informação</h3>
+        <button class="modal-close-btn" id="closeModalBtn">&times;</button>
+      </div>
+
+      <form id="editForm">
+        <input type="hidden" id="editItemId" />
+
+        <div class="form-group">
+          <label>Descrição</label>
+          <input type="text" id="editDesc" required />
+        </div>
+
+        <div class="form-group">
+          <label>Valor (R$)</label>
+          <div class="input-currency-wrapper">
+            <span class="prefix">R$</span>
+            <input type="number" step="0.01" min="0" id="editAmount" required />
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Categoria</label>
+            <input type="text" id="editCategory" required />
+          </div>
+
+          <div class="form-group" id="editTypeGroup">
+            <label>Tipo</label>
+            <select id="editType">
+              <option value="fixed">🔒 Gasto Fixo</option>
+              <option value="variable">🛒 Gasto Variável</option>
+              <option value="income">💵 Ganho / Renda</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Data</label>
+            <input type="date" id="editDate" required />
+          </div>
+
+          <div class="form-group" id="editStatusGroup">
+            <label>Status (Gasto Fixo)</label>
+            <select id="editActive">
+              <option value="true">🟢 Ativo (Repete nos meses)</option>
+              <option value="false">⚪ Inativo / Pausado</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group" id="editEndMonthGroup">
+          <label>Mês de Término / Quitação (Opcional)</label>
+          <input type="month" id="editEndMonth" placeholder="Ex: 2027-12" />
+          <small class="form-hint">Deixe em branco se for uma conta contínua (ex: Aluguel, Luz).</small>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="cancelEditBtn">Cancelar</button>
+          <button type="submit" class="btn-primary">Salvar Alterações</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ====================================================
+       MODAL DE CONFIRMAÇÃO ELEGANTE
+       ==================================================== -->
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal-content modal-confirm-content">
+      <div class="confirm-icon-wrapper" id="confirmIconWrapper">
+        <i class="fa-solid fa-triangle-exclamation" id="confirmIcon"></i>
+      </div>
+      <h3 id="confirmTitle">Tem certeza?</h3>
+      <p id="confirmMessage">Esta ação não pode ser desfeita.</p>
+      <div class="modal-actions confirm-actions">
+        <button type="button" class="btn-secondary" id="confirmCancelBtn">Cancelar</button>
+        <button type="button" class="btn-danger" id="confirmOkBtn">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Toast Notificação -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Scripts -->
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+
+</html>
