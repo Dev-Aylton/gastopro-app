@@ -1491,39 +1491,71 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPasswordToggle('toggleLoginPasswordBtn', 'loginPassword');
   setupPasswordToggle('toggleRegisterPasswordBtn', 'registerPassword');
 
-  // Submissão do Formulário de Login (Demonstração / UI State)
+  // Submissão do Formulário de Login (Supabase Real com fallback)
   if (authLoginForm) {
-    authLoginForm.addEventListener('submit', (e) => {
+    authLoginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('loginEmail')?.value.trim();
       const password = document.getElementById('loginPassword')?.value;
+      const submitBtn = document.getElementById('submitLoginBtn');
 
       if (!email || !password) {
         showAuthAlert('Por favor, preencha todos os campos.');
         return;
       }
 
-      // Simulação visual de login no estado do perfil
-      const profile = FinanceData.getProfile();
-      profile.email = email;
-      if (!profile.name) {
-        profile.name = email.split('@')[0];
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Entrando...';
       }
-      FinanceData.saveProfile(profile);
-      renderUserProfile();
-      closeAuth();
-      showToast(`Bem-vindo de volta, ${profile.name}!`);
+
+      try {
+        if (window.SupabaseAuth && window.SupabaseAuth.client) {
+          const { user } = await window.SupabaseAuth.signIn(email, password);
+          const profile = FinanceData.getProfile();
+          profile.email = user.email;
+          profile.name  = (user.user_metadata && user.user_metadata.name) || profile.name || email.split('@')[0];
+          FinanceData.saveProfile(profile);
+          renderUserProfile();
+          closeAuth();
+          showToast(`Bem-vindo de volta, ${profile.name}!`);
+        } else {
+          // Fallback offline / local
+          const profile = FinanceData.getProfile();
+          profile.email = email;
+          profile.name = profile.name || email.split('@')[0];
+          FinanceData.saveProfile(profile);
+          renderUserProfile();
+          closeAuth();
+          showToast(`Bem-vindo, ${profile.name}!`);
+        }
+      } catch (err) {
+        console.error('[GastoPro Auth] Erro no login:', err);
+        let msg = 'Erro ao realizar login. Verifique suas credenciais.';
+        if (err.message && err.message.includes('Invalid login credentials')) {
+          msg = 'E-mail ou senha incorretos.';
+        } else if (err.message && err.message.includes('Email not confirmed')) {
+          msg = 'Confirmação pendente: verifique seu e-mail ou desative a confirmação no Supabase.';
+        }
+        showAuthAlert(msg);
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>Entrar no GastoPro</span><i class="fa-solid fa-arrow-right"></i>';
+        }
+      }
     });
   }
 
-  // Submissão do Formulário de Cadastro (Demonstração / UI State)
+  // Submissão do Formulário de Cadastro (Supabase Real com fallback)
   if (authRegisterForm) {
-    authRegisterForm.addEventListener('submit', (e) => {
+    authRegisterForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = document.getElementById('registerName')?.value.trim();
       const email = document.getElementById('registerEmail')?.value.trim();
       const password = document.getElementById('registerPassword')?.value;
       const confirmPassword = document.getElementById('registerConfirmPassword')?.value;
+      const submitBtn = document.getElementById('submitRegisterBtn');
 
       if (!name || !email || !password || !confirmPassword) {
         showAuthAlert('Por favor, preencha todos os campos.');
@@ -1540,25 +1572,83 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // Criação de perfil simulado
-      const profile = FinanceData.getProfile();
-      profile.name = name;
-      profile.email = email;
-      FinanceData.saveProfile(profile);
-      renderUserProfile();
-      closeAuth();
-      showToast(`Conta criada com sucesso! Bem-vindo, ${name}!`);
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Criando conta...';
+      }
+
+      try {
+        if (window.SupabaseAuth && window.SupabaseAuth.client) {
+          const data = await window.SupabaseAuth.signUp(name, email, password);
+          const profile = FinanceData.getProfile();
+          profile.name = name;
+          profile.email = email;
+          FinanceData.saveProfile(profile);
+          renderUserProfile();
+
+          // Se a sessão já foi iniciada imediatamente
+          if (data && data.session) {
+            closeAuth();
+            showToast(`Conta criada com sucesso! Bem-vindo, ${name}!`);
+          } else {
+            showAuthAlert('Conta criada! Se a confirmação de e-mail estiver ativa, verifique sua caixa de entrada.', true);
+          }
+        } else {
+          // Fallback offline / local
+          const profile = FinanceData.getProfile();
+          profile.name = name;
+          profile.email = email;
+          FinanceData.saveProfile(profile);
+          renderUserProfile();
+          closeAuth();
+          showToast(`Conta criada com sucesso! Bem-vindo, ${name}!`);
+        }
+      } catch (err) {
+        console.error('[GastoPro Auth] Erro no cadastro:', err);
+        let msg = err.message || 'Erro ao criar conta. Tente novamente.';
+        if (msg.includes('User already registered')) {
+          msg = 'Este e-mail já está cadastrado. Faça login na aba "Entrar".';
+        }
+        showAuthAlert(msg);
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>Criar Minha Conta Gratuita</span><i class="fa-solid fa-user-plus"></i>';
+        }
+      }
     });
   }
 
-  // Botão de Logout
+  // Botão de Logout Real (Supabase)
   if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
+    logoutBtn.addEventListener('click', async () => {
+      try {
+        if (window.SupabaseAuth) {
+          await window.SupabaseAuth.signOut();
+        }
+      } catch (e) {
+        console.warn(e);
+      }
       const profile = FinanceData.getProfile();
       profile.email = null;
       FinanceData.saveProfile(profile);
       renderUserProfile();
       showToast('Você saiu da sua conta. Modo local ativo.');
+    });
+  }
+
+  // Checagem de Sessão Ativa ao iniciar o App
+  if (window.SupabaseAuth) {
+    window.SupabaseAuth.getSessionUser().then((user) => {
+      if (user) {
+        const profile = FinanceData.getProfile();
+        profile.email = user.email;
+        if (!profile.name && user.user_metadata && user.user_metadata.name) {
+          profile.name = user.user_metadata.name;
+        }
+        FinanceData.saveProfile(profile);
+        renderUserProfile();
+      }
     });
   }
 

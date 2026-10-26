@@ -3,14 +3,13 @@
 
 <head>
   <meta charset="UTF-8" />
-  <!-- Content Security Policy: restringe fontes de scripts, estilos e conexões -->
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self';
              script-src 'self' https://cdn.jsdelivr.net;
              style-src 'self' https://fonts.googleapis.com https://cdnjs.cloudflare.com 'unsafe-inline';
              font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:;
              img-src 'self' data: blob:;
-             connect-src 'none';" />
+             connect-src 'self' https://xfjhgzcqlrhpckqwnqtk.supabase.co wss://xfjhgzcqlrhpckqwnqtk.supabase.co;" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GastoPro — Controle de Gastos & Saúde Financeira</title>
   <meta name="description"
@@ -841,6 +840,9 @@
   <div id="toast" class="toast"></div>
 
   <!-- Scripts -->
+  <!-- Supabase JS Client via jsdelivr (permitido no CSP) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase.js"></script>
   <script src="js/data.js"></script>
   <script src="js/app.js"></script>
 </body>
