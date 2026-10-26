@@ -1368,6 +1368,207 @@ document.addEventListener('DOMContentLoaded', () => {
     if (userMenuBtn) {
       userMenuBtn.title = profile.name ? `Menu do Usuário (${profile.name})` : 'Menu do Usuário (Escreva seu nome)';
     }
+
+    // Atualiza status de Conta & Autenticação no Drawer
+    const accountGuestCard   = document.getElementById('accountGuestCard');
+    const accountLoggedCard  = document.getElementById('accountLoggedCard');
+    const loggedUserEmail    = document.getElementById('loggedUserEmail');
+    const accountStatusText  = document.getElementById('accountStatusText');
+
+    if (profile.email) {
+      if (accountGuestCard)  accountGuestCard.style.display = 'none';
+      if (accountLoggedCard) accountLoggedCard.style.display = 'flex';
+      if (loggedUserEmail)   loggedUserEmail.textContent = profile.email;
+      if (accountStatusText) accountStatusText.textContent = 'Conta Conectada (Nuvem)';
+    } else {
+      if (accountGuestCard)  accountGuestCard.style.display = 'flex';
+      if (accountLoggedCard) accountLoggedCard.style.display = 'none';
+      if (accountStatusText) accountStatusText.textContent = 'Modo Local (Não conectado)';
+    }
+  }
+
+  // ── 11.2 Modal de Autenticação (Login / Cadastro) ─────────────
+  const authModal            = document.getElementById('authModal');
+  const openAuthModalBtn     = document.getElementById('openAuthModalBtn');
+  const closeAuthModalBtn    = document.getElementById('closeAuthModalBtn');
+  const continueAsGuestBtn   = document.getElementById('continueAsGuestBtn');
+  const tabLoginBtn          = document.getElementById('tabLoginBtn');
+  const tabRegisterBtn       = document.getElementById('tabRegisterBtn');
+  const authLoginForm        = document.getElementById('authLoginForm');
+  const authRegisterForm     = document.getElementById('authRegisterForm');
+  const authSubtitleText     = document.getElementById('authSubtitleText');
+  const authAlertBanner      = document.getElementById('authAlertBanner');
+  const authAlertText        = document.getElementById('authAlertText');
+  const logoutBtn            = document.getElementById('logoutBtn');
+
+  function showAuthAlert(msg, isSuccess = false) {
+    if (!authAlertBanner || !authAlertText) return;
+    authAlertText.textContent = msg;
+    authAlertBanner.className = isSuccess ? 'auth-alert-banner success' : 'auth-alert-banner';
+    authAlertBanner.style.display = 'flex';
+  }
+
+  function hideAuthAlert() {
+    if (authAlertBanner) authAlertBanner.style.display = 'none';
+  }
+
+  function setAuthTab(tab) {
+    hideAuthAlert();
+    if (tab === 'login') {
+      if (tabLoginBtn) tabLoginBtn.classList.add('active');
+      if (tabRegisterBtn) tabRegisterBtn.classList.remove('active');
+      if (authLoginForm) authLoginForm.style.display = 'flex';
+      if (authRegisterForm) authRegisterForm.style.display = 'none';
+      if (authSubtitleText) {
+        authSubtitleText.textContent = 'Acesse sua conta para sincronizar seus lançamentos com segurança.';
+      }
+    } else {
+      if (tabRegisterBtn) tabRegisterBtn.classList.add('active');
+      if (tabLoginBtn) tabLoginBtn.classList.remove('active');
+      if (authRegisterForm) authRegisterForm.style.display = 'flex';
+      if (authLoginForm) authLoginForm.style.display = 'none';
+      if (authSubtitleText) {
+        authSubtitleText.textContent = 'Crie sua conta em segundos para salvar seus dados com total privacidade.';
+      }
+    }
+  }
+
+  function openAuth(tab = 'login') {
+    setAuthTab(tab);
+    if (authModal) authModal.classList.add('active');
+  }
+
+  function closeAuth() {
+    if (authModal) authModal.classList.remove('active');
+    hideAuthAlert();
+  }
+
+  if (openAuthModalBtn) {
+    openAuthModalBtn.addEventListener('click', () => openAuth('login'));
+  }
+
+  if (closeAuthModalBtn) {
+    closeAuthModalBtn.addEventListener('click', closeAuth);
+  }
+
+  if (continueAsGuestBtn) {
+    continueAsGuestBtn.addEventListener('click', () => {
+      closeAuth();
+      showToast('Continuando no Modo Local.');
+    });
+  }
+
+  if (authModal) {
+    authModal.addEventListener('click', (e) => {
+      if (e.target === authModal) closeAuth();
+    });
+  }
+
+  if (tabLoginBtn) {
+    tabLoginBtn.addEventListener('click', () => setAuthTab('login'));
+  }
+
+  if (tabRegisterBtn) {
+    tabRegisterBtn.addEventListener('click', () => setAuthTab('register'));
+  }
+
+  // Toggle de visualização de senha
+  function setupPasswordToggle(btnId, inputId) {
+    const btn = document.getElementById(btnId);
+    const input = document.getElementById(inputId);
+    if (!btn || !input) return;
+
+    btn.addEventListener('click', () => {
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      const icon = btn.querySelector('i');
+      if (icon) {
+        icon.className = isPassword ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+      }
+    });
+  }
+
+  setupPasswordToggle('toggleLoginPasswordBtn', 'loginPassword');
+  setupPasswordToggle('toggleRegisterPasswordBtn', 'registerPassword');
+
+  // Submissão do Formulário de Login (Demonstração / UI State)
+  if (authLoginForm) {
+    authLoginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const email = document.getElementById('loginEmail')?.value.trim();
+      const password = document.getElementById('loginPassword')?.value;
+
+      if (!email || !password) {
+        showAuthAlert('Por favor, preencha todos os campos.');
+        return;
+      }
+
+      // Simulação visual de login no estado do perfil
+      const profile = FinanceData.getProfile();
+      profile.email = email;
+      if (!profile.name) {
+        profile.name = email.split('@')[0];
+      }
+      FinanceData.saveProfile(profile);
+      renderUserProfile();
+      closeAuth();
+      showToast(`Bem-vindo de volta, ${profile.name}!`);
+    });
+  }
+
+  // Submissão do Formulário de Cadastro (Demonstração / UI State)
+  if (authRegisterForm) {
+    authRegisterForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('registerName')?.value.trim();
+      const email = document.getElementById('registerEmail')?.value.trim();
+      const password = document.getElementById('registerPassword')?.value;
+      const confirmPassword = document.getElementById('registerConfirmPassword')?.value;
+
+      if (!name || !email || !password || !confirmPassword) {
+        showAuthAlert('Por favor, preencha todos os campos.');
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        showAuthAlert('As senhas não coincidem!');
+        return;
+      }
+
+      if (password.length < 6) {
+        showAuthAlert('A senha deve ter no mínimo 6 caracteres.');
+        return;
+      }
+
+      // Criação de perfil simulado
+      const profile = FinanceData.getProfile();
+      profile.name = name;
+      profile.email = email;
+      FinanceData.saveProfile(profile);
+      renderUserProfile();
+      closeAuth();
+      showToast(`Conta criada com sucesso! Bem-vindo, ${name}!`);
+    });
+  }
+
+  // Botão de Logout
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+      const profile = FinanceData.getProfile();
+      profile.email = null;
+      FinanceData.saveProfile(profile);
+      renderUserProfile();
+      showToast('Você saiu da sua conta. Modo local ativo.');
+    });
+  }
+
+  // Link Esqueceu a Senha
+  const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+  if (forgotPasswordLink) {
+    forgotPasswordLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      showAuthAlert('Recuperação de senha: basta informar seu e-mail de cadastro.');
+    });
   }
 
   // Upload de Foto

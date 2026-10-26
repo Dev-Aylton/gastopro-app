@@ -184,9 +184,32 @@
                 </button>
               </div>
 
-              <p class="drawer-storage-status">
-                <i class="fa-solid fa-shield-halved text-success"></i> Armazenamento Local Seguro
+              <p class="drawer-storage-status" id="drawerStorageStatus">
+                <i class="fa-solid fa-cloud-arrow-up text-primary"></i> <span id="accountStatusText">Modo Local (Não conectado)</span>
               </p>
+            </div>
+          </div>
+
+          <!-- Seção de Conta & Acesso Multi-usuário -->
+          <div class="drawer-section drawer-account-section">
+            <span class="drawer-section-title">Acesso & Sincronização</span>
+            <div id="accountGuestCard" class="account-card">
+              <p class="account-desc">Crie sua conta gratuita ou faça login para sincronizar seus dados em qualquer dispositivo.</p>
+              <button type="button" id="openAuthModalBtn" class="btn-auth-trigger">
+                <i class="fa-solid fa-arrow-right-to-bracket"></i> Entrar ou Criar Conta
+              </button>
+            </div>
+            <div id="accountLoggedCard" class="account-card" style="display: none;">
+              <div class="logged-user-row">
+                <i class="fa-solid fa-circle-check text-success"></i>
+                <div>
+                  <strong id="loggedUserEmail">usuario@email.com</strong>
+                  <small>Conectado via Nuvem</small>
+                </div>
+              </div>
+              <button type="button" id="logoutBtn" class="btn-auth-logout">
+                <i class="fa-solid fa-arrow-right-from-bracket"></i> Sair da Conta
+              </button>
             </div>
           </div>
 
@@ -675,6 +698,140 @@
       <div class="modal-actions confirm-actions">
         <button type="button" class="btn-secondary" id="confirmCancelBtn">Cancelar</button>
         <button type="button" class="btn-danger" id="confirmOkBtn">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ====================================================
+       MODAL DE AUTENTICAÇÃO (LOGIN & CADASTRO)
+       ==================================================== -->
+  <div class="modal-overlay" id="authModal">
+    <div class="modal-content modal-auth-content">
+      <!-- Botão Fechar -->
+      <button class="modal-close-btn auth-close-btn" id="closeAuthModalBtn" title="Fechar">&times;</button>
+
+      <!-- Cabeçalho com Identidade Visual -->
+      <div class="auth-header">
+        <div class="auth-brand-badge">
+          <img src="assets/logo.jpg" alt="Logo GastoPro" class="auth-logo-img" />
+          <div class="auth-brand-info">
+            <h2>GastoPro</h2>
+            <span>Gestão Financeira & Nuvem</span>
+          </div>
+        </div>
+        <p class="auth-subtitle" id="authSubtitleText">Acesse sua conta para sincronizar seus lançamentos com segurança.</p>
+      </div>
+
+      <!-- Abas: Entrar / Criar Conta -->
+      <div class="auth-tabs-nav">
+        <button type="button" class="auth-tab-btn active" id="tabLoginBtn">
+          <i class="fa-solid fa-right-to-bracket"></i> Entrar
+        </button>
+        <button type="button" class="auth-tab-btn" id="tabRegisterBtn">
+          <i class="fa-solid fa-user-plus"></i> Criar Conta
+        </button>
+      </div>
+
+      <!-- Banner de Alerta / Mensagens -->
+      <div class="auth-alert-banner" id="authAlertBanner" style="display: none;">
+        <i class="fa-solid fa-circle-info" id="authAlertIcon"></i>
+        <span id="authAlertText">Mensagem informativa</span>
+      </div>
+
+      <!-- FORMULÁRIO 1: LOGIN -->
+      <form id="authLoginForm" class="auth-form-body">
+        <div class="form-group auth-field">
+          <label for="loginEmail">E-mail</label>
+          <div class="auth-input-wrapper">
+            <i class="fa-regular fa-envelope input-leading-icon"></i>
+            <input type="email" id="loginEmail" placeholder="seu@email.com" required autocomplete="email" />
+          </div>
+        </div>
+
+        <div class="form-group auth-field">
+          <div class="label-with-action">
+            <label for="loginPassword">Senha</label>
+            <a href="#" class="auth-forgot-link" id="forgotPasswordLink">Esqueceu a senha?</a>
+          </div>
+          <div class="auth-input-wrapper">
+            <i class="fa-solid fa-lock input-leading-icon"></i>
+            <input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password" />
+            <button type="button" class="btn-toggle-password" id="toggleLoginPasswordBtn" title="Mostrar/Ocultar senha">
+              <i class="fa-regular fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="auth-options-row">
+          <label class="auth-remember-label">
+            <input type="checkbox" id="loginRemember" checked />
+            <span>Manter-me conectado</span>
+          </label>
+        </div>
+
+        <button type="submit" class="btn-primary btn-auth-submit" id="submitLoginBtn">
+          <span>Entrar no GastoPro</span>
+          <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </form>
+
+      <!-- FORMULÁRIO 2: CADASTRO -->
+      <form id="authRegisterForm" class="auth-form-body" style="display: none;">
+        <div class="form-group auth-field">
+          <label for="registerName">Nome Completo</label>
+          <div class="auth-input-wrapper">
+            <i class="fa-regular fa-user input-leading-icon"></i>
+            <input type="text" id="registerName" placeholder="Ex: Aylton Alberto" required autocomplete="name" />
+          </div>
+        </div>
+
+        <div class="form-group auth-field">
+          <label for="registerEmail">E-mail</label>
+          <div class="auth-input-wrapper">
+            <i class="fa-regular fa-envelope input-leading-icon"></i>
+            <input type="email" id="registerEmail" placeholder="seu@email.com" required autocomplete="email" />
+          </div>
+        </div>
+
+        <div class="form-group auth-field">
+          <label for="registerPassword">Senha</label>
+          <div class="auth-input-wrapper">
+            <i class="fa-solid fa-lock input-leading-icon"></i>
+            <input type="password" id="registerPassword" placeholder="Mínimo 6 caracteres" minlength="6" required autocomplete="new-password" />
+            <button type="button" class="btn-toggle-password" id="toggleRegisterPasswordBtn" title="Mostrar/Ocultar senha">
+              <i class="fa-regular fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group auth-field">
+          <label for="registerConfirmPassword">Confirmar Senha</label>
+          <div class="auth-input-wrapper">
+            <i class="fa-solid fa-shield-halved input-leading-icon"></i>
+            <input type="password" id="registerConfirmPassword" placeholder="Repita a senha" minlength="6" required autocomplete="new-password" />
+          </div>
+        </div>
+
+        <div class="auth-security-notice">
+          <i class="fa-solid fa-shield-halved text-success"></i>
+          <span>Seus dados ficam 100% isolados e inacessíveis para outros usuários.</span>
+        </div>
+
+        <button type="submit" class="btn-primary btn-auth-submit" id="submitRegisterBtn">
+          <span>Criar Minha Conta Gratuita</span>
+          <i class="fa-solid fa-user-plus"></i>
+        </button>
+      </form>
+
+      <!-- Divisor e Opção de Modo Convidado -->
+      <div class="auth-footer-divider">
+        <span>ou</span>
+      </div>
+      <div class="auth-guest-option">
+        <button type="button" class="btn-auth-guest" id="continueAsGuestBtn">
+          <i class="fa-solid fa-laptop"></i> Continuar no Modo Convidado (Local)
+        </button>
       </div>
     </div>
   </div>
