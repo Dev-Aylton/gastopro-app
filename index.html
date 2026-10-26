@@ -91,6 +91,12 @@
           <span>Gastos do Mês</span>
           <span class="nav-badge text-danger" id="sidebarExpenseCount">8</span>
         </button>
+
+        <!-- Botão 4: Atualizar Dados -->
+        <button class="nav-item nav-item-action" id="sidebarRefreshBtn" title="Atualizar dados (Refresh)">
+          <i class="fa-solid fa-arrows-rotate" id="sidebarRefreshIcon"></i>
+          <span>Atualizar Dados</span>
+        </button>
       </nav>
     </aside>
 
@@ -142,12 +148,16 @@
           </div>
         </div>
 
-        <!-- Topbar Right: Saldo + Foto/Avatar do Usuário -->
+        <!-- Topbar Right: Saldo + Botão Atualizar + Foto/Avatar do Usuário -->
         <div class="topbar-right">
           <div class="topbar-summary">
             <span class="topbar-label">Saldo do Mês:</span>
             <span class="topbar-value" id="topbarBalance">R$ 0,00</span>
           </div>
+
+          <button class="topbar-refresh-btn" id="refreshAppBtn" title="Atualizar dados (Refresh)" aria-label="Atualizar dados">
+            <i class="fa-solid fa-arrows-rotate" id="refreshIcon"></i>
+          </button>
 
           <button class="user-avatar-btn" id="userMenuBtn" title="Menu do Usuário">
             <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" class="user-avatar-sm" id="topbarAvatarImg" />
@@ -216,6 +226,16 @@
           <!-- Seção de Ações de Dados -->
           <div class="drawer-section">
             <span class="drawer-section-title">Gerenciamento de Dados</span>
+
+            <button id="drawerRefreshBtn" class="drawer-action-btn" title="Atualizar Dados e Sincronizar">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-arrows-rotate text-primary" id="drawerRefreshIcon"></i>
+              </div>
+              <div class="action-text">
+                <strong>Atualizar Dados</strong>
+                <span>Sincronizar com a nuvem e recarregar</span>
+              </div>
+            </button>
 
             <button id="exportBtn" class="drawer-action-btn" title="Baixar Backup">
               <div class="action-icon bg-primary-soft">
@@ -649,6 +669,7 @@
             <label>Tipo</label>
             <select id="editType">
               <option value="fixed">🔒 Gasto Fixo</option>
+              <option value="debt">💳 Dívida / Parcelamento</option>
               <option value="variable">🛒 Gasto Variável</option>
               <option value="income">💵 Ganho / Renda</option>
             </select>

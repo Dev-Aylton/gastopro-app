@@ -104,6 +104,7 @@ const SupabaseAuth = {
         category: row.category,
         type: row.type,
         date: row.date,
+        month: row.date ? String(row.date).substring(0, 7) : '',
         paid: Boolean(row.paid),
         isDebt: Boolean(row.is_debt),
         debtInfo: row.debt_info,

@@ -424,8 +424,11 @@ const FinanceData = {
    * const ganhos = itens.filter(i => i.type === 'income');
    */
   getByMonth(yearMonth) {
-    // Passo 1: lançamentos pontuais deste mês
-    const entries = this.getEntries().filter(e => e.month === yearMonth);
+    // Passo 1: lançamentos pontuais deste mês (com fallback para e.date)
+    const entries = this.getEntries().filter(e => {
+      const itemMonth = e.month || (e.date ? String(e.date).substring(0, 7) : '');
+      return itemMonth === yearMonth;
+    });
 
     // Passo 2: projeta templates fixos ativos para o mês pedido
     const templates = this.getTemplates();
@@ -566,61 +569,47 @@ const FinanceData = {
    * @returns {Object|null} Item atualizado, ou null se não encontrado.
    */
   update(id, updatedFields) {
-    // ROTA: Template de gasto fixo
-    if (id.startsWith('fix-')) {
-      const templates = this.getTemplates();
-      const idx = templates.findIndex(t => t.id === id);
-      if (idx !== -1) {
-        // Sincroniza o dia de vencimento se a data foi alterada
-        if (updatedFields.date) {
-          updatedFields.day = updatedFields.date.split('-')[2] || templates[idx].day;
-        }
-        templates[idx] = { ...templates[idx], ...updatedFields };
-        this.saveTemplates(templates);
-        return templates[idx];
+    // 1. Procura primeiro nos templates
+    const templates = this.getTemplates();
+    const tplIdx = templates.findIndex(t => t.id === id);
+    if (tplIdx !== -1) {
+      if (updatedFields.date) {
+        updatedFields.day = String(updatedFields.date).split('-')[2] || templates[tplIdx].day;
       }
-      return null;
+      templates[tplIdx] = { ...templates[tplIdx], ...updatedFields };
+      this.saveTemplates(templates);
+      return templates[tplIdx];
     }
 
-    // ROTA: Lançamento pontual
+    // 2. Procura nos lançamentos pontuais
     const entries = this.getEntries();
-    const idx = entries.findIndex(e => e.id === id);
-    if (idx !== -1) {
-      entries[idx] = { ...entries[idx], ...updatedFields };
+    const entryIdx = entries.findIndex(e => e.id === id);
+    if (entryIdx !== -1) {
+      if (updatedFields.date) {
+        updatedFields.month = String(updatedFields.date).substring(0, 7);
+      }
+      entries[entryIdx] = { ...entries[entryIdx], ...updatedFields };
       this.saveEntries(entries);
-      return entries[idx];
+      return entries[entryIdx];
     }
+
     return null;
   },
 
   // ================================================================
   // TOGGLE DE PAGAMENTO (BAIXA / DESBAIXA)
-  // Para templates: a baixa é registrada mês a mês em paidMonths{}.
-  // Para lançamentos: inverte diretamente o campo booleano `paid`.
   // ================================================================
 
-  /**
-   * Inverte o status de pagamento de um item para o mês indicado.
-   * - Template: alterna `paidMonths[currentYm]` (baixa específica por mês).
-   * - Lançamento: alterna `paid` diretamente.
-   *
-   * @param {string} id        - ID do item.
-   * @param {string} currentYm - Mês de referência "YYYY-MM".
-   */
   togglePaid(id, currentYm) {
-    // ROTA: Template — baixa registrada apenas para o mês corrente
-    if (id.startsWith('fix-')) {
-      const templates = this.getTemplates();
-      const tpl = templates.find(t => t.id === id);
-      if (tpl) {
-        if (!tpl.paidMonths) tpl.paidMonths = {}; // Inicializa se não existir
-        tpl.paidMonths[currentYm] = !tpl.paidMonths[currentYm];
-        this.saveTemplates(templates);
-      }
+    const templates = this.getTemplates();
+    const tpl = templates.find(t => t.id === id);
+    if (tpl) {
+      if (!tpl.paidMonths) tpl.paidMonths = {};
+      tpl.paidMonths[currentYm] = !tpl.paidMonths[currentYm];
+      this.saveTemplates(templates);
       return;
     }
 
-    // ROTA: Lançamento pontual
     const entries = this.getEntries();
     const item = entries.find(e => e.id === id);
     if (item) {
@@ -631,17 +620,8 @@ const FinanceData = {
 
   // ================================================================
   // TOGGLE DE STATUS ATIVO / INATIVO
-  // Exclusivo para templates. Gastos inativos não entram nos totais
-  // dos meses futuros, mas continuam no banco (não são excluídos).
   // ================================================================
 
-  /**
-   * Inverte o status `active` de um template de gasto fixo.
-   * Útil para pausar temporariamente uma conta sem apagá-la.
-   *
-   * @param {string} id - ID do template (deve começar com 'fix-').
-   * @returns {boolean} Novo valor de `active`, ou false se não encontrado.
-   */
   toggleActive(id) {
     const templates = this.getTemplates();
     const tpl = templates.find(t => t.id === id);
@@ -657,25 +637,21 @@ const FinanceData = {
   // EXCLUSÃO DE ITENS
   // ================================================================
 
-  /**
-   * Remove permanentemente um item do banco de dados.
-   * - 'fix-*' → remove o template (deixa de aparecer em todos os meses).
-   * - demais  → remove o lançamento pontual.
-   *
-   * @param {string} id - ID do item a excluir.
-   */
   delete(id) {
     const profile = this.getProfile();
+    const templates = this.getTemplates();
+    const isTemplate = templates.some(t => t.id === id) || (typeof id === 'string' && id.startsWith('fix-'));
+
     if (profile && profile.userId && window.SupabaseAuth) {
-      if (id.startsWith('fix-')) {
+      if (isTemplate) {
         window.SupabaseAuth.deleteCloudTemplate(id, profile.userId);
       } else {
         window.SupabaseAuth.deleteCloudEntry(id, profile.userId);
       }
     }
 
-    if (id.startsWith('fix-')) {
-      const filtered = this.getTemplates().filter(t => t.id !== id);
+    if (isTemplate) {
+      const filtered = templates.filter(t => t.id !== id);
       this.saveTemplates(filtered);
       return;
     }

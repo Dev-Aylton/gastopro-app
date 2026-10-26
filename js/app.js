@@ -758,16 +758,24 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
 window.openEditModal = function(id) {
   const all = FinanceData.getAll();
   const item = all.find(e => e.id === id);
-  if (!item) return;
+  if (!item) {
+    console.warn('[GastoPro] Item não encontrado para edição:', id);
+    return;
+  }
 
   document.getElementById('editItemId').value = item.id;
-  document.getElementById('editDesc').value = item.desc;
-  document.getElementById('editAmount').value = item.amount;
+  document.getElementById('editDesc').value = item.desc || '';
+  document.getElementById('editAmount').value = item.amount || '';
   document.getElementById('editCategory').value = item.category || '';
-  document.getElementById('editType').value = item.type;
+
+  const editTypeSelect = document.getElementById('editType');
+  if (editTypeSelect) {
+    editTypeSelect.value = item.type || (item.isDebt ? 'debt' : (item.isTemplate ? 'fixed' : 'variable'));
+  }
+
   document.getElementById('editDate').value = item.date || getTodayString();
 
-  const isFixed = item.type === 'fixed' || id.startsWith('fix-');
+  const isFixed = item.type === 'fixed' || item.type === 'debt' || item.isTemplate || (typeof id === 'string' && id.startsWith('fix-'));
   const statusGroup = document.getElementById('editStatusGroup');
   const endMonthGroup = document.getElementById('editEndMonthGroup');
   if (statusGroup) statusGroup.style.display = isFixed ? 'block' : 'none';
@@ -1263,14 +1271,18 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     const id = document.getElementById('editItemId').value;
     const desc = document.getElementById('editDesc').value.trim();
-    const amount = parseFloat(document.getElementById('editAmount').value);
+    const amountRaw = document.getElementById('editAmount').value;
+    const amount = parseFloat(String(amountRaw).replace(',', '.'));
     const category = document.getElementById('editCategory').value.trim();
     const type = document.getElementById('editType').value;
     const date = document.getElementById('editDate').value;
     const active = document.getElementById('editActive') ? document.getElementById('editActive').value === 'true' : true;
     const endMonth = document.getElementById('editEndMonth') ? document.getElementById('editEndMonth').value || null : null;
 
-    if (!id || !desc || isNaN(amount) || amount <= 0) return;
+    if (!id || !desc || isNaN(amount) || amount <= 0) {
+      alert('Por favor, informe a descrição e um valor maior que zero.');
+      return;
+    }
 
     FinanceData.update(id, {
       desc: desc,
@@ -1286,6 +1298,25 @@ document.addEventListener('DOMContentLoaded', () => {
     renderAll();
     showToast('Informações alteradas com sucesso!');
   });
+
+  const editModalEl = document.getElementById('editModal');
+  if (editModalEl) {
+    editModalEl.addEventListener('click', (e) => {
+      if (e.target === editModalEl) closeEditModal();
+    });
+  }
+
+  const editTypeSelect = document.getElementById('editType');
+  if (editTypeSelect) {
+    editTypeSelect.addEventListener('change', () => {
+      const val = editTypeSelect.value;
+      const isFixed = val === 'fixed' || val === 'debt';
+      const statusGroup = document.getElementById('editStatusGroup');
+      const endMonthGroup = document.getElementById('editEndMonthGroup');
+      if (statusGroup) statusGroup.style.display = isFixed ? 'block' : 'none';
+      if (endMonthGroup) endMonthGroup.style.display = isFixed ? 'block' : 'none';
+    });
+  }
 
   document.getElementById('closeModalBtn').addEventListener('click', closeEditModal);
   document.getElementById('cancelEditBtn').addEventListener('click', closeEditModal);
@@ -1804,6 +1835,93 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // ── 12. Botão de Atualizar / Refresh (Desktop & PWA Mobile) ──
+  const refreshAppBtn      = document.getElementById('refreshAppBtn');
+  const sidebarRefreshBtn  = document.getElementById('sidebarRefreshBtn');
+  const drawerRefreshBtn   = document.getElementById('drawerRefreshBtn');
+  const refreshIcon        = document.getElementById('refreshIcon');
+  const sidebarRefreshIcon = document.getElementById('sidebarRefreshIcon');
+  const drawerRefreshIcon  = document.getElementById('drawerRefreshIcon');
+
+  let isRefreshing = false;
+
+  async function handleAppRefresh() {
+    if (isRefreshing) return;
+    isRefreshing = true;
+
+    // Ativa animação de rotação contínua nos ícones
+    const icons = [refreshIcon, sidebarRefreshIcon, drawerRefreshIcon].filter(Boolean);
+    icons.forEach(icon => icon.classList.add('spinning'));
+
+    const btns = [refreshAppBtn, sidebarRefreshBtn, drawerRefreshBtn].filter(Boolean);
+    btns.forEach(btn => btn.classList.add('refreshing'));
+
+    const startTime = Date.now();
+
+    try {
+      let isCloud = false;
+      if (window.SupabaseAuth) {
+        const user = await window.SupabaseAuth.getSessionUser();
+        if (user && user.id) {
+          isCloud = true;
+          await syncUserDataFromCloud(user.id);
+        }
+      }
+
+      // Re-renderiza views e perfil
+      renderUserProfile();
+      renderAll();
+
+      // Feedback visual nítido (mínimo 500ms)
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 500) {
+        await new Promise(res => setTimeout(res, 500 - elapsed));
+      }
+
+      showToast(isCloud ? 'Dados sincronizados com a nuvem!' : 'Dados atualizados com sucesso!');
+
+      // Se a sidebar ou o drawer estiverem abertos, fecha-os
+      closeMobileSidebar();
+      closeProfileDrawer();
+    } catch (err) {
+      console.warn('[GastoPro] Erro durante o refresh:', err);
+      renderAll();
+      showToast('Dados locais atualizados.');
+    } finally {
+      icons.forEach(icon => icon.classList.remove('spinning'));
+      btns.forEach(btn => btn.classList.remove('refreshing'));
+      isRefreshing = false;
+    }
+  }
+
+  if (refreshAppBtn)     refreshAppBtn.addEventListener('click', handleAppRefresh);
+  if (sidebarRefreshBtn) sidebarRefreshBtn.addEventListener('click', handleAppRefresh);
+  if (drawerRefreshBtn)  drawerRefreshBtn.addEventListener('click', handleAppRefresh);
+
+  // Pull-to-refresh para telas touch em smartphones / PWA
+  let touchStartY = 0;
+  let isAtTop = false;
+
+  window.addEventListener('touchstart', (e) => {
+    if (window.scrollY <= 5) {
+      isAtTop = true;
+      touchStartY = e.touches[0].clientY;
+    } else {
+      isAtTop = false;
+    }
+  }, { passive: true });
+
+  window.addEventListener('touchend', (e) => {
+    if (isAtTop && !isRefreshing) {
+      const touchEndY = e.changedTouches[0].clientY;
+      const pullDistance = touchEndY - touchStartY;
+      if (pullDistance > 90) {
+        handleAppRefresh();
+      }
+    }
+    isAtTop = false;
+  }, { passive: true });
 
   // ── Inicialização: renderiza perfil e interface ao carregar ───
   renderUserProfile();
