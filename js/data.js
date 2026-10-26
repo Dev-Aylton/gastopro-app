@@ -336,15 +336,12 @@ const FinanceData = {
   getEntries() {
     try {
       const stored = localStorage.getItem(STORAGE_ENTRIES);
-      if (!stored) {
-        const initial = generateRealInitialEntries();
-        this.saveEntries(initial);
-        return initial;
-      }
+      // Retorna array vazio para novos usuários — dados virão da nuvem após login
+      if (!stored) return [];
       return JSON.parse(stored);
     } catch (e) {
       console.error('[GastoPro] Erro ao ler lançamentos:', e);
-      return generateRealInitialEntries();
+      return [];
     }
   },
 
@@ -378,15 +375,12 @@ const FinanceData = {
   getTemplates() {
     try {
       const stored = localStorage.getItem(STORAGE_TEMPLATES);
-      if (!stored) {
-        const initial = INITIAL_REAL_TEMPLATES;
-        this.saveTemplates(initial);
-        return initial;
-      }
+      // Retorna array vazio para novos usuários — dados virão da nuvem após login
+      if (!stored) return [];
       return JSON.parse(stored);
     } catch (e) {
       console.error('[GastoPro] Erro ao ler templates fixos:', e);
-      return INITIAL_REAL_TEMPLATES;
+      return [];
     }
   },
 
@@ -745,7 +739,7 @@ const FinanceData = {
    * @returns {{ name: string, avatar: string|null }} Perfil do usuário.
    */
   getProfile() {
-    const defaultProfile = { name: 'Aylton Alberto', email: 'desenvolvedor.aylton@gmail.com', avatar: null };
+    const defaultProfile = { name: '', email: '', avatar: null };
     try {
       const stored = localStorage.getItem(STORAGE_PROFILE);
       // Mescla com o default para garantir novos campos em versões futuras

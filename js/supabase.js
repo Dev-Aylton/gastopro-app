@@ -55,22 +55,18 @@ const SupabaseAuth = {
     return data;
   },
 
-  async signInWithGoogle() {
-    if (!sb) throw new Error('Cliente Supabase não inicializado.');
-    const { data, error } = await sb.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin + window.location.pathname
-      }
-    });
-    if (error) throw error;
-    return data;
-  },
-
   async signOut() {
     if (!sb) return;
     const { error } = await sb.auth.signOut();
     if (error) console.error('[Supabase] Erro ao deslogar:', error);
+  },
+
+  async resetPasswordForEmail(email) {
+    if (!sb) throw new Error('Cliente Supabase não inicializado.');
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if (error) throw error;
   },
 
   onAuthStateChange(callback) {

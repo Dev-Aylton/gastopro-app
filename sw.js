@@ -7,14 +7,15 @@
    com fallback automático para Cache Offline.
    ================================================================ */
 
-const CACHE_NAME = 'gastopro-v2.7';
+const CACHE_NAME = 'gastopro-v3.0';
 
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './css/style.css',
-  './js/app.js',
+  './js/supabase.js',
   './js/data.js',
+  './js/app.js',
   './assets/logo.jpg',
   './assets/default_avatar.jpg',
   './manifest.json',
@@ -27,7 +28,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[GastoPro SW v2.5] Cache inicial criado');
+      console.log('[GastoPro SW v3.0] Cache inicial criado');
       return cache.addAll(ASSETS_TO_CACHE);
     })
   );
