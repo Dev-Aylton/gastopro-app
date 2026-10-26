@@ -53,10 +53,10 @@
 // ----------------------------------------------------------------
 
 /** Chave dos lançamentos pontuais (ganhos de renda e gastos variáveis). */
-const STORAGE_ENTRIES = 'gastopro_entries_real_v2';
+const STORAGE_ENTRIES = 'gastopro_entries_v4_oct';
 
 /** Chave dos templates de gastos fixos recorrentes. */
-const STORAGE_TEMPLATES = 'gastopro_templates_real_v2';
+const STORAGE_TEMPLATES = 'gastopro_templates_v4_oct';
 
 /** Chave do perfil do usuário. */
 const STORAGE_PROFILE = 'gastopro_profile_real_v2';
@@ -67,7 +67,7 @@ const STORAGE_PROFILE = 'gastopro_profile_real_v2';
 
 /** Templates de Gastos Fixos Recorrentes e Dívidas reais da planilha */
 const INITIAL_REAL_TEMPLATES = [
-  // 1. Gastos Fixos Recorrentes
+  // 1. Gastos Fixos Recorrentes (Contínuos - vigentes desde o início de 2026)
   {
     id: 'fix-saude-isabella',
     desc: 'Plano de saúde – Isabella',
@@ -76,7 +76,7 @@ const INITIAL_REAL_TEMPLATES = [
     type: 'fixed',
     isDebt: false,
     active: true,
-    startMonth: '2026-11',
+    startMonth: '2026-01',
     endMonth: null,
     day: '05',
     paidMonths: {}
@@ -89,7 +89,7 @@ const INITIAL_REAL_TEMPLATES = [
     type: 'fixed',
     isDebt: false,
     active: true,
-    startMonth: '2026-11',
+    startMonth: '2026-01',
     endMonth: null,
     day: '05',
     paidMonths: {}
@@ -102,7 +102,7 @@ const INITIAL_REAL_TEMPLATES = [
     type: 'fixed',
     isDebt: false,
     active: true,
-    startMonth: '2026-11',
+    startMonth: '2026-01',
     endMonth: null,
     day: '05',
     paidMonths: {}
@@ -115,7 +115,7 @@ const INITIAL_REAL_TEMPLATES = [
     type: 'fixed',
     isDebt: false,
     active: true,
-    startMonth: '2026-11',
+    startMonth: '2026-01',
     endMonth: null,
     day: '05',
     paidMonths: {}
@@ -274,7 +274,7 @@ const INITIAL_REAL_TEMPLATES = [
 /** Gera a lista de receitas programadas para os meses do fluxo (R$ 2.710,00/mês) */
 function generateRealInitialEntries() {
   const months = [
-    '2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04',
+    '2026-10', '2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04',
     '2027-05', '2027-06', '2027-07', '2027-08', '2027-09', '2027-10',
     '2027-11', '2027-12', '2028-01', '2028-02', '2028-03', '2028-04',
     '2028-05', '2028-06', '2028-07'

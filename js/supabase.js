@@ -1,4 +1,4 @@
-﻿/**
+/**
  * GastoPro — Módulo de Integração Supabase
  * Gerencia autenticação de múltiplos usuários e persistência na nuvem (PostgreSQL).
  */
@@ -50,6 +50,18 @@ const SupabaseAuth = {
     const { data, error } = await sb.auth.signInWithPassword({
       email,
       password
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async signInWithGoogle() {
+    if (!sb) throw new Error('Cliente Supabase não inicializado.');
+    const { data, error } = await sb.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin + window.location.pathname
+      }
     });
     if (error) throw error;
     return data;
