@@ -1491,6 +1491,36 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPasswordToggle('toggleLoginPasswordBtn', 'loginPassword');
   setupPasswordToggle('toggleRegisterPasswordBtn', 'registerPassword');
 
+  // ── Sincronização de Dados com a Nuvem (Supabase) ───────────
+  async function syncUserDataFromCloud(userId) {
+    if (!window.SupabaseAuth || !userId) return;
+    try {
+      const cloudEntries = await window.SupabaseAuth.fetchCloudEntries(userId);
+      const cloudTemplates = await window.SupabaseAuth.fetchCloudTemplates(userId);
+
+      if (cloudEntries !== null && cloudTemplates !== null) {
+        if (cloudEntries.length > 0 || cloudTemplates.length > 0) {
+          // Usuário já possui dados salvos na nuvem: atualiza a visualização
+          FinanceData.saveEntries(cloudEntries);
+          FinanceData.saveTemplates(cloudTemplates);
+        } else {
+          // Novo usuário: se tiver dados locais no navegador, sincroniza para a nuvem
+          const localEntries = FinanceData.getEntries();
+          const localTemplates = FinanceData.getTemplates();
+          if (localEntries.length > 0) {
+            localEntries.forEach(e => window.SupabaseAuth.saveCloudEntry(e, userId));
+          }
+          if (localTemplates.length > 0) {
+            localTemplates.forEach(t => window.SupabaseAuth.saveCloudTemplate(t, userId));
+          }
+        }
+        renderAll();
+      }
+    } catch (e) {
+      console.warn('[GastoPro] Aviso de sincronização na nuvem:', e);
+    }
+  }
+
   // Submissão do Formulário de Login (Supabase Real com fallback)
   if (authLoginForm) {
     authLoginForm.addEventListener('submit', async (e) => {
@@ -1513,12 +1543,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.SupabaseAuth && window.SupabaseAuth.client) {
           const { user } = await window.SupabaseAuth.signIn(email, password);
           const profile = FinanceData.getProfile();
-          profile.email = user.email;
-          profile.name  = (user.user_metadata && user.user_metadata.name) || profile.name || email.split('@')[0];
+          profile.userId = user.id;
+          profile.email  = user.email;
+          profile.name   = (user.user_metadata && user.user_metadata.name) || profile.name || email.split('@')[0];
           FinanceData.saveProfile(profile);
           renderUserProfile();
           closeAuth();
           showToast(`Bem-vindo de volta, ${profile.name}!`);
+          await syncUserDataFromCloud(user.id);
         } else {
           // Fallback offline / local
           const profile = FinanceData.getProfile();
@@ -1583,6 +1615,9 @@ document.addEventListener('DOMContentLoaded', () => {
           const profile = FinanceData.getProfile();
           profile.name = name;
           profile.email = email;
+          if (data && data.user) {
+            profile.userId = data.user.id;
+          }
           FinanceData.saveProfile(profile);
           renderUserProfile();
 
@@ -1590,6 +1625,9 @@ document.addEventListener('DOMContentLoaded', () => {
           if (data && data.session) {
             closeAuth();
             showToast(`Conta criada com sucesso! Bem-vindo, ${name}!`);
+            if (data.user) {
+              await syncUserDataFromCloud(data.user.id);
+            }
           } else {
             showAuthAlert('Conta criada! Se a confirmação de e-mail estiver ativa, verifique sua caixa de entrada.', true);
           }
@@ -1630,9 +1668,11 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn(e);
       }
       const profile = FinanceData.getProfile();
+      profile.userId = null;
       profile.email = null;
       FinanceData.saveProfile(profile);
       renderUserProfile();
+      renderAll();
       showToast('Você saiu da sua conta. Modo local ativo.');
     });
   }
@@ -1642,12 +1682,14 @@ document.addEventListener('DOMContentLoaded', () => {
     window.SupabaseAuth.getSessionUser().then((user) => {
       if (user) {
         const profile = FinanceData.getProfile();
+        profile.userId = user.id;
         profile.email = user.email;
         if (!profile.name && user.user_metadata && user.user_metadata.name) {
           profile.name = user.user_metadata.name;
         }
         FinanceData.saveProfile(profile);
         renderUserProfile();
+        syncUserDataFromCloud(user.id);
       }
     });
   }

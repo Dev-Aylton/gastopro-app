@@ -119,6 +119,10 @@ const FinanceData = {
   saveEntries(entries) {
     try {
       localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
+      const profile = this.getProfile();
+      if (profile && profile.userId && window.SupabaseAuth) {
+        entries.forEach(e => window.SupabaseAuth.saveCloudEntry(e, profile.userId));
+      }
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar lançamentos no localStorage:', e);
     }
@@ -155,6 +159,10 @@ const FinanceData = {
   saveTemplates(templates) {
     try {
       localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
+      const profile = this.getProfile();
+      if (profile && profile.userId && window.SupabaseAuth) {
+        templates.forEach(t => window.SupabaseAuth.saveCloudTemplate(t, profile.userId));
+      }
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar templates fixos no localStorage:', e);
     }
@@ -424,6 +432,15 @@ const FinanceData = {
    * @param {string} id - ID do item a excluir.
    */
   delete(id) {
+    const profile = this.getProfile();
+    if (profile && profile.userId && window.SupabaseAuth) {
+      if (id.startsWith('fix-')) {
+        window.SupabaseAuth.deleteCloudTemplate(id, profile.userId);
+      } else {
+        window.SupabaseAuth.deleteCloudEntry(id, profile.userId);
+      }
+    }
+
     if (id.startsWith('fix-')) {
       const filtered = this.getTemplates().filter(t => t.id !== id);
       this.saveTemplates(filtered);
