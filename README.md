@@ -3,7 +3,7 @@
 > Aplicativo Web moderno (**Single Page Application — SPA**) de gestão financeira pessoal com Dashboard de Saúde Financeira, gerenciamento completo de receitas e despesas, rastreamento de dívidas, autenticação multi-usuário com Supabase, importação de extratos bancários, **Wizard de Lançamento Rápido** e PWA para uso offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Versão-3.3--parcial-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-3.3.1-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
 ![Testes](https://img.shields.io/badge/Testes-50%2B%20casos-10b981?style=for-the-badge)
@@ -409,16 +409,30 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 
 ---
 
----
+### v3.3.1 — 27/10/2026 — Correção Crítica: PWA não recebia atualizações no celular
 
-### v3.3.1 — Pendências Técnicas Identificadas na Análise (27/10/2026)
+#### 🐛 Bug: Atualizações não chegavam ao celular (PWA instalado)
 
-> Itens identificados durante revisão de código que precisam ser corrigidos:
+**Causa raiz:** O `CACHE_NAME` no `sw.js` nunca era atualizado (`gastopro-v2.5`), então o evento `activate` do Service Worker nunca encontrava um cache "antigo" para deletar. O celular continuava servindo os arquivos em cache indefinidamente, mesmo com código novo no servidor.
 
-| # | Arquivo | Problema | Ação necessária |
-|---|---|---|---|
-| 1 | `sw.js` (linha 10) | `CACHE_NAME = 'gastopro-v2.5'` — desatualizado | Atualizar para `gastopro-v3.3` |
-| 2 | `js/data.js` (linha 698) | `version: '2.5'` no `exportJSON()` — desatualizado | Atualizar para `3.3` |
+**Como o Service Worker funciona:**
+```
+1. Novo SW detectado → entra em estado "waiting"
+2. skipWaiting() (já existia) → ativa imediatamente
+3. activate: filtra caches com nome DIFERENTE do CACHE_NAME atual
+4. Se o nome não muda → nenhum cache é deletado → celular serve arquivos velhos
+```
+
+**Correção aplicada:**
+
+| Arquivo | Antes | Depois |
+|---|---|---|
+| `sw.js` linha 10 | `CACHE_NAME = 'gastopro-v2.5'` | `CACHE_NAME = 'gastopro-v3.3'` |
+| `js/data.js` linha 698 | `version: '2.5'` | `version: '3.3'` |
+
+**Resultado:** Ao abrir o app no celular após a atualização, o novo SW é ativado, o cache `gastopro-v2.5` é deletado automaticamente e os arquivos atualizados são baixados.
+
+> 💡 **Para forçar atualização imediata no celular:** Feche completamente o app (remova dos recentes) e abra novamente.
 
 ---
 

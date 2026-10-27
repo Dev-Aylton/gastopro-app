@@ -7,7 +7,7 @@
    com fallback automático para Cache Offline.
    ================================================================ */
 
-const CACHE_NAME = 'gastopro-v2.5';
+const CACHE_NAME = 'gastopro-v3.3';
 
 const ASSETS_TO_CACHE = [
   './',

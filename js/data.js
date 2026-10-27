@@ -695,7 +695,7 @@ const FinanceData = {
    */
   exportJSON() {
     const backup = {
-      version:    '2.5',
+      version:    '3.3',
       exportDate: new Date().toISOString(),
       entries:    this.getEntries(),
       templates:  this.getTemplates()
