@@ -97,6 +97,13 @@
           <i class="fa-solid fa-arrows-rotate" id="sidebarRefreshIcon"></i>
           <span>Atualizar Dados</span>
         </button>
+
+        <!-- Botão 5: Importar Extrato -->
+        <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar extrato bancário (CSV ou Texto)">
+          <i class="fa-solid fa-file-import"></i>
+          <span>Importar Extrato</span>
+          <span class="nav-import-badge">Novo</span>
+        </button>
       </nav>
     </aside>
 
@@ -859,6 +866,126 @@
   </div>
 
 
+  <!-- ====================================================
+       MODAL DE IMPORTAÇÃO DE EXTRATOS BANCÁRIOS
+       ==================================================== -->
+  <div class="modal-overlay" id="importModal">
+    <div class="modal-content modal-import-content">
+
+      <!-- Cabeçalho do Modal -->
+      <div class="import-header">
+        <div class="import-header-icon">
+          <i class="fa-solid fa-file-import"></i>
+        </div>
+        <div class="import-header-text">
+          <h3>Importar Extrato Bancário</h3>
+          <p>Importe seus lançamentos via arquivo CSV ou cole o texto do extrato para revisão antes de salvar.</p>
+        </div>
+        <button class="modal-close-btn" id="closeImportModalBtn" title="Fechar">&times;</button>
+      </div>
+
+      <!-- Abas de formato -->
+      <div class="import-tabs">
+        <button class="import-tab-btn active" id="importTabCsvBtn" data-tab="csv">
+          <i class="fa-solid fa-file-csv"></i> Arquivo CSV
+        </button>
+        <button class="import-tab-btn" id="importTabTextBtn" data-tab="text">
+          <i class="fa-solid fa-align-left"></i> Texto do Extrato
+        </button>
+      </div>
+
+      <!-- PAINEL 1: CSV -->
+      <div class="import-csv-panel active" id="importCsvPanel">
+        <div class="import-format-hint">
+          <i class="fa-solid fa-circle-info"></i>
+          <span>Aceita arquivos <strong>.csv</strong> com colunas de Data, Descrição e Valor (qualquer separador). O cabeçalho é detectado automaticamente.</span>
+        </div>
+
+        <!-- Área de Drop / Upload -->
+        <div class="csv-drop-zone" id="csvDropZone">
+          <input type="file" id="csvFileInput" accept=".csv,.txt" />
+          <i class="fa-solid fa-cloud-arrow-up drop-icon" id="csvDropIcon"></i>
+          <p class="drop-title" id="csvDropTitle">Arraste o arquivo CSV aqui</p>
+          <p class="drop-sub" id="csvDropSub">ou clique para selecionar o arquivo (.csv, .txt)</p>
+        </div>
+
+        <button class="btn-parse" id="parseCsvBtn">
+          <i class="fa-solid fa-magnifying-glass"></i> Analisar CSV
+        </button>
+      </div>
+
+      <!-- PAINEL 2: Texto Bruto -->
+      <div class="import-text-panel" id="importTextPanel">
+        <div class="import-format-hint">
+          <i class="fa-solid fa-circle-info"></i>
+          <span>Cole o texto copiado do extrato do seu banco. Formatos aceitos: <strong>DD/MM/AAAA Descrição R$ Valor</strong> ou similar.</span>
+        </div>
+
+        <textarea
+          class="import-textarea"
+          id="importRawTextarea"
+          placeholder="Cole aqui o texto do extrato. Exemplo:
+15/10/2026 iFood *PEDIDO R$ 45,90
+16/10/2026 Supermercado Extra R$ 230,00
+18/10/2026 Spotify 21,90
+20/10/2026 Salário Recebido 2.710,00"></textarea>
+
+        <button class="btn-parse" id="parseTextBtn">
+          <i class="fa-solid fa-magnifying-glass"></i> Analisar Texto
+        </button>
+      </div>
+
+      <!-- SEÇÃO DE PREVIEW (compartilhada entre as abas) -->
+      <div class="import-preview-section" id="importPreviewSection">
+        <div class="preview-header">
+          <h4>
+            <i class="fa-solid fa-table-list"></i>
+            Prévia dos Lançamentos
+          </h4>
+          <span class="preview-count-badge" id="previewCountBadge">0 itens</span>
+        </div>
+
+        <!-- Selecionar todos -->
+        <div class="preview-select-all-row">
+          <label>
+            <input type="checkbox" id="importSelectAll" checked />
+            Selecionar todos
+          </label>
+          <span style="margin-left: auto; font-size: 0.72rem;">Ajuste categoria e tipo antes de importar</span>
+        </div>
+
+        <!-- Tabela de preview -->
+        <div class="import-preview-table-wrapper">
+          <table class="import-preview-table">
+            <thead>
+              <tr>
+                <th class="col-check"><i class="fa-solid fa-check"></i></th>
+                <th class="col-date">Data</th>
+                <th class="col-desc">Descrição</th>
+                <th class="col-category">Categoria</th>
+                <th class="col-type">Tipo</th>
+                <th class="col-amount">Valor</th>
+              </tr>
+            </thead>
+            <tbody id="importPreviewTableBody">
+              <!-- Gerado dinamicamente pelo app.js -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Ações -->
+        <div class="import-actions">
+          <button type="button" class="btn-import-cancel" id="cancelImportBtn">Cancelar</button>
+          <button type="button" class="btn-import-confirm" id="confirmImportBtn">
+            <i class="fa-solid fa-check"></i> Importar Selecionados
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
   <!-- Toast Notificação -->
   <div id="toast" class="toast"></div>
 
@@ -867,6 +994,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabase.js"></script>
   <script src="js/data.js"></script>
+  <script src="js/importer.js"></script>
   <script src="js/app.js"></script>
 </body>
 

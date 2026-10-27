@@ -2573,3 +2573,514 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: var(--border);
 }
+
+/* ================================================================
+   MODAL DE IMPORTAÇÃO DE EXTRATOS (Importer)
+   ================================================================ */
+
+/* Botão importar na sidebar */
+.nav-item-import {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  position: relative;
+}
+
+.nav-item-import:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%);
+  border-color: rgba(99, 102, 241, 0.6);
+}
+
+.nav-item-import .nav-import-badge {
+  background: linear-gradient(135deg, var(--primary), var(--purple));
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 0.15rem 0.4rem;
+  border-radius: 20px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* Modal de importação — dimensões maiores */
+.modal-import-content {
+  max-width: 760px;
+  width: 95%;
+  max-height: 90vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Cabeçalho do modal */
+.import-header {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.import-header-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.import-header-text h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 0.15rem;
+}
+
+.import-header-text p {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Abas CSV / Texto */
+.import-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.1rem;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem;
+}
+
+.import-tab-btn {
+  flex: 1;
+  padding: 0.55rem 0.8rem;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.import-tab-btn.active {
+  background: var(--bg-card);
+  color: var(--text-main);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.import-tab-btn:hover:not(.active) {
+  color: var(--text-main);
+}
+
+/* Painel CSV */
+.import-csv-panel,
+.import-text-panel {
+  display: none;
+}
+
+.import-csv-panel.active,
+.import-text-panel.active {
+  display: block;
+}
+
+/* Área de upload CSV */
+.csv-drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 2rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s;
+  background: var(--bg-input);
+  margin-bottom: 0.8rem;
+  position: relative;
+}
+
+.csv-drop-zone:hover,
+.csv-drop-zone.drag-over {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+.csv-drop-zone .drop-icon {
+  font-size: 2.2rem;
+  color: var(--primary);
+  margin-bottom: 0.7rem;
+  display: block;
+}
+
+.csv-drop-zone .drop-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 0.3rem;
+}
+
+.csv-drop-zone .drop-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.csv-drop-zone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+.csv-file-selected {
+  background: var(--success-bg);
+  border-color: var(--success);
+}
+
+.csv-file-selected .drop-icon {
+  color: var(--success);
+}
+
+/* Textarea para texto bruto */
+.import-textarea {
+  width: 100%;
+  min-height: 140px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-family: 'Courier New', monospace;
+  line-height: 1.6;
+  padding: 0.9rem 1rem;
+  resize: vertical;
+  transition: border-color 0.2s;
+  margin-bottom: 0.8rem;
+}
+
+.import-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.import-textarea::placeholder {
+  color: var(--text-dim);
+  font-family: 'Inter', sans-serif;
+  font-style: italic;
+}
+
+/* Botão parsear */
+.btn-parse {
+  width: 100%;
+  padding: 0.65rem 1rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--primary), var(--purple));
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.btn-parse:hover {
+  opacity: 0.9;
+}
+
+.btn-parse:active {
+  transform: scale(0.98);
+}
+
+/* Seção de preview */
+.import-preview-section {
+  display: none;
+  margin-top: 0.5rem;
+  animation: fadeInUp 0.3s ease;
+}
+
+.import-preview-section.visible {
+  display: block;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+
+.preview-header h4 {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.preview-count-badge {
+  background: var(--primary-bg);
+  color: var(--primary);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.18rem 0.55rem;
+}
+
+/* Tabela de preview */
+.import-preview-table-wrapper {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  max-height: 260px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  margin-bottom: 1rem;
+}
+
+.import-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.import-preview-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-card);
+}
+
+.import-preview-table th {
+  padding: 0.6rem 0.8rem;
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.import-preview-table td {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid rgba(35, 42, 61, 0.5);
+  color: var(--text-main);
+  vertical-align: middle;
+}
+
+.import-preview-table tr:last-child td {
+  border-bottom: none;
+}
+
+.import-preview-table tbody tr:hover td {
+  background: var(--bg-card-hover);
+}
+
+.import-preview-table .col-check {
+  width: 36px;
+  text-align: center;
+}
+
+.import-preview-table .col-date {
+  width: 90px;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+}
+
+.import-preview-table .col-desc {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-preview-table .col-category select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font-size: 0.73rem;
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+  max-width: 130px;
+}
+
+.import-preview-table .col-category select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.import-preview-table .col-type select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font-size: 0.73rem;
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+}
+
+.import-preview-table .col-type select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.import-preview-table .col-amount {
+  text-align: right;
+  font-weight: 600;
+  white-space: nowrap;
+  font-family: 'Courier New', monospace;
+  color: var(--danger);
+}
+
+.import-preview-table .col-amount.income {
+  color: var(--success);
+}
+
+.import-preview-table input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+/* Barra de ações do preview */
+.preview-select-all-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.preview-select-all-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+/* Alerta de preview vazio */
+.import-empty-alert {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--text-muted);
+  font-size: 0.83rem;
+  background: var(--bg-input);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border);
+}
+
+.import-empty-alert i {
+  display: block;
+  font-size: 1.8rem;
+  margin-bottom: 0.5rem;
+  color: var(--warning);
+}
+
+/* Botões de ação finais */
+.import-actions {
+  display: flex;
+  gap: 0.8rem;
+  justify-content: flex-end;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  margin-top: 0.5rem;
+}
+
+.btn-import-confirm {
+  padding: 0.65rem 1.4rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--success);
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-import-confirm:hover {
+  background: var(--success-hover);
+}
+
+.btn-import-cancel {
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-import-cancel:hover {
+  color: var(--text-main);
+  border-color: var(--text-muted);
+}
+
+/* Dica de formato */
+.import-format-hint {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.8rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  line-height: 1.5;
+}
+
+.import-format-hint i {
+  color: var(--warning);
+  margin-top: 0.1rem;
+  flex-shrink: 0;
+}
+
+/* Responsivo */
+@media (max-width: 600px) {
+  .modal-import-content {
+    max-width: 100%;
+    margin: 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    max-height: 92vh;
+  }
+
+  .import-preview-table .col-date,
+  .import-preview-table th:nth-child(2),
+  .import-preview-table td:nth-child(2) {
+    display: none;
+  }
+}
+

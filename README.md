@@ -1,12 +1,13 @@
 # 💼 GastoPro — Controle de Gastos & Saúde Financeira
 
-> Aplicativo Web moderno (**Single Page Application — SPA**) de gestão financeira pessoal com Dashboard de Saúde Financeira, gerenciamento completo de receitas e despesas, rastreamento de dívidas, autenticação multi-usuário com Supabase e PWA para uso offline.
+> Aplicativo Web moderno (**Single Page Application — SPA**) de gestão financeira pessoal com Dashboard de Saúde Financeira, gerenciamento completo de receitas e despesas, rastreamento de dívidas, autenticação multi-usuário com Supabase, importação de extratos bancários e PWA para uso offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Produção-10b981?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Versão-3.0-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Versão-3.1-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
 ![Testes](https://img.shields.io/badge/Testes-50%2B%20casos-10b981?style=for-the-badge)
+
 
 ---
 
@@ -65,7 +66,16 @@ A versão atual (v3.0) evoluiu de um app puramente local para um **SaaS multi-us
 - Instalável como app nativo no celular ou desktop.
 - Funciona offline com Service Worker (Network First + Cache Fallback).
 
----
+### 📥 Importação de Extratos Bancários (v3.1)
+- **Upload de CSV**: Arraste e solte ou selecione um arquivo `.csv` para importação em lote.
+- **Texto Bruto**: Cole diretamente o texto copiado do app ou site do banco.
+- **Detecção automática de colunas**: O parser identifica colunas de Data, Descrição e Valor sem configuração manual.
+- **Categorização automática**: +80 palavras-chave mapeiam automaticamente lançamentos para categorias (iFood → Alimentação, Spotify → Assinaturas, etc.).
+- **Pré-visualização editável**: Revise, corrija categoria e tipo (Gasto/Receita) linha por linha antes de salvar.
+- **Seleção granular**: Selecione ou desmarque lançamentos individualmente ou todos de uma vez.
+- **Suporte a múltiplos formatos**: `DD/MM/AAAA Descrição R$ Valor`, `DD/MM Descrição Valor`, e outros padrões de extratos brasileiros.
+
+
 
 ## 📁 Estrutura de Arquivos
 
@@ -86,6 +96,7 @@ financeiro-app/
 ├── js/
 │   ├── data.js             # Camada de Dados: CRUD local (localStorage) + sync cloud
 │   ├── supabase.js         # Módulo Supabase: auth (email e senha) + CRUD PostgreSQL
+│   ├── importer.js         # Módulo de Importação: parser CSV/Texto + categorização automática (v3.1)
 │   └── app.js              # Controller: lógica, renderização, eventos, gráficos e auth
 │
 ├── tests/

@@ -1899,6 +1899,313 @@ document.addEventListener('DOMContentLoaded', () => {
   if (sidebarRefreshBtn) sidebarRefreshBtn.addEventListener('click', handleAppRefresh);
   if (drawerRefreshBtn)  drawerRefreshBtn.addEventListener('click', handleAppRefresh);
 
+  // ── 13. MÓDULO DE IMPORTAÇÃO DE EXTRATOS ─────────────────────────
+  // Controlador do modal de importação CSV / Texto Bruto.
+  // Depende de GastoProImporter (js/importer.js) para o parsing.
+  // ─────────────────────────────────────────────────────────────────
+
+  /** Todas as categorias disponíveis para o select da tabela de preview. */
+  const IMPORT_CATEGORIES = [
+    'Alimentação', 'Mercado', 'Transporte', 'Saúde', 'Esporte', 'Educação',
+    'Assinaturas', 'Moradia', 'Cartão de crédito', 'Compras', 'Receita',
+    'Lazer', 'Esporte', 'Outros'
+  ];
+
+  // Referências dos elementos do modal
+  const importModal         = document.getElementById('importModal');
+  const closeImportModalBtn = document.getElementById('closeImportModalBtn');
+  const cancelImportBtn     = document.getElementById('cancelImportBtn');
+  const sidebarImportBtn    = document.getElementById('sidebarImportBtn');
+  const importTabCsvBtn     = document.getElementById('importTabCsvBtn');
+  const importTabTextBtn    = document.getElementById('importTabTextBtn');
+  const importCsvPanel      = document.getElementById('importCsvPanel');
+  const importTextPanel     = document.getElementById('importTextPanel');
+  const csvFileInput        = document.getElementById('csvFileInput');
+  const csvDropZone         = document.getElementById('csvDropZone');
+  const parseCsvBtn         = document.getElementById('parseCsvBtn');
+  const parseTextBtn        = document.getElementById('parseTextBtn');
+  const importRawTextarea   = document.getElementById('importRawTextarea');
+  const importPreviewSection= document.getElementById('importPreviewSection');
+  const importPreviewTbody  = document.getElementById('importPreviewTableBody');
+  const previewCountBadge   = document.getElementById('previewCountBadge');
+  const importSelectAll     = document.getElementById('importSelectAll');
+  const confirmImportBtn    = document.getElementById('confirmImportBtn');
+
+  /** Abre o modal de importação e reseta o estado. */
+  function openImportModal() {
+    if (!importModal) return;
+    importModal.classList.add('active');
+    resetImportModal();
+    closeMobileSidebar();
+  }
+
+  /** Fecha o modal de importação. */
+  function closeImportModal() {
+    if (!importModal) return;
+    importModal.classList.remove('active');
+  }
+
+  /** Reseta o modal ao estado inicial (sem preview, aba CSV ativa). */
+  function resetImportModal() {
+    // Reseta painel para CSV
+    switchImportTab('csv');
+    // Limpa upload
+    if (csvFileInput) csvFileInput.value = '';
+    if (csvDropZone) {
+      csvDropZone.classList.remove('csv-file-selected');
+      document.getElementById('csvDropIcon').className = 'fa-solid fa-cloud-arrow-up drop-icon';
+      document.getElementById('csvDropTitle').textContent = 'Arraste o arquivo CSV aqui';
+      document.getElementById('csvDropSub').textContent   = 'ou clique para selecionar o arquivo (.csv, .txt)';
+    }
+    // Limpa textarea
+    if (importRawTextarea) importRawTextarea.value = '';
+    // Esconde preview
+    if (importPreviewSection) importPreviewSection.classList.remove('visible');
+    if (importPreviewTbody)   importPreviewTbody.innerHTML = '';
+    if (previewCountBadge)    previewCountBadge.textContent = '0 itens';
+    if (importSelectAll)      importSelectAll.checked = true;
+  }
+
+  /** Alterna entre as abas CSV e Texto do modal. */
+  function switchImportTab(tab) {
+    const isCsv = tab === 'csv';
+    if (importTabCsvBtn)  importTabCsvBtn.classList.toggle('active', isCsv);
+    if (importTabTextBtn) importTabTextBtn.classList.toggle('active', !isCsv);
+    if (importCsvPanel)   importCsvPanel.classList.toggle('active', isCsv);
+    if (importTextPanel)  importTextPanel.classList.toggle('active', !isCsv);
+    // Esconde preview ao trocar de aba
+    if (importPreviewSection) importPreviewSection.classList.remove('visible');
+  }
+
+  /**
+   * Renderiza a tabela de preview com as linhas parseadas.
+   * @param {Array} rows - Resultado de parseCSV() ou parseRawText().
+   */
+  function renderImportPreview(rows) {
+    if (!importPreviewTbody) return;
+    importPreviewTbody.innerHTML = '';
+
+    if (!rows || rows.length === 0) {
+      importPreviewTbody.innerHTML = `
+        <tr><td colspan="6">
+          <div class="import-empty-alert">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            Nenhum lançamento foi encontrado. Verifique o formato do arquivo ou texto.
+          </div>
+        </td></tr>`;
+      if (previewCountBadge) previewCountBadge.textContent = '0 itens';
+      if (importPreviewSection) importPreviewSection.classList.add('visible');
+      return;
+    }
+
+    // Categorias únicas e ordenadas para o select
+    const allCats = [...new Set([...IMPORT_CATEGORIES])].sort();
+
+    rows.forEach((row, i) => {
+      const isIncome = row.category === 'Receita';
+      const dateDisplay = row.date
+        ? row.date.split('-').reverse().join('/')
+        : '--/--/----';
+
+      // Gera opções do select de categoria
+      const catOptions = allCats.map(c =>
+        `<option value="${escapeHtml(c)}" ${c === row.category ? 'selected' : ''}>${escapeHtml(c)}</option>`
+      ).join('');
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="col-check">
+          <input type="checkbox" class="import-row-check" data-row="${i}" checked />
+        </td>
+        <td class="col-date">${escapeHtml(dateDisplay)}</td>
+        <td class="col-desc" title="${escapeHtml(row.desc)}">${escapeHtml(row.desc)}</td>
+        <td class="col-category">
+          <select class="import-cat-select" data-row="${i}">
+            ${catOptions}
+          </select>
+        </td>
+        <td class="col-type">
+          <select class="import-type-select" data-row="${i}">
+            <option value="variable" ${!isIncome ? 'selected' : ''}>Gasto</option>
+            <option value="income"   ${isIncome  ? 'selected' : ''}>Receita</option>
+          </select>
+        </td>
+        <td class="col-amount ${isIncome ? 'income' : ''}">
+          R$ ${row.amount.toFixed(2).replace('.', ',')}
+        </td>
+      `;
+
+      // Listener dinâmico: ao mudar tipo, atualiza cor do valor
+      tr.querySelector('.import-type-select').addEventListener('change', (e) => {
+        const isInc = e.target.value === 'income';
+        tr.querySelector('.col-amount').classList.toggle('income', isInc);
+      });
+
+      importPreviewTbody.appendChild(tr);
+    });
+
+    if (previewCountBadge) previewCountBadge.textContent = `${rows.length} ${rows.length === 1 ? 'item' : 'itens'}`;
+    if (importPreviewSection) importPreviewSection.classList.add('visible');
+    if (importSelectAll)      importSelectAll.checked = true;
+  }
+
+  // Armazena as linhas parseadas para uso posterior na confirmação
+  let _importParsedRows = [];
+
+  /** Lê o arquivo CSV selecionado e faz o parse. */
+  function handleCsvParse() {
+    if (!csvFileInput || !csvFileInput.files || !csvFileInput.files[0]) {
+      showToast('Selecione um arquivo CSV antes de analisar.');
+      return;
+    }
+    const file = csvFileInput.files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        _importParsedRows = GastoProImporter.parseCSV(e.target.result);
+        renderImportPreview(_importParsedRows);
+        if (_importParsedRows.length > 0) {
+          showToast(`${_importParsedRows.length} lançamentos encontrados no CSV!`);
+        }
+      } catch (err) {
+        console.error('[GastoPro Importer] Erro ao parsear CSV:', err);
+        showToast('Erro ao ler o CSV. Verifique o formato do arquivo.');
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  /** Lê o texto bruto da textarea e faz o parse. */
+  function handleTextParse() {
+    const text = importRawTextarea ? importRawTextarea.value : '';
+    if (!text.trim()) {
+      showToast('Cole o texto do extrato antes de analisar.');
+      return;
+    }
+    try {
+      _importParsedRows = GastoProImporter.parseRawText(text);
+      renderImportPreview(_importParsedRows);
+      if (_importParsedRows.length > 0) {
+        showToast(`${_importParsedRows.length} lançamentos encontrados!`);
+      }
+    } catch (err) {
+      console.error('[GastoPro Importer] Erro ao parsear texto:', err);
+      showToast('Erro ao interpretar o texto. Verifique o formato.');
+    }
+  }
+
+  /**
+   * Confirma a importação: salva os lançamentos selecionados via FinanceData.add().
+   * Lê os valores atuais de categoria e tipo diretamente da tabela de preview
+   * para respeitar as edições feitas pelo usuário antes de confirmar.
+   */
+  function handleConfirmImport() {
+    if (!importPreviewTbody || _importParsedRows.length === 0) return;
+
+    const checkboxes = importPreviewTbody.querySelectorAll('.import-row-check');
+    const catSelects  = importPreviewTbody.querySelectorAll('.import-cat-select');
+    const typeSelects = importPreviewTbody.querySelectorAll('.import-type-select');
+
+    let saved = 0;
+    checkboxes.forEach((cb, i) => {
+      if (!cb.checked) return; // Pula desmarcados
+
+      const row      = _importParsedRows[i];
+      const category = catSelects[i]  ? catSelects[i].value  : row.category;
+      const type     = typeSelects[i] ? typeSelects[i].value : 'variable';
+
+      const entry = GastoProImporter.buildEntry(
+        { ...row, category },
+        type
+      );
+
+      FinanceData.add(entry);
+      saved++;
+    });
+
+    if (saved > 0) {
+      showToast(`${saved} lançamento${saved > 1 ? 's' : ''} importado${saved > 1 ? 's' : ''} com sucesso!`);
+      renderAll();
+      closeImportModal();
+    } else {
+      showToast('Selecione ao menos um lançamento para importar.');
+    }
+  }
+
+  // ── Event Listeners do modal de importação ────────────────────
+
+  // Abrir modal
+  if (sidebarImportBtn) sidebarImportBtn.addEventListener('click', openImportModal);
+
+  // Fechar modal
+  if (closeImportModalBtn) closeImportModalBtn.addEventListener('click', closeImportModal);
+  if (cancelImportBtn)     cancelImportBtn.addEventListener('click', closeImportModal);
+
+  // Fechar ao clicar no overlay
+  if (importModal) {
+    importModal.addEventListener('click', (e) => {
+      if (e.target === importModal) closeImportModal();
+    });
+  }
+
+  // Troca de abas
+  if (importTabCsvBtn)  importTabCsvBtn.addEventListener('click',  () => switchImportTab('csv'));
+  if (importTabTextBtn) importTabTextBtn.addEventListener('click', () => switchImportTab('text'));
+
+  // Feedback visual de arquivo selecionado no drop zone
+  if (csvFileInput) {
+    csvFileInput.addEventListener('change', () => {
+      const file = csvFileInput.files && csvFileInput.files[0];
+      if (file && csvDropZone) {
+        csvDropZone.classList.add('csv-file-selected');
+        document.getElementById('csvDropIcon').className = 'fa-solid fa-file-circle-check drop-icon';
+        document.getElementById('csvDropTitle').textContent = file.name;
+        document.getElementById('csvDropSub').textContent   = `${(file.size / 1024).toFixed(1)} KB — pronto para analisar`;
+      }
+    });
+  }
+
+  // Drag and drop no drop zone
+  if (csvDropZone) {
+    csvDropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      csvDropZone.classList.add('drag-over');
+    });
+    csvDropZone.addEventListener('dragleave', () => {
+      csvDropZone.classList.remove('drag-over');
+    });
+    csvDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      csvDropZone.classList.remove('drag-over');
+      const file = e.dataTransfer && e.dataTransfer.files[0];
+      if (file && csvFileInput) {
+        // Transfere o arquivo para o input via DataTransfer
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        csvFileInput.files = dt.files;
+        csvFileInput.dispatchEvent(new Event('change'));
+      }
+    });
+  }
+
+  // Botões de parse
+  if (parseCsvBtn)   parseCsvBtn.addEventListener('click',   handleCsvParse);
+  if (parseTextBtn)  parseTextBtn.addEventListener('click',  handleTextParse);
+
+  // Selecionar/deselecionar todos
+  if (importSelectAll) {
+    importSelectAll.addEventListener('change', () => {
+      const checkboxes = importPreviewTbody
+        ? importPreviewTbody.querySelectorAll('.import-row-check')
+        : [];
+      checkboxes.forEach(cb => { cb.checked = importSelectAll.checked; });
+    });
+  }
+
+  // Confirmar importação
+  if (confirmImportBtn) confirmImportBtn.addEventListener('click', handleConfirmImport);
+
+
   // Pull-to-refresh para telas touch em smartphones / PWA
   let touchStartY = 0;
   let isAtTop = false;
