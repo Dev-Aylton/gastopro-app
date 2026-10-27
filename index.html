@@ -11,7 +11,7 @@
              img-src 'self' data: blob:;
              connect-src 'self' https://xfjhgzcqlrhpckqwnqtk.supabase.co wss://xfjhgzcqlrhpckqwnqtk.supabase.co;" />
 
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>GastoPro — Controle de Gastos & Saúde Financeira</title>
   <meta name="description"
     content="GastoPro: controle financeiro pessoal profissional com Dashboard de Saúde Financeira, Ganhos e Gastos integrados." />
@@ -37,17 +37,14 @@
     crossorigin="anonymous"
     referrerpolicy="no-referrer" />
 
-  <!-- Chart.js — integrity (SRI) garante que o arquivo não foi adulterado no CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
-    integrity="sha512-ZwR1/gSZM3ai6vCdI+LVF1zSq/5HznD3ZSTk7kajkaj4D292NLuduDCO1c/NT8Id+jE58KYLKT7hXnbtryGmMg=="
-    crossorigin="anonymous"
-    referrerpolicy="no-referrer"></script>
+  <!-- Chart.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <!-- CSS -->
   <link rel="stylesheet" href="css/style.css" />
 </head>
 
-<body>
+<body class="auth-checking">
 
   <div class="app-shell">
 
@@ -293,7 +290,7 @@
           <!-- KPIs do Mês -->
           <div class="kpi-grid">
             <!-- Total Recebido -->
-            <div class="kpi-card income-card" onclick="switchToView('incomes')" title="Clique para gerenciar ganhos">
+            <div class="kpi-card income-card" data-goto="incomes" title="Clique para gerenciar ganhos">
               <div class="kpi-header">
                 <span class="kpi-title"><i class="fa-solid fa-arrow-down"></i> Total Recebido</span>
                 <span class="badge badge-success" id="incomeCount">0 entradas</span>
@@ -303,7 +300,7 @@
             </div>
 
             <!-- Gastos Fixos -->
-            <div class="kpi-card fixed-card" onclick="switchToView('expenses')" title="Clique para gerenciar gastos">
+            <div class="kpi-card fixed-card" data-goto="expenses" title="Clique para gerenciar gastos">
               <div class="kpi-header">
                 <span class="kpi-title"><i class="fa-solid fa-house-lock"></i> Gastos Fixos</span>
                 <span class="badge badge-warning" id="fixedPercentage">0%</span>
@@ -313,7 +310,7 @@
             </div>
 
             <!-- Gastos do Mês -->
-            <div class="kpi-card variable-card" onclick="switchToView('expenses')" title="Clique para gerenciar gastos">
+            <div class="kpi-card variable-card" data-goto="expenses" title="Clique para gerenciar gastos">
               <div class="kpi-header">
                 <span class="kpi-title"><i class="fa-solid fa-bag-shopping"></i> Gastos Variáveis</span>
                 <span class="badge badge-danger" id="variablePercentage">0%</span>
@@ -668,7 +665,7 @@
               <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
                 <i class="fa-solid fa-shield-halved"></i> Privacidade &amp; LGPD
               </a>
-              <span class="badge badge-version">v2.5</span>
+              <span class="badge badge-version">v3.6</span>
             </div>
           </div>
         </div>

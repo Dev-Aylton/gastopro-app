@@ -168,7 +168,9 @@ function setupMockLocalStorage() {
       getItem:    (key) => mockStorage[key] !== undefined ? mockStorage[key] : null,
       setItem:    (key, value) => { mockStorage[key] = String(value); },
       removeItem: (key) => { delete mockStorage[key]; },
-      clear:      () => { for (const k in mockStorage) delete mockStorage[k]; }
+      clear:      () => { for (const k in mockStorage) delete mockStorage[k]; },
+      key:        (index) => Object.keys(mockStorage)[index] || null,
+      get length() { return Object.keys(mockStorage).length; }
     },
     writable: true,
     configurable: true
@@ -250,21 +252,115 @@ describe('FinanceData — Lançamentos Pontuais', () => {
     assertEqual(result[0].desc, 'Salário Teste');
   });
 
-  it('getEntries() deve purgar itens com "shopee" na descrição', () => {
-    const income    = makeIncome();
-    const shopee    = makeVariable({ desc: 'Compra Shopee' });
-    FinanceData.saveEntries([income, shopee]);
-    const result = FinanceData.getEntries();
-    assertEqual(result.length, 1, 'Deve ter purgado o item "Shopee"');
-    assertEqual(result[0].desc, 'Salário Teste');
+  it('deve manter um lançamento legítimo com "Shopee" na descrição', () => {
+    setupMockLocalStorage();
+    const shopee = makeVariable({ desc: 'Compra Shopee' });
+    FinanceData.saveEntries([shopee]);
+    assertEqual(FinanceData.getEntries(), [shopee]);
+  });
+});
+
+describe('FinanceData — Isolamento entre usuários', () => {
+  it('não deve exibir dados do usuário A após trocar para o usuário B', () => {
+    setupMockLocalStorage();
+    FinanceData.activateUser('user-a');
+    FinanceData.saveEntries([makeIncome({ id: 'entry-user-a' })]);
+
+    FinanceData.activateUser('user-b');
+
+    assertEqual(FinanceData.getEntries(), []);
+    assertEqual(localStorage.getItem('gastopro_last_uid'), 'user-b');
   });
 
-  it('getEntries() deve purgar itens com "uninter" na descrição', () => {
-    const uninter = makeVariable({ desc: 'Mensalidade Uninter' });
-    const legit   = makeIncome();
-    FinanceData.saveEntries([uninter, legit]);
-    const result = FinanceData.getEntries();
-    assertEqual(result.length, 1);
+  it('logout deve limpar todas as chaves gastopro_*', () => {
+    setupMockLocalStorage();
+    localStorage.setItem('gastopro_entries_v4_oct', '[]');
+    localStorage.setItem('gastopro_goals_v1', '[]');
+    localStorage.setItem('gastopro_avatar_cache', 'avatar');
+    localStorage.setItem('sb-project-auth-token', 'session');
+
+    FinanceData.clearUserData();
+
+    const remainingKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+    assertEqual(remainingKeys, ['sb-project-auth-token']);
+  });
+
+  it('falha ou resposta vazia da nuvem não deve zerar dados locais do mesmo usuário', () => {
+    setupMockLocalStorage();
+    FinanceData.activateUser('user-a');
+    const localEntry = makeIncome({ id: 'entry-local-user-a' });
+    FinanceData.saveEntries([localEntry]);
+
+    assertFalse(FinanceData.mergeCloudData('user-a', null, null));
+    assertTrue(FinanceData.mergeCloudData('user-a', [], []));
+    assertEqual(FinanceData.getEntries(), [localEntry]);
+  });
+});
+
+describe('FinanceData — Metas por Categoria', () => {
+  setupMockLocalStorage();
+
+  it('deve criar, atualizar e remover uma meta', () => {
+    const created = FinanceData.saveGoal('Mercado', 800);
+    const updated = FinanceData.saveGoal('Mercado', 900);
+
+    assertEqual(FinanceData.getGoals().length, 1);
+    assertEqual(updated.id, created.id);
+    assertEqual(updated.limit, 900);
+
+    FinanceData.deleteGoal('Mercado');
+    assertEqual(FinanceData.getGoals(), []);
+  });
+
+  it('deve aplicar alertas nos limiares reais de 80% e 100%', () => {
+    FinanceData.saveGoal('Mercado', 100);
+    const originalGetElementById = document.getElementById.bind(document);
+    const container = { innerHTML: '' };
+    const emptyState = { style: { display: 'none' } };
+    document.getElementById = (id) => {
+      if (id === 'goalsListContainer') return container;
+      if (id === 'goalsEmptyState') return emptyState;
+      return originalGetElementById(id);
+    };
+
+    try {
+      renderGoalsSection([{ category: 'Mercado', amount: 79.99 }], []);
+      assertTrue(container.innerHTML.includes('goal-status--safe'));
+      assertTrue(container.innerHTML.includes('>79.9%</span>'));
+
+      renderGoalsSection([{ category: 'Mercado', amount: 80 }], []);
+      assertTrue(container.innerHTML.includes('goal-card--warning'));
+
+      renderGoalsSection([{ category: 'Mercado', amount: 99.99 }], []);
+      assertTrue(container.innerHTML.includes('goal-card--warning'));
+      assertFalse(container.innerHTML.includes('goal-card--danger'));
+      assertTrue(container.innerHTML.includes('>99.9%</span>'));
+
+      renderGoalsSection([{ category: 'Mercado', amount: 100 }], []);
+      assertTrue(container.innerHTML.includes('goal-card--danger'));
+    } finally {
+      document.getElementById = originalGetElementById;
+    }
+  });
+
+  it('deve mostrar o estado vazio quando não houver metas', () => {
+    FinanceData.saveGoals([]);
+    const originalGetElementById = document.getElementById.bind(document);
+    const container = { innerHTML: 'conteúdo anterior' };
+    const emptyState = { style: { display: 'none' } };
+    document.getElementById = (id) => {
+      if (id === 'goalsListContainer') return container;
+      if (id === 'goalsEmptyState') return emptyState;
+      return originalGetElementById(id);
+    };
+
+    try {
+      renderGoalsSection([], []);
+      assertEqual(container.innerHTML, '');
+      assertEqual(emptyState.style.display, 'flex');
+    } finally {
+      document.getElementById = originalGetElementById;
+    }
   });
 });
 
@@ -600,19 +696,32 @@ describe('FinanceData — exportJSON()', () => {
   setupMockLocalStorage();
 
   it('backup deve incluir campos version, exportDate, entries e templates', () => {
-    // Como exportJSON dispara download, testamos apenas a estrutura do backup
-    // simulando o que a função geraria internamente
     FinanceData.add(makeIncome());
     FinanceData.add(makeFixed({ month: '2026-01', date: '2026-01-01' }));
 
-    const backup = {
-      version:    '2.5',
-      exportDate: new Date().toISOString(),
-      entries:    FinanceData.getEntries(),
-      templates:  FinanceData.getTemplates()
+    const originalCreateElement = document.createElement.bind(document);
+    let backup = null;
+    document.createElement = (tagName) => {
+      if (tagName !== 'a') return originalCreateElement(tagName);
+
+      return {
+        setAttribute(name, value) {
+          if (name !== 'href') return;
+          const jsonData = value.slice(value.indexOf(',') + 1);
+          backup = JSON.parse(decodeURIComponent(jsonData));
+        },
+        click() {}
+      };
     };
 
+    try {
+      FinanceData.exportJSON();
+    } finally {
+      document.createElement = originalCreateElement;
+    }
+
     assertTrue(typeof backup.version === 'string', 'version deve ser string');
+    assertEqual(backup.version, '3.6');
     assertTrue(typeof backup.exportDate === 'string', 'exportDate deve ser string');
     assertTrue(Array.isArray(backup.entries), 'entries deve ser array');
     assertTrue(Array.isArray(backup.templates), 'templates deve ser array');

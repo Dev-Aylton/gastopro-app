@@ -3,7 +3,7 @@
 > Aplicativo Web moderno (**Single Page Application — SPA**) de gestão financeira pessoal com Dashboard de Saúde Financeira, gerenciamento completo de receitas e despesas, rastreamento de dívidas, autenticação multi-usuário com Supabase, importação de extratos bancários, **Wizard de Lançamento Rápido** e PWA para uso offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-3.3.1-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-3.6-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
 ![Testes](https://img.shields.io/badge/Testes-50%2B%20casos-10b981?style=for-the-badge)
@@ -15,7 +15,7 @@
 
 O **GastoPro** foi idealizado e desenvolvido por **Aylton Alberto**, estudante do curso de **Análise e Desenvolvimento de Sistemas (ADS)**. O projeto nasceu da necessidade real de transformar uma planilha complexa de controle orçamentário pessoal em uma aplicação web interativa, elegante e segura.
 
-A versão atual (v3.0) evoluiu de um app puramente local para um **SaaS multi-usuário com banco de dados em nuvem**, mantendo a simplicidade de uso e adicionando autenticação segura via Supabase.
+A versão atual (v3.6) evoluiu de um app puramente local para um **SaaS multi-usuário com banco de dados em nuvem**, mantendo a simplicidade de uso e adicionando autenticação segura via Supabase.
 
 ---
 
@@ -392,20 +392,22 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 
 ## 📋 Changelog
 
-### v3.3 — 27/10/2026 (Última atualização)
+### v3.6 — 27/10/2026 (Versão atual)
 
-> ⚠️ **Status: PARCIALMENTE IMPLEMENTADA** — A lógica JavaScript está 100% concluída. O HTML (`index.html`) e os estilos CSS (`style.css`) ainda precisam ser adicionados para que a feature seja visível e funcional no app.
+#### 🎯 Metas & Alertas de Teto de Gastos por Categoria
 
-#### 🎯 Metas & Alertas de Teto de Gastos por Categoria (Em andamento)
+- Conclusão da interface da feature: seção no Dashboard, estado vazio, cards e modal de criação/edição.
+- Metas podem ser criadas, editadas e removidas; alertas visuais usam os limiares exatos de 80% e 100%.
+- A renderização acompanha a troca de mês e as metas são removidas junto aos dados locais no logout.
 
-| Componente | Status | Arquivo |
-|---|---|---|
-| **Camada de dados** — `getGoals()`, `saveGoals()`, `saveGoal()`, `deleteGoal()` com chave `gastopro_goals_v1` | ✅ Concluído | `js/data.js` |
-| **Renderização** — `renderGoalsSection()` integrada ao `renderAll()`, barras de progresso e alertas visuais | ✅ Concluído | `js/app.js` |
-| **Modal de Meta** — `openGoalModal()`, `closeGoalModal()`, `initGoalModalListeners()` | ✅ Concluído | `js/app.js` |
-| **Seção HTML no Dashboard** — seção, container, estado vazio e botão "Nova Meta" | ❌ Pendente | `index.html` |
-| **Modal HTML** — estrutura do `goalModal` com select, input e botões | ❌ Pendente | `index.html` |
-| **Estilos CSS** — `.goal-card`, `.goal-bar-fill--*`, `.goal-status`, `.goal-amounts`, `.goal-pct-badge` | ❌ Pendente | `css/style.css` |
+#### 🏷️ Versão e PWA
+
+- Versão 3.6 sincronizada no badge, no backup JSON e no Service Worker.
+- Cache do PWA atualizado para `gastopro-v3.6`; recursos locais listados no pré-cache, incluindo `js/importer.js`.
+
+#### ✅ Correção dos alertas de limite
+
+- Os estados de atenção e limite ultrapassado agora são determinados pela porcentagem real, sem antecipação causada pelo arredondamento do valor exibido.
 
 ---
 
@@ -433,6 +435,21 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 **Resultado:** Ao abrir o app no celular após a atualização, o novo SW é ativado, o cache `gastopro-v2.5` é deletado automaticamente e os arquivos atualizados são baixados.
 
 > 💡 **Para forçar atualização imediata no celular:** Feche completamente o app (remova dos recentes) e abra novamente.
+
+---
+
+### v3.3 — 27/10/2026
+
+#### 🎯 Metas & Alertas de Teto de Gastos por Categoria
+
+| Componente | Status | Arquivo |
+|---|---|---|
+| **Camada de dados** — `getGoals()`, `saveGoals()`, `saveGoal()`, `deleteGoal()` com chave `gastopro_goals_v1` | ✅ Concluído | `js/data.js` |
+| **Renderização** — `renderGoalsSection()` integrada ao `renderAll()`, barras de progresso e alertas visuais | ✅ Concluído | `js/app.js` |
+| **Modal de Meta** — `openGoalModal()`, `closeGoalModal()`, `initGoalModalListeners()` | ✅ Concluído | `js/app.js` |
+| **Seção HTML no Dashboard** — seção, container, estado vazio e botão "Nova Meta" | ✅ Concluído | `index.html` |
+| **Modal HTML** — estrutura do `goalModal` com select, input e botões | ✅ Concluído | `index.html` |
+| **Estilos CSS** — `.goal-card`, `.goal-bar-fill--*`, `.goal-status`, `.goal-amounts`, `.goal-pct-badge` | ✅ Concluído | `css/style.css` |
 
 ---
 
@@ -482,12 +499,12 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 
 ### 🔴 Alta Prioridade
 
-- [ ] **🎯 Metas & Alertas de Teto de Gastos por Categoria** ⚠️ _v3.3 — JS pronto, HTML/CSS pendentes_
+- [x] **🎯 Metas & Alertas de Teto de Gastos por Categoria** — concluído na v3.6
   - [x] `getGoals()`, `saveGoal()`, `deleteGoal()` implementados em `js/data.js`
   - [x] `renderGoalsSection()` e modal de meta implementados em `js/app.js`
-  - [ ] Seção HTML no Dashboard (`index.html`) — **pendente**
-  - [ ] Modal HTML `goalModal` (`index.html`) — **pendente**
-  - [ ] Estilos CSS `.goal-card`, `.goal-bar-fill--*` (`css/style.css`) — **pendente**
+  - [x] Seção HTML no Dashboard (`index.html`)
+  - [x] Modal HTML `goalModal` (`index.html`)
+  - [x] Estilos CSS das metas (`css/style.css`)
 
 - [ ] **🔮 Simulador de Cenários Futuros ("E se...")**
   - Simular: *"E se eu pagar R$ 500 a mais nessa dívida? Quando quito?"*
@@ -521,7 +538,7 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 - [ ] **🧪 Ampliar Cobertura de Testes Automatizados**
   - Testes para o módulo `importer.js` (parser CSV/Texto)
   - Testes para o Wizard (fluxo completo de 4 passos)
-  - Testes para as futuras Metas por Categoria
+  - Testes automatizados para Metas por Categoria
 
 ---
 

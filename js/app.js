@@ -132,7 +132,7 @@ function showToast(msg) {
  * Alterna a tela visível do app (Dashboard, Ganhos ou Gastos).
  * Atualiza o estado, os botões da sidebar, o título da topbar
  * e fecha o menu lateral em dispositivos móveis.
- * Exposta globalmente (window) para ser chamada via onclick no HTML.
+ * Exposta globalmente (window) para ser chamada pela navegação delegada.
  *
  * @param {string} viewId - ID da tela: 'dashboard' | 'incomes' | 'expenses'.
  */
@@ -632,10 +632,10 @@ function renderIncomesView(incomes, totalIncome) {
       <div class="card-item-right">
         <div class="card-item-amount text-success">+ ${formatCurrency(item.amount)}</div>
         <div class="card-item-actions">
-          <button class="btn-action-edit" onclick="openEditModal('${item.id}')" title="Alterar Ganho">
+          <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Ganho">
             <i class="fa-solid fa-pen"></i>
           </button>
-          <button class="btn-action-delete" onclick="deleteEntry('${item.id}')" title="Excluir Ganho">
+          <button class="btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}" title="Excluir Ganho">
             <i class="fa-solid fa-trash-can"></i>
           </button>
         </div>
@@ -709,7 +709,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
               <span class="tag-badge" style="opacity: 0.8;">${typeLabel}</span>
               ${isFixed ? `
                 <button class="badge-status-btn ${item.active ? 'status-active' : 'status-inactive'}" 
-                        onclick="toggleActiveStatus('${item.id}')" 
+                        data-action="toggle-active" data-id="${escapeHtml(item.id)}"
                         title="Clique para ${item.active ? 'pausar nos meses seguintes' : 'reativar nos meses seguintes'}">
                   <i class="fa-solid ${item.active ? 'fa-circle-check' : 'fa-circle-pause'}"></i> ${item.active ? 'Ativo' : 'Inativo'}
                 </button>
@@ -722,7 +722,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
         <div class="card-item-right">
           <!-- Checkbox de Pago (específico para o mês atual) -->
           <label class="checkbox-paid-label" title="${item.paid ? 'Marcar como pendente neste mês' : 'Dar baixa como pago neste mês'}">
-            <input type="checkbox" ${item.paid ? 'checked' : ''} onchange="togglePaidEntry('${item.id}')" />
+            <input type="checkbox" ${item.paid ? 'checked' : ''} data-action="toggle-paid" data-id="${escapeHtml(item.id)}" />
             <span>${item.paid ? 'Pago' : 'Pagar'}</span>
           </label>
 
@@ -731,10 +731,10 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
           </div>
 
           <div class="card-item-actions">
-            <button class="btn-action-edit" onclick="openEditModal('${item.id}')" title="Alterar Informação">
+            <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Informação">
               <i class="fa-solid fa-pen"></i>
             </button>
-            <button class="btn-action-delete" onclick="deleteEntry('${item.id}')" title="Excluir Gasto">
+            <button class="btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}" title="Excluir Gasto">
               <i class="fa-solid fa-trash-can"></i>
             </button>
           </div>
@@ -752,7 +752,6 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
  * Abre o modal de edição preenchido com os dados do item especificado.
  * Detecta automaticamente se é um ganho, gasto fixo ou variável
  * e ajusta a visibilidade dos campos de Status e Mês Final.
- * Exposta globalmente para ser chamada via onclick no HTML.
  *
  * @param {string} id - ID do item a editar (entry-* ou fix-*).
  */
@@ -851,13 +850,12 @@ function showConfirm({ title, message, iconClass, okLabel, okBtnClass, onConfirm
 }
 
 // ================================================================
-// 13. AÇÕES DO USUÁRIO (globais — chamadas via onclick no HTML)
+// 13. AÇÕES DO USUÁRIO (globais — chamadas pela delegação de eventos)
 // ================================================================
 
 /**
  * Exibe confirmação e exclui um item (lançamento ou template).
  * Para templates fixos, exibe aviso de que o gasto deixará de se repetir.
- * Exposta globalmente para ser chamada via onclick no HTML.
  *
  * @param {string} id - ID do item a excluir.
  */
@@ -882,7 +880,6 @@ window.deleteEntry = function(id) {
  * Inverte o status de pagamento de um item para o mês atual.
  * Para templates fixos: registra a baixa em paidMonths[ym].
  * Para lançamentos: alterna o campo paid.
- * Exposta globalmente para ser chamada via onchange no HTML.
  *
  * @param {string} id - ID do item.
  */
@@ -895,7 +892,6 @@ window.togglePaidEntry = function(id) {
 /**
  * Inverte o status ativo/inativo de um template de gasto fixo.
  * Gastos inativos são mantidos no banco mas excluídos dos totais futuros.
- * Exposta globalmente para ser chamada via onclick no HTML.
  *
  * @param {string} id - ID do template fixo.
  */
@@ -918,8 +914,6 @@ function getTodayString() {
 /**
  * Sanitiza strings para exibição segura no HTML, prevenindo XSS.
  * Escapa os caracteres especiais: &, <, >, " e ' (aspas simples).
- * O escape de ' &#x27; é essencial para atributos onclick que usam
- * aspas simples como delimitador: onclick="fn('${id}')".
  *
  * @param {string|null|undefined} str - Texto a sanitizar.
  * @returns {string} Texto com caracteres especiais escapados.
@@ -931,7 +925,7 @@ function escapeHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;'); // Escapa aspas simples — protége atributos onclick='...'
+    .replace(/'/g, '&#x27;');
 }
 
 /**
@@ -961,7 +955,7 @@ function formatDate(dateStr) {
  * Usa DOMContentLoaded para garantir que o HTML já está disponível.
  *
  * ORDEM DE INICIALIZAÇÃO:
- *  1. Navegação da sidebar (troca de telas).
+ *  1. Navegação delegada e da sidebar (troca de telas e ações dinâmicas).
  *  2. Menu mobile (abrir/fechar sidebar).
  *  3. Navegação de meses (setas prev/next).
  *  4. Mini calendário popover (seleção de mês/ano).
@@ -975,6 +969,46 @@ function formatDate(dateStr) {
  *  12. Registro do Service Worker (PWA).
  */
 document.addEventListener('DOMContentLoaded', () => {
+  if (!document.getElementById('prevMonthBtn')) return;
+
+  // ── Navegação e ações delegadas ───────────────────────────────
+  document.addEventListener('click', (e) => {
+    if (!(e.target instanceof Element)) return;
+
+    const gotoElement = e.target.closest('[data-goto]');
+    if (gotoElement) {
+      switchToView(gotoElement.dataset.goto);
+      return;
+    }
+
+    const actionElement = e.target.closest('[data-action]');
+    if (!actionElement) return;
+
+    const { action, id } = actionElement.dataset;
+    switch (action) {
+      case 'edit':
+        openEditModal(id);
+        break;
+      case 'delete':
+        deleteEntry(id);
+        break;
+      case 'toggle-active':
+        toggleActiveStatus(id);
+        break;
+      case 'select-month':
+        selectMonthFromPicker(Number(actionElement.dataset.year), Number(actionElement.dataset.month));
+        break;
+      case 'edit-goal':
+        openGoalModal(id);
+        break;
+    }
+  });
+
+  document.addEventListener('change', (e) => {
+    if (!(e.target instanceof Element)) return;
+    const paidInput = e.target.closest('[data-action="toggle-paid"]');
+    if (paidInput) togglePaidEntry(paidInput.dataset.id);
+  });
 
   // ── 1. Navegação da Sidebar ────────────────────────────────────
   // Apenas botões COM data-view disparam switchToView() (evita chamar com null)
@@ -1070,7 +1104,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       return `
         <button class="picker-month-btn ${isSelected ? 'selected' : ''} ${hasData ? 'has-data' : ''}" 
-                onclick="selectMonthFromPicker(${pickerYear}, ${monthNum})">
+                data-action="select-month" data-year="${pickerYear}" data-month="${monthNum}">
           ${name}
         </button>
       `;
@@ -1079,7 +1113,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /**
    * Navega para o mês/ano selecionado no calendário popover.
-   * Exposta globalmente para ser chamada via onclick no HTML gerado.
    *
    * @param {number} year  - Ano selecionado.
    * @param {number} month - Mês selecionado (1–12).
@@ -1542,38 +1575,121 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPasswordToggle('toggleRegisterPasswordBtn', 'registerPassword');
 
   // ── Sincronização de Dados com a Nuvem (Supabase) ───────────
+  const activeSyncs = new Map();
+
   async function syncUserDataFromCloud(userId) {
     if (!window.SupabaseAuth || !userId) return;
-    try {
-      const cloudEntries = await window.SupabaseAuth.fetchCloudEntries(userId);
-      const cloudTemplates = await window.SupabaseAuth.fetchCloudTemplates(userId);
+    if (activeSyncs.has(userId)) return activeSyncs.get(userId);
 
-      if (cloudEntries !== null && cloudTemplates !== null) {
-        if (cloudEntries.length > 0 || cloudTemplates.length > 0) {
-          // Usuário JÁ possui dados salvos na nuvem → substitui localStorage pelo dado da nuvem.
-          // IMPORTANTE: usamos localStorage diretamente para não re-disparar saveCloudEntry.
-          try {
-            localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify(cloudEntries));
-            localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify(cloudTemplates));
-          } catch (storageErr) {
-            console.warn('[GastoPro] Falha ao gravar no localStorage:', storageErr);
-          }
-        } else {
-          // NOVO usuário sem dados na nuvem.
-          // NÃO enviamos dados locais: eles podem pertencer a outro usuário que usou
-          // o mesmo navegador antes. Limpamos o localStorage para começar do zero.
-          try {
-            localStorage.removeItem('gastopro_entries_v4_oct');
-            localStorage.removeItem('gastopro_templates_v4_oct');
-          } catch (storageErr) {
-            console.warn('[GastoPro] Falha ao limpar localStorage:', storageErr);
-          }
+    const syncPromise = (async () => {
+      try {
+        const sessionUser = await window.SupabaseAuth.getSessionUser();
+        if (!sessionUser || sessionUser.id !== userId) return false;
+
+        const [cloudEntries, cloudTemplates] = await Promise.all([
+          window.SupabaseAuth.fetchCloudEntries(userId),
+          window.SupabaseAuth.fetchCloudTemplates(userId)
+        ]);
+
+        if (!Array.isArray(cloudEntries) || !Array.isArray(cloudTemplates)) {
+          console.warn('[GastoPro] Sincronização incompleta; os dados locais foram mantidos.');
+          return false;
         }
+
+        if (!FinanceData.mergeCloudData(userId, cloudEntries, cloudTemplates)) {
+          console.warn('[GastoPro] Sincronização ignorada: o usuário local não corresponde à sessão.');
+          return false;
+        }
+
         renderAll();
+        return true;
+      } catch (e) {
+        console.warn('[GastoPro] Aviso de sincronização na nuvem:', e);
+        return false;
       }
-    } catch (e) {
-      console.warn('[GastoPro] Aviso de sincronização na nuvem:', e);
+    })();
+
+    activeSyncs.set(userId, syncPromise);
+    try {
+      return await syncPromise;
+    } finally {
+      activeSyncs.delete(userId);
     }
+  }
+
+  async function clearAppCaches() {
+    if (!('caches' in window)) return;
+    const cacheNames = await caches.keys();
+    await Promise.all(
+      cacheNames
+        .filter(name => name.startsWith('gastopro-'))
+        .map(name => caches.delete(name))
+    );
+  }
+
+  function clearUserSessionData() {
+    try {
+      FinanceData.clearUserData();
+    } catch (e) {
+      console.warn('[GastoPro] Falha ao limpar dados locais da sessão:', e);
+    }
+
+    if (state.chartInstance) state.chartInstance.destroy();
+    state.chartInstance = null;
+    document.querySelectorAll('.modal-overlay.active').forEach(modal => {
+      modal.classList.remove('active');
+    });
+    const editForm = document.getElementById('editForm');
+    if (editForm) editForm.reset();
+    clearAppCaches().catch(e => {
+      console.warn('[GastoPro] Falha ao limpar caches locais:', e);
+    });
+    renderUserProfile();
+    renderAll();
+  }
+
+  async function prepareAuthenticatedUser(user) {
+    if (!user || !user.id) return null;
+    const switchedUser = FinanceData.activateUser(user.id);
+    if (switchedUser) {
+      await clearAppCaches().catch(e => {
+        console.warn('[GastoPro] Falha ao limpar caches da conta anterior:', e);
+      });
+    }
+
+    const profile = FinanceData.getProfile();
+    profile.userId = user.id;
+    profile.email = user.email;
+    profile.name = (user.user_metadata && user.user_metadata.name) || profile.name || user.email.split('@')[0];
+    FinanceData.saveProfile(profile);
+    renderUserProfile();
+    return profile;
+  }
+
+  if (window.SupabaseAuth) {
+    window.SupabaseAuth.onAuthStateChange((event, user) => {
+      if (event === 'SIGNED_OUT' || (!user && event === 'TOKEN_REFRESHED')) {
+        clearUserSessionData();
+        return;
+      }
+      if (!user) return;
+
+      const switchedUser = FinanceData.activateUser(user.id);
+      if (switchedUser) {
+        clearAppCaches().catch(e => {
+          console.warn('[GastoPro] Falha ao limpar caches da conta anterior:', e);
+        });
+      }
+      if (switchedUser || event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+        prepareAuthenticatedUser(user).then(() => {
+          if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+            return syncUserDataFromCloud(user.id);
+          }
+        }).catch(e => {
+          console.warn('[GastoPro] Falha ao preparar sessão autenticada:', e);
+        });
+      }
+    });
   }
 
 
@@ -1599,12 +1715,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         if (window.SupabaseAuth && window.SupabaseAuth.client) {
           const { user } = await window.SupabaseAuth.signIn(email, password);
-          const profile = FinanceData.getProfile();
-          profile.userId = user.id;
-          profile.email  = user.email;
-          profile.name   = (user.user_metadata && user.user_metadata.name) || profile.name || email.split('@')[0];
-          FinanceData.saveProfile(profile);
-          renderUserProfile();
+          const profile = await prepareAuthenticatedUser(user);
           closeAuth();
           showToast(`Bem-vindo de volta, ${profile.name}!`);
           await syncUserDataFromCloud(user.id);
@@ -1672,9 +1783,6 @@ document.addEventListener('DOMContentLoaded', () => {
           const profile = FinanceData.getProfile();
           profile.name = name;
           profile.email = email;
-          if (data && data.user) {
-            profile.userId = data.user.id;
-          }
           FinanceData.saveProfile(profile);
           renderUserProfile();
 
@@ -1682,9 +1790,9 @@ document.addEventListener('DOMContentLoaded', () => {
           if (data && data.session) {
             closeAuth();
             showToast(`Conta criada com sucesso! Bem-vindo, ${name}!`);
-            if (data.user) {
-              await syncUserDataFromCloud(data.user.id);
-            }
+            const user = data.session.user;
+            const authenticatedProfile = await prepareAuthenticatedUser(user);
+            await syncUserDataFromCloud(authenticatedProfile.userId);
           } else {
             showAuthAlert('Conta criada! Se a confirmação de e-mail estiver ativa, verifique sua caixa de entrada.', true);
           }
@@ -1724,36 +1832,8 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {
         console.warn(e);
       }
-      // Limpa TODOS os dados locais ao sair para garantir isolamento total entre usuários.
-      // O próximo login (deste ou de outro usuário) buscará os dados corretos da nuvem.
-      // LGPD: nome e avatar do usuário anterior não devem vazar para o próximo usuário.
-      try {
-        localStorage.removeItem('gastopro_entries_v4_oct');
-        localStorage.removeItem('gastopro_templates_v4_oct');
-        localStorage.removeItem('gastopro_profile_real_v2'); // Limpa nome, avatar e e-mail
-      } catch (e) {
-        console.warn('[GastoPro] Falha ao limpar localStorage no logout:', e);
-      }
-      renderUserProfile();
-      renderAll();
+      clearUserSessionData();
       showToast('Você saiu da sua conta com segurança.');
-    });
-  }
-
-  // Checagem de Sessão Ativa ao iniciar o App
-  if (window.SupabaseAuth) {
-    window.SupabaseAuth.getSessionUser().then((user) => {
-      if (user) {
-        const profile = FinanceData.getProfile();
-        profile.userId = user.id;
-        profile.email = user.email;
-        if (!profile.name && user.user_metadata && user.user_metadata.name) {
-          profile.name = user.user_metadata.name;
-        }
-        FinanceData.saveProfile(profile);
-        renderUserProfile();
-        syncUserDataFromCloud(user.id);
-      }
     });
   }
 
@@ -1878,11 +1958,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       let isCloud = false;
+      let hasCloudSession = false;
       if (window.SupabaseAuth) {
         const user = await window.SupabaseAuth.getSessionUser();
         if (user && user.id) {
-          isCloud = true;
-          await syncUserDataFromCloud(user.id);
+          hasCloudSession = true;
+          isCloud = await syncUserDataFromCloud(user.id);
         }
       }
 
@@ -1896,7 +1977,12 @@ document.addEventListener('DOMContentLoaded', () => {
         await new Promise(res => setTimeout(res, 500 - elapsed));
       }
 
-      showToast(isCloud ? 'Dados sincronizados com a nuvem!' : 'Dados atualizados com sucesso!');
+      const refreshMessage = isCloud
+        ? 'Dados sincronizados com a nuvem!'
+        : hasCloudSession
+          ? 'Dados locais mantidos; não foi possível sincronizar agora.'
+          : 'Dados atualizados com sucesso!';
+      showToast(refreshMessage);
 
       // Se a sidebar ou o drawer estiverem abertos, fecha-os
       closeMobileSidebar();
@@ -2907,8 +2993,33 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── Inicialização: renderiza perfil e interface ao carregar ───
-  renderUserProfile();
-  renderAll();
+  async function initializeAuthenticatedView() {
+    let user = null;
+    try {
+      user = window.SupabaseAuth
+        ? await window.SupabaseAuth.getSessionUser()
+        : null;
+
+      if (user) {
+        await prepareAuthenticatedUser(user);
+      } else if (localStorage.getItem('gastopro_last_uid')) {
+        clearUserSessionData();
+      }
+    } catch (e) {
+      console.warn('[GastoPro] Falha ao restaurar sessão:', e);
+    }
+
+    renderUserProfile();
+    renderAll();
+    document.body.classList.remove('auth-checking');
+
+    if (user) await syncUserDataFromCloud(user.id);
+  }
+
+  initializeAuthenticatedView().catch(e => {
+    console.error('[GastoPro] Falha ao inicializar a sessão:', e);
+    document.body.classList.remove('auth-checking');
+  });
 
   // ── 12. Registro do Service Worker (PWA) ─────────────────────
   // Permite instalação como app e funcionamento offline.
@@ -2957,22 +3068,14 @@ function renderGoalsSection(fixed, variables) {
     spendingMap[cat] = (spendingMap[cat] || 0) + (item.amount || 0);
   });
 
-  // Disparar alertas toast para metas críticas (>= 100%) ou próximas (>= 80%)
-  // Executa apenas uma vez por mês verificado (evita spam)
-  goals.forEach(goal => {
-    const spent = spendingMap[goal.category] || 0;
-    const pct   = goal.limit > 0 ? (spent / goal.limit) * 100 : 0;
-    if (pct >= 100) {
-      // Alerta já será visível no card — toast só no momento exato (ver modal)
-    }
-  });
-
   // Renderiza os cards
   container.innerHTML = goals.map(goal => {
-    const spent    = spendingMap[goal.category] || 0;
-    const pct      = goal.limit > 0 ? Math.min(200, (spent / goal.limit) * 100) : 0;
-    const pctShow  = Math.min(100, pct); // Largura da barra (max 100%)
-    const pctLabel = Math.round(goal.limit > 0 ? (spent / goal.limit) * 100 : 0);
+    const spent     = spendingMap[goal.category] || 0;
+    const pct       = goal.limit > 0 ? (spent / goal.limit) * 100 : 0;
+    const pctShow   = Math.min(100, pct); // Largura da barra (max 100%)
+    const pctLabel  = Math.floor(pct * 10) / 10;
+    const isDanger  = pct >= 100;
+    const isWarning = pct >= 80 && !isDanger;
 
     // Define cor e status conforme percentual
     let barClass   = 'goal-bar-fill--safe';
@@ -2980,12 +3083,12 @@ function renderGoalsSection(fixed, variables) {
     let statusClass = 'goal-status--safe';
     let statusText  = 'Dentro do limite';
 
-    if (pctLabel >= 100) {
+    if (isDanger) {
       barClass    = 'goal-bar-fill--danger';
       statusIcon  = '<i class="fa-solid fa-circle-exclamation"></i>';
       statusClass = 'goal-status--danger';
       statusText  = '🔴 Limite ultrapassado!';
-    } else if (pctLabel >= 80) {
+    } else if (isWarning) {
       barClass    = 'goal-bar-fill--warning';
       statusIcon  = '<i class="fa-solid fa-triangle-exclamation"></i>';
       statusClass = 'goal-status--warning';
@@ -2993,13 +3096,13 @@ function renderGoalsSection(fixed, variables) {
     }
 
     return `
-      <div class="goal-card ${pctLabel >= 100 ? 'goal-card--danger' : pctLabel >= 80 ? 'goal-card--warning' : ''}" data-goal-category="${escapeHtml(goal.category)}">
+      <div class="goal-card ${isDanger ? 'goal-card--danger' : isWarning ? 'goal-card--warning' : ''}" data-goal-category="${escapeHtml(goal.category)}">
         <div class="goal-card-header">
           <div class="goal-card-title">
             <span class="goal-category-name">${escapeHtml(goal.category)}</span>
             <span class="goal-status ${statusClass}">${statusIcon} ${statusText}</span>
           </div>
-          <button class="goal-edit-btn" onclick="openGoalModal('${escapeHtml(goal.category)}')" title="Editar meta">
+          <button class="goal-edit-btn" data-action="edit-goal" data-id="${escapeHtml(goal.category)}" title="Editar meta">
             <i class="fa-solid fa-pen-to-square"></i>
           </button>
         </div>
@@ -3007,7 +3110,7 @@ function renderGoalsSection(fixed, variables) {
           <span class="goal-spent">${formatCurrency(spent)}</span>
           <span class="goal-separator">de</span>
           <span class="goal-limit">${formatCurrency(goal.limit)}</span>
-          <span class="goal-pct-badge ${pctLabel >= 100 ? 'badge-danger' : pctLabel >= 80 ? 'badge-warning' : 'badge-success'}">${pctLabel}%</span>
+          <span class="goal-pct-badge ${isDanger ? 'badge-danger' : isWarning ? 'badge-warning' : 'badge-success'}">${pctLabel}%</span>
         </div>
         <div class="goal-bar-track">
           <div class="goal-bar-fill ${barClass}" style="width: ${pctShow}%"></div>
@@ -3124,6 +3227,3 @@ function initGoalModalListeners() {
     });
   }
 }
-
-
-

@@ -32,6 +32,12 @@ const SupabaseAuth = {
     }
   },
 
+  async getAuthenticatedUserId(expectedUserId) {
+    const user = await this.getSessionUser();
+    if (!user || (expectedUserId && user.id !== expectedUserId)) return null;
+    return user.id;
+  },
+
   async signUp(name, email, password) {
     if (!sb) throw new Error('Cliente Supabase não inicializado.');
     const { data, error } = await sb.auth.signUp({
@@ -58,7 +64,10 @@ const SupabaseAuth = {
   async signOut() {
     if (!sb) return;
     const { error } = await sb.auth.signOut();
-    if (error) console.error('[Supabase] Erro ao deslogar:', error);
+    if (error) {
+      console.error('[Supabase] Erro ao deslogar:', error);
+      throw error;
+    }
   },
 
   async resetPasswordForEmail(email) {
@@ -72,7 +81,7 @@ const SupabaseAuth = {
   onAuthStateChange(callback) {
     if (!sb) return;
     sb.auth.onAuthStateChange((event, session) => {
-      callback(event, session ? session.user : null);
+      setTimeout(() => callback(event, session ? session.user : null), 0);
     });
   },
 
@@ -84,11 +93,14 @@ const SupabaseAuth = {
    * Busca todos os lançamentos pontuais do usuário logado na nuvem.
    */
   async fetchCloudEntries(userId) {
-    if (!sb || !userId) return null;
+    if (!sb) return null;
     try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return null;
       const { data, error } = await sb
         .from('entries')
         .select('*')
+        .eq('user_id', sessionUserId)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -120,10 +132,12 @@ const SupabaseAuth = {
    * Salva ou atualiza um lançamento na nuvem.
    */
   async saveCloudEntry(entry, userId) {
-    if (!sb || !userId) return;
+    if (!sb) return;
     try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return;
       const payload = {
-        user_id: userId,
+        user_id: sessionUserId,
         description: entry.desc,
         amount: entry.amount,
         category: entry.category,
@@ -139,7 +153,8 @@ const SupabaseAuth = {
         payload.id = entry.id;
       }
 
-      await sb.from('entries').upsert(payload);
+      const { error } = await sb.from('entries').upsert(payload);
+      if (error) console.warn('[Supabase] Erro ao salvar entry:', error.message);
     } catch (e) {
       console.warn('[Supabase] Falha ao salvar entry na nuvem:', e);
     }
@@ -149,10 +164,15 @@ const SupabaseAuth = {
    * Remove um lançamento da nuvem.
    */
   async deleteCloudEntry(entryId, userId) {
-    if (!sb || !userId) return;
+    if (!sb) return;
     try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return;
       if (String(entryId).includes('-')) {
-        await sb.from('entries').delete().eq('id', entryId);
+        const { error } = await sb.from('entries').delete()
+          .eq('id', entryId)
+          .eq('user_id', sessionUserId);
+        if (error) console.warn('[Supabase] Erro ao excluir entry:', error.message);
       }
     } catch (e) {
       console.warn('[Supabase] Falha ao excluir entry na nuvem:', e);
@@ -163,11 +183,14 @@ const SupabaseAuth = {
    * Busca todos os templates de gastos fixos recorrentes na nuvem.
    */
   async fetchCloudTemplates(userId) {
-    if (!sb || !userId) return null;
+    if (!sb) return null;
     try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return null;
       const { data, error } = await sb
         .from('fixed_templates')
-        .select('*');
+        .select('*')
+        .eq('user_id', sessionUserId);
 
       if (error) {
         console.warn('[Supabase] Erro ao carregar templates:', error.message);
@@ -197,10 +220,12 @@ const SupabaseAuth = {
    * Salva ou atualiza um template de gasto fixo na nuvem.
    */
   async saveCloudTemplate(tpl, userId) {
-    if (!sb || !userId) return;
+    if (!sb) return;
     try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return;
       const payload = {
-        user_id: userId,
+        user_id: sessionUserId,
         description: tpl.desc,
         amount: tpl.amount,
         category: tpl.category,
@@ -217,7 +242,8 @@ const SupabaseAuth = {
         payload.id = tpl.id;
       }
 
-      await sb.from('fixed_templates').upsert(payload);
+      const { error } = await sb.from('fixed_templates').upsert(payload);
+      if (error) console.warn('[Supabase] Erro ao salvar template:', error.message);
     } catch (e) {
       console.warn('[Supabase] Falha ao salvar template na nuvem:', e);
     }
@@ -227,10 +253,15 @@ const SupabaseAuth = {
    * Remove um template da nuvem.
    */
   async deleteCloudTemplate(tplId, userId) {
-    if (!sb || !userId) return;
+    if (!sb) return;
     try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return;
       if (String(tplId).includes('-')) {
-        await sb.from('fixed_templates').delete().eq('id', tplId);
+        const { error } = await sb.from('fixed_templates').delete()
+          .eq('id', tplId)
+          .eq('user_id', sessionUserId);
+        if (error) console.warn('[Supabase] Erro ao excluir template:', error.message);
       }
     } catch (e) {
       console.warn('[Supabase] Falha ao deletar template na nuvem:', e);

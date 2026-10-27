@@ -49,12 +49,16 @@
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   background-color: var(--bg-body);
   color: var(--text-main);
   min-height: 100vh;
+  min-height: 100dvh;
   line-height: 1.5;
-  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -64,6 +68,8 @@ body {
 .app-shell {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
 }
 
 /* SIDEBAR */
@@ -77,6 +83,7 @@ body {
   top: 0;
   bottom: 0;
   left: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   z-index: 100;
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -211,7 +218,12 @@ body {
 .main-content {
   margin-left: 270px;
   flex: 1;
+  min-width: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  width: 0;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   background-color: var(--bg-main);
   display: flex;
   flex-direction: column;
@@ -220,7 +232,7 @@ body {
 .topbar {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
-  padding: 0.9rem 2rem;
+  padding: calc(0.9rem + env(safe-area-inset-top)) 2rem 0.9rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -335,12 +347,14 @@ body {
   z-index: 240;
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
   transition: all 0.25s ease;
 }
 
 .profile-drawer-overlay.active {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
 }
 
 .profile-drawer {
@@ -718,7 +732,7 @@ body {
 
 .picker-months-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.45rem;
 }
 
@@ -804,6 +818,7 @@ html {
   padding: 1.8rem 2rem 3rem 2rem;
   max-width: 1250px;
   width: 100%;
+  min-width: 0;
   margin: 0 auto;
 }
 
@@ -814,6 +829,7 @@ html {
 .view-section.active {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 1.6rem;
   animation: viewFadeInSmooth 0.36s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -908,7 +924,7 @@ html {
    ================================================================ */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   gap: 1rem;
 }
 
@@ -1102,7 +1118,7 @@ html {
 
 .debt-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 0.85rem;
 }
 
@@ -1518,13 +1534,16 @@ button:active { transform: scale(0.98); }
   z-index: 200;
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
   transition: all 0.25s ease;
-  padding: 1rem;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
 }
 
 .modal-overlay.active {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
 }
 
 .modal-content {
@@ -1532,7 +1551,10 @@ button:active { transform: scale(0.98); }
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.8rem;
-  max-width: 480px;
+  max-width: min(480px, calc(100% - 2rem));
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
   width: 100%;
   box-shadow: var(--shadow-lg);
   transform: scale(0.95);
@@ -1578,6 +1600,7 @@ button:active { transform: scale(0.98); }
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 1.5rem;
 }
@@ -1587,6 +1610,7 @@ button:active { transform: scale(0.98); }
   position: relative;
   height: 280px;
   width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1605,8 +1629,8 @@ button:active { transform: scale(0.98); }
 /* Toast */
 .toast {
   position: fixed;
-  bottom: 2rem;
-  right: 2rem;
+  bottom: calc(2rem + env(safe-area-inset-bottom));
+  right: calc(2rem + env(safe-area-inset-right));
   background: #1e293b;
   border: 1px solid var(--border);
   color: #fff;
@@ -1647,12 +1671,22 @@ button:active { transform: scale(0.98); }
   z-index: 95;
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
   transition: all 0.25s ease;
 }
 
 .sidebar-overlay.active {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
+}
+
+[data-goto],
+[data-action],
+.kpi-card {
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .sidebar-close-btn {
@@ -1671,7 +1705,7 @@ button:active { transform: scale(0.98); }
 }
 
 /* Tablet & Smartphones (< 860px) */
-@media (max-width: 860px) {
+@media (max-width: 900px) {
   .sidebar {
     transform: translateX(-100%);
     box-shadow: 10px 0 30px rgba(0, 0, 0, 0.7);
@@ -1686,6 +1720,7 @@ button:active { transform: scale(0.98); }
   }
   .main-content {
     margin-left: 0;
+    width: 100%;
   }
   .menu-toggle-btn {
     display: flex;
@@ -1698,13 +1733,15 @@ button:active { transform: scale(0.98); }
     border: 1px solid var(--border);
   }
   .topbar {
-    padding: 0.75rem 1rem;
+    padding: calc(0.75rem + env(safe-area-inset-top))
+      calc(1rem + env(safe-area-inset-right)) 0.75rem
+      calc(1rem + env(safe-area-inset-left));
   }
   .view-title {
     display: none; /* Deixa a barra limpa para o mês e avatar */
   }
   .views-wrapper {
-    padding: 1.2rem 1rem 3rem 1rem;
+    padding: 1.2rem 1rem calc(3rem + env(safe-area-inset-bottom)) 1rem;
   }
   .topbar-summary {
     display: none;
@@ -1714,7 +1751,9 @@ button:active { transform: scale(0.98); }
 /* Smartphones Compactos (< 560px - iPhone SE, Galaxy, telas de 360px a 480px) */
 @media (max-width: 560px) {
   .topbar {
-    padding: 0.65rem 0.85rem;
+    padding: calc(0.65rem + env(safe-area-inset-top))
+      calc(0.85rem + env(safe-area-inset-right)) 0.65rem
+      calc(0.85rem + env(safe-area-inset-left));
     gap: 0.5rem;
   }
 
@@ -1855,14 +1894,14 @@ button:active { transform: scale(0.98); }
 
   /* Popover do Mês no Mobile */
   .month-picker-popover {
-    width: calc(100vw - 32px);
+    width: min(270px, 100%);
     max-width: 280px;
     left: 50%;
   }
 
   /* Footer no Mobile */
   .app-footer {
-    padding: 1.5rem 1rem;
+    padding: 1.5rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
   }
   .footer-top, .footer-bottom {
     flex-direction: column;
@@ -1994,7 +2033,7 @@ button:active { transform: scale(0.98); }
 
 .form-grid-6 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
   gap: 0.75rem;
   align-items: end;
 }
@@ -3150,8 +3189,10 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  width: min(680px, 96vw);
-  max-height: 90vh;
+  width: min(680px, 100%);
+  max-width: calc(100% - 2rem);
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
   overflow-y: auto;
   box-shadow: var(--shadow-lg);
   transform: scale(0.95);
@@ -3536,7 +3577,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 /* ── Grid de categorias variáveis ────────────────────────────── */
 .wizard-category-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 145px), 1fr));
   gap: 0.6rem;
   margin-bottom: 0.5rem;
 }
@@ -4031,6 +4072,10 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   color: #fb923c;
 }
 
+.goals-panel {
+  min-width: 0;
+}
+
 .btn-add-goal {
   display: inline-flex;
   align-items: center;
@@ -4075,8 +4120,8 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 .goals-empty span { font-size: 0.83rem; }
 
 .goal-card {
-  background: var(--surface-2, rgba(255,255,255,0.04));
-  border: 1px solid var(--border, rgba(255,255,255,0.07));
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 0.9rem 1rem;
   transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
@@ -4116,7 +4161,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   margin-bottom: 0.5rem;
 }
 .goal-card-title    { display: flex; flex-direction: column; gap: 0.2rem; }
-.goal-category-name { font-weight: 700; font-size: 0.92rem; color: var(--text-primary); }
+.goal-category-name { font-weight: 700; font-size: 0.92rem; color: var(--text-main); }
 .goal-status {
   font-size: 0.76rem;
   font-weight: 500;
@@ -4148,7 +4193,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   margin-bottom: 0.55rem;
   flex-wrap: wrap;
 }
-.goal-spent     { font-weight: 700; font-size: 1rem; color: var(--text-primary); }
+.goal-spent     { font-weight: 700; font-size: 1rem; color: var(--text-main); }
 .goal-separator { font-size: 0.78rem; color: var(--text-muted); }
 .goal-limit     { font-size: 0.85rem; color: var(--text-muted); }
 
@@ -4206,4 +4251,151 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
     align-self: flex-end;
   }
   .goals-list { gap: 0.7rem; }
+}
+
+/* Ajustes finais para telas estreitas, zoom do iOS e recortes do modo standalone. */
+.auth-checking .app-shell {
+  visibility: hidden;
+}
+
+.app-shell > *,
+.main-content > *,
+.topbar > *,
+.topbar-left > *,
+.topbar-right > *,
+.view-section > *,
+.kpi-grid > *,
+.form-grid-4 > *,
+.form-grid-5 > *,
+.form-grid-6 > *,
+.manage-item-card > *,
+.card-item-left > *,
+.card-item-right > * {
+  min-width: 0;
+}
+
+img,
+canvas,
+svg,
+video {
+  max-width: 100%;
+}
+
+.main-content,
+.views-wrapper,
+.view-section,
+.modal-content,
+.profile-drawer {
+  overflow-wrap: anywhere;
+}
+
+.card-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chart-wrapper {
+  width: 100%;
+  min-width: 0;
+  height: 280px;
+}
+
+.import-preview-section,
+#importPreviewSection {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.modal-overlay .modal-content,
+.modal-overlay .modal-wizard-content {
+  max-width: min(100%, 480px);
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+}
+
+.modal-overlay .modal-wizard-content {
+  max-width: min(680px, 100%);
+}
+
+.modal-actions > button,
+.confirm-actions > button {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profile-drawer {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.app-footer {
+  padding-bottom: calc(1.8rem + env(safe-area-inset-bottom));
+}
+
+.toast {
+  left: max(1rem, env(safe-area-inset-left));
+  right: max(1rem, env(safe-area-inset-right));
+  width: max-content;
+  max-width: calc(100% - 2rem);
+}
+
+button,
+a,
+[role="button"],
+[data-goto],
+[data-action],
+input[type="checkbox"],
+input[type="date"],
+input[type="month"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 600px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .modal-actions {
+    gap: 0.5rem;
+  }
+
+  .modal-actions > button,
+  .confirm-actions > button {
+    flex: 1 1 auto;
+  }
+
+  .wizard-result-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .card-item-title {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 360px) {
+  .topbar {
+    gap: 0.35rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .views-wrapper {
+    padding-left: 0.6rem;
+    padding-right: 0.6rem;
+  }
+
+  .wizard-header,
+  .wizard-footer {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .wizard-result-kpis {
+    grid-template-columns: 1fr;
+  }
 }

@@ -12,6 +12,8 @@
    • STORAGE_ENTRIES   → Lançamentos pontuais (ganhos e gastos variáveis)
    • STORAGE_TEMPLATES → Templates de gastos fixos recorrentes
    • STORAGE_PROFILE   → Dados de perfil do usuário (nome e avatar Base64)
+   • STORAGE_GOALS     → Metas por categoria
+   • STORAGE_LAST_UID  → UID dono dos dados locais ativos
 
    ESQUEMA DE UM LANÇAMENTO (entry):
    {
@@ -63,6 +65,7 @@ const STORAGE_PROFILE = 'gastopro_profile_real_v2';
 
 /** Chave das metas de teto de gastos por categoria. */
 const STORAGE_GOALS = 'gastopro_goals_v1';
+const STORAGE_LAST_UID = 'gastopro_last_uid';
 
 
 // ----------------------------------------------------------------
@@ -326,6 +329,44 @@ function generateRealInitialEntries() {
  * Centraliza todas as operações de CRUD no localStorage.
  */
 const FinanceData = {
+
+  clearUserData() {
+    const keysToRemove = [];
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index);
+      if (key && key.startsWith('gastopro_')) keysToRemove.push(key);
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+  },
+
+  activateUser(userId) {
+    if (!userId) return false;
+    if (localStorage.getItem(STORAGE_LAST_UID) === userId) return false;
+    this.clearUserData();
+    localStorage.setItem(STORAGE_LAST_UID, userId);
+    return true;
+  },
+
+  mergeCloudData(userId, cloudEntries, cloudTemplates) {
+    if (
+      !userId ||
+      localStorage.getItem(STORAGE_LAST_UID) !== userId ||
+      !Array.isArray(cloudEntries) ||
+      !Array.isArray(cloudTemplates)
+    ) return false;
+
+    const mergeById = (localItems, cloudItems) => {
+      const merged = new Map(localItems.map(item => [item.id, item]));
+      cloudItems.forEach(item => merged.set(item.id, item));
+      return [...merged.values()];
+    };
+
+    const entries = mergeById(this.getEntries(), cloudEntries);
+    const templates = mergeById(this.getTemplates(), cloudTemplates);
+    localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
+    localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
+    return true;
+  },
 
   // ================================================================
   // LEITURA E ESCRITA DE LANÇAMENTOS PONTUAIS
@@ -687,7 +728,7 @@ const FinanceData = {
    *
    * Estrutura do backup exportado:
    * {
-   *   version:    "2.5",
+   *   version:    "3.6",
    *   exportDate: "2026-11-05T10:00:00.000Z",
    *   entries:    [...],    // Todos os lançamentos pontuais
    *   templates:  [...]     // Todos os templates de gastos fixos
@@ -695,7 +736,7 @@ const FinanceData = {
    */
   exportJSON() {
     const backup = {
-      version:    '3.3',
+      version:    '3.6',
       exportDate: new Date().toISOString(),
       entries:    this.getEntries(),
       templates:  this.getTemplates()

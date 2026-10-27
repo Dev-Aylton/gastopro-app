@@ -7,7 +7,7 @@
    com fallback automático para Cache Offline.
    ================================================================ */
 
-const CACHE_NAME = 'gastopro-v3.3';
+const CACHE_NAME = 'gastopro-v3.6';
 
 const ASSETS_TO_CACHE = [
   './',
@@ -29,7 +29,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[GastoPro SW v3.0] Cache inicial criado');
+      console.log('[GastoPro SW v3.6] Cache inicial criado');
       return cache.addAll(ASSETS_TO_CACHE);
     })
   );
@@ -56,6 +56,8 @@ self.addEventListener('activate', (event) => {
 // FETCH: Network First para scripts e arquivos locais
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const requestUrl = new URL(event.request.url);
+  if (requestUrl.origin !== self.location.origin) return;
 
   event.respondWith(
     fetch(event.request)

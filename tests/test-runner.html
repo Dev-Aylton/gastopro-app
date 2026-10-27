@@ -167,58 +167,7 @@
   <script src="../js/app.js"></script>
   <script src="gastopro.test.js"></script>
 
-  <script>
-    /* -------------------------------------------------------
-       Atualiza a interface com os resultados após os testes.
-       Aguarda o evento 'load' que o gastopro.test.js dispara
-       ao chamar printTestReport() no final da execução.
-       ------------------------------------------------------- */
-    window.addEventListener('load', () => {
-      // Aguarda um tick para garantir que printTestReport() já rodou
-      setTimeout(() => {
-        const results = window.GastoProTestResults;
-        if (!results) return;
-
-        // Preenche os números de resumo
-        document.getElementById('numTotal').textContent = results.total;
-        document.getElementById('numPass').textContent  = results.passed;
-        document.getElementById('numFail').textContent  = results.failed;
-
-        // Exibe o banner de status geral
-        const banner = document.getElementById('statusBanner');
-        banner.style.display = 'block';
-
-        if (results.failed === 0) {
-          banner.className = 'status-banner all-pass';
-          banner.textContent = '🎉 Todos os testes passaram! App está 100% funcional.';
-        } else {
-          banner.className = 'status-banner has-fail';
-          banner.textContent = `⚠️ ${results.failed} teste(s) reprovado(s). Veja abaixo.`;
-        }
-
-        // Exibe seção de falhas detalhadas (se houver)
-        if (results.errors && results.errors.length > 0) {
-          const failSection = document.getElementById('failSection');
-          const failList    = document.getElementById('failList');
-          failSection.style.display = 'block';
-
-          results.errors.forEach(err => {
-            const card = document.createElement('div');
-            card.className = 'fail-card';
-            card.innerHTML = `
-              <div class="fail-test">❌ ${err.test}</div>
-              <div class="fail-error">→ ${err.error}</div>
-            `;
-            failList.appendChild(card);
-          });
-        }
-
-        // Remove a mensagem de carregamento
-        const loadMsg = document.getElementById('loadingMsg');
-        if (loadMsg) loadMsg.remove();
-      }, 100);
-    });
-  </script>
+  <script src="test-runner.js"></script>
 
 </body>
 </html>
