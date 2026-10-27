@@ -83,9 +83,10 @@ A versão atual (v3.0) evoluiu de um app puramente local para um **SaaS multi-us
 - **Passo 4 — Resultado**: KPIs de Renda/Gastos/Saldo + barras animadas da regra 50/30/20 + diagnóstico textual inteligente.
 - **Salvamento em lote**: Todos os dados são salvos de uma vez via `FinanceData.add()` com sincronização automática no Supabase.
 - **Validação contextual**: Impede avançar sem informar renda; categoriza automaticamente gastos avulsos.
-- **Suporte a teclado**: `Enter` adiciona itens em qualquer campo de input do wizard.
-
-
+### 🧭 Navegação Lateral (Sidebar) & Sincronização
+- **Indicadores em tempo real**: Badges numéricos com o total de receitas e despesas cadastradas no mês selecionado.
+- **Ferramentas de produtividade**: Acesso direto ao **Importador de Extratos** e ao **Wizard de Lançamento Rápido**.
+- **Botão Atualizar Dados**: Posicionado na base da barra lateral (rodapé da sidebar), permitindo sincronizar dados locais com o Supabase a qualquer momento com animação visual e feedback ao usuário.
 
 ## 📁 Estrutura de Arquivos
 
