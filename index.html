@@ -78,32 +78,32 @@
           <span>Dashboard & Saúde</span>
         </button>
 
-        <!-- Botão 2: Ganhos do Mês -->
+        <!-- Botão 2: Wizard de Lançamento Rápido (Logo abaixo do Dashboard) -->
+        <button class="nav-item nav-item-wizard" id="sidebarWizardBtn" title="Lançamento rápido guiado em 3 passos">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+          <span>Lançamento Rápido</span>
+          <span class="nav-wizard-badge">Novo</span>
+        </button>
+
+        <!-- Botão 3: Ganhos do Mês -->
         <button class="nav-item" data-view="incomes" id="navIncomes">
           <i class="fa-solid fa-hand-holding-dollar"></i>
           <span>Ganhos do Mês</span>
           <span class="nav-badge text-success" id="sidebarIncomeCount">3</span>
         </button>
 
-        <!-- Botão 3: Gastos do Mês -->
+        <!-- Botão 4: Gastos do Mês -->
         <button class="nav-item" data-view="expenses" id="navExpenses">
           <i class="fa-solid fa-receipt"></i>
           <span>Gastos do Mês</span>
           <span class="nav-badge text-danger" id="sidebarExpenseCount">8</span>
         </button>
 
-        <!-- Botão 4: Importar Extrato -->
+        <!-- Botão 5: Importar Extrato (No rodapé, acima de Atualizar Dados) -->
         <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar extrato bancário (CSV ou Texto)">
           <i class="fa-solid fa-file-import"></i>
           <span>Importar Extrato</span>
           <span class="nav-import-badge">Novo</span>
-        </button>
-
-        <!-- Botão 5: Wizard de Lançamento Rápido -->
-        <button class="nav-item nav-item-wizard" id="sidebarWizardBtn" title="Lançamento rápido guiado em 3 passos">
-          <i class="fa-solid fa-wand-magic-sparkles"></i>
-          <span>Lançamento Rápido</span>
-          <span class="nav-wizard-badge">Novo</span>
         </button>
 
         <!-- Botão 6: Atualizar Dados (Rodapé da Sidebar) -->
@@ -275,7 +275,9 @@
           <!-- Dica de Privacidade -->
           <div class="drawer-tip">
             <i class="fa-solid fa-lock text-success"></i>
-            <p>Seus dados financeiros ficam salvos exclusivamente no seu navegador com privacidade total.</p>
+            <p>Seus dados financeiros ficam salvos exclusivamente no seu navegador com privacidade total.
+              <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Política de Privacidade (LGPD)</a>
+            </p>
           </div>
         </div>
       </aside>
@@ -400,13 +402,40 @@
             </div>
           </div>
 
-        </section>
+          <!-- Metas por Categoria -->
+          <div class="panel-box goals-panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-orange-soft"><i class="fa-solid fa-bullseye"></i></div>
+                <div>
+                  <h2>Metas por Categoria</h2>
+                  <p>Teto de gastos com alertas automáticos ao atingir 80% e 100%</p>
+                </div>
+              </div>
+              <button class="btn-add-goal" id="openGoalModalBtn" title="Adicionar meta de gasto">
+                <i class="fa-solid fa-plus"></i> Nova Meta
+              </button>
+            </div>
+            <div id="goalsListContainer" class="goals-list">
+              <!-- Renderizado dinamicamente por renderGoalsSection() -->
+            </div>
+            <div id="goalsEmptyState" class="goals-empty" style="display:none;">
+              <i class="fa-solid fa-bullseye"></i>
+              <p>Nenhuma meta definida ainda.</p>
+              <span>Clique em <strong>+ Nova Meta</strong> para definir um teto de gastos por categoria.</span>
+            </div>
+          </div>
+
+
 
 
         <!-- ====================================================
              TELA 2: GANHOS DO MÊS (VER, INSERIR, ALTERAR, EXCLUIR)
              ==================================================== -->
+        </section>
+
         <section class="view-section" id="view-incomes">
+
 
           <div class="view-header-card bg-green-gradient">
             <div class="view-header-info">
@@ -636,7 +665,10 @@
             </div>
             <div class="footer-meta">
               <span>GastoPro &copy; 2026 &bull; Todos os direitos reservados</span>
-              <span class="badge badge-version">v2.4 Pro</span>
+              <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
+                <i class="fa-solid fa-shield-halved"></i> Privacidade &amp; LGPD
+              </a>
+              <span class="badge badge-version">v2.5</span>
             </div>
           </div>
         </div>
@@ -852,6 +884,18 @@
         <div class="auth-security-notice">
           <i class="fa-solid fa-shield-halved text-success"></i>
           <span>Seus dados ficam 100% isolados e inacessíveis para outros usuários.</span>
+        </div>
+
+        <!-- LGPD: Consentimento e Política de Privacidade -->
+        <div class="auth-lgpd-consent">
+          <label class="auth-consent-label">
+            <input type="checkbox" id="registerConsent" required />
+            <span>Li e concordo com a
+              <a href="#" id="openPrivacyPolicyBtn" class="auth-policy-link">Política de Privacidade</a>
+              e autorizo o tratamento dos meus dados financeiros para fins de controle pessoal,
+              conforme a <strong>LGPD (Lei 13.709/2018)</strong>.
+            </span>
+          </label>
         </div>
 
         <button type="submit" class="btn-primary btn-auth-submit" id="submitRegisterBtn">
@@ -1220,6 +1264,104 @@
     </div>
   </div>
 
+
+  <!-- ====================================================
+       MODAL — POLÍTICA DE PRIVACIDADE (LGPD)
+       ==================================================== -->
+  <div class="modal-overlay" id="privacyPolicyModal">
+    <div class="modal-content modal-privacy-content">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-shield-halved text-success"></i> Política de Privacidade</h3>
+        <button class="modal-close-btn" id="closePrivacyModalBtn">&times;</button>
+      </div>
+      <div class="privacy-body">
+        <p class="privacy-date"><i class="fa-regular fa-calendar"></i> Última atualização: Outubro de 2026</p>
+
+        <h4>1. Quem somos</h4>
+        <p>O <strong>GastoPro</strong> é um aplicativo de controle financeiro pessoal desenvolvido por <strong>Aylton Alberto</strong>. Não é uma empresa, não tem fins comerciais e não coleta dados para venda ou publicidade.</p>
+
+        <h4>2. Dados coletados e finalidade</h4>
+        <ul>
+          <li><strong>Dados financeiros</strong> (lançamentos, ganhos e gastos): armazenados localmente no seu navegador (localStorage) para a funcionalidade do app.</li>
+          <li><strong>Nome e foto de perfil</strong>: salvos localmente para personalização da interface.</li>
+          <li><strong>E-mail e senha</strong>: usados exclusivamente para autenticação via Supabase quando você opta por criar conta. Senhas nunca são armazenadas localmente.</li>
+        </ul>
+
+        <h4>3. Como os dados são armazenados</h4>
+        <p><strong>Modo Local (sem login):</strong> todos os dados ficam exclusivamente no <em>localStorage</em> do seu navegador. Nenhum dado é enviado a servidores externos.</p>
+        <p><strong>Modo Nuvem (com login):</strong> os dados são sincronizados com o Supabase (banco de dados seguro), protegidos por autenticação e criptografia em trânsito (HTTPS/TLS). O acesso é isolado por usuário via Row Level Security (RLS).</p>
+
+        <h4>4. Seus direitos (LGPD — Lei 13.709/2018)</h4>
+        <ul>
+          <li>✅ <strong>Acesso</strong>: você pode exportar todos os seus dados pelo botão "Baixar Backup".</li>
+          <li>✅ <strong>Exclusão</strong>: use o botão "Reset" para apagar todos os dados locais.</li>
+          <li>✅ <strong>Portabilidade</strong>: o backup JSON pode ser importado em outras ferramentas.</li>
+          <li>✅ <strong>Revogação de consentimento</strong>: basta fazer logout — os dados locais são apagados.</li>
+        </ul>
+
+        <h4>5. Compartilhamento de dados</h4>
+        <p>Os dados <strong>não são compartilhados, vendidos ou utilizados para fins publicitários</strong>. O único processador externo é o Supabase (quando você usa a conta na nuvem), sediado nos EUA e com cláusulas de proteção de dados.</p>
+
+        <h4>6. Segurança</h4>
+        <p>O app implementa Content-Security-Policy (CSP), proteção contra XSS, integridade de CDNs (SRI) e armazenamento seguro de sessão.</p>
+
+        <h4>7. Contato</h4>
+        <p>Para exercer seus direitos ou tirar dúvidas sobre privacidade, entre em contato com o desenvolvedor pelo GitHub ou redes sociais.</p>
+
+        <div class="privacy-footer-note">
+          <i class="fa-solid fa-circle-info text-primary"></i>
+          Esta política pode ser atualizada. A data de última revisão está indicada no topo do documento.
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" id="closePrivacyModalOkBtn">Entendido</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL — METAS DE TETO DE GASTOS POR CATEGORIA -->
+  <div class="modal-overlay" id="goalModal">
+    <div class="modal-content modal-goal-content">
+      <div class="modal-header">
+        <h3 id="goalModalTitle"><i class="fa-solid fa-bullseye"></i> Nova Meta de Gasto</h3>
+        <button class="modal-close-btn" id="closeGoalModalBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="goal-modal-hint">Defina o <strong>teto de gasto</strong> para uma categoria. Você receberá alertas ao atingir <span class="text-warning">80%</span> e <span class="text-danger">100%</span> do limite.</p>
+        <div class="form-group">
+          <label for="goalCategorySelect">Categoria</label>
+          <select id="goalCategorySelect" class="form-control">
+            <option value="">Selecione a categoria...</option>
+            <option value="Alimentação">🍔 Alimentação</option>
+            <option value="Mercado">🛒 Mercado</option>
+            <option value="Transporte">🚗 Transporte</option>
+            <option value="Saúde">🏥 Saúde</option>
+            <option value="Lazer">🎮 Lazer</option>
+            <option value="Educação">📚 Educação</option>
+            <option value="Moradia">🏠 Moradia</option>
+            <option value="Esporte">💪 Esporte</option>
+            <option value="Assinaturas">📱 Assinaturas</option>
+            <option value="Vestuário">👕 Vestuário</option>
+            <option value="Cartão de crédito">💳 Cartão de crédito</option>
+            <option value="Outros">📦 Outros</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="goalLimitInput">Limite de Gasto (R$)</label>
+          <input type="number" id="goalLimitInput" class="form-control" placeholder="Ex: 800.00" min="1" step="0.01">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="removeGoalBtn" style="display:none;">
+          <i class="fa-solid fa-trash"></i> Remover Meta
+        </button>
+        <button type="button" class="btn-secondary" id="cancelGoalModalBtn">Cancelar</button>
+        <button type="button" class="btn-primary" id="saveGoalBtn">
+          <i class="fa-solid fa-floppy-disk"></i> Salvar Meta
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- Toast Notificação -->
   <div id="toast" class="toast"></div>

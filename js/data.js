@@ -61,6 +61,10 @@ const STORAGE_TEMPLATES = 'gastopro_templates_v4_oct';
 /** Chave do perfil do usuário. */
 const STORAGE_PROFILE = 'gastopro_profile_real_v2';
 
+/** Chave das metas de teto de gastos por categoria. */
+const STORAGE_GOALS = 'gastopro_goals_v1';
+
+
 // ----------------------------------------------------------------
 // BASE DE DADOS REAL EXTRAÍDA DA PLANILHA (Controle Mensal Aylton.xlsx)
 // ----------------------------------------------------------------
@@ -737,5 +741,73 @@ const FinanceData = {
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar perfil no localStorage:', e);
     }
+  },
+
+  // ================================================================
+  // METAS DE TETO DE GASTOS POR CATEGORIA
+  // ================================================================
+
+  /**
+   * Lê todas as metas de teto de gastos por categoria.
+   * Cada meta: { id, category, limit }
+   *
+   * @returns {Array<Object>} Lista de metas.
+   */
+  getGoals() {
+    try {
+      const stored = localStorage.getItem(STORAGE_GOALS);
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      console.error('[GastoPro] Erro ao ler metas:', e);
+      return [];
+    }
+  },
+
+  /**
+   * Persiste a lista completa de metas de categoria.
+   *
+   * @param {Array<Object>} goals - Array de metas a salvar.
+   */
+  saveGoals(goals) {
+    try {
+      localStorage.setItem(STORAGE_GOALS, JSON.stringify(goals));
+    } catch (e) {
+      console.error('[GastoPro] Erro ao salvar metas:', e);
+    }
+  },
+
+  /**
+   * Adiciona ou atualiza a meta de uma categoria específica.
+   * Se já existe uma meta para a categoria, substitui o limite.
+   *
+   * @param {string} category - Nome da categoria.
+   * @param {number} limit    - Limite de gasto em R$.
+   * @returns {Object} Meta salva.
+   */
+  saveGoal(category, limit) {
+    const goals = this.getGoals();
+    const existing = goals.findIndex(g => g.category === category);
+    const goal = {
+      id: existing >= 0 ? goals[existing].id : 'goal-' + Date.now(),
+      category,
+      limit: parseFloat(limit) || 0
+    };
+    if (existing >= 0) {
+      goals[existing] = goal;
+    } else {
+      goals.push(goal);
+    }
+    this.saveGoals(goals);
+    return goal;
+  },
+
+  /**
+   * Remove a meta de uma categoria.
+   *
+   * @param {string} category - Nome da categoria a remover.
+   */
+  deleteGoal(category) {
+    const goals = this.getGoals().filter(g => g.category !== category);
+    this.saveGoals(goals);
   }
 };

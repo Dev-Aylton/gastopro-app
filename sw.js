@@ -7,7 +7,7 @@
    com fallback automático para Cache Offline.
    ================================================================ */
 
-const CACHE_NAME = 'gastopro-v3.0';
+const CACHE_NAME = 'gastopro-v2.5';
 
 const ASSETS_TO_CACHE = [
   './',
@@ -15,6 +15,7 @@ const ASSETS_TO_CACHE = [
   './css/style.css',
   './js/supabase.js',
   './js/data.js',
+  './js/importer.js',
   './js/app.js',
   './assets/logo.jpg',
   './assets/default_avatar.jpg',

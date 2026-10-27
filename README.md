@@ -2,8 +2,8 @@
 
 > Aplicativo Web moderno (**Single Page Application — SPA**) de gestão financeira pessoal com Dashboard de Saúde Financeira, gerenciamento completo de receitas e despesas, rastreamento de dívidas, autenticação multi-usuário com Supabase, importação de extratos bancários, **Wizard de Lançamento Rápido** e PWA para uso offline.
 
-![Status](https://img.shields.io/badge/Status-Em%20Produção-10b981?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Versão-3.2-6366f1?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Versão-3.3--parcial-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
 ![Testes](https://img.shields.io/badge/Testes-50%2B%20casos-10b981?style=for-the-badge)
@@ -386,3 +386,146 @@ const SUPABASE_KEY = 'sua-chave-anon-publica'; // Chave pública — segura no f
 
 Desenvolvido por **Aylton Alberto** • Estudante de Análise e Desenvolvimento de Sistemas (ADS).  
 Projeto livre para fins educacionais e estudo de arquitetura web front-end.
+
+
+---
+
+## 📋 Changelog
+
+### v3.3 — 27/10/2026 (Última atualização)
+
+> ⚠️ **Status: PARCIALMENTE IMPLEMENTADA** — A lógica JavaScript está 100% concluída. O HTML (`index.html`) e os estilos CSS (`style.css`) ainda precisam ser adicionados para que a feature seja visível e funcional no app.
+
+#### 🎯 Metas & Alertas de Teto de Gastos por Categoria (Em andamento)
+
+| Componente | Status | Arquivo |
+|---|---|---|
+| **Camada de dados** — `getGoals()`, `saveGoals()`, `saveGoal()`, `deleteGoal()` com chave `gastopro_goals_v1` | ✅ Concluído | `js/data.js` |
+| **Renderização** — `renderGoalsSection()` integrada ao `renderAll()`, barras de progresso e alertas visuais | ✅ Concluído | `js/app.js` |
+| **Modal de Meta** — `openGoalModal()`, `closeGoalModal()`, `initGoalModalListeners()` | ✅ Concluído | `js/app.js` |
+| **Seção HTML no Dashboard** — seção, container, estado vazio e botão "Nova Meta" | ❌ Pendente | `index.html` |
+| **Modal HTML** — estrutura do `goalModal` com select, input e botões | ❌ Pendente | `index.html` |
+| **Estilos CSS** — `.goal-card`, `.goal-bar-fill--*`, `.goal-status`, `.goal-amounts`, `.goal-pct-badge` | ❌ Pendente | `css/style.css` |
+
+---
+
+---
+
+### v3.3.1 — Pendências Técnicas Identificadas na Análise (27/10/2026)
+
+> Itens identificados durante revisão de código que precisam ser corrigidos:
+
+| # | Arquivo | Problema | Ação necessária |
+|---|---|---|---|
+| 1 | `sw.js` (linha 10) | `CACHE_NAME = 'gastopro-v2.5'` — desatualizado | Atualizar para `gastopro-v3.3` |
+| 2 | `js/data.js` (linha 698) | `version: '2.5'` no `exportJSON()` — desatualizado | Atualizar para `3.3` |
+
+---
+
+### v2.5 — 27/10/2026
+
+#### 🐛 Correções de Bugs
+
+| # | Severidade | Correção | Arquivo |
+|---|---|---|---|
+| 1 | 🔴 Crítico | **Calendário Popover corrigido**: e.stopPropagation() adicionado no trigger do month picker — o popover estava fechando instantaneamente por borbulhamento de evento | js/app.js |
+| 2 | 🟡 Médio | **Logout limpa perfil completo**: gastopro_profile_real_v2 agora é removido no logout, evitando vazamento de nome, avatar e e-mail entre usuários no mesmo dispositivo | js/app.js |
+| 3 | 🟡 Médio | **Calendário has-data corrigido**: mini-calendário agora detecta meses com gastos fixos ativos (não apenas lançamentos pontuais) | js/app.js |
+| 4 | 🟡 Baixo | **Sidebar listener corrigido**: seletor [data-view] evita que botões de ação (Import, Wizard, Refresh) disparem switchToView(null) | js/app.js |
+
+#### ⚖️ Conformidade LGPD (Lei 13.709/2018)
+
+| Melhoria | Arquivos |
+|---|---|
+| **Modal de Política de Privacidade** com 7 seções: Quem somos, Dados coletados, Armazenamento, Direitos LGPD, Compartilhamento, Segurança e Contato | index.html + js/app.js + css/style.css |
+| **Link "Privacidade e LGPD"** no rodapé da aplicação | index.html |
+| **Link "Política de Privacidade"** no Drawer do Usuário | index.html |
+| **Checkbox de Consentimento** no formulário de cadastro com referência à LGPD | index.html |
+| Estilos CSS para todos os novos elementos de privacidade | css/style.css |
+
+#### 🎨 Reformulação de Layout & Experiência do Usuário (Sidebar & UI)
+
+| # | Melhoria | Descrição | Arquivo |
+|---|---|---|---|
+| 1 | ⚡ **Lançamento Rápido reposicionado** | Botão movido para logo abaixo de "Dashboard & Saúde", facilitando o acesso instantâneo ao wizard guiado de lançamentos | index.html + css/style.css |
+| 2 | 💎 **Importar Extrato em Destaque** | Reposicionado no final da sidebar (imediatamente acima de "Atualizar Dados") com estilo Fintech Verde Esmeralda (gradiente, brilho e realce no hover) | index.html + css/style.css |
+| 3 | 🏷️ **Versão v2.5 sincronizada no app** | Badge de versão atualizado para v2.5 no rodapé do sistema; Service Worker atualizado para cache `gastopro-v2.5` com suporte offline a `importer.js` | index.html + sw.js |
+
+### v2.4 Pro — versão anterior
+- Wizard de Lançamento Rápido (4 passos)
+- Importação de Extratos CSV/Texto
+- Autenticação multi-usuário com Supabase
+- Centro de Dívidas e Previsão de Quitação
+- Modal de Confirmação Customizado
+- Pull-to-refresh mobile (PWA)
+
+---
+
+## 🗺️ Roadmap de Melhorias Pendentes
+
+> Lista gerada a partir dos documentos de planejamento (PDFs) do projeto.
+> Marcar cada item como concluído (`[x]`) à medida que for implementado.
+
+### 🔴 Alta Prioridade
+
+- [ ] **🎯 Metas & Alertas de Teto de Gastos por Categoria** ⚠️ _v3.3 — JS pronto, HTML/CSS pendentes_
+  - [x] `getGoals()`, `saveGoal()`, `deleteGoal()` implementados em `js/data.js`
+  - [x] `renderGoalsSection()` e modal de meta implementados em `js/app.js`
+  - [ ] Seção HTML no Dashboard (`index.html`) — **pendente**
+  - [ ] Modal HTML `goalModal` (`index.html`) — **pendente**
+  - [ ] Estilos CSS `.goal-card`, `.goal-bar-fill--*` (`css/style.css`) — **pendente**
+
+- [ ] **🔮 Simulador de Cenários Futuros ("E se...")**
+  - Simular: *"E se eu pagar R$ 500 a mais nessa dívida? Quando quito?"*
+  - Projeção de amortização de dívidas com gráfico de linha
+  - Simulação de corte de categoria: *"E se eu reduzir Alimentação em 20%?"*
+  - Comparativo antes/depois exibido em painel lateral
+
+- [ ] **📊 Exportação de Relatórios (PDF / Excel)**
+  - Exportar relatório mensal completo em PDF (summary + gráficos)
+  - Exportar lançamentos em Excel/CSV filtrado por período
+  - Relatório anual consolidado (12 meses + totalizador)
+
+---
+
+### 🟡 Média Prioridade
+
+- [ ] **🏷️ Deduplicação na Importação de Extratos**
+  - Detectar lançamentos duplicados (mesma data + valor + estabelecimento)
+  - Exibir alerta visual de duplicata antes de confirmar a importação
+  - Opção de ignorar ou forçar importação do duplicado
+
+- [ ] **🔔 Notificações In-App de Alertas de Gastos**
+  - Alertas visuais quando meta de categoria estiver próxima do limite
+  - Base para notificações push futuras via Service Worker
+
+- [ ] **💡 Offline-First Aprimorado com IndexedDB**
+  - Migrar de localStorage para IndexedDB (maior capacidade e performance)
+  - Fila de sync: registrar operações offline e enviar ao reconectar
+  - Indicador de status de conectividade visível na UI
+
+- [ ] **🧪 Ampliar Cobertura de Testes Automatizados**
+  - Testes para o módulo `importer.js` (parser CSV/Texto)
+  - Testes para o Wizard (fluxo completo de 4 passos)
+  - Testes para as futuras Metas por Categoria
+
+---
+
+### 🟢 Baixa Prioridade / Futuro SaaS
+
+- [ ] **💳 Plano Freemium (Free vs. Pro)**
+  - Separar funcionalidades entre plano Gratuito e Pro
+  - Pro: Exportação PDF/Excel, histórico ilimitado, backup automático agendado
+
+- [ ] **💰 Integração com Gateway de Pagamento**
+  - Mercado Pago / Asaas / Stripe para cobrar assinaturas do plano Pro
+  - Webhook de confirmação de pagamento → liberar acesso Pro automaticamente
+
+- [ ] **🐍 Backend Python (FastAPI + Supabase)**
+  - API RESTful com FastAPI + SQLAlchemy hospedada no Render/Railway (free)
+  - Parser CSV mais robusto no servidor com pandas
+  - Cron Jobs para backup automático de dados
+  - Endpoints protegidos com JWT integrado ao Supabase Auth
+
+- [ ] **🤝 Sistema de Afiliados**
+  - Recomendação inteligente de cartões e contas para receita passiva do app

@@ -305,6 +305,7 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
   renderHealthDiagnostic(totalIncome, balance, pctFixed, pctVar, pctSave);
   renderDebtCenter(ym);
   renderCategoryChart(fixed, variables);
+  renderGoalsSection(fixed, variables);
 }
 
 /**
@@ -976,8 +977,8 @@ function formatDate(dateStr) {
 document.addEventListener('DOMContentLoaded', () => {
 
   // ── 1. Navegação da Sidebar ────────────────────────────────────
-  // Cada botão de navegação dispara switchToView() com seu data-view
-  document.querySelectorAll('.sidebar-nav .nav-item').forEach(btn => {
+  // Apenas botões COM data-view disparam switchToView() (evita chamar com null)
+  document.querySelectorAll('.sidebar-nav .nav-item[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
       const view = btn.getAttribute('data-view');
       switchToView(view);
@@ -1047,14 +1048,25 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function renderMonthPicker() {
     pickerYearDisplay.textContent = pickerYear;
-    const all = FinanceData.getAll();
+    const all       = FinanceData.getAll();
+    const templates = FinanceData.getTemplates();
 
     pickerMonthsGrid.innerHTML = SHORT_MONTHS.map((name, index) => {
       const monthNum   = index + 1;
       const ym         = `${pickerYear}-${String(monthNum).padStart(2, '0')}`;
       const isSelected = pickerYear === state.currentYear && monthNum === state.currentMonth;
-      // Verifica se há qualquer dado cadastrado naquele mês (indicador visual de dados)
-      const hasData    = all.some(e => e.month === ym);
+
+      // Verifica lançamentos pontuais com month === ym
+      const hasEntry = all.some(e => !e.isTemplate && e.month === ym);
+
+      // Verifica se algum template fixo está vigente neste mês
+      const hasTemplate = templates.some(t => {
+        const started  = !t.startMonth || t.startMonth <= ym;
+        const notEnded = !t.endMonth   || ym <= t.endMonth;
+        return t.active !== false && started && notEnded;
+      });
+
+      const hasData = hasEntry || hasTemplate;
 
       return `
         <button class="picker-month-btn ${isSelected ? 'selected' : ''} ${hasData ? 'has-data' : ''}" 
@@ -1099,7 +1111,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (monthPickerTrigger) monthPickerTrigger.classList.remove('active');
   }
 
-  if (monthPickerTrigger) monthPickerTrigger.addEventListener('click', toggleMonthPicker);
+  if (monthPickerTrigger) {
+    monthPickerTrigger.addEventListener('click', (e) => {
+      // stopPropagation impede que o clique borbulhe até o document.click
+      // que fecharia o popover imediatamente após abri-lo
+      e.stopPropagation();
+      toggleMonthPicker();
+    });
+  }
 
   if (pickerPrevYearBtn) {
     pickerPrevYearBtn.addEventListener('click', (e) => {
@@ -1705,18 +1724,16 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {
         console.warn(e);
       }
-      // Limpa dados locais ao sair para garantir isolamento total entre usuários.
+      // Limpa TODOS os dados locais ao sair para garantir isolamento total entre usuários.
       // O próximo login (deste ou de outro usuário) buscará os dados corretos da nuvem.
+      // LGPD: nome e avatar do usuário anterior não devem vazar para o próximo usuário.
       try {
         localStorage.removeItem('gastopro_entries_v4_oct');
         localStorage.removeItem('gastopro_templates_v4_oct');
+        localStorage.removeItem('gastopro_profile_real_v2'); // Limpa nome, avatar e e-mail
       } catch (e) {
         console.warn('[GastoPro] Falha ao limpar localStorage no logout:', e);
       }
-      const profile = FinanceData.getProfile();
-      profile.userId = null;
-      profile.email = null;
-      FinanceData.saveProfile(profile);
       renderUserProfile();
       renderAll();
       showToast('Você saiu da sua conta com segurança.');
@@ -2857,6 +2874,38 @@ document.addEventListener('DOMContentLoaded', () => {
     isAtTop = false;
   }, { passive: true });
 
+  // ── 15. Modal de Política de Privacidade (LGPD) ──────────────
+  // Abre a partir do footer, drawer ou link no formulário de cadastro
+
+  const privacyPolicyModal    = document.getElementById('privacyPolicyModal');
+  const closePrivacyModalBtn  = document.getElementById('closePrivacyModalBtn');
+  const closePrivacyModalOkBtn = document.getElementById('closePrivacyModalOkBtn');
+  const footerPrivacyLink     = document.getElementById('footerPrivacyLink');
+  const drawerPrivacyLink     = document.getElementById('drawerPrivacyLink');
+  const openPrivacyPolicyBtn  = document.getElementById('openPrivacyPolicyBtn');
+
+  function openPrivacyModal(e) {
+    if (e) e.preventDefault();
+    if (privacyPolicyModal) privacyPolicyModal.classList.add('active');
+  }
+
+  function closePrivacyModal() {
+    if (privacyPolicyModal) privacyPolicyModal.classList.remove('active');
+  }
+
+  if (footerPrivacyLink)    footerPrivacyLink.addEventListener('click',    openPrivacyModal);
+  if (drawerPrivacyLink)    drawerPrivacyLink.addEventListener('click',    openPrivacyModal);
+  if (openPrivacyPolicyBtn) openPrivacyPolicyBtn.addEventListener('click', openPrivacyModal);
+  if (closePrivacyModalBtn) closePrivacyModalBtn.addEventListener('click', closePrivacyModal);
+  if (closePrivacyModalOkBtn) closePrivacyModalOkBtn.addEventListener('click', closePrivacyModal);
+
+  // Fechar ao clicar no overlay
+  if (privacyPolicyModal) {
+    privacyPolicyModal.addEventListener('click', (e) => {
+      if (e.target === privacyPolicyModal) closePrivacyModal();
+    });
+  }
+
   // ── Inicialização: renderiza perfil e interface ao carregar ───
   renderUserProfile();
   renderAll();
@@ -2870,5 +2919,211 @@ document.addEventListener('DOMContentLoaded', () => {
       console.info('[GastoPro] Service Worker não registrado (normal em file://):', err.message);
     });
   }
+
+  // ── 13. Metas por Categoria — Event Listeners ─────────────────
+  initGoalModalListeners();
 });
+
+// ================================================================
+// METAS POR CATEGORIA — RENDERIZAÇÃO
+// ================================================================
+
+/**
+ * Calcula o gasto atual de cada categoria e renderiza os cards
+ * de metas com barras de progresso coloridas e alertas visuais.
+ *
+ * @param {Array} fixed     - Gastos fixos ativos do mês.
+ * @param {Array} variables - Gastos variáveis do mês.
+ */
+function renderGoalsSection(fixed, variables) {
+  const container  = document.getElementById('goalsListContainer');
+  const emptyState = document.getElementById('goalsEmptyState');
+  if (!container) return;
+
+  const goals = FinanceData.getGoals();
+
+  if (goals.length === 0) {
+    container.innerHTML = '';
+    if (emptyState) emptyState.style.display = 'flex';
+    return;
+  }
+
+  if (emptyState) emptyState.style.display = 'none';
+
+  // Calcula gasto atual agrupado por categoria (fixos + variáveis)
+  const spendingMap = {};
+  [...fixed, ...variables].forEach(item => {
+    const cat = item.category || 'Outros';
+    spendingMap[cat] = (spendingMap[cat] || 0) + (item.amount || 0);
+  });
+
+  // Disparar alertas toast para metas críticas (>= 100%) ou próximas (>= 80%)
+  // Executa apenas uma vez por mês verificado (evita spam)
+  goals.forEach(goal => {
+    const spent = spendingMap[goal.category] || 0;
+    const pct   = goal.limit > 0 ? (spent / goal.limit) * 100 : 0;
+    if (pct >= 100) {
+      // Alerta já será visível no card — toast só no momento exato (ver modal)
+    }
+  });
+
+  // Renderiza os cards
+  container.innerHTML = goals.map(goal => {
+    const spent    = spendingMap[goal.category] || 0;
+    const pct      = goal.limit > 0 ? Math.min(200, (spent / goal.limit) * 100) : 0;
+    const pctShow  = Math.min(100, pct); // Largura da barra (max 100%)
+    const pctLabel = Math.round(goal.limit > 0 ? (spent / goal.limit) * 100 : 0);
+
+    // Define cor e status conforme percentual
+    let barClass   = 'goal-bar-fill--safe';
+    let statusIcon = '<i class="fa-solid fa-circle-check"></i>';
+    let statusClass = 'goal-status--safe';
+    let statusText  = 'Dentro do limite';
+
+    if (pctLabel >= 100) {
+      barClass    = 'goal-bar-fill--danger';
+      statusIcon  = '<i class="fa-solid fa-circle-exclamation"></i>';
+      statusClass = 'goal-status--danger';
+      statusText  = '🔴 Limite ultrapassado!';
+    } else if (pctLabel >= 80) {
+      barClass    = 'goal-bar-fill--warning';
+      statusIcon  = '<i class="fa-solid fa-triangle-exclamation"></i>';
+      statusClass = 'goal-status--warning';
+      statusText  = '⚠️ Atenção: 80% atingido';
+    }
+
+    return `
+      <div class="goal-card ${pctLabel >= 100 ? 'goal-card--danger' : pctLabel >= 80 ? 'goal-card--warning' : ''}" data-goal-category="${escapeHtml(goal.category)}">
+        <div class="goal-card-header">
+          <div class="goal-card-title">
+            <span class="goal-category-name">${escapeHtml(goal.category)}</span>
+            <span class="goal-status ${statusClass}">${statusIcon} ${statusText}</span>
+          </div>
+          <button class="goal-edit-btn" onclick="openGoalModal('${escapeHtml(goal.category)}')" title="Editar meta">
+            <i class="fa-solid fa-pen-to-square"></i>
+          </button>
+        </div>
+        <div class="goal-amounts">
+          <span class="goal-spent">${formatCurrency(spent)}</span>
+          <span class="goal-separator">de</span>
+          <span class="goal-limit">${formatCurrency(goal.limit)}</span>
+          <span class="goal-pct-badge ${pctLabel >= 100 ? 'badge-danger' : pctLabel >= 80 ? 'badge-warning' : 'badge-success'}">${pctLabel}%</span>
+        </div>
+        <div class="goal-bar-track">
+          <div class="goal-bar-fill ${barClass}" style="width: ${pctShow}%"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ================================================================
+// METAS POR CATEGORIA — MODAL
+// ================================================================
+
+/**
+ * Abre o modal de meta.
+ * Se passado category, pré-preenche para edição; caso contrário, cria nova.
+ *
+ * @param {string} [category] - Categoria da meta a editar (opcional).
+ */
+window.openGoalModal = function(category) {
+  const modal      = document.getElementById('goalModal');
+  const title      = document.getElementById('goalModalTitle');
+  const catSelect  = document.getElementById('goalCategorySelect');
+  const limitInput = document.getElementById('goalLimitInput');
+  const removeBtn  = document.getElementById('removeGoalBtn');
+
+  if (!modal) return;
+
+  if (category) {
+    // Modo edição: preenche com valores da meta existente
+    const goals     = FinanceData.getGoals();
+    const existing  = goals.find(g => g.category === category);
+    title.innerHTML = '<i class="fa-solid fa-bullseye"></i> Editar Meta de Gasto';
+    catSelect.value  = category;
+    catSelect.disabled = true; // Categoria não pode mudar na edição
+    limitInput.value = existing ? existing.limit : '';
+    removeBtn.style.display = 'inline-flex';
+  } else {
+    // Modo criação
+    title.innerHTML  = '<i class="fa-solid fa-bullseye"></i> Nova Meta de Gasto';
+    catSelect.value  = '';
+    catSelect.disabled = false;
+    limitInput.value = '';
+    removeBtn.style.display = 'none';
+  }
+
+  modal.classList.add('active');
+  setTimeout(() => limitInput.focus(), 100);
+};
+
+/**
+ * Fecha o modal de metas e reseta o estado.
+ */
+function closeGoalModal() {
+  const modal     = document.getElementById('goalModal');
+  const catSelect = document.getElementById('goalCategorySelect');
+  if (modal)     modal.classList.remove('active');
+  if (catSelect) catSelect.disabled = false;
+}
+
+/**
+ * Inicializa todos os event listeners do modal de metas.
+ */
+function initGoalModalListeners() {
+  const openBtn    = document.getElementById('openGoalModalBtn');
+  const closeBtn   = document.getElementById('closeGoalModalBtn');
+  const cancelBtn  = document.getElementById('cancelGoalModalBtn');
+  const saveBtn    = document.getElementById('saveGoalBtn');
+  const removeBtn  = document.getElementById('removeGoalBtn');
+  const modal      = document.getElementById('goalModal');
+
+  if (openBtn)   openBtn.addEventListener('click',  () => openGoalModal());
+  if (closeBtn)  closeBtn.addEventListener('click',  closeGoalModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeGoalModal);
+
+  // Fecha ao clicar no overlay
+  if (modal) {
+    modal.addEventListener('click', e => {
+      if (e.target === modal) closeGoalModal();
+    });
+  }
+
+  // Salvar meta
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      const category = document.getElementById('goalCategorySelect').value.trim();
+      const limit    = parseFloat(document.getElementById('goalLimitInput').value);
+
+      if (!category) {
+        showToast('⚠️ Selecione uma categoria antes de salvar.');
+        return;
+      }
+      if (!limit || limit <= 0) {
+        showToast('⚠️ Informe um valor de limite válido (maior que zero).');
+        return;
+      }
+
+      FinanceData.saveGoal(category, limit);
+      closeGoalModal();
+      renderAll();
+      showToast(`✅ Meta de ${category}: ${formatCurrency(limit)} salva!`);
+    });
+  }
+
+  // Remover meta
+  if (removeBtn) {
+    removeBtn.addEventListener('click', () => {
+      const category = document.getElementById('goalCategorySelect').value;
+      if (!category) return;
+      FinanceData.deleteGoal(category);
+      closeGoalModal();
+      renderAll();
+      showToast(`🗑️ Meta de ${category} removida.`);
+    });
+  }
+}
+
+
 
