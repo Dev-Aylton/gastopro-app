@@ -17,7 +17,7 @@
 
    ESQUEMA DE UM LANÇAMENTO (entry):
    {
-     id:       "entry-<timestamp>-<random>",  // ID único gerado na inserção
+     id:       "UUID v4",                      // ID único gerado na inserção
      month:    "2026-11",                     // Mês de competência YYYY-MM
      type:     "income" | "variable",         // Tipo do lançamento
      desc:     "Salário",                     // Descrição legível
@@ -29,7 +29,7 @@
 
    ESQUEMA DE UM TEMPLATE FIXO (fixed template):
    {
-     id:         "fix-<timestamp>-<random>",
+     id:         "UUID v4",
      desc:       "Aluguel",
      amount:     1350.00,
      category:   "Moradia",
@@ -66,6 +66,12 @@ const STORAGE_PROFILE = 'gastopro_profile_real_v2';
 /** Chave das metas de teto de gastos por categoria. */
 const STORAGE_GOALS = 'gastopro_goals_v1';
 const STORAGE_LAST_UID = 'gastopro_last_uid';
+const STORAGE_PENDING_SYNC = 'gastopro_pending_sync_v1';
+
+function isUuid(id) {
+  return typeof id === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
 
 
 // ----------------------------------------------------------------
@@ -339,12 +345,182 @@ const FinanceData = {
     keysToRemove.forEach(key => localStorage.removeItem(key));
   },
 
+  getPendingSync() {
+    try {
+      const stored = localStorage.getItem(STORAGE_PENDING_SYNC);
+      return stored
+        ? { full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [], ...JSON.parse(stored) }
+        : { full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [] };
+    } catch (e) {
+      console.error('[GastoPro] Erro ao ler alterações pendentes:', e);
+      return { full: true, entries: [], templates: [], deletedEntries: [], deletedTemplates: [] };
+    }
+  },
+
+  savePendingSync(pending) {
+    localStorage.setItem(STORAGE_PENDING_SYNC, JSON.stringify(pending));
+  },
+
+  hasPendingSync() {
+    const pending = this.getPendingSync();
+    return Boolean(
+      pending.full ||
+      pending.entries.length ||
+      pending.templates.length ||
+      pending.deletedEntries.length ||
+      pending.deletedTemplates.length
+    );
+  },
+
+  getActiveUserId() {
+    return localStorage.getItem(STORAGE_LAST_UID);
+  },
+
+  markFullSync() {
+    const pending = this.getPendingSync();
+    pending.full = true;
+    this.savePendingSync(pending);
+  },
+
+  queueLocalChanges(kind, previousItems, nextItems) {
+    const pending = this.getPendingSync();
+    const pendingIds = pending[kind];
+    const deletedIds = pending[kind === 'entries' ? 'deletedEntries' : 'deletedTemplates'];
+    const previousById = new Map(previousItems.map(item => [item.id, item]));
+    const nextById = new Map(nextItems.map(item => [item.id, item]));
+
+    nextItems.forEach(item => {
+      if (!isUuid(item.id)) return;
+      const previous = previousById.get(item.id);
+      if (!previous || JSON.stringify(previous) !== JSON.stringify(item)) {
+        if (!pendingIds.includes(item.id)) pendingIds.push(item.id);
+        const deletedIndex = deletedIds.indexOf(item.id);
+        if (deletedIndex !== -1) deletedIds.splice(deletedIndex, 1);
+      }
+    });
+
+    previousItems.forEach(item => {
+      if (isUuid(item.id) && !nextById.has(item.id) && !deletedIds.includes(item.id)) {
+        deletedIds.push(item.id);
+        const pendingIndex = pendingIds.indexOf(item.id);
+        if (pendingIndex !== -1) pendingIds.splice(pendingIndex, 1);
+      }
+    });
+
+    this.savePendingSync(pending);
+  },
+
   activateUser(userId) {
     if (!userId) return false;
-    if (localStorage.getItem(STORAGE_LAST_UID) === userId) return false;
-    this.clearUserData();
+    const previousUserId = localStorage.getItem(STORAGE_LAST_UID);
+    if (previousUserId === userId) return false;
+
+    if (previousUserId) {
+      if (this.hasPendingSync()) return false;
+      this.clearUserData();
+    } else {
+      this.markFullSync();
+    }
     localStorage.setItem(STORAGE_LAST_UID, userId);
     return true;
+  },
+
+  async prepareLocalDataForSync(userId) {
+    if (!userId || localStorage.getItem(STORAGE_LAST_UID) !== userId) {
+      return { success: false, error: new Error('O usuário local não corresponde à sessão atual.') };
+    }
+
+    const entries = this.getEntries();
+    const templates = this.getTemplates();
+    const migratedEntries = entries.map(item => isUuid(item.id) ? item : { ...item, id: crypto.randomUUID() });
+    const migratedTemplates = templates.map(item => isUuid(item.id) ? item : { ...item, id: crypto.randomUUID() });
+
+    if (migratedEntries.some((item, index) => item.id !== entries[index].id)) {
+      localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(migratedEntries));
+      this.queueLocalChanges('entries', entries, migratedEntries);
+    }
+    if (migratedTemplates.some((item, index) => item.id !== templates[index].id)) {
+      localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(migratedTemplates));
+      this.queueLocalChanges('templates', templates, migratedTemplates);
+    }
+
+    return this.flushPendingSync(userId);
+  },
+
+  async syncAllToCloud(userId) {
+    if (!userId || localStorage.getItem(STORAGE_LAST_UID) !== userId) {
+      return { success: false, error: new Error('O usuário local não corresponde à sessão atual.') };
+    }
+    const prepared = await this.prepareLocalDataForSync(userId);
+    if (!prepared.success) return prepared;
+    this.markFullSync();
+    return this.flushPendingSync(userId);
+  },
+
+  async flushPendingSync(userId) {
+    const profile = this.getProfile();
+    const targetUserId = userId || (profile && profile.userId);
+    if (!targetUserId || !window.SupabaseAuth) return { success: true, skipped: true };
+
+    const flush = async () => {
+      if (localStorage.getItem(STORAGE_LAST_UID) !== targetUserId) {
+        return { success: false, error: new Error('O usuário local não corresponde à sessão atual.') };
+      }
+
+      const pending = this.getPendingSync();
+      const fullSync = pending.full;
+      const entries = this.getEntries();
+      const templates = this.getTemplates();
+      const entriesToSave = fullSync
+        ? entries
+        : entries.filter(item => pending.entries.includes(item.id));
+      const templatesToSave = fullSync
+        ? templates
+        : templates.filter(item => pending.templates.includes(item.id));
+
+      const results = await Promise.all([
+        entriesToSave.length ? window.SupabaseAuth.saveCloudEntries(entriesToSave, targetUserId) : { success: true },
+        templatesToSave.length ? window.SupabaseAuth.saveCloudTemplates(templatesToSave, targetUserId) : { success: true },
+        pending.deletedEntries.length ? window.SupabaseAuth.deleteCloudEntries(pending.deletedEntries, targetUserId) : { success: true },
+        pending.deletedTemplates.length ? window.SupabaseAuth.deleteCloudTemplates(pending.deletedTemplates, targetUserId) : { success: true }
+      ]);
+
+      const failedResult = results.find(result => !result || !result.success);
+      if (failedResult) {
+        if (typeof showToast === 'function') {
+          showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
+        }
+        return failedResult || { success: false, error: new Error('Falha desconhecida de sincronização.') };
+      }
+
+      const latestPending = this.getPendingSync();
+      const removeSyncedIds = (kind, sentItems, currentItems) => {
+        const sentById = new Map(sentItems.map(item => [item.id, JSON.stringify(item)]));
+        latestPending[kind] = latestPending[kind].filter(id => {
+          const current = currentItems.find(item => item.id === id);
+          return current && sentById.get(id) !== JSON.stringify(current);
+        });
+      };
+      removeSyncedIds('entries', entriesToSave, this.getEntries());
+      removeSyncedIds('templates', templatesToSave, this.getTemplates());
+
+      const currentEntryIds = new Set(this.getEntries().map(item => item.id));
+      const currentTemplateIds = new Set(this.getTemplates().map(item => item.id));
+      latestPending.deletedEntries = latestPending.deletedEntries.filter(id => currentEntryIds.has(id));
+      latestPending.deletedTemplates = latestPending.deletedTemplates.filter(id => currentTemplateIds.has(id));
+
+      if (fullSync) {
+        latestPending.full = JSON.stringify(entries) !== JSON.stringify(this.getEntries()) ||
+          JSON.stringify(templates) !== JSON.stringify(this.getTemplates());
+      }
+      this.savePendingSync(latestPending);
+      return { success: true };
+    };
+
+    const previousSync = this._pendingSyncPromise || Promise.resolve();
+    const currentSync = previousSync.then(flush, flush);
+    this._pendingSyncPromise = currentSync.catch(() => undefined);
+    return currentSync;
   },
 
   mergeCloudData(userId, cloudEntries, cloudTemplates) {
@@ -395,15 +571,16 @@ const FinanceData = {
    *
    * @param {Array<Object>} entries - Array de lançamentos a salvar.
    */
-  saveEntries(entries) {
+  async saveEntries(entries) {
     try {
+      const previousEntries = this.getEntries();
       localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
+      this.queueLocalChanges('entries', previousEntries, entries);
       const profile = this.getProfile();
-      if (profile && profile.userId && window.SupabaseAuth) {
-        entries.forEach(e => window.SupabaseAuth.saveCloudEntry(e, profile.userId));
-      }
+      return await this.flushPendingSync(profile && profile.userId);
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar lançamentos no localStorage:', e);
+      return { success: false, error: e };
     }
   },
 
@@ -434,15 +611,16 @@ const FinanceData = {
    *
    * @param {Array<Object>} templates - Array de templates a salvar.
    */
-  saveTemplates(templates) {
+  async saveTemplates(templates) {
     try {
+      const previousTemplates = this.getTemplates();
       localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
+      this.queueLocalChanges('templates', previousTemplates, templates);
       const profile = this.getProfile();
-      if (profile && profile.userId && window.SupabaseAuth) {
-        templates.forEach(t => window.SupabaseAuth.saveCloudTemplate(t, profile.userId));
-      }
+      return await this.flushPendingSync(profile && profile.userId);
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar templates fixos no localStorage:', e);
+      return { success: false, error: e };
     }
   },
 
@@ -555,10 +733,10 @@ const FinanceData = {
     // Ganhos e variáveis são lançamentos pontuais de mês único
     const entries = this.getEntries();
     const newItem = {
-      id:   'entry-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+      ...item,
+      id:   crypto.randomUUID(),
       date: item.date || new Date().toISOString().split('T')[0],
-      paid: item.paid !== undefined ? item.paid : true, // Lançamentos nascem confirmados
-      ...item
+      paid: item.paid !== undefined ? item.paid : true // Lançamentos nascem confirmados
     };
     entries.push(newItem);
     this.saveEntries(entries);
@@ -579,7 +757,7 @@ const FinanceData = {
     const day = dateStr.split('-')[2] || '05';
 
     const newTemplate = {
-      id:         'fix-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+      id:         crypto.randomUUID(),
       desc:       tpl.desc,
       amount:     parseFloat(tpl.amount) || 0,
       category:   tpl.category || (tpl.type === 'debt' ? 'Empréstimo' : 'Contas'),
@@ -602,12 +780,12 @@ const FinanceData = {
 
   // ================================================================
   // ATUALIZAÇÃO DE ITENS EXISTENTES
-  // Roteia automaticamente pelo prefixo do ID.
+  // Procura o item nas coleções locais para determinar seu tipo.
   // ================================================================
 
   /**
    * Atualiza campos de um item existente (lançamento ou template).
-   * Roteamento: IDs 'fix-*' → template | demais → lançamento pontual.
+   * Roteamento pelo ID encontrado na coleção de templates ou lançamentos.
    *
    * @param {string} id            - ID do item a atualizar.
    * @param {Object} updatedFields - Campos a mesclar sobre o item existente.
@@ -618,6 +796,10 @@ const FinanceData = {
     const templates = this.getTemplates();
     const tplIdx = templates.findIndex(t => t.id === id);
     if (tplIdx !== -1) {
+      if (updatedFields.type === 'income' || updatedFields.type === 'variable') {
+        console.warn('[GastoPro] Não é possível converter um template recorrente em lançamento pontual pela edição.');
+        return null;
+      }
       if (updatedFields.date) {
         updatedFields.day = String(updatedFields.date).split('-')[2] || templates[tplIdx].day;
       }
@@ -630,6 +812,10 @@ const FinanceData = {
     const entries = this.getEntries();
     const entryIdx = entries.findIndex(e => e.id === id);
     if (entryIdx !== -1) {
+      if (updatedFields.type === 'fixed' || updatedFields.type === 'debt') {
+        console.warn('[GastoPro] Não é possível converter um lançamento pontual em template recorrente pela edição.');
+        return null;
+      }
       if (updatedFields.date) {
         updatedFields.month = String(updatedFields.date).substring(0, 7);
       }
@@ -682,27 +868,12 @@ const FinanceData = {
   // EXCLUSÃO DE ITENS
   // ================================================================
 
-  delete(id) {
-    const profile = this.getProfile();
+  async delete(id) {
     const templates = this.getTemplates();
-    const isTemplate = templates.some(t => t.id === id) || (typeof id === 'string' && id.startsWith('fix-'));
-
-    if (profile && profile.userId && window.SupabaseAuth) {
-      if (isTemplate) {
-        window.SupabaseAuth.deleteCloudTemplate(id, profile.userId);
-      } else {
-        window.SupabaseAuth.deleteCloudEntry(id, profile.userId);
-      }
+    if (templates.some(template => template.id === id)) {
+      return this.saveTemplates(templates.filter(template => template.id !== id));
     }
-
-    if (isTemplate) {
-      const filtered = templates.filter(t => t.id !== id);
-      this.saveTemplates(filtered);
-      return;
-    }
-
-    const filtered = this.getEntries().filter(e => e.id !== id);
-    this.saveEntries(filtered);
+    return this.saveEntries(this.getEntries().filter(entry => entry.id !== id));
   },
 
   // ================================================================
@@ -731,7 +902,8 @@ const FinanceData = {
    *   version:    "3.6",
    *   exportDate: "2026-11-05T10:00:00.000Z",
    *   entries:    [...],    // Todos os lançamentos pontuais
-   *   templates:  [...]     // Todos os templates de gastos fixos
+   *   templates:  [...],    // Todos os templates de gastos fixos
+   *   goals:      [...]      // Metas de gastos por categoria
    * }
    */
   exportJSON() {
@@ -739,7 +911,8 @@ const FinanceData = {
       version:    '3.6',
       exportDate: new Date().toISOString(),
       entries:    this.getEntries(),
-      templates:  this.getTemplates()
+      templates:  this.getTemplates(),
+      goals:      this.getGoals()
     };
     // Cria a Data URL e dispara o download via link temporário
     const dataStr  = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(backup, null, 2));
@@ -829,7 +1002,7 @@ const FinanceData = {
     const goals = this.getGoals();
     const existing = goals.findIndex(g => g.category === category);
     const goal = {
-      id: existing >= 0 ? goals[existing].id : 'goal-' + Date.now(),
+      id: existing >= 0 ? goals[existing].id : 'goal-' + crypto.randomUUID(),
       category,
       limit: parseFloat(limit) || 0
     };

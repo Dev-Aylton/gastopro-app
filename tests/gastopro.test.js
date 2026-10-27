@@ -261,10 +261,36 @@ describe('FinanceData — Lançamentos Pontuais', () => {
 });
 
 describe('FinanceData — Isolamento entre usuários', () => {
+  it('primeiro login deve preservar e marcar para sync os dados criados no modo local', () => {
+    setupMockLocalStorage();
+    const localEntry = makeIncome({ id: 'entry-guest-1' });
+    FinanceData.saveEntries([localEntry]);
+
+    FinanceData.activateUser('user-first-login');
+
+    assertEqual(FinanceData.getEntries(), [localEntry]);
+    assertEqual(localStorage.getItem('gastopro_last_uid'), 'user-first-login');
+    assertTrue(FinanceData.hasPendingSync());
+  });
+
+  it('não deve apagar dados pendentes ao tentar trocar para outra conta', () => {
+    setupMockLocalStorage();
+    const localEntry = makeIncome({ id: crypto.randomUUID() });
+    FinanceData.saveEntries([localEntry]);
+    FinanceData.activateUser('user-a');
+
+    assertFalse(FinanceData.activateUser('user-b'));
+
+    assertEqual(FinanceData.getActiveUserId(), 'user-a');
+    assertEqual(FinanceData.getEntries(), [localEntry]);
+  });
+
   it('não deve exibir dados do usuário A após trocar para o usuário B', () => {
     setupMockLocalStorage();
-    FinanceData.activateUser('user-a');
-    FinanceData.saveEntries([makeIncome({ id: 'entry-user-a' })]);
+    localStorage.setItem('gastopro_last_uid', 'user-a');
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([
+      makeIncome({ id: crypto.randomUUID() })
+    ]));
 
     FinanceData.activateUser('user-b');
 
@@ -304,6 +330,7 @@ describe('FinanceData — Metas por Categoria', () => {
     const created = FinanceData.saveGoal('Mercado', 800);
     const updated = FinanceData.saveGoal('Mercado', 900);
 
+    assertTrue(created.id.startsWith('goal-') && isUuid(created.id.slice(5)));
     assertEqual(FinanceData.getGoals().length, 1);
     assertEqual(updated.id, created.id);
     assertEqual(updated.limit, 900);
@@ -384,9 +411,9 @@ describe('FinanceData — Templates de Gastos Fixos', () => {
 describe('FinanceData — add() Lançamentos', () => {
   setupMockLocalStorage();
 
-  it('add(income) deve criar um lançamento pontual com ID "entry-"', () => {
+  it('add(income) deve criar um lançamento pontual com UUID v4', () => {
     const item = FinanceData.add(makeIncome());
-    assertTrue(item.id.startsWith('entry-'), `ID deveria começar com "entry-", foi: ${item.id}`);
+    assertTrue(isUuid(item.id), `ID deveria ser UUID v4, foi: ${item.id}`);
   });
 
   it('add(income) deve persistir o item corretamente', () => {
@@ -398,10 +425,10 @@ describe('FinanceData — add() Lançamentos', () => {
     assertEqual(entries[0].type, 'income');
   });
 
-  it('add(variable) deve criar lançamento variável com ID "entry-"', () => {
+  it('add(variable) deve criar lançamento variável com UUID v4', () => {
     setupMockLocalStorage();
     const item = FinanceData.add(makeVariable());
-    assertTrue(item.id.startsWith('entry-'));
+    assertTrue(isUuid(item.id));
     assertEqual(item.type, 'variable');
   });
 
@@ -428,9 +455,9 @@ describe('FinanceData — add() Lançamentos', () => {
 describe('FinanceData — addTemplate() Gastos Fixos', () => {
   setupMockLocalStorage();
 
-  it('add(fixed) deve criar um template com ID "fix-"', () => {
+  it('add(fixed) deve criar um template com UUID v4', () => {
     const tpl = FinanceData.add(makeFixed());
-    assertTrue(tpl.id.startsWith('fix-'), `ID deveria começar com "fix-", foi: ${tpl.id}`);
+    assertTrue(isUuid(tpl.id), `ID deveria ser UUID v4, foi: ${tpl.id}`);
   });
 
   it('add(fixed) deve salvar no localStorage de templates', () => {
@@ -539,6 +566,24 @@ describe('FinanceData — update()', () => {
     const updated = FinanceData.update(item.id, { amount: 2500, desc: 'Salário Atualizado' });
     assertEqual(updated.amount, 2500);
     assertEqual(updated.desc, 'Salário Atualizado');
+  });
+
+  it('deve impedir que um lançamento pontual seja alterado para recorrente', () => {
+    setupMockLocalStorage();
+    const item = FinanceData.add(makeVariable());
+    const updated = FinanceData.update(item.id, { type: 'fixed' });
+    assertNull(updated);
+    assertTrue(FinanceData.getEntries().some(entry => entry.id === item.id));
+    assertFalse(FinanceData.getTemplates().some(template => template.id === item.id));
+  });
+
+  it('deve impedir que um template recorrente seja alterado para pontual', () => {
+    setupMockLocalStorage();
+    const template = FinanceData.add(makeFixed());
+    const updated = FinanceData.update(template.id, { type: 'variable' });
+    assertNull(updated);
+    assertTrue(FinanceData.getTemplates().some(item => item.id === template.id));
+    assertFalse(FinanceData.getEntries().some(item => item.id === template.id));
   });
 
   it('deve retornar null para lançamento inexistente', () => {
@@ -725,6 +770,7 @@ describe('FinanceData — exportJSON()', () => {
     assertTrue(typeof backup.exportDate === 'string', 'exportDate deve ser string');
     assertTrue(Array.isArray(backup.entries), 'entries deve ser array');
     assertTrue(Array.isArray(backup.templates), 'templates deve ser array');
+    assertTrue(Array.isArray(backup.goals), 'goals deve ser array');
     assertEqual(backup.entries.length, 1);
     assertEqual(backup.templates.length, 1);
   });
@@ -770,7 +816,7 @@ describe('FinanceData — getAll()', () => {
     setupMockLocalStorage();
     FinanceData.add(makeFixed({ month: '2026-01', date: '2026-01-01' }));
     const all = FinanceData.getAll();
-    const template = all.find(i => i.id.startsWith('fix-'));
+    const template = all.find(i => i.isTemplate);
     assertTrue(template.isTemplate);
   });
 });

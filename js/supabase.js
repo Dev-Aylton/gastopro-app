@@ -38,6 +38,16 @@ const SupabaseAuth = {
     return user.id;
   },
 
+  reportCloudError(operation, error) {
+    const details = {
+      message: error && error.message ? error.message : String(error || 'Erro desconhecido.'),
+      code: error && error.code ? error.code : null,
+      details: error && error.details ? error.details : null
+    };
+    console.error(`[Supabase] ${operation}:`, details);
+    return { success: false, error: details };
+  },
+
   async signUp(name, email, password) {
     if (!sb) throw new Error('Cliente Supabase não inicializado.');
     const { data, error } = await sb.auth.signUp({
@@ -131,12 +141,22 @@ const SupabaseAuth = {
   /**
    * Salva ou atualiza um lançamento na nuvem.
    */
-  async saveCloudEntry(entry, userId) {
-    if (!sb) return;
+  async saveCloudEntries(entries, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao salvar entries', new Error('Cliente Supabase não inicializado.'));
     try {
       const sessionUserId = await this.getAuthenticatedUserId(userId);
-      if (!sessionUserId) return;
-      const payload = {
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao salvar entries', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      if (!entries.length) return { success: true };
+
+      const invalidItem = entries.find(entry => !isUuid(entry.id));
+      if (invalidItem) {
+        return this.reportCloudError('ID inválido ao salvar entries', new Error(`O lançamento ${invalidItem.id} ainda não possui UUID v4.`));
+      }
+
+      const payload = entries.map(entry => ({
+        id: entry.id,
         user_id: sessionUserId,
         description: entry.desc,
         amount: entry.amount,
@@ -147,35 +167,46 @@ const SupabaseAuth = {
         is_debt: Boolean(entry.isDebt),
         debt_info: entry.debtInfo || null,
         active: entry.active !== false
-      };
-
-      if (entry.id && String(entry.id).includes('-')) {
-        payload.id = entry.id;
-      }
+      }));
 
       const { error } = await sb.from('entries').upsert(payload);
-      if (error) console.warn('[Supabase] Erro ao salvar entry:', error.message);
+      if (error) return this.reportCloudError('Erro ao salvar entries', error);
+      return { success: true };
     } catch (e) {
-      console.warn('[Supabase] Falha ao salvar entry na nuvem:', e);
+      return this.reportCloudError('Falha ao salvar entries na nuvem', e);
     }
+  },
+
+  async saveCloudEntry(entry, userId) {
+    return this.saveCloudEntries([entry], userId);
   },
 
   /**
    * Remove um lançamento da nuvem.
    */
   async deleteCloudEntry(entryId, userId) {
-    if (!sb) return;
+    return this.deleteCloudEntries([entryId], userId);
+  },
+
+  async deleteCloudEntries(entryIds, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao excluir entries', new Error('Cliente Supabase não inicializado.'));
     try {
       const sessionUserId = await this.getAuthenticatedUserId(userId);
-      if (!sessionUserId) return;
-      if (String(entryId).includes('-')) {
-        const { error } = await sb.from('entries').delete()
-          .eq('id', entryId)
-          .eq('user_id', sessionUserId);
-        if (error) console.warn('[Supabase] Erro ao excluir entry:', error.message);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao excluir entries', new Error('Não há uma sessão autenticada correspondente.'));
       }
+      const validIds = entryIds.filter(isUuid);
+      if (validIds.length !== entryIds.length) {
+        return this.reportCloudError('ID inválido ao excluir entries', new Error('A exclusão contém um ID que não é UUID v4.'));
+      }
+      if (!validIds.length) return { success: true };
+      const { error } = await sb.from('entries').delete()
+        .in('id', validIds)
+        .eq('user_id', sessionUserId);
+      if (error) return this.reportCloudError('Erro ao excluir entries', error);
+      return { success: true };
     } catch (e) {
-      console.warn('[Supabase] Falha ao excluir entry na nuvem:', e);
+      return this.reportCloudError('Falha ao excluir entries na nuvem', e);
     }
   },
 
@@ -219,12 +250,22 @@ const SupabaseAuth = {
   /**
    * Salva ou atualiza um template de gasto fixo na nuvem.
    */
-  async saveCloudTemplate(tpl, userId) {
-    if (!sb) return;
+  async saveCloudTemplates(templates, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao salvar templates', new Error('Cliente Supabase não inicializado.'));
     try {
       const sessionUserId = await this.getAuthenticatedUserId(userId);
-      if (!sessionUserId) return;
-      const payload = {
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao salvar templates', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      if (!templates.length) return { success: true };
+
+      const invalidItem = templates.find(tpl => !isUuid(tpl.id));
+      if (invalidItem) {
+        return this.reportCloudError('ID inválido ao salvar templates', new Error(`O template ${invalidItem.id} ainda não possui UUID v4.`));
+      }
+
+      const payload = templates.map(tpl => ({
+        id: tpl.id,
         user_id: sessionUserId,
         description: tpl.desc,
         amount: tpl.amount,
@@ -236,35 +277,46 @@ const SupabaseAuth = {
         end_month: tpl.endMonth || null,
         day: tpl.day || '01',
         paid_months: tpl.paidMonths || {}
-      };
-
-      if (tpl.id && String(tpl.id).includes('-')) {
-        payload.id = tpl.id;
-      }
+      }));
 
       const { error } = await sb.from('fixed_templates').upsert(payload);
-      if (error) console.warn('[Supabase] Erro ao salvar template:', error.message);
+      if (error) return this.reportCloudError('Erro ao salvar templates', error);
+      return { success: true };
     } catch (e) {
-      console.warn('[Supabase] Falha ao salvar template na nuvem:', e);
+      return this.reportCloudError('Falha ao salvar templates na nuvem', e);
     }
+  },
+
+  async saveCloudTemplate(tpl, userId) {
+    return this.saveCloudTemplates([tpl], userId);
   },
 
   /**
    * Remove um template da nuvem.
    */
   async deleteCloudTemplate(tplId, userId) {
-    if (!sb) return;
+    return this.deleteCloudTemplates([tplId], userId);
+  },
+
+  async deleteCloudTemplates(templateIds, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao excluir templates', new Error('Cliente Supabase não inicializado.'));
     try {
       const sessionUserId = await this.getAuthenticatedUserId(userId);
-      if (!sessionUserId) return;
-      if (String(tplId).includes('-')) {
-        const { error } = await sb.from('fixed_templates').delete()
-          .eq('id', tplId)
-          .eq('user_id', sessionUserId);
-        if (error) console.warn('[Supabase] Erro ao excluir template:', error.message);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao excluir templates', new Error('Não há uma sessão autenticada correspondente.'));
       }
+      const validIds = templateIds.filter(isUuid);
+      if (validIds.length !== templateIds.length) {
+        return this.reportCloudError('ID inválido ao excluir templates', new Error('A exclusão contém um ID que não é UUID v4.'));
+      }
+      if (!validIds.length) return { success: true };
+      const { error } = await sb.from('fixed_templates').delete()
+        .in('id', validIds)
+        .eq('user_id', sessionUserId);
+      if (error) return this.reportCloudError('Erro ao excluir templates', error);
+      return { success: true };
     } catch (e) {
-      console.warn('[Supabase] Falha ao deletar template na nuvem:', e);
+      return this.reportCloudError('Falha ao excluir templates na nuvem', e);
     }
   }
 };

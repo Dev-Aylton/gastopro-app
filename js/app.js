@@ -753,7 +753,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
  * Detecta automaticamente se é um ganho, gasto fixo ou variável
  * e ajusta a visibilidade dos campos de Status e Mês Final.
  *
- * @param {string} id - ID do item a editar (entry-* ou fix-*).
+ * @param {string} id - UUID do item a editar.
  */
 window.openEditModal = function(id) {
   const all = FinanceData.getAll();
@@ -771,11 +771,18 @@ window.openEditModal = function(id) {
   const editTypeSelect = document.getElementById('editType');
   if (editTypeSelect) {
     editTypeSelect.value = item.type || (item.isDebt ? 'debt' : (item.isTemplate ? 'fixed' : 'variable'));
+    const isTemplate = FinanceData.getTemplates().some(template => template.id === id);
+    Array.from(editTypeSelect.options).forEach(option => {
+      option.disabled = isTemplate
+        ? option.value === 'income' || option.value === 'variable'
+        : option.value === 'fixed' || option.value === 'debt';
+    });
   }
 
   document.getElementById('editDate').value = item.date || getTodayString();
 
-  const isFixed = item.type === 'fixed' || item.type === 'debt' || item.isTemplate || (typeof id === 'string' && id.startsWith('fix-'));
+  const isFixed = item.type === 'fixed' || item.type === 'debt' || item.isTemplate ||
+    FinanceData.getTemplates().some(template => template.id === id);
   const statusGroup = document.getElementById('editStatusGroup');
   const endMonthGroup = document.getElementById('editEndMonthGroup');
   if (statusGroup) statusGroup.style.display = isFixed ? 'block' : 'none';
@@ -860,7 +867,7 @@ function showConfirm({ title, message, iconClass, okLabel, okBtnClass, onConfirm
  * @param {string} id - ID do item a excluir.
  */
 window.deleteEntry = function(id) {
-  const isFixed = id.startsWith('fix-');
+  const isFixed = FinanceData.getTemplates().some(template => template.id === id);
   showConfirm({
     title: isFixed ? 'Excluir gasto fixo recorrente?' : 'Excluir lançamento?',
     message: isFixed 
@@ -868,10 +875,10 @@ window.deleteEntry = function(id) {
       : 'Esta ação não pode ser desfeita. O item será removido permanentemente.',
     iconClass: 'fa-solid fa-trash-can',
     okLabel: 'Sim, excluir',
-    onConfirm: () => {
-      FinanceData.delete(id);
+    onConfirm: async () => {
+      const result = await FinanceData.delete(id);
       renderAll();
-      showToast('Item excluído com sucesso!');
+      if (result && result.success) showToast('Item excluído com sucesso!');
     }
   });
 };
@@ -1336,7 +1343,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    FinanceData.update(id, {
+    const updated = FinanceData.update(id, {
       desc: desc,
       amount: amount,
       category: category,
@@ -1345,6 +1352,10 @@ document.addEventListener('DOMContentLoaded', () => {
       active: active,
       endMonth: endMonth
     });
+    if (!updated) {
+      showToast('Não é possível alterar entre lançamento pontual e recorrente pela edição.');
+      return;
+    }
 
     closeEditModal();
     renderAll();
@@ -1586,6 +1597,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const sessionUser = await window.SupabaseAuth.getSessionUser();
         if (!sessionUser || sessionUser.id !== userId) return false;
 
+        const localSync = await FinanceData.prepareLocalDataForSync(userId);
+        if (!localSync.success) return false;
+
         const [cloudEntries, cloudTemplates] = await Promise.all([
           window.SupabaseAuth.fetchCloudEntries(userId),
           window.SupabaseAuth.fetchCloudTemplates(userId)
@@ -1593,11 +1607,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!Array.isArray(cloudEntries) || !Array.isArray(cloudTemplates)) {
           console.warn('[GastoPro] Sincronização incompleta; os dados locais foram mantidos.');
+          showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
           return false;
         }
 
         if (!FinanceData.mergeCloudData(userId, cloudEntries, cloudTemplates)) {
           console.warn('[GastoPro] Sincronização ignorada: o usuário local não corresponde à sessão.');
+          showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
           return false;
         }
 
@@ -1651,6 +1667,18 @@ document.addEventListener('DOMContentLoaded', () => {
   async function prepareAuthenticatedUser(user) {
     if (!user || !user.id) return null;
     const switchedUser = FinanceData.activateUser(user.id);
+    if (FinanceData.getActiveUserId() !== user.id) {
+      showToast('Há dados não sincronizados da conta anterior. Eles foram preservados neste aparelho.');
+      try {
+        const activeSession = await window.SupabaseAuth.getSessionUser();
+        if (activeSession && activeSession.id === user.id) {
+          await window.SupabaseAuth.signOut();
+        }
+      } catch (e) {
+        console.warn('[GastoPro] Falha ao cancelar a troca de conta:', e);
+      }
+      return null;
+    }
     if (switchedUser) {
       await clearAppCaches().catch(e => {
         console.warn('[GastoPro] Falha ao limpar caches da conta anterior:', e);
@@ -1669,6 +1697,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.SupabaseAuth) {
     window.SupabaseAuth.onAuthStateChange((event, user) => {
       if (event === 'SIGNED_OUT' || (!user && event === 'TOKEN_REFRESHED')) {
+        if (FinanceData.hasPendingSync()) {
+          showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
+          return;
+        }
         clearUserSessionData();
         return;
       }
@@ -1681,7 +1713,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
       if (switchedUser || event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-        prepareAuthenticatedUser(user).then(() => {
+        prepareAuthenticatedUser(user).then(profile => {
+          if (!profile) return false;
           if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
             return syncUserDataFromCloud(user.id);
           }
@@ -1716,6 +1749,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.SupabaseAuth && window.SupabaseAuth.client) {
           const { user } = await window.SupabaseAuth.signIn(email, password);
           const profile = await prepareAuthenticatedUser(user);
+          if (!profile) {
+            showAuthAlert('Os dados pendentes da conta anterior foram preservados. Entre novamente nessa conta para sincronizá-los.');
+            return;
+          }
           closeAuth();
           showToast(`Bem-vindo de volta, ${profile.name}!`);
           await syncUserDataFromCloud(user.id);
@@ -1792,7 +1829,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast(`Conta criada com sucesso! Bem-vindo, ${name}!`);
             const user = data.session.user;
             const authenticatedProfile = await prepareAuthenticatedUser(user);
-            await syncUserDataFromCloud(authenticatedProfile.userId);
+            if (authenticatedProfile) await syncUserDataFromCloud(authenticatedProfile.userId);
           } else {
             showAuthAlert('Conta criada! Se a confirmação de e-mail estiver ativa, verifique sua caixa de entrada.', true);
           }
@@ -1825,12 +1862,36 @@ document.addEventListener('DOMContentLoaded', () => {
   // Botão de Logout Real (Supabase)
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
+      const user = window.SupabaseAuth
+        ? await window.SupabaseAuth.getSessionUser()
+        : null;
+      if (!user || !user.id) {
+        showToast('Seus dados locais foram mantidos neste aparelho.');
+        return;
+      }
+
+      const syncResult = await FinanceData.syncAllToCloud(user.id);
+      if (!syncResult.success) {
+        showConfirm({
+          title: 'Não foi possível sincronizar',
+          message: 'Seus dados continuam neste aparelho. Baixe um backup JSON antes de tentar sair novamente.',
+          iconClass: 'fa-solid fa-cloud-arrow-up',
+          okLabel: 'Baixar backup JSON',
+          okBtnClass: 'btn-primary',
+          onConfirm: () => {
+            FinanceData.exportJSON();
+            showToast('Backup JSON exportado. Seus dados continuam salvos neste aparelho.');
+          }
+        });
+        return;
+      }
+
       try {
-        if (window.SupabaseAuth) {
-          await window.SupabaseAuth.signOut();
-        }
+        await window.SupabaseAuth.signOut();
       } catch (e) {
-        console.warn(e);
+        console.warn('[GastoPro] Falha ao encerrar sessão:', e);
+        showToast('Não foi possível encerrar a sessão. Seus dados continuam salvos neste aparelho.');
+        return;
       }
       clearUserSessionData();
       showToast('Você saiu da sua conta com segurança.');
@@ -3001,7 +3062,8 @@ document.addEventListener('DOMContentLoaded', () => {
         : null;
 
       if (user) {
-        await prepareAuthenticatedUser(user);
+        const profile = await prepareAuthenticatedUser(user);
+        if (!profile) user = null;
       } else if (localStorage.getItem('gastopro_last_uid')) {
         clearUserSessionData();
       }
