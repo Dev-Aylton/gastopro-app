@@ -83,6 +83,10 @@ function formatCurrency(val) {
   return (val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function isValidPassword(password) {
+  return typeof password === 'string' && password.length >= 8;
+}
+
 /**
  * Gera a string de mês/ano no formato YYYY-MM, com zero à esquerda no mês.
  * Usado como chave padrão de competência em todo o app.
@@ -93,6 +97,25 @@ function formatCurrency(val) {
  */
 function getYearMonthString(year, month) {
   return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function getDailyBudgetInfo(balance, year, month, today) {
+  const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const targetYm = `${year}-${String(month).padStart(2, '0')}`;
+  if (targetYm < currentYm) {
+    return { status: 'past', days: 0, dailyAmount: null, message: 'Mês encerrado' };
+  }
+
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const days = targetYm === currentYm
+    ? Math.max(1, daysInMonth - today.getDate() + 1)
+    : daysInMonth;
+  return {
+    status: targetYm === currentYm ? 'current' : 'future',
+    days,
+    dailyAmount: Number(balance) / days,
+    message: ''
+  };
 }
 
 /**
@@ -167,6 +190,11 @@ window.switchToView = function(viewId) {
   if (sidebar && sidebar.classList.contains('open')) {
     sidebar.classList.remove('open');
     if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+    const menuToggleBtn = document.getElementById('menuToggleBtn');
+    if (menuToggleBtn) {
+      menuToggleBtn.setAttribute('aria-expanded', 'false');
+      menuToggleBtn.setAttribute('aria-label', 'Abrir menu de navegação');
+    }
   }
 
   // Re-renderiza toda a interface para refletir a tela ativa
@@ -283,17 +311,13 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
   document.getElementById('fixedPercentage').textContent    = `${pctFixed}% da renda`;
   document.getElementById('variablePercentage').textContent = `${pctVar}% da renda`;
 
-  // --- Previsão de sobra diária até o final do mês ---
-  const today      = new Date();
-  // Dia 0 do próximo mês = último dia do mês atual
-  const daysInMonth = new Date(state.currentYear, state.currentMonth, 0).getDate();
-  // Garante ao menos 1 para evitar divisão por zero no último dia do mês
-  const daysLeft    = Math.max(1, daysInMonth - today.getDate());
-
-  if (balance > 0) {
-    const dailyAvailable = balance / daysLeft;
+  // --- Previsão de sobra diária do mês selecionado ---
+  const dailyBudget = getDailyBudgetInfo(balance, state.currentYear, state.currentMonth, new Date());
+  if (dailyBudget.status === 'past') {
+    document.getElementById('dailyBudgetDisplay').textContent = dailyBudget.message;
+  } else if (balance > 0) {
     document.getElementById('dailyBudgetDisplay').textContent =
-      `Sobra média de ${formatCurrency(dailyAvailable)}/dia nos ${daysLeft} dias restantes`;
+      `Sobra média de ${formatCurrency(dailyBudget.dailyAmount)}/dia nos ${dailyBudget.days} dias restantes`;
   } else {
     document.getElementById('dailyBudgetDisplay').textContent =
       balance < 0
@@ -325,69 +349,82 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
  * @param {number} pctVar   - % da renda comprometida com gastos variáveis.
  * @param {number} pctSave  - % restante disponível para poupança.
  */
-function renderHealthDiagnostic(income, balance, pctFixed, pctVar, pctSave) {
-  const icon  = document.getElementById('healthStatusIcon');
-  const title = document.getElementById('healthTitle');
-  const desc  = document.getElementById('healthDescription');
-  const badge = document.getElementById('healthBadge');
-
-  // Atualiza os percentuais nos rótulos da barra 50/30/20
-  document.getElementById('lblPctFixed').textContent = `${pctFixed}%`;
-  document.getElementById('lblPctVar').textContent   = `${pctVar}%`;
-  document.getElementById('lblPctSave').textContent  = `${pctSave}%`;
-
-  // Atualiza as larguras das barras de progresso (limitado a 100% para não transbordar)
-  document.getElementById('barFixed').style.width    = `${Math.min(100, pctFixed)}%`;
-  document.getElementById('barVariable').style.width = `${Math.min(100, pctVar)}%`;
-  document.getElementById('barSavings').style.width  = `${Math.min(100, pctSave)}%`;
-
-  // --- Diagnóstico por prioridade (do pior para o melhor) ---
-
+function getHealthDiagnostic(income, balance, pctFixed, pctVar, pctSave) {
   if (income === 0) {
-    badge.className = 'badge badge-warning';
-    badge.textContent = 'Sem Renda';
-    icon.innerHTML = '<i class="fa-solid fa-hourglass-start"></i>';
-    icon.style.background = 'var(--warning-bg)';
-    icon.style.color = 'var(--warning)';
-    title.textContent = 'Nenhuma renda lançada neste mês';
-    desc.textContent = 'Acesse a aba Ganhos do Mês para inserir seu salário ou receitas.';
-    return;
+    return {
+      badge: 'Sem Renda', badgeClass: 'badge badge-warning',
+      icon: 'fa-hourglass-start', iconBackground: 'var(--warning-bg)', iconColor: 'var(--warning)',
+      title: 'Nenhuma renda lançada neste mês',
+      description: 'Acesse a aba Ganhos do Mês para inserir seu salário ou receitas.'
+    };
   }
-
   if (balance < 0) {
-    badge.className = 'badge badge-danger';
-    badge.textContent = 'Alerta: Déficit';
-    icon.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
-    icon.style.background = 'var(--danger-bg)';
-    icon.style.color = 'var(--danger)';
-    title.textContent = 'Seus gastos superaram seus ganhos!';
-    desc.textContent = `Você está com saldo negativo de ${formatCurrency(Math.abs(balance))}. Priorize pagar as dívidas essenciais para evitar juros.`;
-  } else if (pctFixed > 55) {
-    badge.className = 'badge badge-warning';
-    badge.textContent = 'Fixos Altos';
-    icon.innerHTML = '<i class="fa-solid fa-shield-halved"></i>';
-    icon.style.background = 'var(--warning-bg)';
-    icon.style.color = 'var(--warning)';
-    title.textContent = 'Atenção com as despesas fixas e parcelas';
-    desc.textContent = `Seus gastos fixos consomem ${pctFixed}% da renda (o ideal recomendado é até 50%). Revise suas assinaturas e contas fixas para equilibrar seu orçamento.`;
-  } else if (pctSave >= 20) {
-    badge.className = 'badge badge-success';
-    badge.textContent = 'Excelente';
-    icon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
-    icon.style.background = 'var(--success-bg)';
-    icon.style.color = 'var(--success)';
-    title.textContent = 'Finanças sob total controle 🎉';
-    desc.textContent = `Você tem ${pctSave}% (${formatCurrency(balance)}) disponível para construir sua reserva de emergência e investir!`;
-  } else {
-    badge.className = 'badge badge-success';
-    badge.textContent = 'Equilibrado';
-    icon.innerHTML = '<i class="fa-solid fa-scale-balanced"></i>';
-    icon.style.background = 'var(--primary-bg)';
-    icon.style.color = 'var(--primary)';
-    title.textContent = 'Orçamento mensal saudável';
-    desc.textContent = `Contas em dia com sobra positiva de ${formatCurrency(balance)} garantindo sua tranquilidade financeira.`;
+    return {
+      badge: 'Alerta: Déficit', badgeClass: 'badge badge-danger',
+      icon: 'fa-triangle-exclamation', iconBackground: 'var(--danger-bg)', iconColor: 'var(--danger)',
+      title: 'Seus gastos superaram seus ganhos!',
+      description: `Você está com saldo negativo de ${formatCurrency(Math.abs(balance))}. Priorize pagar as dívidas essenciais para evitar juros.`
+    };
   }
+  if (pctFixed > 55) {
+    return {
+      badge: 'Fixos Altos', badgeClass: 'badge badge-warning',
+      icon: 'fa-shield-halved', iconBackground: 'var(--warning-bg)', iconColor: 'var(--warning)',
+      title: 'Atenção com as despesas fixas e parcelas',
+      description: `Seus gastos fixos consomem ${pctFixed}% da renda (ideal até 50%; alerta acima de 55%). Revise suas assinaturas e contas fixas para equilibrar seu orçamento.`
+    };
+  }
+  if (pctVar > 30) {
+    return {
+      badge: 'Variáveis Altos', badgeClass: 'badge badge-warning',
+      icon: 'fa-cart-shopping', iconBackground: 'var(--warning-bg)', iconColor: 'var(--warning)',
+      title: 'Atenção aos gastos variáveis',
+      description: `Seus gastos variáveis consomem ${pctVar}% da renda, acima do limite recomendado de 30%. Revise gastos do dia a dia e lazer.`
+    };
+  }
+  if (pctSave >= 20) {
+    return {
+      badge: 'Excelente', badgeClass: 'badge badge-success',
+      icon: 'fa-circle-check', iconBackground: 'var(--success-bg)', iconColor: 'var(--success)',
+      title: 'Finanças sob total controle 🎉',
+      description: `Você tem ${pctSave}% (${formatCurrency(balance)}) disponível para construir sua reserva de emergência e investir!`
+    };
+  }
+  return {
+    badge: 'Equilibrado', badgeClass: 'badge badge-success',
+    icon: 'fa-scale-balanced', iconBackground: 'var(--primary-bg)', iconColor: 'var(--primary)',
+    title: 'Orçamento mensal saudável',
+    description: `Contas em dia com sobra positiva de ${formatCurrency(balance)} garantindo sua tranquilidade financeira.`
+  };
 }
+
+function renderHealthDiagnostic(income, balance, pctFixed, pctVar, pctSave) {
+  const icon = document.getElementById('healthStatusIcon');
+  const title = document.getElementById('healthTitle');
+  const desc = document.getElementById('healthDescription');
+  const badge = document.getElementById('healthBadge');
+  const diagnostic = getHealthDiagnostic(income, balance, pctFixed, pctVar, pctSave);
+
+  document.getElementById('lblPctFixed').textContent = `${pctFixed}%`;
+  document.getElementById('lblPctVar').textContent = `${pctVar}%`;
+  document.getElementById('lblPctSave').textContent = `${pctSave}%`;
+  document.getElementById('barFixed').style.width = `${Math.min(100, pctFixed)}%`;
+  document.getElementById('barVariable').style.width = `${Math.min(100, pctVar)}%`;
+  document.getElementById('barSavings').style.width = `${Math.min(100, pctSave)}%`;
+
+  badge.className = diagnostic.badgeClass;
+  badge.textContent = diagnostic.badge;
+  icon.innerHTML = `<i class="fa-solid ${diagnostic.icon}"></i>`;
+  icon.style.background = diagnostic.iconBackground;
+  icon.style.color = diagnostic.iconColor;
+  title.textContent = diagnostic.title;
+  desc.textContent = diagnostic.description;
+}
+
+window.GastoProReportHelpers = {
+  getHealthDiagnostic,
+  getDailyBudgetInfo
+};
 
 // ================================================================
 // 7. CENTRO DE DÍVIDAS & PREVISÃO DE QUITAÇÃO
@@ -406,13 +443,7 @@ function renderHealthDiagnostic(income, balance, pctFixed, pctVar, pctSave) {
  *
  * @param {string} currentYm - Mês atual no formato "YYYY-MM".
  */
-function renderDebtCenter(currentYm) {
-  const container = document.getElementById('debtCardsGrid');
-  const totalRemainingEl = document.getElementById('totalDebtRemaining');
-  if (!container) return;
-
-  const templates = FinanceData.getTemplates();
-  // Identifica dívidas ou parcelamentos definidos pelo usuário
+function getDebtCenterData(currentYm, templates = FinanceData.getTemplates()) {
   const debtTemplates = templates.filter(t => {
     if (t.isDebt || t.endMonth) return true;
     const cat = (t.category || '').toLowerCase();
@@ -425,7 +456,62 @@ function renderDebtCenter(currentYm) {
            desc.includes('dívida') || desc.includes('divida');
   });
 
-  if (debtTemplates.length === 0) {
+  const items = debtTemplates.map(tpl => {
+    const paidMonthsCount = tpl.paidMonths ? Object.values(tpl.paidMonths).filter(Boolean).length : 0;
+    let totalMonths = 0;
+    let remainingMonths = 0;
+
+    if (tpl.endMonth && tpl.startMonth) {
+      const [sYear, sMonth] = tpl.startMonth.split('-').map(Number);
+      const [eYear, eMonth] = tpl.endMonth.split('-').map(Number);
+      totalMonths = Math.max(1, (eYear - sYear) * 12 + (eMonth - sMonth) + 1);
+      // Regra atual: parcelas restantes = total do período menos meses marcados como pagos,
+      // mesmo que o mês final já tenha passado; o atraso não baixa parcelas automaticamente.
+      remainingMonths = Math.max(0, totalMonths - paidMonthsCount);
+    } else {
+      totalMonths = paidMonthsCount + (tpl.paidMonths && tpl.paidMonths[currentYm] ? 0 : 1);
+      remainingMonths = tpl.paidMonths && tpl.paidMonths[currentYm] ? 0 : 1;
+    }
+
+    const remainingAmount = remainingMonths * tpl.amount;
+    const paidAmount = paidMonthsCount * tpl.amount;
+    const totalProgressAmount = remainingAmount + paidAmount || tpl.amount * totalMonths;
+    const isFinished = remainingMonths === 0;
+    const isOverdue = Boolean(tpl.endMonth && currentYm > tpl.endMonth && remainingMonths > 0);
+    return {
+      id: tpl.id,
+      description: tpl.desc,
+      category: tpl.category || 'Empréstimo',
+      amount: tpl.amount,
+      paidMonthsCount,
+      totalMonths,
+      remainingMonths,
+      remainingAmount,
+      paidAmount,
+      percentagePaid: totalProgressAmount > 0
+        ? Math.min(100, Math.round((paidAmount / totalProgressAmount) * 100))
+        : 0,
+      isFinished: Boolean(isFinished),
+      isOverdue,
+      forecastMonth: tpl.endMonth || null
+    };
+  });
+  return {
+    items,
+    totalRemaining: items.reduce((sum, item) => sum + item.remainingAmount, 0)
+  };
+}
+
+window.GastoProReportHelpers.getDebtCenterData = getDebtCenterData;
+
+function renderDebtCenter(currentYm) {
+  const container = document.getElementById('debtCardsGrid');
+  const totalRemainingEl = document.getElementById('totalDebtRemaining');
+  if (!container) return;
+
+  const debtData = getDebtCenterData(currentYm);
+
+  if (debtData.items.length === 0) {
     container.innerHTML = `
       <div class="empty-state-debt" style="grid-column: 1 / -1; text-align: center; padding: 2rem 1rem; color: var(--text-muted); opacity: 0.85;">
         <i class="fa-solid fa-flag-checkered" style="font-size: 2rem; margin-bottom: 0.6rem; opacity: 0.4;"></i>
@@ -437,47 +523,21 @@ function renderDebtCenter(currentYm) {
     return;
   }
 
-  let overallRemaining = 0;
-
-  const cardsHtml = debtTemplates.map(tpl => {
-    const paidMonthsCount = tpl.paidMonths ? Object.values(tpl.paidMonths).filter(Boolean).length : 0;
-    
-    // Se o usuário especificou endMonth, calcula o total de parcelas
-    let totalMonths = 0;
-    let remainingMonths = 0;
-    
-    if (tpl.endMonth && tpl.startMonth) {
-      const [sYear, sMonth] = tpl.startMonth.split('-').map(Number);
-      const [eYear, eMonth] = tpl.endMonth.split('-').map(Number);
-      totalMonths = Math.max(1, (eYear - sYear) * 12 + (eMonth - sMonth) + 1);
-      remainingMonths = Math.max(0, totalMonths - paidMonthsCount);
-    } else {
-      totalMonths = paidMonthsCount + (tpl.paidMonths && tpl.paidMonths[currentYm] ? 0 : 1);
-      remainingMonths = tpl.paidMonths && tpl.paidMonths[currentYm] ? 0 : 1;
-    }
-
-    const remainingAmount = remainingMonths * tpl.amount;
-    const paidAmount = paidMonthsCount * tpl.amount;
-    const totalProg = remainingAmount + paidAmount || (tpl.amount * totalMonths);
-    overallRemaining += remainingAmount;
-
-    const pctPaid = totalProg > 0 ? Math.min(100, Math.round((paidAmount / totalProg) * 100)) : 0;
-    const isFinished = remainingMonths === 0 || (tpl.endMonth && currentYm > tpl.endMonth);
-
+  const cardsHtml = debtData.items.map(debt => {
     return `
       <div class="debt-card-item">
         <div class="debt-card-header">
-          <span>${escapeHtml(tpl.desc)}</span>
-          <span class="debt-status-tag ${isFinished ? 'badge-success' : 'badge-warning'}">
-            ${isFinished ? '🎉 Quitada!' : `${remainingMonths}x restantes`}
+          <span>${escapeHtml(debt.description)}</span>
+          <span class="debt-status-tag ${debt.isFinished ? 'badge-success' : debt.isOverdue ? 'badge-danger' : 'badge-warning'}">
+            ${debt.isFinished ? '🎉 Quitada!' : debt.isOverdue ? `${debt.remainingMonths} parcela(s) em aberto` : `${debt.remainingMonths}x restantes`}
           </span>
         </div>
         <div class="debt-progress-bg">
-          <div class="debt-progress-fill" style="width: ${pctPaid}%; background: ${isFinished ? 'var(--success)' : 'var(--warning)'};"></div>
+          <div class="debt-progress-fill" style="width: ${debt.percentagePaid}%; background: ${debt.isFinished ? 'var(--success)' : 'var(--warning)'};"></div>
         </div>
         <div class="debt-card-meta">
-          <span>Resta: <strong>${formatCurrency(remainingAmount)}</strong></span>
-          <span>${tpl.endMonth ? `Previsão: ${tpl.endMonth.split('-').reverse().join('/')}` : 'Gasto Ativo'}</span>
+          <span>Resta: <strong>${formatCurrency(debt.remainingAmount)}</strong></span>
+          <span>${debt.forecastMonth ? `Previsão: ${escapeHtml(debt.forecastMonth.split('-').reverse().join('/'))}` : 'Gasto Ativo'}</span>
         </div>
       </div>
     `;
@@ -485,7 +545,7 @@ function renderDebtCenter(currentYm) {
 
   container.innerHTML = cardsHtml;
   if (totalRemainingEl) {
-    totalRemainingEl.textContent = formatCurrency(overallRemaining);
+    totalRemainingEl.textContent = formatCurrency(debtData.totalRemaining);
   }
 }
 
@@ -508,14 +568,21 @@ function renderCategoryChart(fixed, variables) {
   const emptyMsg = document.getElementById('chartEmptyMessage');
   if (!ctx) return;
 
-  const catTotals = {};
+  const catTotals = new Map();
+  const knownCategories = [...GastoProCategories.EXPENSE, ...GastoProCategories.INCOME];
   [...fixed, ...variables].forEach(item => {
     const cat = item.type === 'fixed' ? (item.category || item.desc) : item.category;
-    catTotals[cat] = (catTotals[cat] || 0) + item.amount;
+    const category = knownCategories.find(value =>
+      GastoProCategories.normalize(value) === GastoProCategories.normalize(cat)
+    ) || String(cat || 'Outros').trim();
+    const key = GastoProCategories.normalize(category);
+    const current = catTotals.get(key) || { label: category, amount: 0 };
+    current.amount += Number(item.amount) || 0;
+    catTotals.set(key, current);
   });
 
-  const labels = Object.keys(catTotals);
-  const data = Object.values(catTotals);
+  const labels = [...catTotals.values()].map(item => item.label);
+  const data = [...catTotals.values()].map(item => item.amount);
 
   if (labels.length === 0) {
     if (state.chartInstance) {
@@ -624,7 +691,7 @@ function renderIncomesView(incomes, totalIncome) {
           <div class="card-item-title">${escapeHtml(item.desc)}</div>
           <div class="card-item-meta">
             <span class="tag-badge">${escapeHtml(item.category || 'Renda')}</span>
-            <span><i class="fa-regular fa-calendar"></i> ${formatDate(item.date)}</span>
+            <span><i class="fa-regular fa-calendar"></i> ${escapeHtml(formatDate(item.date))}</span>
           </div>
         </div>
       </div>
@@ -632,10 +699,10 @@ function renderIncomesView(incomes, totalIncome) {
       <div class="card-item-right">
         <div class="card-item-amount text-success">+ ${formatCurrency(item.amount)}</div>
         <div class="card-item-actions">
-          <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Ganho">
+          <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Ganho" aria-label="Editar ganho ${escapeHtml(item.desc)}">
             <i class="fa-solid fa-pen"></i>
           </button>
-          <button class="btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}" title="Excluir Ganho">
+          <button class="btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}" title="Excluir Ganho" aria-label="Excluir ganho ${escapeHtml(item.desc)}">
             <i class="fa-solid fa-trash-can"></i>
           </button>
         </div>
@@ -714,7 +781,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
                   <i class="fa-solid ${item.active ? 'fa-circle-check' : 'fa-circle-pause'}"></i> ${item.active ? 'Ativo' : 'Inativo'}
                 </button>
               ` : ''}
-              <span><i class="fa-regular fa-calendar"></i> ${formatDate(item.date)}</span>
+              <span><i class="fa-regular fa-calendar"></i> ${escapeHtml(formatDate(item.date))}</span>
             </div>
           </div>
         </div>
@@ -731,10 +798,10 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
           </div>
 
           <div class="card-item-actions">
-            <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Informação">
+            <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Informação" aria-label="Editar gasto ${escapeHtml(item.desc)}">
               <i class="fa-solid fa-pen"></i>
             </button>
-            <button class="btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}" title="Excluir Gasto">
+            <button class="btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}" title="Excluir Gasto" aria-label="Excluir gasto ${escapeHtml(item.desc)}">
               <i class="fa-solid fa-trash-can"></i>
             </button>
           </div>
@@ -766,7 +833,17 @@ window.openEditModal = function(id) {
   document.getElementById('editItemId').value = item.id;
   document.getElementById('editDesc').value = item.desc || '';
   document.getElementById('editAmount').value = item.amount || '';
-  document.getElementById('editCategory').value = item.category || '';
+  const editCategory = document.getElementById('editCategory');
+  const categoryValue = item.category || '';
+  editCategory.querySelectorAll('[data-legacy="true"]').forEach(option => option.remove());
+  if (categoryValue && !Array.from(editCategory.options).some(option => option.value === categoryValue)) {
+    const legacyOption = document.createElement('option');
+    legacyOption.value = categoryValue;
+    legacyOption.textContent = categoryValue;
+    legacyOption.dataset.legacy = 'true';
+    editCategory.appendChild(legacyOption);
+  }
+  editCategory.value = categoryValue;
 
   const editTypeSelect = document.getElementById('editType');
   if (editTypeSelect) {
@@ -822,7 +899,10 @@ function closeEditModal() {
  * @param {string}   [options.okBtnClass]  - Classe CSS do botão OK.
  * @param {Function} options.onConfirm  - Callback executado ao confirmar.
  */
-function showConfirm({ title, message, iconClass, okLabel, okBtnClass, onConfirm }) {
+function showConfirm({
+  title, message, iconClass, okLabel, okBtnClass, onConfirm,
+  onBackup, secondaryLabel, onSecondary
+}) {
   const modal = document.getElementById('confirmModal');
   const iconEl = document.getElementById('confirmIcon');
   const iconWrapper = document.getElementById('confirmIconWrapper');
@@ -830,6 +910,7 @@ function showConfirm({ title, message, iconClass, okLabel, okBtnClass, onConfirm
   const msgEl = document.getElementById('confirmMessage');
   const okBtn = document.getElementById('confirmOkBtn');
   const cancelBtn = document.getElementById('confirmCancelBtn');
+  const backupBtn = document.getElementById('confirmBackupBtn');
 
   iconEl.className = iconClass || 'fa-solid fa-triangle-exclamation';
   iconWrapper.className = 'confirm-icon-wrapper confirm-icon-danger';
@@ -839,19 +920,35 @@ function showConfirm({ title, message, iconClass, okLabel, okBtnClass, onConfirm
   // Clona os botões para remover listeners antigos e evitar acúmulo
   const newOk = okBtn.cloneNode(true);
   const newCancel = cancelBtn.cloneNode(true);
+  const newBackup = backupBtn ? backupBtn.cloneNode(true) : null;
   okBtn.parentNode.replaceChild(newOk, okBtn);
   cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+  if (backupBtn && newBackup) {
+    backupBtn.parentNode.replaceChild(newBackup, backupBtn);
+    newBackup.hidden = !onBackup && !onSecondary;
+    newBackup.textContent = secondaryLabel || 'Baixar backup JSON';
+  }
 
   newOk.textContent = okLabel || 'Confirmar';
   newOk.className = okBtnClass || 'btn-danger';
 
-  newOk.addEventListener('click', () => {
+  newOk.addEventListener('click', async () => {
     modal.classList.remove('active');
-    onConfirm();
+    await onConfirm();
   });
   newCancel.addEventListener('click', () => {
     modal.classList.remove('active');
   });
+  if (newBackup && (onBackup || onSecondary)) {
+    newBackup.addEventListener('click', async () => {
+      if (onSecondary) {
+        modal.classList.remove('active');
+        await onSecondary();
+      } else {
+        onBackup();
+      }
+    });
+  }
 
   modal.classList.add('active');
 }
@@ -915,7 +1012,7 @@ window.toggleActiveStatus = function(id) {
  * @returns {string} Data atual no formato "YYYY-MM-DD".
  */
 function getTodayString() {
-  return new Date().toISOString().split('T')[0];
+  return getLocalDateString();
 }
 
 /**
@@ -951,10 +1048,77 @@ function formatDate(dateStr) {
   return dateStr;
 }
 
+function isSupportedAvatarType(type) {
+  return ['image/jpeg', 'image/png', 'image/webp'].includes(type);
+}
+
+function resizeAvatarToJpeg(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const scale = Math.min(1, 256 / image.width, 256 / image.height);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Não foi possível processar a imagem.');
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      } catch (error) {
+        reject(error);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Não foi possível abrir a imagem.'));
+    };
+    image.src = objectUrl;
+  });
+}
+
 // ================================================================
 // 14. MINI CALENDÁRIO POPOVER (definido dentro do DOMContentLoaded)
 // 15. EVENT LISTENERS & INICIALIZAÇÃO DO APP
 // ================================================================
+
+window.GastoProKeyboardPanels = {
+  bind({ panel, trigger, isOpen, close, trapFocus = false }) {
+    document.addEventListener('keydown', event => {
+      if (event.defaultPrevented || !isOpen()) return;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+        if (trigger) trigger.focus();
+        return;
+      }
+
+      if (!trapFocus || event.key !== 'Tab') return;
+      const focusable = [...panel.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )].filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+  }
+};
 
 /**
  * Bootstrap principal do app.
@@ -977,6 +1141,249 @@ function formatDate(dateStr) {
  */
 document.addEventListener('DOMContentLoaded', () => {
   if (!document.getElementById('prevMonthBtn')) return;
+
+  const categoryIcons = {
+    'Moradia': '🏠', 'Contas': '💡', 'Saúde': '🏥', 'Esporte': '🥋',
+    'Cartão de crédito': '💳', 'Alimentação': '🍽️', 'Mercado': '🛒',
+    'Transporte': '🚗', 'Educação': '🎓', 'Empréstimo': '💳',
+    'Parcelamento': '📦', 'Assinaturas': '📱', 'Compras': '🛍️',
+    'Vestuário': '👕', 'Lazer': '🍿', 'Outros': '📦',
+    'Salário': '💼', 'Adiantamento': '📅', 'Extra': '✨',
+    'Investimentos': '📈', 'Receita': '💵'
+  };
+  const categoryOptions = (select, categories, placeholder) => {
+    if (!select) return;
+    while (select.firstChild) select.removeChild(select.firstChild);
+    if (placeholder) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = placeholder;
+      select.appendChild(option);
+    }
+    categories.forEach(category => {
+      const option = document.createElement('option');
+      option.value = category;
+      option.textContent = `${categoryIcons[category] || '📦'} ${category}`;
+      select.appendChild(option);
+    });
+  };
+  const categoryCatalog = window.GastoProCategories;
+  categoryOptions(document.getElementById('expenseCategory'), categoryCatalog.EXPENSE);
+  categoryOptions(document.getElementById('incomeCategory'), categoryCatalog.INCOME);
+  categoryOptions(document.getElementById('goalCategorySelect'), categoryCatalog.EXPENSE, 'Selecione a categoria...');
+  categoryOptions(document.getElementById('editCategory'), [...categoryCatalog.EXPENSE, ...categoryCatalog.INCOME]);
+
+  const reportModal = document.getElementById('reportModal');
+  const reportDialog = reportModal && reportModal.querySelector('[role="dialog"]');
+  const reportForm = document.getElementById('reportForm');
+  const reportType = document.getElementById('reportPeriodType');
+  const reportFrom = document.getElementById('reportFrom');
+  const reportTo = document.getElementById('reportTo');
+  const reportToGroup = document.getElementById('reportToGroup');
+  const reportFromLabel = document.getElementById('reportFromLabel');
+  const reportError = document.getElementById('reportError');
+  const generateReportBtn = document.getElementById('generateReportBtn');
+  let reportGenerationInProgress = false;
+  let reportScriptPromises = {};
+  let reportPreviousFocus = null;
+
+  function updateReportPeriodFields() {
+    const type = reportType.value;
+    reportToGroup.hidden = type !== 'range';
+    reportTo.required = type === 'range';
+    reportFromLabel.textContent = type === 'year' ? 'Ano' : 'Mês';
+    reportFrom.type = type === 'year' ? 'number' : 'month';
+    if (type === 'year') {
+      reportFrom.min = '2000';
+      reportFrom.max = '2100';
+      reportFrom.step = '1';
+      reportFrom.value = reportFrom.value.slice(0, 4) || String(new Date().getFullYear());
+    } else {
+      reportFrom.removeAttribute('min');
+      reportFrom.removeAttribute('max');
+      reportFrom.removeAttribute('step');
+      if (!/^\d{4}-\d{2}$/.test(reportFrom.value)) {
+        reportFrom.value = getLocalDateString().slice(0, 7);
+      }
+    }
+  }
+
+  function openReportModal() {
+    if (!reportModal) return;
+    reportPreviousFocus = document.activeElement;
+    reportError.hidden = true;
+    updateReportPeriodFields();
+    reportModal.classList.add('active');
+    reportModal.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => reportDialog.focus());
+  }
+
+  function closeReportModal() {
+    if (!reportModal) return;
+    reportModal.classList.remove('active');
+    reportModal.setAttribute('aria-hidden', 'true');
+    if (reportPreviousFocus && typeof reportPreviousFocus.focus === 'function') {
+      reportPreviousFocus.focus();
+    }
+  }
+
+  function loadReportScript(src) {
+    if (reportScriptPromises[src]) return reportScriptPromises[src];
+    reportScriptPromises[src] = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`Não foi possível carregar ${src}.`));
+      document.head.appendChild(script);
+    });
+    return reportScriptPromises[src];
+  }
+
+  function downloadReportFile(blob, fileName) {
+    let url;
+    let link;
+    try {
+      url = URL.createObjectURL(blob);
+      link = document.createElement('a');
+      if (!('download' in link)) {
+        throw new Error('Este navegador não oferece download direto por link.');
+      }
+      link.href = url;
+      link.download = fileName;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return true;
+    } catch (error) {
+      if (url) URL.revokeObjectURL(url);
+      console.warn('[GastoPro] O download do relatório não pôde ser iniciado:', error);
+      return false;
+    } finally {
+      if (link && link.isConnected) link.remove();
+    }
+  }
+
+  async function deliverReport(result) {
+    if (typeof navigator.canShare === 'function' &&
+      typeof navigator.share === 'function' && typeof File === 'function') {
+      try {
+        const file = new File([result.blob], result.fileName, { type: 'application/pdf' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'Relatório financeiro GastoPro',
+            text: 'Relatório financeiro em PDF'
+          });
+          return 'shared';
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') return 'cancelled';
+        console.warn('[GastoPro] O compartilhamento do relatório falhou:', error);
+      }
+    }
+
+    if (downloadReportFile(result.blob, result.fileName)) return 'downloaded';
+    const url = URL.createObjectURL(result.blob);
+    try {
+      const opened = window.open(url, '_blank');
+      if (!opened) throw new Error('O navegador bloqueou a abertura do PDF.');
+      opened.opener = null;
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return 'opened';
+    } catch (error) {
+      URL.revokeObjectURL(url);
+      throw new Error('Não foi possível iniciar o download ou abrir o PDF. Tente novamente.');
+    }
+  }
+
+  if (reportType) reportType.addEventListener('change', updateReportPeriodFields);
+  document.getElementById('openReportModalBtn')?.addEventListener('click', openReportModal);
+  document.getElementById('closeReportModalBtn')?.addEventListener('click', closeReportModal);
+  document.getElementById('cancelReportBtn')?.addEventListener('click', closeReportModal);
+  if (reportModal) {
+    reportModal.addEventListener('click', event => {
+      if (event.target === reportModal) closeReportModal();
+    });
+    reportModal.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeReportModal();
+      } else if (event.key === 'Tab') {
+        const focusable = [...reportDialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled])')]
+          .filter(element => !element.closest('[hidden]'));
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    });
+  }
+  if (reportForm) {
+    reportForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (reportGenerationInProgress) return;
+      reportGenerationInProgress = true;
+      generateReportBtn.disabled = true;
+      generateReportBtn.textContent = 'Gerando...';
+      reportError.hidden = true;
+      try {
+        await loadReportScript('js/vendor/jspdf.umd.min.js');
+        await loadReportScript('js/vendor/jspdf.plugin.autotable.min.js');
+        const type = reportType.value;
+        const fromValue = reportFrom.value;
+        const toValue = reportTo.value;
+        let from;
+        let to;
+        if (type === 'year') {
+          if (!/^\d{4}$/.test(fromValue)) throw new Error('Informe um ano válido.');
+          from = `${fromValue}-01`;
+          to = `${fromValue}-12`;
+        } else if (type === 'range') {
+          from = fromValue;
+          to = toValue;
+        } else {
+          from = fromValue;
+          to = fromValue;
+        }
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(from) ||
+          !/^\d{4}-(0[1-9]|1[0-2])$/.test(to) || from > to) {
+          throw new Error('Confira o período informado.');
+        }
+        const data = buildReportData({
+          type, from, to,
+          includeDetails: document.getElementById('reportIncludeDetails').checked
+        });
+        const blob = await renderReportPDF(data, { download: false });
+        const result = { blob, fileName: getReportFileName(data) };
+        const delivery = await deliverReport(result);
+        if (delivery === 'opened') {
+          reportError.textContent = 'O relatório foi aberto em uma nova aba porque o download automático não pôde ser iniciado.';
+          reportError.hidden = false;
+        } else if (delivery !== 'cancelled') {
+          closeReportModal();
+        }
+      } catch (error) {
+        console.error('[GastoPro] Falha ao gerar ou entregar o relatório:', error);
+        reportError.textContent = 'Não foi possível gerar ou baixar o relatório. Confira sua conexão e tente novamente.';
+        reportError.hidden = false;
+      } finally {
+        reportGenerationInProgress = false;
+        generateReportBtn.disabled = false;
+        generateReportBtn.textContent = 'Gerar PDF';
+      }
+    });
+  }
+  window.addEventListener('online', () => {
+    FinanceData.flushPendingSync().catch(error => {
+      console.error('[GastoPro] Falha ao retomar sincronização:', error);
+    });
+  });
 
   // ── Navegação e ações delegadas ───────────────────────────────
   document.addEventListener('click', (e) => {
@@ -1011,6 +1418,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  document.addEventListener('keydown', (e) => {
+    if (!(e.target instanceof Element) || !['Enter', ' '].includes(e.key)) return;
+    const gotoElement = e.target.closest('[data-goto][role="button"]');
+    if (!gotoElement) return;
+    e.preventDefault();
+    switchToView(gotoElement.dataset.goto);
+  });
+
   document.addEventListener('change', (e) => {
     if (!(e.target instanceof Element)) return;
     const paidInput = e.target.closest('[data-action="toggle-paid"]');
@@ -1036,17 +1451,33 @@ document.addEventListener('DOMContentLoaded', () => {
   function openMobileSidebar() {
     if (sidebarEl)        sidebarEl.classList.add('open');
     if (sidebarOverlayEl) sidebarOverlayEl.classList.add('active');
+    if (menuToggleBtn) {
+      menuToggleBtn.setAttribute('aria-expanded', 'true');
+      menuToggleBtn.setAttribute('aria-label', 'Fechar menu de navegação');
+    }
   }
 
   /** Fecha o menu lateral em dispositivos móveis. */
   function closeMobileSidebar() {
     if (sidebarEl)        sidebarEl.classList.remove('open');
     if (sidebarOverlayEl) sidebarOverlayEl.classList.remove('active');
+    if (menuToggleBtn) {
+      menuToggleBtn.setAttribute('aria-expanded', 'false');
+      menuToggleBtn.setAttribute('aria-label', 'Abrir menu de navegação');
+    }
   }
 
   if (menuToggleBtn)    menuToggleBtn.addEventListener('click', openMobileSidebar);
   if (closeSidebarBtn)  closeSidebarBtn.addEventListener('click', closeMobileSidebar);
   if (sidebarOverlayEl) sidebarOverlayEl.addEventListener('click', closeMobileSidebar);
+  if (sidebarEl) {
+    window.GastoProKeyboardPanels.bind({
+      panel: sidebarEl,
+      trigger: menuToggleBtn,
+      isOpen: () => sidebarEl.classList.contains('open'),
+      close: closeMobileSidebar
+    });
+  }
 
   // ── 3. Navegação de Meses (setas prev/next) ───────────────────
   // Ao chegar no limite (jan/dez) vira para o ano anterior/seguinte
@@ -1141,6 +1572,7 @@ document.addEventListener('DOMContentLoaded', () => {
       pickerYear = state.currentYear; // Inicia no ano do mês ativo
       renderMonthPicker();
       monthPickerPopover.classList.add('open');
+      if (monthPickerTrigger) monthPickerTrigger.setAttribute('aria-expanded', 'true');
       if (monthPickerTrigger) monthPickerTrigger.classList.add('active');
     }
   }
@@ -1148,7 +1580,17 @@ document.addEventListener('DOMContentLoaded', () => {
   /** Fecha o popover de calendário. */
   function closeMonthPicker() {
     if (monthPickerPopover) monthPickerPopover.classList.remove('open');
+    if (monthPickerTrigger) monthPickerTrigger.setAttribute('aria-expanded', 'false');
     if (monthPickerTrigger) monthPickerTrigger.classList.remove('active');
+  }
+
+  if (monthPickerPopover) {
+    window.GastoProKeyboardPanels.bind({
+      panel: monthPickerPopover,
+      trigger: monthPickerTrigger,
+      isOpen: () => monthPickerPopover.classList.contains('open'),
+      close: closeMonthPicker
+    });
   }
 
   if (monthPickerTrigger) {
@@ -1390,19 +1832,85 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Backup JSON exportado com sucesso!');
   });
 
+  const restoreBackupBtn = document.getElementById('restoreBackupBtn');
+  const restoreBackupFile = document.getElementById('restoreBackupFile');
+  if (restoreBackupBtn && restoreBackupFile) {
+    restoreBackupBtn.addEventListener('click', () => restoreBackupFile.click());
+    restoreBackupFile.addEventListener('change', async () => {
+      const file = restoreBackupFile.files && restoreBackupFile.files[0];
+      restoreBackupFile.value = '';
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) {
+        showToast('O backup excede o limite de 5 MB.');
+        return;
+      }
+
+      try {
+        const text = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(reader.error || new Error('Falha ao ler o arquivo.'));
+          reader.readAsText(file);
+        });
+        const preview = GastoProBackupHelpers.validate(text);
+        if (preview.error) {
+          showToast(preview.error);
+          return;
+        }
+
+        const summary = `Backup com ${preview.entries.length} lançamentos, ${preview.templates.length} gastos fixos e ${preview.goals.length} metas. Escolha como restaurar.`;
+        const restore = async mode => {
+          const result = await FinanceData.importJSON(text, mode);
+          if (!result.success) {
+            showToast(result.error || 'Não foi possível restaurar o backup.');
+            return;
+          }
+          renderAll();
+          renderUserProfile();
+          showToast(mode === 'merge' ? 'Backup mesclado com sucesso.' : 'Backup restaurado; os dados anteriores foram substituídos.');
+        };
+        showConfirm({
+          title: 'Prévia do backup',
+          message: summary,
+          iconClass: 'fa-solid fa-file-import',
+          okLabel: 'Mesclar',
+          okBtnClass: 'btn-primary',
+          secondaryLabel: 'Substituir tudo',
+          onConfirm: () => restore('merge'),
+          onSecondary: () => restore('replace')
+        });
+      } catch (error) {
+        console.error('[GastoPro] Falha ao ler backup:', error);
+        showToast('Não foi possível ler o arquivo de backup.');
+      }
+    });
+  }
+
   // Exige confirmação antes de apagar todos os dados (ação irreversível)
   document.getElementById('clearDataBtn').addEventListener('click', () => {
+    const profile = FinanceData.getProfile();
+    const hasCloudAccount = Boolean(profile.userId && profile.email);
     showConfirm({
       title:    'Zerar todos os dados?',
-      message:  'Todos os seus lançamentos serão apagados permanentemente. Esta ação não pode ser desfeita!',
+      message:  hasCloudAccount
+        ? 'Todos os lançamentos e metas serão apagados deste aparelho e da nuvem. Isso também apaga seus dados sincronizados na nuvem. Baixe um backup antes, se desejar.'
+        : 'Todos os lançamentos e metas serão apagados somente deste aparelho. Baixe um backup antes, se desejar.',
       iconClass:'fa-solid fa-trash-can',
       okLabel:  'Sim, zerar tudo',
-      onConfirm: () => {
-        FinanceData.clearAll();
-        FinanceData.saveProfile({ name: '', avatar: null });
+      onBackup: () => {
+        FinanceData.exportJSON();
+        showToast('Backup JSON exportado.');
+      },
+      onConfirm: async () => {
+        const result = await FinanceData.clearAll();
+        FinanceData.saveProfile({ ...profile, name: '', avatar: null });
         closeProfileDrawer();
         renderUserProfile();
         renderAll();
+        if (!result.success) {
+          showToast('Reset local concluído; a exclusão na nuvem ficou pendente.');
+          return;
+        }
         showToast('Todos os dados foram resetados com sucesso!');
       }
     });
@@ -1419,20 +1927,38 @@ document.addEventListener('DOMContentLoaded', () => {
     if (profileDrawer && profileDrawerOverlay) {
       profileDrawer.classList.add('open');
       profileDrawerOverlay.classList.add('active');
+      profileDrawer.removeAttribute('inert');
+      profileDrawer.setAttribute('aria-hidden', 'false');
+      if (userMenuBtn) userMenuBtn.setAttribute('aria-expanded', 'true');
+      if (closeDrawerBtn) closeDrawerBtn.focus();
     }
   }
 
   /** Fecha o painel de perfil deslizando-o para fora da tela. */
   function closeProfileDrawer() {
     if (profileDrawer && profileDrawerOverlay) {
+      const returnFocus = profileDrawer.contains(document.activeElement);
       profileDrawer.classList.remove('open');
       profileDrawerOverlay.classList.remove('active');
+      profileDrawer.setAttribute('aria-hidden', 'true');
+      profileDrawer.setAttribute('inert', '');
+      if (userMenuBtn) userMenuBtn.setAttribute('aria-expanded', 'false');
+      if (returnFocus && userMenuBtn) userMenuBtn.focus();
     }
   }
 
   if (userMenuBtn)          userMenuBtn.addEventListener('click', openProfileDrawer);
   if (closeDrawerBtn)       closeDrawerBtn.addEventListener('click', closeProfileDrawer);
   if (profileDrawerOverlay) profileDrawerOverlay.addEventListener('click', closeProfileDrawer);
+  if (profileDrawer) {
+    window.GastoProKeyboardPanels.bind({
+      panel: profileDrawer,
+      trigger: userMenuBtn,
+      isOpen: () => profileDrawer.classList.contains('open'),
+      close: closeProfileDrawer,
+      trapFocus: true
+    });
+  }
 
   // ── 11. Personalização de Perfil (Foto e Nome) ───────────────
   const profileNameInput      = document.getElementById('profileNameInput');
@@ -1494,6 +2020,48 @@ document.addEventListener('DOMContentLoaded', () => {
   const authAlertBanner      = document.getElementById('authAlertBanner');
   const authAlertText        = document.getElementById('authAlertText');
   const logoutBtn            = document.getElementById('logoutBtn');
+  const passwordRecoveryModal = document.getElementById('passwordRecoveryModal');
+  const passwordRecoveryDialog = passwordRecoveryModal && passwordRecoveryModal.querySelector('[role="dialog"]');
+  const passwordRecoveryForm = document.getElementById('passwordRecoveryForm');
+  const passwordRecoveryError = document.getElementById('passwordRecoveryError');
+  let recoveryPreviousFocus = null;
+  if (passwordRecoveryError) passwordRecoveryError.style.display = 'none';
+
+  function closePasswordRecovery() {
+    if (!passwordRecoveryModal) return;
+    passwordRecoveryModal.classList.remove('active');
+    passwordRecoveryModal.setAttribute('aria-hidden', 'true');
+    if (passwordRecoveryError) {
+      passwordRecoveryError.textContent = '';
+      passwordRecoveryError.hidden = true;
+      passwordRecoveryError.style.display = 'none';
+    }
+    if (recoveryPreviousFocus && typeof recoveryPreviousFocus.focus === 'function') {
+      recoveryPreviousFocus.focus();
+    }
+  }
+
+  function openPasswordRecovery() {
+    if (!passwordRecoveryModal || !passwordRecoveryDialog) return;
+    recoveryPreviousFocus = document.activeElement;
+    passwordRecoveryModal.classList.add('active');
+    passwordRecoveryModal.setAttribute('aria-hidden', 'false');
+    passwordRecoveryDialog.focus();
+    document.getElementById('recoveryPassword')?.focus();
+  }
+
+  const closePasswordRecoveryBtn = document.getElementById('closePasswordRecoveryBtn');
+  if (closePasswordRecoveryBtn) closePasswordRecoveryBtn.addEventListener('click', closePasswordRecovery);
+  if (passwordRecoveryModal) {
+    passwordRecoveryModal.addEventListener('click', e => {
+      if (e.target === passwordRecoveryModal) closePasswordRecovery();
+    });
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && passwordRecoveryModal?.classList.contains('active')) {
+      closePasswordRecovery();
+    }
+  });
 
   function showAuthAlert(msg, isSuccess = false) {
     if (!authAlertBanner || !authAlertText) return;
@@ -1579,11 +2147,48 @@ document.addEventListener('DOMContentLoaded', () => {
       if (icon) {
         icon.className = isPassword ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
       }
+      btn.setAttribute('aria-label', isPassword ? 'Ocultar senha' : 'Mostrar senha');
     });
   }
 
   setupPasswordToggle('toggleLoginPasswordBtn', 'loginPassword');
   setupPasswordToggle('toggleRegisterPasswordBtn', 'registerPassword');
+  setupPasswordToggle('toggleRecoveryPasswordBtn', 'recoveryPassword');
+
+  if (passwordRecoveryForm) {
+    passwordRecoveryForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      const password = document.getElementById('recoveryPassword').value;
+      const confirmation = document.getElementById('recoveryPasswordConfirm').value;
+      const submitBtn = document.getElementById('submitRecoveryPasswordBtn');
+      if (!isValidPassword(password)) {
+        passwordRecoveryError.textContent = 'A senha deve ter no mínimo 8 caracteres.';
+        passwordRecoveryError.hidden = false;
+        passwordRecoveryError.style.display = 'flex';
+        return;
+      }
+      if (password !== confirmation) {
+        passwordRecoveryError.textContent = 'As senhas não coincidem.';
+        passwordRecoveryError.hidden = false;
+        passwordRecoveryError.style.display = 'flex';
+        return;
+      }
+      submitBtn.disabled = true;
+      try {
+        await window.SupabaseAuth.updatePassword(password);
+        closePasswordRecovery();
+        history.replaceState(null, document.title, `${location.pathname}${location.search}`);
+        showToast('Senha atualizada com sucesso.');
+      } catch (error) {
+        console.error('[GastoPro Auth] Erro ao atualizar senha:', error);
+        passwordRecoveryError.textContent = 'Não foi possível atualizar a senha. Solicite um novo link e tente novamente.';
+        passwordRecoveryError.hidden = false;
+        passwordRecoveryError.style.display = 'flex';
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  }
 
   // ── Sincronização de Dados com a Nuvem (Supabase) ───────────
   const activeSyncs = new Map();
@@ -1611,7 +2216,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return false;
         }
 
-        if (!FinanceData.mergeCloudData(userId, cloudEntries, cloudTemplates)) {
+        if (!FinanceData.mergeCloudData(userId, cloudEntries, cloudTemplates, localSync.success)) {
           console.warn('[GastoPro] Sincronização ignorada: o usuário local não corresponde à sessão.');
           showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
           return false;
@@ -1633,16 +2238,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function clearAppCaches() {
-    if (!('caches' in window)) return;
-    const cacheNames = await caches.keys();
-    await Promise.all(
-      cacheNames
-        .filter(name => name.startsWith('gastopro-'))
-        .map(name => caches.delete(name))
-    );
-  }
-
   function clearUserSessionData() {
     try {
       FinanceData.clearUserData();
@@ -1657,9 +2252,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     const editForm = document.getElementById('editForm');
     if (editForm) editForm.reset();
-    clearAppCaches().catch(e => {
-      console.warn('[GastoPro] Falha ao limpar caches locais:', e);
-    });
     renderUserProfile();
     renderAll();
   }
@@ -1679,12 +2271,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return null;
     }
-    if (switchedUser) {
-      await clearAppCaches().catch(e => {
-        console.warn('[GastoPro] Falha ao limpar caches da conta anterior:', e);
-      });
-    }
-
     const profile = FinanceData.getProfile();
     profile.userId = user.id;
     profile.email = user.email;
@@ -1696,6 +2282,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (window.SupabaseAuth) {
     window.SupabaseAuth.onAuthStateChange((event, user) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        openPasswordRecovery();
+        return;
+      }
       if (event === 'SIGNED_OUT' || (!user && event === 'TOKEN_REFRESHED')) {
         if (FinanceData.hasPendingSync()) {
           showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
@@ -1707,11 +2297,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!user) return;
 
       const switchedUser = FinanceData.activateUser(user.id);
-      if (switchedUser) {
-        clearAppCaches().catch(e => {
-          console.warn('[GastoPro] Falha ao limpar caches da conta anterior:', e);
-        });
-      }
       if (switchedUser || event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         prepareAuthenticatedUser(user).then(profile => {
           if (!profile) return false;
@@ -1739,6 +2324,10 @@ document.addEventListener('DOMContentLoaded', () => {
         showAuthAlert('Por favor, preencha todos os campos.');
         return;
       }
+      if (!window.SupabaseAuth || !window.SupabaseAuth.client) {
+        showAuthAlert('Serviço de autenticação indisponível. Verifique sua conexão e tente novamente.');
+        return;
+      }
 
       if (submitBtn) {
         submitBtn.disabled = true;
@@ -1746,33 +2335,22 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       try {
-        if (window.SupabaseAuth && window.SupabaseAuth.client) {
-          const { user } = await window.SupabaseAuth.signIn(email, password);
-          const profile = await prepareAuthenticatedUser(user);
-          if (!profile) {
-            showAuthAlert('Os dados pendentes da conta anterior foram preservados. Entre novamente nessa conta para sincronizá-los.');
-            return;
-          }
-          closeAuth();
-          showToast(`Bem-vindo de volta, ${profile.name}!`);
-          await syncUserDataFromCloud(user.id);
-        } else {
-          // Fallback offline / local
-          const profile = FinanceData.getProfile();
-          profile.email = email;
-          profile.name = profile.name || email.split('@')[0];
-          FinanceData.saveProfile(profile);
-          renderUserProfile();
-          closeAuth();
-          showToast(`Bem-vindo, ${profile.name}!`);
+        const { user } = await window.SupabaseAuth.signIn(email, password);
+        const profile = await prepareAuthenticatedUser(user);
+        if (!profile) {
+          showAuthAlert('Os dados pendentes da conta anterior foram preservados. Entre novamente nessa conta para sincronizá-los.');
+          return;
         }
+        closeAuth();
+        showToast(`Bem-vindo de volta, ${profile.name}!`);
+        await syncUserDataFromCloud(user.id);
       } catch (err) {
         console.error('[GastoPro Auth] Erro no login:', err);
         let msg = 'Erro ao realizar login. Verifique suas credenciais.';
         if (err.message && err.message.includes('Invalid login credentials')) {
           msg = 'E-mail ou senha incorretos.';
         } else if (err.message && err.message.includes('Email not confirmed')) {
-          msg = 'Confirmação pendente: verifique seu e-mail ou desative a confirmação no Supabase.';
+          msg = 'Confirme seu e-mail antes de entrar.';
         }
         showAuthAlert(msg);
       } finally {
@@ -1799,13 +2377,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      if (!window.SupabaseAuth || !window.SupabaseAuth.client) {
+        showAuthAlert('Serviço de autenticação indisponível. Verifique sua conexão e tente novamente.');
+        return;
+      }
+
       if (password !== confirmPassword) {
         showAuthAlert('As senhas não coincidem!');
         return;
       }
 
-      if (password.length < 6) {
-        showAuthAlert('A senha deve ter no mínimo 6 caracteres.');
+      if (!isValidPassword(password)) {
+        showAuthAlert('A senha deve ter no mínimo 8 caracteres.');
         return;
       }
 
@@ -1815,33 +2398,21 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       try {
-        if (window.SupabaseAuth && window.SupabaseAuth.client) {
-          const data = await window.SupabaseAuth.signUp(name, email, password);
-          const profile = FinanceData.getProfile();
-          profile.name = name;
-          profile.email = email;
-          FinanceData.saveProfile(profile);
-          renderUserProfile();
+        const data = await window.SupabaseAuth.signUp(name, email, password);
+        const profile = FinanceData.getProfile();
+        profile.name = name;
+        profile.email = email;
+        FinanceData.saveProfile(profile);
+        renderUserProfile();
 
-          // Se a sessão já foi iniciada imediatamente
-          if (data && data.session) {
-            closeAuth();
-            showToast(`Conta criada com sucesso! Bem-vindo, ${name}!`);
-            const user = data.session.user;
-            const authenticatedProfile = await prepareAuthenticatedUser(user);
-            if (authenticatedProfile) await syncUserDataFromCloud(authenticatedProfile.userId);
-          } else {
-            showAuthAlert('Conta criada! Se a confirmação de e-mail estiver ativa, verifique sua caixa de entrada.', true);
-          }
-        } else {
-          // Fallback offline / local
-          const profile = FinanceData.getProfile();
-          profile.name = name;
-          profile.email = email;
-          FinanceData.saveProfile(profile);
-          renderUserProfile();
+        if (data && data.session) {
           closeAuth();
           showToast(`Conta criada com sucesso! Bem-vindo, ${name}!`);
+          const user = data.session.user;
+          const authenticatedProfile = await prepareAuthenticatedUser(user);
+          if (authenticatedProfile) await syncUserDataFromCloud(authenticatedProfile.userId);
+        } else {
+          showAuthAlert('Conta criada! Se a confirmação de e-mail estiver ativa, verifique sua caixa de entrada.', true);
         }
       } catch (err) {
         console.error('[GastoPro Auth] Erro no cadastro:', err);
@@ -1870,7 +2441,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const syncResult = await FinanceData.syncAllToCloud(user.id);
+      const syncResult = await FinanceData.prepareLocalDataForSync(user.id);
       if (!syncResult.success) {
         showConfirm({
           title: 'Não foi possível sincronizar',
@@ -1941,8 +2512,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
 
-      if (!file.type.startsWith('image/')) {
-        alert('Por favor, selecione um arquivo de imagem válido (JPG, PNG, WebP).');
+      if (!isSupportedAvatarType(file.type)) {
+        showToast('Selecione uma imagem JPEG, PNG ou WebP.');
         return;
       }
 
@@ -1953,15 +2524,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
+      resizeAvatarToJpeg(file).then(avatar => {
         const profile = FinanceData.getProfile();
-        profile.avatar = event.target.result;
-        FinanceData.saveProfile(profile);
+        profile.avatar = avatar;
+        const result = FinanceData.saveProfile(profile);
+        if (!result.success) {
+          if (result.error && result.error.name === 'QuotaExceededError') {
+            showToast('O armazenamento do navegador está cheio. Remova alguns dados e tente novamente.');
+          } else {
+            showToast('Não foi possível salvar a foto neste aparelho.');
+          }
+          return;
+        }
         renderUserProfile();
         showToast('Foto de perfil atualizada com sucesso!');
-      };
-      reader.readAsDataURL(file);
+      }).catch(error => {
+        console.error('[GastoPro] Erro ao processar avatar:', error);
+        showToast('Não foi possível processar a imagem. Tente outro arquivo.');
+      });
     });
   }
 
@@ -2069,11 +2649,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // ─────────────────────────────────────────────────────────────────
 
   /** Todas as categorias disponíveis para o select da tabela de preview. */
-  const IMPORT_CATEGORIES = [
-    'Alimentação', 'Mercado', 'Transporte', 'Saúde', 'Esporte', 'Educação',
-    'Assinaturas', 'Moradia', 'Cartão de crédito', 'Compras', 'Receita',
-    'Lazer', 'Esporte', 'Outros'
-  ];
+  const IMPORT_CATEGORIES = [...new Set([
+    ...GastoProCategories.EXPENSE,
+    ...GastoProCategories.INCOME
+  ])];
 
   // Referências dos elementos do modal
   const importModal         = document.getElementById('importModal');
@@ -2163,13 +2742,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Categorias únicas e ordenadas para o select
-    const allCats = [...new Set([...IMPORT_CATEGORIES])].sort();
+    const allCats = [...new Set([
+      ...GastoProCategories.EXPENSE,
+      ...GastoProCategories.INCOME,
+      ...IMPORT_CATEGORIES
+    ])].sort();
 
     rows.forEach((row, i) => {
-      const isIncome = row.category === 'Receita';
+      const isIncome = row.type === 'income';
       const dateDisplay = row.date
         ? row.date.split('-').reverse().join('/')
-        : '--/--/----';
+        : 'Data inválida';
+      const rowStatus = [
+        row.invalid ? '<span class="import-row-status invalid">Data inválida</span>' : '',
+        row.duplicate ? '<span class="import-row-status duplicate">Duplicado</span>' : ''
+      ].filter(Boolean).join(' ');
 
       // Gera opções do select de categoria
       const catOptions = allCats.map(c =>
@@ -2179,23 +2766,28 @@ document.addEventListener('DOMContentLoaded', () => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="col-check">
-          <input type="checkbox" class="import-row-check" data-row="${i}" checked />
+          <input type="checkbox" class="import-row-check" data-row="${i}"
+            aria-label="Incluir lançamento ${escapeHtml(row.desc)}"
+            ${row.selected ? 'checked' : ''} ${row.invalid ? 'disabled' : ''} />
         </td>
         <td class="col-date">${escapeHtml(dateDisplay)}</td>
-        <td class="col-desc" title="${escapeHtml(row.desc)}">${escapeHtml(row.desc)}</td>
+        <td class="col-desc" title="${escapeHtml(row.desc)}">
+          ${escapeHtml(row.desc)} ${rowStatus}
+          ${row.invalidReason ? `<small class="import-row-reason">${escapeHtml(row.invalidReason)}</small>` : ''}
+        </td>
         <td class="col-category">
-          <select class="import-cat-select" data-row="${i}">
+          <select class="import-cat-select" data-row="${i}" aria-label="Categoria de ${escapeHtml(row.desc)}">
             ${catOptions}
           </select>
         </td>
         <td class="col-type">
-          <select class="import-type-select" data-row="${i}">
+          <select class="import-type-select" data-row="${i}" aria-label="Tipo de ${escapeHtml(row.desc)}">
             <option value="variable" ${!isIncome ? 'selected' : ''}>Gasto</option>
             <option value="income"   ${isIncome  ? 'selected' : ''}>Receita</option>
           </select>
         </td>
         <td class="col-amount ${isIncome ? 'income' : ''}">
-          R$ ${row.amount.toFixed(2).replace('.', ',')}
+          ${escapeHtml(formatCurrency(row.amount))}
         </td>
       `;
 
@@ -2208,13 +2800,31 @@ document.addEventListener('DOMContentLoaded', () => {
       importPreviewTbody.appendChild(tr);
     });
 
-    if (previewCountBadge) previewCountBadge.textContent = `${rows.length} ${rows.length === 1 ? 'item' : 'itens'}`;
+    const invalidCount = rows.filter(row => row.invalid).length;
+    const duplicateCount = rows.filter(row => row.duplicate).length;
+    if (previewCountBadge) {
+      previewCountBadge.textContent =
+        `${rows.length} ${rows.length === 1 ? 'item' : 'itens'} · ${invalidCount} inválidos · ${duplicateCount} duplicados`;
+    }
     if (importPreviewSection) importPreviewSection.classList.add('visible');
-    if (importSelectAll)      importSelectAll.checked = true;
+    if (importSelectAll) importSelectAll.checked = rows.length > 0 && rows.every(row => row.selected);
   }
 
   // Armazena as linhas parseadas para uso posterior na confirmação
   let _importParsedRows = [];
+
+  function showImportWarnings() {
+    const warnings = GastoProImporter.getLastWarnings();
+    if (warnings.length) showToast(warnings.join(' '));
+    return warnings.length > 0;
+  }
+
+  function prepareImportRows(rows) {
+    _importParsedRows = GastoProImporter.markDuplicates(rows, FinanceData.getEntries());
+    const hadWarnings = showImportWarnings();
+    renderImportPreview(_importParsedRows);
+    return hadWarnings;
+  }
 
   /** Lê o arquivo CSV selecionado e faz o parse. */
   function handleCsvParse() {
@@ -2223,12 +2833,22 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const file = csvFileInput.files[0];
+    if (file.size > 1_000_000) {
+      showToast('O arquivo CSV deve ter no máximo 1 MB.');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        _importParsedRows = GastoProImporter.parseCSV(e.target.result);
-        renderImportPreview(_importParsedRows);
-        if (_importParsedRows.length > 0) {
+        const bytes = new Uint8Array(e.target.result);
+        let text;
+        try {
+          text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        } catch {
+          text = new TextDecoder('windows-1252').decode(bytes);
+        }
+        const hadWarnings = prepareImportRows(GastoProImporter.parseCSV(text));
+        if (_importParsedRows.length > 0 && !hadWarnings) {
           showToast(`${_importParsedRows.length} lançamentos encontrados no CSV!`);
         }
       } catch (err) {
@@ -2236,7 +2856,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Erro ao ler o CSV. Verifique o formato do arquivo.');
       }
     };
-    reader.readAsText(file, 'UTF-8');
+    reader.readAsArrayBuffer(file);
   }
 
   /** Lê o texto bruto da textarea e faz o parse. */
@@ -2246,10 +2866,13 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast('Cole o texto do extrato antes de analisar.');
       return;
     }
+    if (text.length > 200_000) {
+      showToast('O texto colado excede 200.000 caracteres.');
+      return;
+    }
     try {
-      _importParsedRows = GastoProImporter.parseRawText(text);
-      renderImportPreview(_importParsedRows);
-      if (_importParsedRows.length > 0) {
+      const hadWarnings = prepareImportRows(GastoProImporter.parseRawText(text));
+      if (_importParsedRows.length > 0 && !hadWarnings) {
         showToast(`${_importParsedRows.length} lançamentos encontrados!`);
       }
     } catch (err) {
@@ -2259,20 +2882,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * Confirma a importação: salva os lançamentos selecionados via FinanceData.add().
+   * Confirma a importação e grava os itens selecionados em um único lote.
    * Lê os valores atuais de categoria e tipo diretamente da tabela de preview
    * para respeitar as edições feitas pelo usuário antes de confirmar.
    */
-  function handleConfirmImport() {
+  async function handleConfirmImport() {
     if (!importPreviewTbody || _importParsedRows.length === 0) return;
 
     const checkboxes = importPreviewTbody.querySelectorAll('.import-row-check');
     const catSelects  = importPreviewTbody.querySelectorAll('.import-cat-select');
     const typeSelects = importPreviewTbody.querySelectorAll('.import-type-select');
 
-    let saved = 0;
+    const items = [];
     checkboxes.forEach((cb, i) => {
-      if (!cb.checked) return; // Pula desmarcados
+      if (!cb.checked || _importParsedRows[i].invalid) return;
 
       const row      = _importParsedRows[i];
       const category = catSelects[i]  ? catSelects[i].value  : row.category;
@@ -2283,14 +2906,26 @@ document.addEventListener('DOMContentLoaded', () => {
         type
       );
 
-      FinanceData.add(entry);
-      saved++;
+      items.push(entry);
     });
 
-    if (saved > 0) {
-      showToast(`${saved} lançamento${saved > 1 ? 's' : ''} importado${saved > 1 ? 's' : ''} com sucesso!`);
-      renderAll();
-      closeImportModal();
+    if (items.length > 0) {
+      try {
+        const result = await FinanceData.addMany(items);
+        if (!result.success) {
+          showToast(result.syncResult
+            ? 'Os lançamentos foram salvos neste aparelho, mas a sincronização ficou pendente.'
+            : 'Não foi possível salvar os lançamentos importados neste aparelho.');
+          return;
+        }
+        const saved = result.items.length;
+        showToast(`${saved} lançamento${saved > 1 ? 's' : ''} importado${saved > 1 ? 's' : ''} com sucesso!`);
+        renderAll();
+        closeImportModal();
+      } catch (err) {
+        console.error('[GastoPro Importer] Erro ao salvar os lançamentos:', err);
+        showToast('Não foi possível concluir a importação. Tente novamente.');
+      }
     } else {
       showToast('Selecione ao menos um lançamento para importar.');
     }
@@ -2362,7 +2997,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const checkboxes = importPreviewTbody
         ? importPreviewTbody.querySelectorAll('.import-row-check')
         : [];
-      checkboxes.forEach(cb => { cb.checked = importSelectAll.checked; });
+      checkboxes.forEach(cb => {
+        if (!cb.disabled) cb.checked = importSelectAll.checked;
+      });
     });
   }
 
@@ -2391,16 +3028,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /** Categorias do Passo 3 — variáveis por categoria */
   const WIZARD_VAR_CATEGORIES = [
-    { name: 'Alimentação',  icon: '🍔' },
-    { name: 'Mercado',      icon: '🛒' },
-    { name: 'Transporte',   icon: '🚗' },
-    { name: 'Saúde',        icon: '💊' },
-    { name: 'Lazer',        icon: '🎬' },
-    { name: 'Compras',      icon: '🛍️' },
-    { name: 'Assinaturas',  icon: '📺' },
-    { name: 'Esporte',      icon: '🏋️' },
-    { name: 'Educação',     icon: '📚' },
-    { name: 'Outros',       icon: '💸' },
+    ...GastoProCategories.EXPENSE.map(name => ({
+      name,
+      icon: categoryIcons[name] || '📦'
+    }))
   ];
 
   // Referências dos elementos do Wizard
@@ -2571,7 +3202,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="wizard-item-desc">${escapeHtml(item.desc)}</span>
           <span class="wizard-item-date">${item.date ? item.date.split('-').reverse().join('/') : ''}</span>
           <span class="wizard-item-amount">${formatCurrency(item.amount)}</span>
-          <button class="btn-wizard-remove" data-idx="${idx}" title="Remover">
+          <button class="btn-wizard-remove" data-idx="${idx}" title="Remover" aria-label="Remover renda ${escapeHtml(item.desc)}">
             <i class="fa-solid fa-xmark"></i>
           </button>
         `;
@@ -2627,7 +3258,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const item = document.createElement('label');
           item.className = 'wizard-check-item';
           item.innerHTML = `
-            <input type="checkbox" ${isChecked ? 'checked' : ''} data-id="${t.id}" />
+            <input type="checkbox" ${isChecked ? 'checked' : ''} data-id="${escapeHtml(t.id)}" />
             <span class="wizard-check-item-desc">${escapeHtml(t.desc)}</span>
             <span class="wizard-check-item-amount">${formatCurrency(t.amount)}</span>
           `;
@@ -2658,7 +3289,7 @@ document.addEventListener('DOMContentLoaded', () => {
       card.innerHTML = `
         <span class="wizard-item-desc">${escapeHtml(item.desc)}</span>
         <span class="wizard-item-amount expense">${formatCurrency(item.amount)}</span>
-        <button class="btn-wizard-remove" data-idx="${idx}" title="Remover">
+        <button class="btn-wizard-remove" data-idx="${idx}" title="Remover" aria-label="Remover gasto fixo ${escapeHtml(item.desc)}">
           <i class="fa-solid fa-xmark"></i>
         </button>
       `;
@@ -2703,6 +3334,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <input
           type="number"
           class="wizard-cat-input"
+          aria-label="Valor para ${escapeHtml(cat.name)}"
           placeholder="R$ 0,00"
           min="0"
           step="0.01"
@@ -2732,7 +3364,7 @@ document.addEventListener('DOMContentLoaded', () => {
       card.innerHTML = `
         <span class="wizard-item-desc">${escapeHtml(item.desc)}</span>
         <span class="wizard-item-amount expense">${formatCurrency(item.amount)}</span>
-        <button class="btn-wizard-remove" data-idx="${idx}" title="Remover">
+        <button class="btn-wizard-remove" data-idx="${idx}" title="Remover" aria-label="Remover gasto variável ${escapeHtml(item.desc)}">
           <i class="fa-solid fa-xmark"></i>
         </button>
       `;
@@ -3108,6 +3740,33 @@ document.addEventListener('DOMContentLoaded', () => {
  * @param {Array} fixed     - Gastos fixos ativos do mês.
  * @param {Array} variables - Gastos variáveis do mês.
  */
+function calculateGoalProgress(goals, fixed, variables) {
+  const spendingMap = {};
+  [...fixed, ...variables].forEach(item => {
+    const category = item.category || 'Outros';
+    const key = GastoProCategories.normalize(category);
+    spendingMap[key] = (spendingMap[key] || 0) + (Number(item.amount) || 0);
+  });
+
+  return goals.map(goal => {
+    const spent = spendingMap[GastoProCategories.normalize(goal.category)] || 0;
+    const percentage = goal.limit > 0 ? (spent / goal.limit) * 100 : 0;
+    const isDanger = percentage >= 100;
+    const isWarning = percentage >= 80 && !isDanger;
+    return {
+      ...goal,
+      spent,
+      percentage,
+      percentageLabel: Math.floor(percentage * 10) / 10,
+      isDanger,
+      isWarning,
+      status: isDanger ? 'Limite ultrapassado!' : isWarning ? 'Atenção: 80% atingido' : 'Dentro do limite'
+    };
+  });
+}
+
+window.GastoProReportHelpers.calculateGoalProgress = calculateGoalProgress;
+
 function renderGoalsSection(fixed, variables) {
   const container  = document.getElementById('goalsListContainer');
   const emptyState = document.getElementById('goalsEmptyState');
@@ -3123,21 +3782,12 @@ function renderGoalsSection(fixed, variables) {
 
   if (emptyState) emptyState.style.display = 'none';
 
-  // Calcula gasto atual agrupado por categoria (fixos + variáveis)
-  const spendingMap = {};
-  [...fixed, ...variables].forEach(item => {
-    const cat = item.category || 'Outros';
-    spendingMap[cat] = (spendingMap[cat] || 0) + (item.amount || 0);
-  });
-
   // Renderiza os cards
-  container.innerHTML = goals.map(goal => {
-    const spent     = spendingMap[goal.category] || 0;
-    const pct       = goal.limit > 0 ? (spent / goal.limit) * 100 : 0;
-    const pctShow   = Math.min(100, pct); // Largura da barra (max 100%)
-    const pctLabel  = Math.floor(pct * 10) / 10;
-    const isDanger  = pct >= 100;
-    const isWarning = pct >= 80 && !isDanger;
+  const progress = calculateGoalProgress(goals, fixed, variables);
+  container.innerHTML = progress.map(goal => {
+    const pctShow = Math.min(100, goal.percentage);
+    const isDanger = goal.isDanger;
+    const isWarning = goal.isWarning;
 
     // Define cor e status conforme percentual
     let barClass   = 'goal-bar-fill--safe';
@@ -3149,12 +3799,12 @@ function renderGoalsSection(fixed, variables) {
       barClass    = 'goal-bar-fill--danger';
       statusIcon  = '<i class="fa-solid fa-circle-exclamation"></i>';
       statusClass = 'goal-status--danger';
-      statusText  = '🔴 Limite ultrapassado!';
+      statusText  = `🔴 ${goal.status}`;
     } else if (isWarning) {
       barClass    = 'goal-bar-fill--warning';
       statusIcon  = '<i class="fa-solid fa-triangle-exclamation"></i>';
       statusClass = 'goal-status--warning';
-      statusText  = '⚠️ Atenção: 80% atingido';
+      statusText  = `⚠️ ${goal.status}`;
     }
 
     return `
@@ -3169,10 +3819,10 @@ function renderGoalsSection(fixed, variables) {
           </button>
         </div>
         <div class="goal-amounts">
-          <span class="goal-spent">${formatCurrency(spent)}</span>
+          <span class="goal-spent">${formatCurrency(goal.spent)}</span>
           <span class="goal-separator">de</span>
           <span class="goal-limit">${formatCurrency(goal.limit)}</span>
-          <span class="goal-pct-badge ${isDanger ? 'badge-danger' : isWarning ? 'badge-warning' : 'badge-success'}">${pctLabel}%</span>
+          <span class="goal-pct-badge ${isDanger ? 'badge-danger' : isWarning ? 'badge-warning' : 'badge-success'}">${goal.percentageLabel}%</span>
         </div>
         <div class="goal-bar-track">
           <div class="goal-bar-fill ${barClass}" style="width: ${pctShow}%"></div>
@@ -3199,13 +3849,27 @@ window.openGoalModal = function(category) {
   const limitInput = document.getElementById('goalLimitInput');
   const removeBtn  = document.getElementById('removeGoalBtn');
 
-  if (!modal) return;
+  catSelect.querySelectorAll('[data-legacy="true"]').forEach(option => option.remove());
 
   if (category) {
     // Modo edição: preenche com valores da meta existente
     const goals     = FinanceData.getGoals();
     const existing  = goals.find(g => g.category === category);
+    if (!Array.from(catSelect.options).some(option => option.value === category)) {
+      const legacyOption = document.createElement('option');
+      legacyOption.value = category;
+      legacyOption.textContent = category;
+      legacyOption.dataset.legacy = 'true';
+      catSelect.appendChild(legacyOption);
+    }
     title.innerHTML = '<i class="fa-solid fa-bullseye"></i> Editar Meta de Gasto';
+    if (!Array.from(catSelect.options).some(option => option.value === category)) {
+      const legacyOption = document.createElement('option');
+      legacyOption.value = category;
+      legacyOption.textContent = category;
+      legacyOption.dataset.legacy = 'true';
+      catSelect.appendChild(legacyOption);
+    }
     catSelect.value  = category;
     catSelect.disabled = true; // Categoria não pode mudar na edição
     limitInput.value = existing ? existing.limit : '';

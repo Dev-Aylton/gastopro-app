@@ -1,8 +1,10 @@
 {
   "name": "GastoPro — Controle de Gastos & Saúde Financeira",
   "short_name": "GastoPro",
-  "description": "Controle financeiro pessoal com Dashboard, Ganhos e Gastos. 100% offline e seguro.",
+  "description": "Controle financeiro pessoal com modo local e sincronização segura na nuvem.",
+  "id": "./index.html",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0b0e14",
   "theme_color": "#0b0e14",
@@ -10,27 +12,21 @@
   "lang": "pt-BR",
   "icons": [
     {
-      "src": "assets/logo.jpg",
+      "src": "assets/icon-192.png",
       "sizes": "192x192",
-      "type": "image/jpeg",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "assets/logo.jpg",
-      "sizes": "192x192",
-      "type": "image/jpeg",
-      "purpose": "maskable"
-    },
-    {
-      "src": "assets/logo.jpg",
+      "src": "assets/icon-512.png",
       "sizes": "512x512",
-      "type": "image/jpeg",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "assets/logo.jpg",
+      "src": "assets/icon-maskable-512.png",
       "sizes": "512x512",
-      "type": "image/jpeg",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ],

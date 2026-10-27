@@ -1,11 +1,11 @@
-﻿# Dependencias
+# Dependencias
 node_modules/
 
 # Logs
 *.log
 npm-debug.log*
 
-# Sistema Operacional
+# Sistema operacional
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -21,5 +21,11 @@ dist/
 build/
 
 # Variaveis de ambiente
-.env
-.env.local
+.env*
+!.env.example
+
+# Supabase local
+supabase/.temp/
+
+# Backups temporarios
+*.bak

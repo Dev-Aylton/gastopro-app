@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (**Single Page Application — SPA**) de gestão financeira pessoal com Dashboard de Saúde Financeira, gerenciamento completo de receitas e despesas, rastreamento de dívidas, autenticação multi-usuário com Supabase, importação de extratos bancários, **Wizard de Lançamento Rápido** e PWA para uso offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-3.6-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-3.9-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-50%2B%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-130%20casos-10b981?style=for-the-badge)
 
 
 ---
@@ -15,7 +15,7 @@
 
 O **GastoPro** foi idealizado e desenvolvido por **Aylton Alberto**, estudante do curso de **Análise e Desenvolvimento de Sistemas (ADS)**. O projeto nasceu da necessidade real de transformar uma planilha complexa de controle orçamentário pessoal em uma aplicação web interativa, elegante e segura.
 
-A versão atual (v3.6) evoluiu de um app puramente local para um **SaaS multi-usuário com banco de dados em nuvem**, mantendo a simplicidade de uso e adicionando autenticação segura via Supabase.
+A versão atual (v3.9) evoluiu de um app puramente local para um **SaaS multi-usuário com banco de dados em nuvem**, mantendo a simplicidade de uso e adicionando autenticação segura via Supabase.
 
 ---
 
@@ -26,6 +26,7 @@ A versão atual (v3.6) evoluiu de um app puramente local para um **SaaS multi-us
 - Diagnóstico visual baseado na metodologia **50/30/20** com barras de progresso coloridas.
 - Cálculo automático da **sobra média diária** até o fim do mês.
 - Gráfico de rosca (doughnut) com distribuição de gastos por categoria via **Chart.js**.
+- Orçamento diário ajustado ao mês selecionado e alertas para dívidas vencidas ainda não baixadas.
 
 ### 💳 Centro de Dívidas & Previsão de Quitação
 - Rastreamento dinâmico de parcelamentos, empréstimos e financiamentos.
@@ -54,13 +55,31 @@ A versão atual (v3.6) evoluiu de um app puramente local para um **SaaS multi-us
 - Recuperação de senha via e-mail (**resetPasswordForEmail**).
 - Dados isolados por usuário via **Row Level Security (RLS)** no PostgreSQL.
 - Sincronização automática ao logar — dados carregados da nuvem.
-- **Logout seguro**: limpa o localStorage local para proteger dados entre usuários no mesmo dispositivo.
+- **Logout**: encerra a sessão e limpa os dados locais deste aparelho; os dados sincronizados na nuvem permanecem.
 
 ### 👤 Painel do Usuário (Offcanvas Drawer)
-- Personalização de nome e foto de perfil (Base64, até 2 MB).
+- Personalização de nome e foto de perfil local; imagens JPEG, PNG ou WebP são redimensionadas para no máximo 256×256 e salvas como JPEG.
 - Status da conta: Conectado (Nuvem) ou Modo Local.
 - Exportação de backup completo em JSON.
-- Reset completo com confirmação de segurança.
+- Restauração de backup JSON com prévia, mesclagem por ID ou substituição dos dados.
+- Reset completo com confirmação de segurança; com login, também apaga os dados sincronizados na nuvem, e sem login apaga apenas os dados deste aparelho.
+- As metas por categoria permanecem apenas neste aparelho; não são sincronizadas com o Supabase e são removidas no reset ou na troca de usuário.
+
+### 📄 Relatório Financeiro em PDF
+- Relatório mensal, anual ou por intervalo, gerado localmente no navegador.
+- Inclui totais, distribuição por categoria, dívidas, metas, diagnóstico e lançamentos detalhados opcionais.
+- Usa jsPDF 4.2.1 e jspdf-autotable 5.0.9, carregados sob demanda a partir de arquivos locais.
+- No celular, permite compartilhar o arquivo PDF; em outros casos, oferece download ou abertura do PDF.
+
+Os bundles UMD do jsPDF e Chart.js mantêm seus cabeçalhos de licença MIT. O bundle UMD do Supabase não inclui cabeçalho no arquivo oficial; a licença MIT oficial do pacote está preservada em `js/vendor/LICENSE.supabase.txt`. SHA-256 dos arquivos locais:
+- `js/vendor/jspdf.umd.min.js` (jsPDF 4.2.1): `E6551FCDC32F09D6853B2C5126D18D01D9447E0DA618A41A11EBEEE0F6C20D54`
+- `js/vendor/jspdf.plugin.autotable.min.js` (jspdf-autotable 5.0.9): `83DD8E5AE29436BD3D3EF4F4A915125B3951264994C25DE0359D3FBD105ABE15`
+- `js/vendor/supabase.umd.js` (@supabase/supabase-js 2.117.3, publicado em 07/10/2026): `D6A5C4414A5D4CE646D9C1DE223AA7067D3FF664C15394FFEB7FCFFC763354A3`
+- `js/vendor/chart.umd.js` (Chart.js 4.4.1): `74401D738DD3E03EE5DFB3B6841210FE2C4EAD8A960C4011CA4BA0B78A9FD8F3`
+
+Integridade SHA-512 dos tarballs oficiais do registry npm, verificada antes da extração:
+- `@supabase/supabase-js@2.117.3`: `K+f8PimXDunPWQ63CKRXaF5pbVPJxmfw5ryAnh0s9S9PkwcuqBjiSpIaqpF7KLDljeYwXIL85ST8QxaO0+XuvA==`
+- `chart.js@4.4.1`: `C74QN1bxwV1v2PEujhmKjOZ7iUM4w6BWs23Md/6aOZZSlwMzeCIDGuZay++rBgChYru7/+QFeoQW0fQoP534Dg==`
 
 ### 📱 PWA (Progressive Web App)
 - Instalável como app nativo no celular ou desktop.
@@ -83,6 +102,12 @@ A versão atual (v3.6) evoluiu de um app puramente local para um **SaaS multi-us
 - **Passo 4 — Resultado**: KPIs de Renda/Gastos/Saldo + barras animadas da regra 50/30/20 + diagnóstico textual inteligente.
 - **Salvamento em lote**: Todos os dados são salvos de uma vez via `FinanceData.add()` com sincronização automática no Supabase.
 - **Validação contextual**: Impede avançar sem informar renda; categoriza automaticamente gastos avulsos.
+
+### 🔐 Dados locais, login, logout e reset
+- Ao criar conta ou entrar, lançamentos e templates são sincronizados para a conta Supabase autenticada.
+- O logout encerra a sessão e remove os dados financeiros locais deste aparelho; os registros na nuvem permanecem até que o Reset logado solicite sua exclusão.
+- O Reset com sessão ativa remove os dados locais e apaga os dados sincronizados na nuvem. Sem sessão ativa, remove somente os dados deste aparelho.
+- Metas por categoria, nome e foto do perfil ficam apenas no aparelho. A sessão de autenticação é mantida pelo cliente Supabase no navegador.
 ### 🧭 Navegação Lateral (Sidebar) & Sincronização
 - **Indicadores em tempo real**: Badges numéricos com o total de receitas e despesas cadastradas no mês selecionado.
 - **Ferramentas de produtividade**: Acesso direto ao **Importador de Extratos** e ao **Wizard de Lançamento Rápido**.
@@ -99,7 +124,11 @@ financeiro-app/
 │
 ├── assets/
 │   ├── logo.jpg            # Logotipo do app
-│   └── default_avatar.jpg  # Avatar padrão do usuário
+│   ├── default_avatar.jpg  # Avatar padrão do usuário
+│   ├── icon-192.png        # Ícone PWA 192x192
+│   ├── icon-512.png        # Ícone PWA 512x512
+│   ├── icon-maskable-512.png # Ícone maskable
+│   └── apple-touch-icon.png # Ícone para iOS
 │
 ├── css/
 │   └── style.css           # Design System completo: dark mode, variáveis CSS, animações
@@ -107,11 +136,25 @@ financeiro-app/
 ├── js/
 │   ├── data.js             # Camada de Dados: CRUD local (localStorage) + sync cloud
 │   ├── supabase.js         # Módulo Supabase: auth (email e senha) + CRUD PostgreSQL
+│   ├── categories.js       # Categorias compartilhadas e normalização
 │   ├── importer.js         # Módulo de Importação: parser CSV/Texto + categorização automática (v3.1)
-│   └── app.js              # Controller: lógica, renderização, eventos, gráficos e auth
+│   ├── app.js              # Controller: lógica, renderização, eventos, gráficos e auth
+│   ├── report.js           # Dados e renderização do relatório PDF
+│   ├── a11y.js             # Gerencia foco, navegação por Tab e fechamento por Esc nos modais
+│   └── vendor/
+│       ├── chart.umd.js
+│       ├── supabase.umd.js
+│       ├── LICENSE.supabase.txt
+│       ├── jspdf.umd.min.js
+│       └── jspdf.plugin.autotable.min.js
+│
+├── supabase/
+│   ├── schema.sql          # Esquema do banco: tabelas, RLS, índices, permissões e triggers
+│   └── migrations/
+│       └── 20261027_hardening.sql # Migração para aplicação manual; não executada
 │
 ├── tests/
-│   ├── gastopro.test.js    # Suite de testes (50+ casos, vanilla JS, sem framework)
+│   ├── gastopro.test.js    # Suite de testes (130 casos, vanilla JS, sem framework)
 │   └── test-runner.html    # Página de execução dos testes no navegador
 │
 └── README.md               # Esta documentação
@@ -153,9 +196,7 @@ Objeto singleton `FinanceData` — única camada que acessa o `localStorage`.
 | `gastopro_templates_v4_oct` | Templates de gastos fixos recorrentes |
 | `gastopro_profile_real_v2` | Perfil do usuário (nome, email, userId, avatar) |
 
-**Roteamento por prefixo de ID:**
-- `entry-*` → Lançamentos pontuais (vinculados a um mês)
-- `fix-*` → Templates fixos (projetados em todos os meses do período)
+**IDs:** lançamentos e templates usam UUID v4; o tipo de registro é determinado pela coleção correspondente, não por prefixos no ID.
 
 **API pública:**
 
@@ -177,7 +218,7 @@ Objeto singleton `FinanceData` — única camada que acessa o `localStorage`.
 **Esquema — Lançamento Pontual:**
 ```json
 {
-  "id":       "entry-1730000000000-a1b2",
+  "id":       "550e8400-e29b-41d4-a716-446655440000",
   "month":    "2026-11",
   "type":     "income",
   "desc":     "Salário",
@@ -191,7 +232,7 @@ Objeto singleton `FinanceData` — única camada que acessa o `localStorage`.
 **Esquema — Template de Gasto Fixo:**
 ```json
 {
-  "id":         "fix-1730000000000-c3d4",
+  "id":         "550e8400-e29b-41d4-a716-446655440001",
   "desc":       "Plano de saúde – Isabella",
   "amount":     480.00,
   "category":   "Saúde",
@@ -243,73 +284,30 @@ As tabelas `entries` e `fixed_templates` têm RLS ativo. Cada query retorna **ap
 ### 2. Limpeza de localStorage no Login/Logout
 
 ```
-Logout      → localStorage dos dados é limpo imediatamente
-Login       → dados carregados EXCLUSIVAMENTE da nuvem
-Novo usuário → localStorage limpo; app inicia em branco
+Logout      → encerra a sessao e remove os dados financeiros locais; a nuvem permanece
+Login       → sincroniza os dados da conta ativa com a nuvem
+Reset logado → remove os dados locais e apaga os dados sincronizados na nuvem
+Reset local  → remove somente os dados deste aparelho
 ```
 
-Isso previne o cenário onde um novo usuário herda dados do usuário anterior no mesmo navegador.
+Ao trocar de conta, os dados locais da conta anterior são limpos quando não há sincronização pendente. Metas, nome e foto de perfil permanecem locais e não são sincronizados.
 
 ### 3. Perfil Sem Dados Hardcoded
 O `defaultProfile` retorna `{ name: '', email: '', avatar: null }` — sem dados pessoais fixos no código.
 
 ---
 
-## 🗄️ Banco de Dados Supabase
+## 🗄️ Banco de Dados (Supabase)
 
-### Tabela `entries`
-```sql
-CREATE TABLE entries (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id     uuid REFERENCES auth.users NOT NULL,
-  description text NOT NULL,
-  amount      numeric(12,2) NOT NULL,
-  category    text,
-  type        text CHECK (type IN ('income','variable')),
-  date        date,
-  paid        boolean DEFAULT false,
-  is_debt     boolean DEFAULT false,
-  active      boolean DEFAULT true,
-  created_at  timestamptz DEFAULT now()
-);
-```
+O arquivo [`supabase/schema.sql`](./supabase/schema.sql) espelha o banco de produção. Para criar um projeto novo, execute seu conteúdo no SQL Editor do Supabase. Toda mudança no banco deve ser feita no painel e registrada neste arquivo.
 
-### Tabela `fixed_templates`
-```sql
-CREATE TABLE fixed_templates (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id     uuid REFERENCES auth.users NOT NULL,
-  description text NOT NULL,
-  amount      numeric(12,2) NOT NULL,
-  category    text,
-  type        text DEFAULT 'fixed',
-  is_debt     boolean DEFAULT false,
-  active      boolean DEFAULT true,
-  start_month text,
-  end_month   text,
-  day         text DEFAULT '01',
-  paid_months jsonb DEFAULT '{}',
-  created_at  timestamptz DEFAULT now()
-);
-```
-
-### Row Level Security
-```sql
-ALTER TABLE entries ENABLE ROW LEVEL SECURITY;
-ALTER TABLE fixed_templates ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "user_own_entries"
-  ON entries FOR ALL USING (auth.uid() = user_id);
-
-CREATE POLICY "user_own_templates"
-  ON fixed_templates FOR ALL USING (auth.uid() = user_id);
-```
+A tabela `profiles` guarda o identificador Auth do usuário, nome e avatar; o app atual ainda mantém o perfil localmente e não grava nessa tabela. `entries.debt_info` é um JSONB opcional, mas o código atual não define uma estrutura para seu conteúdo.
 
 ---
 
 ## 🧪 Testes Automatizados
 
-Suite com **50+ casos de teste** em JavaScript puro (sem frameworks).
+Suite com **130 casos de teste** em JavaScript puro (sem frameworks).
 
 ### Como executar
 1. Abra `tests/test-runner.html` no Chrome ou Edge.
@@ -370,7 +368,7 @@ No repositório: **Settings → Pages → Branch: main / (root) → Save**.
 ## 🛠️ Configuração do Supabase
 
 1. Criar projeto em [supabase.com](https://supabase.com).
-2. Criar tabelas e ativar RLS conforme scripts acima.
+2. No SQL Editor do projeto, execute `supabase/schema.sql` para criar o esquema documentado.
 3. Em **Authentication → Providers**: certificar-se de que o provedor **Email** está habilitado.
 4. Em **Authentication → URL Configuration**: adicionar a URL do app em **Redirect URLs**.
 5. Inserir as credenciais em `js/supabase.js`:
@@ -392,7 +390,52 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 
 ## 📋 Changelog
 
-### v3.6 — 27/10/2026 (Versão atual)
+### v3.9 — 27/10/2026 (Versão atual)
+
+- Bump da versão do app, do backup JSON e do cache do Service Worker para 3.9.
+- Drawer do perfil com foco inicial no botão fechar, contenção de Tab/Shift+Tab, fechamento por Esc e `aria-modal`.
+- Calendário de meses e sidebar mobile fecham por Esc e devolvem o foco aos acionadores; sidebar mantém `aria-expanded` e rótulo atualizados.
+- Contraste de textos de erro e avisos em vermelho ajustado com `--danger-text`; foco dos seletores da prévia de importação preservado sem remover o contorno.
+- Adicionado o link "Pular para o conteúdo" e o landmark `<main id="mainContent">`.
+- Pré-cache dos recursos essenciais usa `cache: 'reload'`.
+- Cobertura atual: 130 testes automatizados.
+
+### v3.8 — 27/10/2026
+
+- Bundles oficiais locais de Chart.js 4.4.1 e Supabase JS 2.117.3; scripts não dependem mais do jsDelivr.
+- CSP mais restritiva para scripts e diretivas `object-src`, `base-uri` e `form-action`.
+- Service Worker usa timeout de rede de 4 segundos, `no-cache` para assets locais, fallback específico para navegação e pré-cache tolerante de recursos opcionais.
+- Gerados ícones PNG PWA e ícone Apple Touch; manifest atualizado com `id` e `scope`.
+- Avatares aceitam JPEG, PNG e WebP, são redimensionados para até 256x256 e salvos como JPEG; erro de cota recebe aviso.
+- Escapados valores de data, previsão de dívida e IDs interpolados em HTML.
+- Política de privacidade corrigida para refletir provedores externos, dados locais, sessão, logout e Reset.
+- Criada a migração de hardening `supabase/migrations/20261027_hardening.sql`; ela **não foi executada**. `supabase/schema.sql` apenas a referencia para aplicação manual.
+- `.gitignore` atualizado para arquivos `.env*`, com exceção de `.env.example`, temporários locais do Supabase e backups.
+- Importador aprimorado com sinais, débito/crédito, cabeçalhos com preâmbulo, validação de datas, limites, deduplicação e gravação em lote.
+- Cobertura atual: 127 testes automatizados aprovados.
+- Os termos de licença ainda precisam ser esclarecidos: o rodapé informa "Todos os direitos reservados", enquanto esta documentação descreve o projeto como livre para fins educacionais.
+
+### v3.7 — 27/10/2026
+
+#### 📄 Relatório Financeiro em PDF
+
+- Relatórios de mês, ano ou intervalo com opção de detalhar os lançamentos.
+- Resumo financeiro, metas e diagnóstico reutilizam as regras já existentes no dashboard; o centro de dívidas compartilha o cálculo de parcelas.
+- Bibliotecas oficiais jsPDF 4.2.1 e jspdf-autotable 5.0.9 são carregadas sob demanda, sem CDN para o PDF.
+- Modal acessível, compartilhamento de PDF em dispositivos compatíveis e fallback para abrir ou baixar quando necessário.
+- Service Worker v3.7 pré-cacheia assets locais; os CDNs permitidos usam stale-while-revalidate e domínios Supabase nunca são interceptados.
+- Evento `online` tenta retomar a sincronização pendente.
+- Percentuais do PDF formatados no padrão pt-BR; textos fixos revisados para preservar acentuação e colunas numéricas alinhadas à direita.
+- Download agora tenta o compartilhamento de arquivos compatível com iOS, depois o download por link e, por fim, a abertura do PDF com aviso.
+- A regra atual de parcelas restantes está documentada e coberta por teste: período total menos a quantidade de meses marcados como pagos.
+- Validação final: 92 testes automatizados aprovados e PDF fictício gerado para conferência.
+
+#### 📦 Integridade dos bundles locais
+
+- `js/vendor/jspdf.umd.min.js` — jsPDF 4.2.1; SHA-256 `E6551FCDC32F09D6853B2C5126D18D01D9447E0DA618A41A11EBEEE0F6C20D54`.
+- `js/vendor/jspdf.plugin.autotable.min.js` — jspdf-autotable 5.0.9; SHA-256 `83DD8E5AE29436BD3D3EF4F4A915125B3951264994C25DE0359D3FBD105ABE15`.
+
+### v3.6 — 27/10/2026
 
 #### 🎯 Metas & Alertas de Teto de Gastos por Categoria
 
@@ -404,6 +447,7 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 
 - Versão 3.6 sincronizada no badge, no backup JSON e no Service Worker.
 - Cache do PWA atualizado para `gastopro-v3.6`; recursos locais listados no pré-cache, incluindo `js/importer.js`.
+- Esquema do banco Supabase documentado em `supabase/schema.sql`, incluindo tabelas, validações, RLS, índices, permissões e triggers.
 
 #### ✅ Correção dos alertas de limite
 
@@ -512,19 +556,19 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
   - Simulação de corte de categoria: *"E se eu reduzir Alimentação em 20%?"*
   - Comparativo antes/depois exibido em painel lateral
 
-- [ ] **📊 Exportação de Relatórios (PDF / Excel)**
-  - Exportar relatório mensal completo em PDF (summary + gráficos)
+- [x] **📄 Exportação de relatório financeiro em PDF** — concluído na v3.7
+  - [x] Relatório por mês, ano ou intervalo, com totais, categorias, dívidas, metas e diagnóstico
+  - [x] Detalhamento opcional dos lançamentos e geração local no navegador
+- [ ] **📊 Exportação de dados adicionais**
   - Exportar lançamentos em Excel/CSV filtrado por período
-  - Relatório anual consolidado (12 meses + totalizador)
+  - Exportações adicionais em Excel/CSV
 
 ---
 
 ### 🟡 Média Prioridade
 
-- [ ] **🏷️ Deduplicação na Importação de Extratos**
-  - Detectar lançamentos duplicados (mesma data + valor + estabelecimento)
-  - Exibir alerta visual de duplicata antes de confirmar a importação
-  - Opção de ignorar ou forçar importação do duplicado
+- [x] **🏷️ Deduplicação na Importação de Extratos** — concluída na v3.8
+  - Duplicatas existentes ou repetidas no arquivo são desmarcadas inicialmente; o usuário pode forçar a importação.
 
 - [ ] **🔔 Notificações In-App de Alertas de Gastos**
   - Alertas visuais quando meta de categoria estiver próxima do limite
@@ -536,7 +580,7 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
   - Indicador de status de conectividade visível na UI
 
 - [ ] **🧪 Ampliar Cobertura de Testes Automatizados**
-  - Testes para o módulo `importer.js` (parser CSV/Texto)
+  - [x] Testes do módulo `importer.js` (parser CSV/Texto e casos de borda)
   - Testes para o Wizard (fluxo completo de 4 passos)
   - Testes automatizados para Metas por Categoria
 

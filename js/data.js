@@ -51,7 +51,7 @@
 
 // ----------------------------------------------------------------
 // CHAVES DO LOCALSTORAGE
-// Nomes versionados para carregar a base de dados real da planilha.
+// Nomes versionados das chaves de persistência local.
 // ----------------------------------------------------------------
 
 /** Chave dos lançamentos pontuais (ganhos de renda e gastos variáveis). */
@@ -68,272 +68,102 @@ const STORAGE_GOALS = 'gastopro_goals_v1';
 const STORAGE_LAST_UID = 'gastopro_last_uid';
 const STORAGE_PENDING_SYNC = 'gastopro_pending_sync_v1';
 
+function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function isUuid(id) {
   return typeof id === 'string' &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 }
 
+function validateBackupText(text) {
+  if (typeof text !== 'string') return { error: 'O conteúdo do backup deve ser texto.' };
+  if (new Blob([text]).size > 5 * 1024 * 1024) return { error: 'O backup excede o limite de 5 MB.' };
 
-// ----------------------------------------------------------------
-// BASE DE DADOS REAL EXTRAÍDA DA PLANILHA (Controle Mensal Aylton.xlsx)
-// ----------------------------------------------------------------
-
-/** Templates de Gastos Fixos Recorrentes e Dívidas reais da planilha */
-const INITIAL_REAL_TEMPLATES = [
-  // 1. Gastos Fixos Recorrentes (Contínuos - vigentes desde o início de 2026)
-  {
-    id: 'fix-saude-isabella',
-    desc: 'Plano de saúde – Isabella',
-    amount: 480.00,
-    category: 'Saúde',
-    type: 'fixed',
-    isDebt: false,
-    active: true,
-    startMonth: '2026-01',
-    endMonth: null,
-    day: '05',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-jiujitsu-kimura',
-    desc: 'Jiu Jitsu – Kimura',
-    amount: 120.00,
-    category: 'Esporte',
-    type: 'fixed',
-    isDebt: false,
-    active: true,
-    startMonth: '2026-01',
-    endMonth: null,
-    day: '05',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-academia-kitfit',
-    desc: 'Academia – KitFit',
-    amount: 200.00,
-    category: 'Esporte',
-    type: 'fixed',
-    isDebt: false,
-    active: true,
-    startMonth: '2026-01',
-    endMonth: null,
-    day: '05',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-cartao-credito',
-    desc: 'Cartão de crédito (média)',
-    amount: 850.00,
-    category: 'Cartão de crédito',
-    type: 'fixed',
-    isDebt: false,
-    active: true,
-    startMonth: '2026-01',
-    endMonth: null,
-    day: '05',
-    paidMonths: {}
-  },
-
-  // 2. Dívidas & Parcelamentos: Faculdade UNINTER
-  {
-    id: 'fix-uninter-pend-1',
-    desc: 'UNINTER – Pendência 1',
-    amount: 293.85,
-    category: 'Faculdade UNINTER',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2026-11',
-    endMonth: '2026-11',
-    day: '09',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-uninter-pend-2',
-    desc: 'UNINTER – Pendência 2',
-    amount: 230.00,
-    category: 'Faculdade UNINTER',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2026-11',
-    endMonth: '2026-11',
-    day: '09',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-uninter-mens-1',
-    desc: 'UNINTER – Mensalidades Dez/26 a Jan/28',
-    amount: 293.85,
-    category: 'Faculdade UNINTER',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2026-12',
-    endMonth: '2028-01',
-    day: '09',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-uninter-mens-2',
-    desc: 'UNINTER – Mensalidades Fev/28 a Jul/28',
-    amount: 241.37,
-    category: 'Faculdade UNINTER',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2028-02',
-    endMonth: '2028-07',
-    day: '09',
-    paidMonths: {}
-  },
-
-  // 3. Dívidas & Parcelamentos: Shopee Empréstimo
-  {
-    id: 'fix-shopee-emp-1',
-    desc: 'Shopee Empréstimo – parcelas 8 a 11',
-    amount: 99.38,
-    category: 'Shopee Empréstimo',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2026-11',
-    endMonth: '2027-02',
-    day: '10',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-shopee-emp-2',
-    desc: 'Shopee Empréstimo – parcela 12',
-    amount: 99.43,
-    category: 'Shopee Empréstimo',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2027-03',
-    endMonth: '2027-03',
-    day: '10',
-    paidMonths: {}
-  },
-
-  // 4. Dívidas & Parcelamentos: Shopee Parcelado
-  {
-    id: 'fix-shopee-parc-1',
-    desc: 'Shopee Parcelado – parcela 1',
-    amount: 588.99,
-    category: 'Shopee Parcelado',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2026-11',
-    endMonth: '2026-11',
-    day: '20',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-shopee-parc-2',
-    desc: 'Shopee Parcelado – parcela 2',
-    amount: 516.51,
-    category: 'Shopee Parcelado',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2026-12',
-    endMonth: '2026-12',
-    day: '20',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-shopee-parc-3',
-    desc: 'Shopee Parcelado – parcela 3',
-    amount: 516.52,
-    category: 'Shopee Parcelado',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2027-01',
-    endMonth: '2027-01',
-    day: '20',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-shopee-parc-4',
-    desc: 'Shopee Parcelado – parcelas 4 a 10',
-    amount: 156.39,
-    category: 'Shopee Parcelado',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2027-02',
-    endMonth: '2027-08',
-    day: '20',
-    paidMonths: {}
-  },
-  {
-    id: 'fix-shopee-parc-5',
-    desc: 'Shopee Parcelado – parcela 11',
-    amount: 156.41,
-    category: 'Shopee Parcelado',
-    type: 'fixed',
-    isDebt: true,
-    active: true,
-    startMonth: '2027-09',
-    endMonth: '2027-09',
-    day: '20',
-    paidMonths: {}
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    return { error: 'O arquivo não contém um JSON válido.' };
   }
-];
+  if (!parsed || typeof parsed !== 'object' ||
+    typeof parsed.version !== 'string' || !parsed.version.trim()) {
+    return { error: 'O backup precisa conter uma versão textual.' };
+  }
 
-/** Gera a lista de receitas programadas para os meses do fluxo (R$ 2.710,00/mês) */
-function generateRealInitialEntries() {
-  const months = [
-    '2026-10', '2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04',
-    '2027-05', '2027-06', '2027-07', '2027-08', '2027-09', '2027-10',
-    '2027-11', '2027-12', '2028-01', '2028-02', '2028-03', '2028-04',
-    '2028-05', '2028-06', '2028-07'
-  ];
-  const list = [];
-  months.forEach(m => {
-    list.push({
-      id: `rec-03-${m}`,
-      month: m,
-      type: 'income',
-      desc: 'Receita – dia 03',
-      amount: 160.00,
-      category: 'Receita',
-      paid: true,
-      date: `${m}-03`
-    });
-    list.push({
-      id: `rec-07-${m}`,
-      month: m,
-      type: 'income',
-      desc: 'Receita – 7º dia útil',
-      amount: 1700.00,
-      category: 'Receita',
-      paid: true,
-      date: `${m}-07`
-    });
-    list.push({
-      id: `rec-15-${m}`,
-      month: m,
-      type: 'income',
-      desc: 'Receita – dia 15',
-      amount: 850.00,
-      category: 'Receita',
-      paid: true,
-      date: `${m}-15`
-    });
-  });
-  return list;
+  const collections = ['entries', 'templates', 'goals'];
+  for (const key of collections) {
+    if (!Array.isArray(parsed[key])) return { error: `A coleção ${key} precisa ser uma lista.` };
+    if (parsed[key].length > 5000) return { error: `A coleção ${key} excede o limite de 5.000 itens.` };
+  }
+
+  const entries = parsed.entries.map(item => ({ ...item }));
+  const templates = parsed.templates.map(item => ({ ...item }));
+  const goals = parsed.goals.map(item => ({ ...item }));
+  for (const [index, item] of entries.entries()) {
+    const error = window.validateCloudPayload(item, 'entries');
+    if (error) return { error: `Lançamento ${index + 1}: ${error}` };
+    item.amount = Number(item.amount);
+    item.month = item.date.substring(0, 7);
+    if (!isUuid(item.id)) item.id = crypto.randomUUID();
+  }
+  for (const [index, item] of templates.entries()) {
+    const error = window.validateCloudPayload(item, 'templates');
+    if (error) return { error: `Gasto fixo ${index + 1}: ${error}` };
+    item.amount = Number(item.amount);
+    if (!isUuid(item.id)) item.id = crypto.randomUUID();
+  }
+  for (const [index, goal] of goals.entries()) {
+    if (!goal || typeof goal.category !== 'string' || !goal.category.trim() ||
+      goal.category.length > 100 || !Number.isFinite(Number(goal.limit)) || Number(goal.limit) <= 0) {
+      return { error: `Meta ${index + 1}: informe categoria e limite válido.` };
+    }
+    goal.category = goal.category.trim();
+    goal.limit = Number(goal.limit);
+    const goalId = String(goal.id || '').replace(/^goal-/, '');
+    goal.id = isUuid(goalId) ? goalId : crypto.randomUUID();
+  }
+
+  return {
+    version: parsed.version,
+    exportDate: typeof parsed.exportDate === 'string' ? parsed.exportDate : null,
+    entries,
+    templates,
+    goals
+  };
 }
 
-/**
- * @namespace FinanceData
- * @description
- * Singleton de persistência de dados do GastoPro.
- * Centraliza todas as operações de CRUD no localStorage.
- */
+function mergeBackupData(current, incoming, mode) {
+  const clone = value => JSON.parse(JSON.stringify(value));
+  if (mode === 'replace') return clone(incoming);
+  if (mode !== 'merge') throw new TypeError('Modo de restauração inválido.');
+
+  const mergeById = (existing, added, normalizeGoalId = false) => {
+    const keyOf = item => {
+      const id = String(item.id);
+      return normalizeGoalId ? id.replace(/^goal-/, '') : id;
+    };
+    const merged = new Map(existing.map(item => [keyOf(item), clone(item)]));
+    added.forEach(item => merged.set(keyOf(item), clone(item)));
+    return [...merged.values()];
+  };
+  return {
+    entries: mergeById(current.entries, incoming.entries),
+    templates: mergeById(current.templates, incoming.templates),
+    goals: mergeById(current.goals, incoming.goals, true)
+  };
+}
+
+window.GastoProBackupHelpers = {
+  validate: validateBackupText,
+  merge: mergeBackupData
+};
+
+
 const FinanceData = {
 
   clearUserData() {
@@ -420,6 +250,7 @@ const FinanceData = {
       this.clearUserData();
     } else {
       this.markFullSync();
+      localStorage.removeItem(STORAGE_GOALS);
     }
     localStorage.setItem(STORAGE_LAST_UID, userId);
     return true;
@@ -485,35 +316,54 @@ const FinanceData = {
         pending.deletedTemplates.length ? window.SupabaseAuth.deleteCloudTemplates(pending.deletedTemplates, targetUserId) : { success: true }
       ]);
 
-      const failedResult = results.find(result => !result || !result.success);
-      if (failedResult) {
-        if (typeof showToast === 'function') {
-          showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
-        }
-        return failedResult || { success: false, error: new Error('Falha desconhecida de sincronização.') };
-      }
-
       const latestPending = this.getPendingSync();
-      const removeSyncedIds = (kind, sentItems, currentItems) => {
+      const getFailedIds = (result, sentItems) => {
+        if (result && result.success) return result.failedIds || [];
+        return result && Array.isArray(result.failedIds) && result.failedIds.length
+          ? result.failedIds
+          : sentItems.map(item => item.id);
+      };
+      const failedEntryIds = getFailedIds(results[0], entriesToSave);
+      const failedTemplateIds = getFailedIds(results[1], templatesToSave);
+      const failedEntryDeletes = !results[2] || !results[2].success;
+      const failedTemplateDeletes = !results[3] || !results[3].success;
+      const hasFailures = failedEntryIds.length > 0 || failedTemplateIds.length > 0 ||
+        failedEntryDeletes || failedTemplateDeletes;
+      const removeSyncedIds = (kind, sentItems, currentItems, failedIds) => {
         const sentById = new Map(sentItems.map(item => [item.id, JSON.stringify(item)]));
         latestPending[kind] = latestPending[kind].filter(id => {
+          if (failedIds.includes(id)) return true;
           const current = currentItems.find(item => item.id === id);
           return current && sentById.get(id) !== JSON.stringify(current);
         });
+        failedIds.forEach(id => {
+          if (!latestPending[kind].includes(id)) latestPending[kind].push(id);
+        });
       };
-      removeSyncedIds('entries', entriesToSave, this.getEntries());
-      removeSyncedIds('templates', templatesToSave, this.getTemplates());
+      removeSyncedIds('entries', entriesToSave, this.getEntries(), failedEntryIds);
+      removeSyncedIds('templates', templatesToSave, this.getTemplates(), failedTemplateIds);
 
-      const currentEntryIds = new Set(this.getEntries().map(item => item.id));
-      const currentTemplateIds = new Set(this.getTemplates().map(item => item.id));
-      latestPending.deletedEntries = latestPending.deletedEntries.filter(id => currentEntryIds.has(id));
-      latestPending.deletedTemplates = latestPending.deletedTemplates.filter(id => currentTemplateIds.has(id));
+      if (!failedEntryDeletes) {
+        latestPending.deletedEntries = latestPending.deletedEntries.filter(id => !pending.deletedEntries.includes(id));
+      }
+      if (!failedTemplateDeletes) {
+        latestPending.deletedTemplates = latestPending.deletedTemplates.filter(id => !pending.deletedTemplates.includes(id));
+      }
 
       if (fullSync) {
-        latestPending.full = JSON.stringify(entries) !== JSON.stringify(this.getEntries()) ||
-          JSON.stringify(templates) !== JSON.stringify(this.getTemplates());
+        latestPending.full = !hasFailures && (
+          JSON.stringify(entries) !== JSON.stringify(this.getEntries()) ||
+          JSON.stringify(templates) !== JSON.stringify(this.getTemplates())
+        );
       }
       this.savePendingSync(latestPending);
+      if (hasFailures) {
+        if (typeof showToast === 'function') {
+          showToast('Não foi possível sincronizar todos os dados; os itens pendentes continuam salvos neste aparelho');
+        }
+        return results.find(result => !result || !result.success) ||
+          { success: false, error: new Error('Alguns itens não puderam ser sincronizados.') };
+      }
       return { success: true };
     };
 
@@ -523,7 +373,7 @@ const FinanceData = {
     return currentSync;
   },
 
-  mergeCloudData(userId, cloudEntries, cloudTemplates) {
+  mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded = false) {
     if (
       !userId ||
       localStorage.getItem(STORAGE_LAST_UID) !== userId ||
@@ -531,14 +381,22 @@ const FinanceData = {
       !Array.isArray(cloudTemplates)
     ) return false;
 
-    const mergeById = (localItems, cloudItems) => {
+    const pending = this.getPendingSync();
+    const canRemoveCloudDeleted = flushSucceeded && !this.hasPendingSync();
+    const mergeById = (localItems, cloudItems, pendingIds) => {
       const merged = new Map(localItems.map(item => [item.id, item]));
       cloudItems.forEach(item => merged.set(item.id, item));
+      if (canRemoveCloudDeleted) {
+        localItems.forEach(item => {
+          if (!isUuid(item.id) || pendingIds.includes(item.id)) merged.set(item.id, item);
+          else if (!cloudItems.some(cloudItem => cloudItem.id === item.id)) merged.delete(item.id);
+        });
+      }
       return [...merged.values()];
     };
 
-    const entries = mergeById(this.getEntries(), cloudEntries);
-    const templates = mergeById(this.getTemplates(), cloudTemplates);
+    const entries = mergeById(this.getEntries(), cloudEntries, pending.entries);
+    const templates = mergeById(this.getTemplates(), cloudTemplates, pending.templates);
     localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
     localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
     return true;
@@ -550,7 +408,6 @@ const FinanceData = {
 
   /**
    * Lê todos os lançamentos pontuais do localStorage.
-   * Inicializa com os dados reais da planilha se ainda não existirem.
    *
    * @returns {Array<Object>} Lista de lançamentos.
    */
@@ -571,13 +428,15 @@ const FinanceData = {
    *
    * @param {Array<Object>} entries - Array de lançamentos a salvar.
    */
-  async saveEntries(entries) {
+  async saveEntries(entries, options = {}) {
     try {
       const previousEntries = this.getEntries();
       localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
       this.queueLocalChanges('entries', previousEntries, entries);
       const profile = this.getProfile();
-      return await this.flushPendingSync(profile && profile.userId);
+      return options.flush === false
+        ? { success: true, queued: true }
+        : await this.flushPendingSync(profile && profile.userId);
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar lançamentos no localStorage:', e);
       return { success: false, error: e };
@@ -590,7 +449,6 @@ const FinanceData = {
 
   /**
    * Lê todos os templates de gastos fixos do localStorage.
-   * Inicializa com os dados reais da planilha se ainda não existirem.
    *
    * @returns {Array<Object>} Lista de templates.
    */
@@ -611,13 +469,15 @@ const FinanceData = {
    *
    * @param {Array<Object>} templates - Array de templates a salvar.
    */
-  async saveTemplates(templates) {
+  async saveTemplates(templates, options = {}) {
     try {
       const previousTemplates = this.getTemplates();
       localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
       this.queueLocalChanges('templates', previousTemplates, templates);
       const profile = this.getProfile();
-      return await this.flushPendingSync(profile && profile.userId);
+      return options.flush === false
+        ? { success: true, queued: true }
+        : await this.flushPendingSync(profile && profile.userId);
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar templates fixos no localStorage:', e);
       return { success: false, error: e };
@@ -711,6 +571,63 @@ const FinanceData = {
   // O tipo do item determina se vira lançamento pontual ou template.
   // ================================================================
 
+  async addMany(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return { success: true, items: [], syncResult: { success: true, skipped: true } };
+    }
+
+    const newEntries = [];
+    const newTemplates = [];
+    const addedItems = [];
+
+    items.forEach(item => {
+      if (item.type === 'fixed' || item.type === 'debt') {
+        const date = item.date || getLocalDateString();
+        const category = item.category || (item.type === 'debt' ? 'Empréstimo' : 'Contas');
+        const template = {
+          id: crypto.randomUUID(),
+          desc: item.desc,
+          amount: parseFloat(item.amount) || 0,
+          category,
+          type: 'fixed',
+          isDebt: item.type === 'debt' || Boolean(item.endMonth) ||
+            category === 'Empréstimo' || category === 'Parcelamento',
+          active: true,
+          startMonth: item.month || item.startMonth || date.substring(0, 7),
+          endMonth: item.endMonth || null,
+          day: date.split('-')[2] || '05',
+          date,
+          paidMonths: {}
+        };
+        newTemplates.push(template);
+        addedItems.push(template);
+        return;
+      }
+
+      const date = item.date || getLocalDateString();
+      const entry = {
+        ...item,
+        id: crypto.randomUUID(),
+        date,
+        month: item.month || date.substring(0, 7),
+        paid: item.paid !== undefined ? item.paid : true
+      };
+      newEntries.push(entry);
+      addedItems.push(entry);
+    });
+
+    if (newEntries.length) {
+      const result = await this.saveEntries([...this.getEntries(), ...newEntries], { flush: false });
+      if (!result.success) return { success: false, items: addedItems, error: result.error };
+    }
+    if (newTemplates.length) {
+      const result = await this.saveTemplates([...this.getTemplates(), ...newTemplates], { flush: false });
+      if (!result.success) return { success: false, items: addedItems, error: result.error };
+    }
+    const syncResult = await this.flushPendingSync(this.getProfile().userId);
+    return { success: syncResult.success, items: addedItems, syncResult, error: syncResult.error };
+  },
+
   /**
    * Adiciona um novo item financeiro ao banco.
    * - Tipo 'fixed' ou 'debt' → cria template recorrente via addTemplate().
@@ -735,7 +652,7 @@ const FinanceData = {
     const newItem = {
       ...item,
       id:   crypto.randomUUID(),
-      date: item.date || new Date().toISOString().split('T')[0],
+      date: item.date || getLocalDateString(),
       paid: item.paid !== undefined ? item.paid : true // Lançamentos nascem confirmados
     };
     entries.push(newItem);
@@ -752,7 +669,7 @@ const FinanceData = {
    */
   addTemplate(tpl) {
     const templates = this.getTemplates();
-    const dateStr   = tpl.date || new Date().toISOString().split('T')[0];
+    const dateStr   = tpl.date || getLocalDateString();
     // Extrai o dia de vencimento da data (ex: "05" de "2026-11-05")
     const day = dateStr.split('-')[2] || '05';
 
@@ -881,12 +798,15 @@ const FinanceData = {
   // ================================================================
 
   /**
-   * Apaga TODOS os lançamentos e templates do localStorage.
+   * Apaga lançamentos, templates e metas, aguardando a sincronização pendente.
    * Ação irreversível — sempre exibir confirmação ao usuário antes de chamar.
    */
-  clearAll() {
-    this.saveEntries([]);
-    this.saveTemplates([]);
+  async clearAll() {
+    const profile = this.getProfile();
+    await this.saveEntries([], { flush: false });
+    await this.saveTemplates([], { flush: false });
+    this.saveGoals([]);
+    return this.flushPendingSync(profile.userId);
   },
 
   // ================================================================
@@ -899,7 +819,7 @@ const FinanceData = {
    *
    * Estrutura do backup exportado:
    * {
-   *   version:    "3.6",
+   *   version:    "3.9",
    *   exportDate: "2026-11-05T10:00:00.000Z",
    *   entries:    [...],    // Todos os lançamentos pontuais
    *   templates:  [...],    // Todos os templates de gastos fixos
@@ -908,18 +828,50 @@ const FinanceData = {
    */
   exportJSON() {
     const backup = {
-      version:    '3.6',
+      version:    '3.9',
       exportDate: new Date().toISOString(),
       entries:    this.getEntries(),
       templates:  this.getTemplates(),
       goals:      this.getGoals()
     };
-    // Cria a Data URL e dispara o download via link temporário
-    const dataStr  = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(backup, null, 2));
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const objectUrl = URL.createObjectURL(blob);
     const dlAnchor = document.createElement('a');
-    dlAnchor.setAttribute('href', dataStr);
-    dlAnchor.setAttribute('download', 'gastopro_backup.json');
+    dlAnchor.setAttribute('href', objectUrl);
+    dlAnchor.setAttribute('download', `gastopro_backup_${getLocalDateString()}.json`);
+    dlAnchor.style.display = 'none';
+    document.body.appendChild(dlAnchor);
     dlAnchor.click();
+    dlAnchor.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    return backup;
+  },
+
+  async importJSON(text, mode = 'merge') {
+    const imported = validateBackupText(text);
+    if (imported.error) return { success: false, error: imported.error };
+    let restored;
+    try {
+      restored = mergeBackupData({
+        entries: this.getEntries(),
+        templates: this.getTemplates(),
+        goals: this.getGoals()
+      }, imported, mode);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+
+    const [entriesResult, templatesResult] = await Promise.all([
+      this.saveEntries(restored.entries),
+      this.saveTemplates(restored.templates)
+    ]);
+    if (!this.saveGoals(restored.goals)) {
+      return { success: false, error: 'Lançamentos e gastos fixos restaurados, mas não foi possível salvar as metas localmente.' };
+    }
+    if (!entriesResult.success || !templatesResult.success) {
+      return { success: false, error: 'O backup foi restaurado localmente, mas há alterações pendentes de sincronização.' };
+    }
+    return { success: true };
   },
 
   // ================================================================
@@ -952,8 +904,10 @@ const FinanceData = {
   saveProfile(profile) {
     try {
       localStorage.setItem(STORAGE_PROFILE, JSON.stringify(profile));
+      return { success: true };
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar perfil no localStorage:', e);
+      return { success: false, error: e };
     }
   },
 
@@ -985,8 +939,10 @@ const FinanceData = {
   saveGoals(goals) {
     try {
       localStorage.setItem(STORAGE_GOALS, JSON.stringify(goals));
+      return true;
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar metas:', e);
+      return false;
     }
   },
 

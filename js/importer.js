@@ -26,123 +26,174 @@
  */
 const GastoProImporter = (() => {
 
-  // ================================================================
-  // MAPA DE CATEGORIZAÇÃO AUTOMÁTICA
-  // Dicionário de palavras-chave → categoria.
-  // A busca é case-insensitive e parcial (includes).
-  // ================================================================
+  const MAX_CSV_CHARS = 1_000_000;
+  const MAX_RAW_CHARS = 200_000;
+  const MAX_LINE_CHARS = 500;
+  const MAX_ROWS = 2000;
+  let lastWarnings = [];
 
-  /** @type {Array<{keys: string[], category: string}>} */
   const CATEGORY_RULES = [
-    // Alimentação
-    { keys: ['ifood', 'rappi', 'uber eat', 'delivery', 'mcdonalds', 'mc donalds', 'burguer', 'burger',
-             'pizza', 'lanche', 'restaurante', 'rest.', 'padaria', 'pastelaria', 'sushi',
-             'starbucks', 'cafe', 'café', 'bar ', 'boteco', 'churrascaria', 'galeto', 'refeicao',
-             'refeição', 'alimentacao', 'alimentação'], category: 'Alimentação' },
-
-    // Mercado / Supermercado
-    { keys: ['mercado', 'supermercado', 'atacadao', 'atacadão', 'assai', 'assaí', 'carrefour',
-             'extra', 'walmart', 'big', 'hortifruti', 'sacolão', 'sacolao', 'feira', 'minimarket',
-             'pao de acucar', 'pão de açúcar', 'sams club', 'costco'], category: 'Mercado' },
-
-    // Transporte
-    { keys: ['uber', '99pop', '99 pop', 'cabify', 'taxi', 'táxi', 'onibus', 'ônibus',
-             'metrô', 'metro', 'combustivel', 'combustível', 'gasolina', 'etanol',
-             'posto ', 'estacionamento', 'pedagio', 'pedágio', 'autopass', 'sem parar',
-             'veloe', 'bilhete único', 'bilhete unico'], category: 'Transporte' },
-
-    // Saúde
-    { keys: ['farmacia', 'farmácia', 'drogaria', 'droga', 'ultrafarma', 'drogaraia', 'raia',
-             'medico', 'médico', 'consulta', 'clinica', 'clínica', 'hospital', 'exame',
-             'laboratorio', 'laboratório', 'plano de saude', 'plano saude', 'amil', 'sulamerica',
-             'unimed', 'hapvida', 'bradesco saude', 'porto saude', 'odonto'], category: 'Saúde' },
-
-    // Esporte / Lazer
+    { keys: ['ifood', 'rappi', 'uber eats', 'uber eat', 'delivery', 'mcdonalds', 'mc donalds',
+      'burguer', 'burger', 'pizza', 'lanche', 'restaurante', 'padaria', 'pastelaria', 'sushi',
+      'starbucks', 'cafe', 'bar', 'boteco', 'churrascaria', 'galeto', 'refeicao', 'alimentacao'],
+      category: 'Alimentação' },
+    { keys: ['mercado', 'supermercado', 'atacadao', 'assai', 'carrefour', 'extra', 'walmart',
+      'hortifruti', 'sacolao', 'feira', 'minimarket', 'pao de acucar', 'sams club', 'costco'],
+      category: 'Mercado' },
+    { keys: ['uber', '99pop', '99 pop', 'cabify', 'taxi', 'onibus', 'combustivel', 'gasolina',
+      'etanol', 'posto', 'estacionamento', 'pedagio', 'autopass', 'sem parar', 'veloe',
+      'bilhete unico'], category: 'Transporte' },
+    { keys: ['farmacia', 'drogaria', 'ultrafarma', 'drogaraia', 'raia', 'medico', 'consulta',
+      'clinica', 'hospital', 'exame', 'laboratorio', 'plano de saude', 'plano saude', 'amil',
+      'sulamerica', 'unimed', 'hapvida', 'bradesco saude', 'porto saude', 'odonto'], category: 'Saúde' },
     { keys: ['academia', 'gym', 'smartfit', 'smart fit', 'bioritmo', 'jiu jitsu', 'jiujitsu',
-             'crossfit', 'pilates', 'yoga', 'natacao', 'natação', 'esporte'], category: 'Esporte' },
-
-    // Educação
+      'crossfit', 'pilates', 'yoga', 'natacao', 'esporte'], category: 'Esporte' },
     { keys: ['uninter', 'faculdade', 'universidade', 'escola', 'curso', 'alura', 'udemy',
-             'coursera', 'mentoria', 'treinamento', 'livro', 'livraria', 'apostila',
-             'mensalidade escolar', 'matricula', 'matrícula'], category: 'Educação' },
-
-    // Streaming / Assinaturas
+      'coursera', 'mentoria', 'treinamento', 'livro', 'livraria', 'apostila',
+      'mensalidade escolar', 'matricula'], category: 'Educação' },
     { keys: ['netflix', 'spotify', 'amazon prime', 'youtube', 'disney', 'hbo', 'globoplay',
-             'paramount', 'apple tv', 'deezer', 'tidal', 'crunchyroll', 'twitch',
-             'microsoft 365', 'office 365', 'adobe', 'canva', 'notion', 'chatgpt',
-             'assinatura', 'subscription'], category: 'Assinaturas' },
-
-    // Moradia / Casa
-    { keys: ['aluguel', 'condominio', 'condomínio', 'energia', 'light', 'cemig', 'copel',
-             'enel', 'agua', 'água', 'sabesp', 'sanepar', 'embasa', 'copasa', 'gas ', 'gás ',
-             'comgas', 'internet', 'tim ', 'vivo', 'claro', 'oi ', 'net ',
-             'giga', 'algar', 'embratel', 'telefone', 'iptu', 'imovel',
-             'imóvel', 'reforma'], category: 'Moradia' },
-
-    // Cartão de Crédito / Financeiro
-    { keys: ['cartao', 'cartão', 'fatura', 'financiamento', 'parcela', 'emprestimo', 'empréstimo',
-             'cdc', 'sicredi', 'nubank', 'inter', 'c6', 'neon', 'debito automatico',
-             'débito automático'], category: 'Cartão de crédito' },
-
-    // Compras Online / E-commerce
+      'paramount', 'apple tv', 'deezer', 'tidal', 'crunchyroll', 'twitch', 'microsoft 365',
+      'office 365', 'adobe', 'canva', 'notion', 'chatgpt', 'assinatura', 'subscription'],
+      category: 'Assinaturas' },
+    { keys: ['aluguel', 'condominio', 'energia', 'cemig', 'copel', 'enel', 'agua', 'sabesp',
+      'sanepar', 'embasa', 'copasa', 'comgas', 'internet', 'giga', 'algar', 'embratel',
+      'telefone', 'iptu', 'imovel', 'reforma'], category: 'Moradia' },
+    { keys: ['cartao', 'fatura', 'financiamento', 'parcela', 'emprestimo', 'cdc', 'sicredi',
+      'nubank', 'c6', 'neon', 'debito automatico'], category: 'Cartão de crédito' },
     { keys: ['shopee', 'mercado livre', 'mercadolivre', 'americanas', 'magazine', 'magalu',
-             'amazon', 'aliexpress', 'shein', 'zara', 'renner', 'riachuelo',
-             'hering', 'loja', 'produto'], category: 'Compras' },
-
-    // Salário / Receita
-    { keys: ['salario', 'salário', 'pgto sal', 'folha', 'holerite',
-             'adiantamento', 'pix recebido', 'ted recebido', 'doc recebido', 'deposito',
-             'depósito', 'transferencia recebida', 'receita'], category: 'Receita' },
-
-    // Lazer / Entretenimento
+      'amazon', 'aliexpress', 'shein', 'zara', 'renner', 'riachuelo', 'hering'], category: 'Compras' },
+    { keys: ['salario', 'pgto sal', 'folha', 'holerite', 'adiantamento', 'pix recebido',
+      'ted recebido', 'doc recebido', 'deposito', 'transferencia recebida', 'receita'],
+      category: 'Receita' },
     { keys: ['cinema', 'teatro', 'show', 'ingresso', 'evento', 'bilheteria', 'ticketmaster',
-             'ingresso.com', 'sympla', 'parque', 'clube', 'viagem', 'hotel', 'airbnb',
-             'booking', 'passagem', 'decolar', 'cvc'], category: 'Lazer' },
+      'sympla', 'parque', 'clube', 'viagem', 'hotel', 'airbnb', 'booking', 'passagem',
+      'decolar', 'cvc'], category: 'Lazer' }
   ];
 
   // ================================================================
   // FUNÇÕES PRIVADAS
   // ================================================================
 
+  function normalize(text) {
+    return window.GastoProCategories.normalize(text);
+  }
+
+  function containsWholeKey(text, key) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`).test(text);
+  }
+
   function autoDetectCategory(desc) {
     if (!desc) return 'Outros';
-    const lower = String(desc).toLowerCase();
+    const lower = normalize(desc);
     for (const rule of CATEGORY_RULES) {
-      if (rule.keys.some(k => lower.includes(k))) {
+      if (rule.keys.some(key => containsWholeKey(lower, normalize(key)))) {
         return rule.category;
       }
     }
     return 'Outros';
   }
 
-  function parseMoney(val) {
-    if (!val) return 0;
-    let s = String(val).trim();
-    s = s.replace(/R\$\s?/g, '').trim();
-    if (/\d+\.\d{3},\d{2}$/.test(s) || /\d+,\d{2}$/.test(s)) {
-      s = s.replace(/\./g, '').replace(',', '.');
-    }
-    s = s.replace(/[^\d.\-]/g, '');
-    const num = parseFloat(s);
-    return isNaN(num) ? 0 : Math.abs(num);
+  function truncateText(value, maxLength) {
+    return String(value == null ? '' : value).slice(0, maxLength);
   }
 
-  function parseDate(dateStr) {
-    if (!dateStr) return new Date().toISOString().split('T')[0];
-    const s = String(dateStr).trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    const brMatch = s.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{2,4})$/);
-    if (brMatch) {
-      let [, d, m, y] = brMatch;
-      if (y.length === 2) y = '20' + y;
-      return `${y}-${m}-${d}`;
+  function parseMoneySigned(value) {
+    if (value == null || value === '') return 0;
+    let text = String(value).trim().replace(/R\$\s?/gi, '').replace(/\s/g, '');
+    const isNegative = /^\(.*\)$/.test(text) || text.startsWith('-');
+    text = text.replace(/[()]/g, '').replace(/^[+-]/, '').replace(/[^\d.,]/g, '');
+    if (!text) return 0;
+
+    const comma = text.lastIndexOf(',');
+    const dot = text.lastIndexOf('.');
+    if (comma !== -1 && dot !== -1) {
+      text = comma > dot
+        ? text.replace(/\./g, '').replace(',', '.')
+        : text.replace(/,/g, '');
+    } else if (comma !== -1) {
+      text = text.replace(/\./g, '').replace(',', '.');
+    } else if ((text.match(/\./g) || []).length > 1) {
+      const lastDot = text.lastIndexOf('.');
+      text = text.slice(0, lastDot).replace(/\./g, '') + text.slice(lastDot);
     }
-    return new Date().toISOString().split('T')[0];
+
+    const number = Number(text);
+    if (!Number.isFinite(number)) return 0;
+    return isNegative ? -number : number;
   }
 
-  // ================================================================
-  // PARSER CSV
-  // ================================================================
+  function parseMoney(value) {
+    return Math.abs(parseMoneySigned(value));
+  }
+
+  function validDateParts(year, month, day) {
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day;
+  }
+
+  function formatIsoDate(year, month, day) {
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  function parseDate(dateValue, today = new Date()) {
+    if (!dateValue) return null;
+    const text = String(dateValue).trim();
+    const match = text.match(/^(\d{4}-\d{2}-\d{2}|\d{2}[/-]\d{2}(?:[/-]\d{2,4})?)(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+    if (!match) return null;
+
+    const datePart = match[1];
+    let year;
+    let month;
+    let day;
+    if (/^\d{4}-/.test(datePart)) {
+      [year, month, day] = datePart.split('-').map(Number);
+    } else {
+      const parts = datePart.split(/[/-]/).map(Number);
+      [day, month] = parts;
+      year = parts[2] || today.getFullYear();
+      if (parts[2] && String(parts[2]).length === 2) year += 2000;
+      if (!parts[2]) {
+        const tentative = new Date(Date.UTC(year, month - 1, day));
+        const currentDate = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+        if (tentative - currentDate > 7 * 24 * 60 * 60 * 1000) year--;
+      }
+    }
+
+    if (!validDateParts(year, month, day)) return null;
+    return formatIsoDate(year, month, day);
+  }
+
+  function setWarnings(warnings = []) {
+    lastWarnings = [...new Set(warnings)];
+  }
+
+  function lineIgnored(line) {
+    return /\b(?:saldo|total|limite)\b|\bfatura\s+anterior\b/.test(normalize(line));
+  }
+
+  function isDateHeader(header) {
+    return /^(data|date|dt)(?:\b|$)|data\s+(?:lancamento|movimento|transacao|pgto)/.test(header);
+  }
+
+  function findHeader(lines) {
+    for (let index = 0; index < Math.min(lines.length, 15); index++) {
+      const line = lines[index];
+      if (!line || line.length > MAX_LINE_CHARS) continue;
+      const separator = line.split(';').length > line.split(',').length ? ';' : ',';
+      const headers = splitCSVLine(line, separator).map(cell =>
+        normalize(cell.replace(/^"|"$/g, '').trim())
+      );
+      const hasDate = headers.some(isDateHeader);
+      const hasValue = headers.some(header =>
+        /^(valor|value|amount|vlr|montante)(?:\b|$)/.test(header) ||
+        /^(debito|credito|debit|credit)$/.test(header)
+      );
+      if (hasDate && hasValue) return { index, separator, headers };
+    }
+    return null;
+  }
 
   function splitCSVLine(line, sep) {
     const result = [];
@@ -164,126 +215,164 @@ const GastoProImporter = (() => {
   }
 
   function parseCSV(text) {
+    setWarnings();
     if (!text || !text.trim()) return [];
-    const lines = text.trim().split(/\r?\n/);
-    if (lines.length < 2) return [];
+    if (text.length > MAX_CSV_CHARS) {
+      setWarnings(['Arquivo CSV excede 1 MB; reduza o arquivo e tente novamente.']);
+      return [];
+    }
 
-    const header = lines[0];
-    const sep = (header.split(';').length > header.split(',').length) ? ';' : ',';
-    const headers = header.split(sep).map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
+    const lines = text.split(/\r?\n/);
+    if (lines.length > MAX_ROWS + 15) {
+      setWarnings(['O extrato excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.']);
+    }
+    const header = findHeader(lines);
+    if (!header) return [];
 
-    const idxDate = headers.findIndex(h =>
-      ['data', 'date', 'dt', 'data lançamento', 'data lancamento', 'data movimento',
-       'data transação', 'data transacao', 'data pgto'].some(k => h.includes(k))
+    const headers = header.headers;
+    const idxDate = headers.findIndex(isDateHeader);
+    const idxDesc = headers.findIndex(name =>
+      /^(desc|description|historico|descricao|memo|estabelecimento|lancamento|detalhe)(?:\b|$)/.test(name)
     );
-    const idxDesc = headers.findIndex(h =>
-      ['desc', 'histórico', 'historico', 'descricao', 'descrição', 'memo',
-       'estabelecimento', 'lançamento', 'lancamento', 'detalhe'].some(k => h.includes(k))
+    const idxDebit = headers.findIndex(name => /^(debito|debit)$/.test(name));
+    const idxCredit = headers.findIndex(name => /^(credito|credit)$/.test(name));
+    const idxAmount = headers.findIndex(name =>
+      /^(valor|value|amount|vlr|montante)$/.test(name)
     );
-    const idxAmount = headers.findIndex(h =>
-      ['valor', 'value', 'amount', 'vlr', 'debito', 'débito', 'credit', 'crédito',
-       'val', 'montante'].some(k => h.includes(k))
-    );
+    if (idxDebit < 0 && idxCredit < 0 && idxAmount < 0) return [];
 
-    const colDate   = idxDate   >= 0 ? idxDate   : 0;
-    const colDesc   = idxDesc   >= 0 ? idxDesc   : 1;
-    const colAmount = idxAmount >= 0 ? idxAmount : 2;
-
-    const result = [];
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
+    const rows = [];
+    const warnings = [...lastWarnings];
+    const lastLine = Math.min(lines.length, header.index + 1 + MAX_ROWS);
+    for (let index = header.index + 1; index < lastLine; index++) {
+      const line = lines[index].trim();
       if (!line) continue;
-      const cols = splitCSVLine(line, sep);
-      if (cols.length < 2) continue;
-
-      const rawDate   = (cols[colDate]   || '').replace(/^"|"$/g, '').trim();
-      const rawDesc   = (cols[colDesc]   || '').replace(/^"|"$/g, '').trim();
-      const rawAmount = (cols[colAmount] || '').replace(/^"|"$/g, '').trim();
-
-      const amount = parseMoney(rawAmount);
-      if (!rawDesc && amount === 0) continue;
-
-      result.push({
-        date:     parseDate(rawDate),
-        desc:     rawDesc || 'Lançamento importado',
-        amount:   amount,
-        category: autoDetectCategory(rawDesc),
-        raw:      line
+      if (line.length > MAX_LINE_CHARS) {
+        warnings.push('Linhas com mais de 500 caracteres foram ignoradas.');
+        continue;
+      }
+      if (lineIgnored(line)) continue;
+      const columns = splitCSVLine(line, header.separator);
+      const valueAt = columnIndex => (columns[columnIndex] || '').replace(/^"|"$/g, '').trim();
+      const rawDate = valueAt(idxDate);
+      const rawDesc = valueAt(idxDesc);
+      const debit = idxDebit >= 0 ? parseMoney(valueAt(idxDebit)) : 0;
+      const credit = idxCredit >= 0 ? parseMoney(valueAt(idxCredit)) : 0;
+      const signedAmount = idxDebit >= 0 || idxCredit >= 0
+        ? credit - debit
+        : parseMoneySigned(valueAt(idxAmount));
+      if (!rawDesc && signedAmount === 0) continue;
+      const date = parseDate(rawDate);
+      rows.push({
+        date,
+        desc: truncateText(rawDesc || 'Lançamento importado', 300),
+        amount: Math.abs(signedAmount),
+        signedAmount,
+        category: truncateText(autoDetectCategory(rawDesc), 100),
+        invalid: !date,
+        invalidReason: date ? '' : 'Data inválida ou ausente.',
+        raw: line
       });
     }
-    return result;
+    if (lines.length > lastLine) warnings.push('O extrato excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.');
+    applyDefaultTypes(rows);
+    setWarnings(warnings);
+    return rows;
   }
 
   // ================================================================
   // PARSER DE TEXTO BRUTO
   // ================================================================
 
+  function applyDefaultTypes(rows) {
+    const hasNegative = rows.some(row => row.signedAmount < 0);
+    const hasPositive = rows.some(row => row.signedAmount > 0);
+    const mixedSigns = hasNegative && hasPositive;
+    rows.forEach(row => {
+      row.type = row.category === 'Receita' ||
+        (mixedSigns && row.signedAmount > 0) ? 'income' : 'variable';
+    });
+  }
+
   function parseRawText(text) {
+    setWarnings();
     if (!text || !text.trim()) return [];
-    const lines = text.trim().split(/\r?\n/);
-    const result = [];
-
-    const patterns = [
-      // Data no início: "15/10/2026 iFood *RESTAURANTE R$ 45,90"
-      /^(\d{2}[\/\-]\d{2}[\/\-]\d{2,4})\s+(.+?)\s+R?\$?\s*([\-]?\d{1,3}(?:\.\d{3})*(?:,\d{2})?|\d+(?:[.,]\d{2})?)$/i,
-      // Data no início sem ano: "15/10 iFood 45,90"
-      /^(\d{2}\/\d{2})\s+(.+?)\s+([\-]?\d{1,3}(?:\.\d{3})*(?:,\d{2})?|\d+(?:[.,]\d{2})?)$/i,
-      // Valor no início: "- R$ 45,90 iFood 15/10/2026"
-      /^[\-\+]?\s*R?\$?\s*([\-]?\d{1,3}(?:\.\d{3})*(?:,\d{2})?)\s+(.+?)\s+(\d{2}[\/\-]\d{2}[\/\-]\d{2,4})$/i,
-    ];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.length < 5) continue;
-
-      let matched = false;
-      for (let pi = 0; pi < patterns.length; pi++) {
-        const m = trimmed.match(patterns[pi]);
-        if (!m) continue;
-
-        let dateStr, desc, amtStr;
-        if (pi === 2) {
-          [, amtStr, desc, dateStr] = m;
-        } else {
-          [, dateStr, desc, amtStr] = m;
-        }
-
-        if (dateStr && !dateStr.match(/\d{4}/)) {
-          dateStr = `${dateStr}/${new Date().getFullYear()}`;
-        }
-
-        const amount = parseMoney(amtStr);
-        if (!desc && amount === 0) continue;
-
-        result.push({
-          date:     parseDate(dateStr || ''),
-          desc:     (desc || 'Lançamento importado').trim(),
-          amount:   amount,
-          category: autoDetectCategory(desc),
-          raw:      trimmed
-        });
-        matched = true;
-        break;
-      }
-
-      if (!matched) {
-        const amtMatch = trimmed.match(/([\-]?\d{1,3}(?:\.\d{3})*,\d{2})/);
-        if (amtMatch) {
-          const amount = parseMoney(amtMatch[1]);
-          const desc = trimmed.replace(amtMatch[0], '').replace(/R\$\s?/, '').trim();
-          if (desc && amount > 0) {
-            result.push({
-              date:     new Date().toISOString().split('T')[0],
-              desc:     desc,
-              amount:   amount,
-              category: autoDetectCategory(desc),
-              raw:      trimmed
-            });
-          }
-        }
-      }
+    if (text.length > MAX_RAW_CHARS) {
+      setWarnings(['O texto colado excede 200.000 caracteres.']);
+      return [];
     }
+
+    const lines = text.split(/\r?\n/);
+    const result = [];
+    const warnings = [];
+    const amountPattern = '([+-]?\\s*(?:R\\$\\s*)?(?:\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:[,.]\\d{1,2})?)';
+    const datePattern = '(\\d{4}-\\d{2}-\\d{2}|\\d{2}[/-]\\d{2}(?:[/-]\\d{2,4})?(?:\\s+\\d{1,2}:\\d{2})?)';
+    const startDate = new RegExp(`^${datePattern}\\s+(.+?)\\s+${amountPattern}$`);
+    const endDate = new RegExp(`^${amountPattern}\\s+(.+?)\\s+${datePattern}$`);
+    const noDate = new RegExp(`^(.+?)\\s+${amountPattern}$`);
+
+    for (const originalLine of lines.slice(0, MAX_ROWS)) {
+      const line = originalLine.trim();
+      if (!line) continue;
+      if (line.length > MAX_LINE_CHARS) {
+        warnings.push('Linhas com mais de 500 caracteres foram ignoradas.');
+        continue;
+      }
+      if (lineIgnored(line)) continue;
+      let match = line.match(startDate);
+      let dateText;
+      let desc;
+      let signedAmount;
+      if (match) {
+        [, dateText, desc, signedAmount] = match;
+        signedAmount = parseMoneySigned(signedAmount);
+      } else {
+        match = line.match(endDate);
+        if (match) {
+          [, signedAmount, desc, dateText] = match;
+          signedAmount = parseMoneySigned(signedAmount);
+        } else {
+          match = line.match(noDate);
+          if (!match) continue;
+          [, desc, signedAmount] = match;
+          signedAmount = parseMoneySigned(signedAmount);
+          dateText = '';
+        }
+      }
+      const date = parseDate(dateText);
+      result.push({
+        date,
+        desc: truncateText(desc.trim(), 300),
+        amount: Math.abs(signedAmount),
+        signedAmount,
+        category: truncateText(autoDetectCategory(desc), 100),
+        invalid: !date,
+        invalidReason: date ? '' : 'Data inválida ou ausente.',
+        raw: line
+      });
+    }
+    if (lines.length > MAX_ROWS) warnings.push('O texto excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.');
+    applyDefaultTypes(result);
+    setWarnings(warnings);
     return result;
+  }
+
+  function markDuplicates(rows, existingItems = []) {
+    const makeKey = item => {
+      if (item.invalid || !item.date || !Number.isFinite(Number(item.amount))) return null;
+      return `${item.date}|${Number(item.amount)}|${normalize(item.desc)}`;
+    };
+    const seen = new Set(existingItems.map(makeKey).filter(Boolean));
+    return rows.map(row => {
+      const key = makeKey(row);
+      const duplicate = Boolean(key && seen.has(key));
+      if (key) seen.add(key);
+      return { ...row, duplicate, selected: !row.invalid && !duplicate };
+    });
+  }
+
+  function getLastWarnings() {
+    return [...lastWarnings];
   }
 
   // ================================================================
@@ -296,9 +385,9 @@ const GastoProImporter = (() => {
       `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
     return {
       type:     type,
-      desc:     row.desc,
+      desc:     truncateText(row.desc, 300),
       amount:   row.amount,
-      category: row.category,
+      category: truncateText(row.category, 100),
       date:     row.date,
       month:    month,
       paid:     true
@@ -308,7 +397,10 @@ const GastoProImporter = (() => {
   // ================================================================
   // API PÚBLICA
   // ================================================================
-  return { parseCSV, parseRawText, autoDetectCategory, buildEntry, parseMoney, parseDate };
+  return {
+    parseCSV, parseRawText, autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
+    parseDate, markDuplicates, getLastWarnings
+  };
 
 })();
 

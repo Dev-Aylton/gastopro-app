@@ -5,10 +5,13 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self';
-             script-src 'self' https://cdn.jsdelivr.net;
+             script-src 'self';
              style-src 'self' https://fonts.googleapis.com https://cdnjs.cloudflare.com 'unsafe-inline';
              font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:;
              img-src 'self' data: blob:;
+             object-src 'none';
+             base-uri 'self';
+             form-action 'self';
              connect-src 'self' https://xfjhgzcqlrhpckqwnqtk.supabase.co wss://xfjhgzcqlrhpckqwnqtk.supabase.co;" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -20,8 +23,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="GastoPro" />
-  <link rel="icon" type="image/jpeg" href="assets/logo.jpg" />
-  <link rel="apple-touch-icon" href="assets/logo.jpg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.json" />
 
   <!-- Google Fonts: Inter -->
@@ -37,14 +40,13 @@
     crossorigin="anonymous"
     referrerpolicy="no-referrer" />
 
-  <!-- Chart.js via CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
   <!-- CSS -->
   <link rel="stylesheet" href="css/style.css" />
 </head>
 
 <body class="auth-checking">
+
+  <a class="skip-link" href="#mainContent">Pular para o conteúdo</a>
 
   <div class="app-shell">
 
@@ -63,7 +65,7 @@
             <span>Gestão Financeira</span>
           </div>
         </div>
-        <button class="sidebar-close-btn" id="closeSidebarBtn" title="Fechar Menu">
+        <button class="sidebar-close-btn" id="closeSidebarBtn" title="Fechar Menu" aria-label="Fechar menu de navegação">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
@@ -76,7 +78,7 @@
         </button>
 
         <!-- Botão 2: Wizard de Lançamento Rápido (Logo abaixo do Dashboard) -->
-        <button class="nav-item nav-item-wizard" id="sidebarWizardBtn" title="Lançamento rápido guiado em 3 passos">
+        <button class="nav-item nav-item-wizard" id="sidebarWizardBtn" title="Lançamento rápido guiado em 4 passos">
           <i class="fa-solid fa-wand-magic-sparkles"></i>
           <span>Lançamento Rápido</span>
           <span class="nav-wizard-badge">Novo</span>
@@ -86,14 +88,14 @@
         <button class="nav-item" data-view="incomes" id="navIncomes">
           <i class="fa-solid fa-hand-holding-dollar"></i>
           <span>Ganhos do Mês</span>
-          <span class="nav-badge text-success" id="sidebarIncomeCount">3</span>
+          <span class="nav-badge text-success" id="sidebarIncomeCount"></span>
         </button>
 
         <!-- Botão 4: Gastos do Mês -->
         <button class="nav-item" data-view="expenses" id="navExpenses">
           <i class="fa-solid fa-receipt"></i>
           <span>Gastos do Mês</span>
-          <span class="nav-badge text-danger" id="sidebarExpenseCount">8</span>
+          <span class="nav-badge text-danger" id="sidebarExpenseCount"></span>
         </button>
 
         <!-- Botão 5: Importar Extrato (No rodapé, acima de Atualizar Dados) -->
@@ -119,36 +121,36 @@
       <!-- Topbar Header -->
       <header class="topbar">
         <div class="topbar-left">
-          <button class="menu-toggle-btn" id="menuToggleBtn" title="Alternar Menu">
+          <button class="menu-toggle-btn" id="menuToggleBtn" title="Alternar Menu" aria-label="Abrir menu de navegação" aria-expanded="false">
             <i class="fa-solid fa-bars"></i>
           </button>
-          <h2 class="view-title" id="currentViewTitle">Dashboard Geral</h2>
+          <h1 class="view-title" id="currentViewTitle">Dashboard Geral</h1>
         </div>
 
         <!-- Seletor de Mês com Mini Calendário Popover -->
         <div class="month-selector-bar" id="monthSelectorBar">
-          <button id="prevMonthBtn" class="btn-icon" title="Mês anterior">
+          <button id="prevMonthBtn" class="btn-icon" title="Mês anterior" aria-label="Mês anterior">
             <i class="fa-solid fa-chevron-left"></i>
           </button>
 
-          <button class="current-month-display" id="monthPickerTrigger" title="Clique para abrir o calendário de meses">
+          <button class="current-month-display" id="monthPickerTrigger" title="Clique para abrir o calendário de meses" aria-haspopup="dialog" aria-expanded="false">
             <i class="fa-regular fa-calendar text-primary"></i>
-            <span id="currentMonthLabel">Novembro 2026</span>
+            <span id="currentMonthLabel"></span>
             <i class="fa-solid fa-chevron-down caret-icon"></i>
           </button>
 
-          <button id="nextMonthBtn" class="btn-icon" title="Próximo mês">
+          <button id="nextMonthBtn" class="btn-icon" title="Próximo mês" aria-label="Próximo mês">
             <i class="fa-solid fa-chevron-right"></i>
           </button>
 
           <!-- POPOVER CALENDÁRIO DE MESES -->
-          <div class="month-picker-popover" id="monthPickerPopover">
+          <div class="month-picker-popover" id="monthPickerPopover" role="dialog" aria-label="Selecionar mês">
             <div class="picker-year-nav">
-              <button class="btn-icon btn-sm" id="pickerPrevYearBtn" title="Ano anterior">
+              <button class="btn-icon btn-sm" id="pickerPrevYearBtn" title="Ano anterior" aria-label="Ano anterior">
                 <i class="fa-solid fa-chevron-left"></i>
               </button>
               <strong id="pickerYearDisplay">2026</strong>
-              <button class="btn-icon btn-sm" id="pickerNextYearBtn" title="Próximo ano">
+              <button class="btn-icon btn-sm" id="pickerNextYearBtn" title="Próximo ano" aria-label="Próximo ano">
                 <i class="fa-solid fa-chevron-right"></i>
               </button>
             </div>
@@ -170,7 +172,7 @@
             <i class="fa-solid fa-arrows-rotate" id="refreshIcon"></i>
           </button>
 
-          <button class="user-avatar-btn" id="userMenuBtn" title="Menu do Usuário">
+          <button class="user-avatar-btn" id="userMenuBtn" title="Menu do Usuário" aria-label="Abrir menu do usuário" aria-haspopup="dialog" aria-expanded="false">
             <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" class="user-avatar-sm" id="topbarAvatarImg" />
           </button>
         </div>
@@ -180,10 +182,10 @@
            DRAWER LATERAL DO USUÁRIO (DIREITA)
            ========================================== -->
       <div class="profile-drawer-overlay" id="profileDrawerOverlay"></div>
-      <aside class="profile-drawer" id="profileDrawer">
+      <aside class="profile-drawer" id="profileDrawer" role="dialog" aria-modal="true" aria-label="Menu do usuário" aria-hidden="true" inert>
         <div class="drawer-header">
           <h3>Painel do Usuário</h3>
-          <button class="drawer-close-btn" id="closeDrawerBtn">&times;</button>
+          <button class="drawer-close-btn" id="closeDrawerBtn" aria-label="Fechar menu do usuário">&times;</button>
         </div>
 
         <div class="drawer-body">
@@ -195,12 +197,12 @@
               </div>
               <div class="avatar-camera-badge"><i class="fa-solid fa-camera"></i></div>
             </div>
-            <input type="file" id="avatarFileInput" accept="image/*" style="display: none;" />
+            <input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp" style="display: none;" />
 
             <div class="drawer-user-info">
               <div class="profile-name-edit-row">
                 <input type="text" id="profileNameInput" class="profile-name-input" value="" placeholder="Escreva seu nome..." />
-                <button type="button" id="saveProfileNameBtn" class="btn-save-name" title="Salvar Nome">
+                <button type="button" id="saveProfileNameBtn" class="btn-save-name" title="Salvar Nome" aria-label="Salvar nome do perfil">
                   <i class="fa-solid fa-check"></i>
                 </button>
               </div>
@@ -257,6 +259,27 @@
                 <span>Salvar cópia dos seus dados no PC</span>
               </div>
             </button>
+            <button type="button" id="restoreBackupBtn" class="drawer-action-btn" title="Restaurar backup">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-upload text-primary"></i>
+              </div>
+              <div class="action-text">
+                <strong>Restaurar backup</strong>
+                <span>Mesclar ou substituir os dados deste aparelho</span>
+              </div>
+            </button>
+            <input type="file" id="restoreBackupFile" accept=".json,application/json" hidden />
+
+            <button type="button" id="openReportModalBtn" class="drawer-action-btn"
+              title="Baixar Relatório PDF" aria-haspopup="dialog" aria-controls="reportModal">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-file-pdf text-primary"></i>
+              </div>
+              <div class="action-text">
+                <strong>Baixar Relatório PDF</strong>
+                <span>Gerar um relatório financeiro para impressão</span>
+              </div>
+            </button>
 
             <button id="clearDataBtn" class="drawer-action-btn btn-danger-action" title="Zerar todos os lançamentos">
               <div class="action-icon bg-danger-soft">
@@ -272,7 +295,7 @@
           <!-- Dica de Privacidade -->
           <div class="drawer-tip">
             <i class="fa-solid fa-lock text-success"></i>
-            <p>Seus dados financeiros ficam salvos exclusivamente no seu navegador com privacidade total.
+            <p>Sem login, seus dados ficam no navegador. Com login, são sincronizados com o Supabase e protegidos por RLS.
               <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Política de Privacidade (LGPD)</a>
             </p>
           </div>
@@ -280,7 +303,7 @@
       </aside>
 
       <!-- CONTAINER DAS TELAS COM TRANSIÇÃO SUAVE -->
-      <div class="views-wrapper">
+      <main class="views-wrapper" id="mainContent">
 
         <!-- ====================================================
              TELA 1: HOME / DASHBOARD & SAÚDE FINANCEIRA
@@ -290,7 +313,7 @@
           <!-- KPIs do Mês -->
           <div class="kpi-grid">
             <!-- Total Recebido -->
-            <div class="kpi-card income-card" data-goto="incomes" title="Clique para gerenciar ganhos">
+            <div class="kpi-card income-card" data-goto="incomes" role="button" tabindex="0" title="Clique para gerenciar ganhos">
               <div class="kpi-header">
                 <span class="kpi-title"><i class="fa-solid fa-arrow-down"></i> Total Recebido</span>
                 <span class="badge badge-success" id="incomeCount">0 entradas</span>
@@ -300,7 +323,7 @@
             </div>
 
             <!-- Gastos Fixos -->
-            <div class="kpi-card fixed-card" data-goto="expenses" title="Clique para gerenciar gastos">
+            <div class="kpi-card fixed-card" data-goto="expenses" role="button" tabindex="0" title="Clique para gerenciar gastos">
               <div class="kpi-header">
                 <span class="kpi-title"><i class="fa-solid fa-house-lock"></i> Gastos Fixos</span>
                 <span class="badge badge-warning" id="fixedPercentage">0%</span>
@@ -310,7 +333,7 @@
             </div>
 
             <!-- Gastos do Mês -->
-            <div class="kpi-card variable-card" data-goto="expenses" title="Clique para gerenciar gastos">
+            <div class="kpi-card variable-card" data-goto="expenses" role="button" tabindex="0" title="Clique para gerenciar gastos">
               <div class="kpi-header">
                 <span class="kpi-title"><i class="fa-solid fa-bag-shopping"></i> Gastos Variáveis</span>
                 <span class="badge badge-danger" id="variablePercentage">0%</span>
@@ -439,8 +462,7 @@
               <div class="view-icon-badge"><i class="fa-solid fa-hand-holding-dollar"></i></div>
               <div>
                 <h2>Ganhos do Mês</h2>
-                <p>Veja, adicione, altere ou exclua qualquer receita de <span class="badge-month-label">Novembro
-                    2026</span></p>
+                <p>Veja, adicione, altere ou exclua qualquer receita de <span class="badge-month-label"></span></p>
               </div>
             </div>
             <div class="view-header-total">
@@ -463,12 +485,12 @@
 
             <form id="incomeForm" class="form-grid-5">
               <div>
-                <label>Descrição</label>
+                <label for="incomeDesc">Descrição</label>
                 <input type="text" id="incomeDesc" placeholder="Ex: Salário / Freela" required />
               </div>
 
               <div>
-                <label>Valor (R$)</label>
+                <label for="incomeAmount">Valor (R$)</label>
                 <div class="input-currency-wrapper">
                   <span class="prefix">R$</span>
                   <input type="number" step="0.01" min="0" id="incomeAmount" placeholder="0,00" required />
@@ -476,7 +498,7 @@
               </div>
 
               <div>
-                <label>Categoria</label>
+                <label for="incomeCategory">Categoria</label>
                 <select id="incomeCategory">
                   <option value="Salário">💼 Salário</option>
                   <option value="Adiantamento">📅 Adiantamento</option>
@@ -487,7 +509,7 @@
               </div>
 
               <div>
-                <label>Data do Recebimento</label>
+                <label for="incomeDate">Data do Recebimento</label>
                 <input type="date" id="incomeDate" required />
               </div>
 
@@ -530,7 +552,7 @@
               <div>
                 <h2>Gastos do Mês</h2>
                 <p>Controle completo de contas fixas, dívidas e gastos variáveis de <span
-                    class="badge-month-label">Novembro 2026</span></p>
+                    class="badge-month-label"></span></p>
               </div>
             </div>
             <div class="view-header-total">
@@ -553,12 +575,12 @@
 
             <form id="expenseForm" class="form-grid-6">
               <div>
-                <label>Descrição do Gasto</label>
+                <label for="expenseDesc">Descrição do Gasto</label>
                 <input type="text" id="expenseDesc" placeholder="Ex: Supermercado / Aluguel" required />
               </div>
 
               <div>
-                <label>Valor (R$)</label>
+                <label for="expenseAmount">Valor (R$)</label>
                 <div class="input-currency-wrapper">
                   <span class="prefix">R$</span>
                   <input type="number" step="0.01" min="0" id="expenseAmount" placeholder="0,00" required />
@@ -566,7 +588,7 @@
               </div>
 
               <div>
-                <label>Tipo de Gasto</label>
+                <label for="expenseType">Tipo de Gasto</label>
                 <select id="expenseType" required>
                   <option value="fixed">🔒 Gasto Fixo Contínuo</option>
                   <option value="debt">💳 Dívida / Empréstimo / Parcela</option>
@@ -575,12 +597,12 @@
               </div>
 
               <div id="expenseEndMonthWrapper" style="display: none;">
-                <label>Mês Final (Quitação)</label>
+                <label for="expenseEndMonth">Mês Final (Quitação)</label>
                 <input type="month" id="expenseEndMonth" placeholder="Ex: 2027-12" />
               </div>
 
               <div>
-                <label>Categoria</label>
+                <label for="expenseCategory">Categoria</label>
                 <select id="expenseCategory">
                   <option value="Moradia">🏠 Moradia & Aluguel</option>
                   <option value="Contas">💡 Contas (Luz, Net, etc)</option>
@@ -598,7 +620,7 @@
               </div>
 
               <div>
-                <label>Data do Gasto</label>
+                <label for="expenseDate">Data do Gasto</label>
                 <input type="date" id="expenseDate" required />
               </div>
 
@@ -632,7 +654,7 @@
 
         </section>
 
-      </div> <!-- /views-wrapper -->
+      </main> <!-- /mainContent -->
 
       <!-- ==========================================
            RODAPÉ (FOOTER)
@@ -649,7 +671,7 @@
             </div>
             <div class="footer-security-badge">
               <i class="fa-solid fa-shield-halved text-success"></i>
-              <span>Seus dados ficam 100% seguros e salvos localmente no seu dispositivo.</span>
+              <span>Sem login, os dados ficam no dispositivo. Com login, também são sincronizados com a nuvem.</span>
             </div>
           </div>
 
@@ -665,7 +687,7 @@
               <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
                 <i class="fa-solid fa-shield-halved"></i> Privacidade &amp; LGPD
               </a>
-              <span class="badge badge-version">v3.6</span>
+              <span class="badge badge-version">v3.9</span>
             </div>
           </div>
         </div>
@@ -680,22 +702,22 @@
        MODAL DE EDIÇÃO / ALTERAÇÃO
        ==================================================== -->
   <div class="modal-overlay" id="editModal">
-    <div class="modal-content">
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="editModalTitle" tabindex="-1">
       <div class="modal-header">
         <h3 id="editModalTitle">Alterar Informação</h3>
-        <button class="modal-close-btn" id="closeModalBtn">&times;</button>
+        <button class="modal-close-btn" id="closeModalBtn" aria-label="Fechar edição">&times;</button>
       </div>
 
       <form id="editForm">
         <input type="hidden" id="editItemId" />
 
         <div class="form-group">
-          <label>Descrição</label>
+          <label for="editDesc">Descrição</label>
           <input type="text" id="editDesc" required />
         </div>
 
         <div class="form-group">
-          <label>Valor (R$)</label>
+          <label for="editAmount">Valor (R$)</label>
           <div class="input-currency-wrapper">
             <span class="prefix">R$</span>
             <input type="number" step="0.01" min="0" id="editAmount" required />
@@ -704,12 +726,12 @@
 
         <div class="form-row-2">
           <div class="form-group">
-            <label>Categoria</label>
-            <input type="text" id="editCategory" required />
+            <label for="editCategory">Categoria</label>
+            <select id="editCategory" required></select>
           </div>
 
           <div class="form-group" id="editTypeGroup">
-            <label>Tipo</label>
+            <label for="editType">Tipo</label>
             <select id="editType">
               <option value="fixed">🔒 Gasto Fixo</option>
               <option value="debt">💳 Dívida / Parcelamento</option>
@@ -721,12 +743,12 @@
 
         <div class="form-row-2">
           <div class="form-group">
-            <label>Data</label>
+            <label for="editDate">Data</label>
             <input type="date" id="editDate" required />
           </div>
 
           <div class="form-group" id="editStatusGroup">
-            <label>Status (Gasto Fixo)</label>
+            <label for="editActive">Status (Gasto Fixo)</label>
             <select id="editActive">
               <option value="true">🟢 Ativo (Repete nos meses)</option>
               <option value="false">⚪ Inativo / Pausado</option>
@@ -735,7 +757,7 @@
         </div>
 
         <div class="form-group" id="editEndMonthGroup">
-          <label>Mês de Término / Quitação (Opcional)</label>
+          <label for="editEndMonth">Mês de Término / Quitação (Opcional)</label>
           <input type="month" id="editEndMonth" placeholder="Ex: 2027-12" />
           <small class="form-hint">Deixe em branco se for uma conta contínua (ex: Aluguel, Luz).</small>
         </div>
@@ -753,12 +775,15 @@
        MODAL DE CONFIRMAÇÃO ELEGANTE
        ==================================================== -->
   <div class="modal-overlay" id="confirmModal">
-    <div class="modal-content modal-confirm-content">
+    <div class="modal-content modal-confirm-content" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" tabindex="-1">
       <div class="confirm-icon-wrapper" id="confirmIconWrapper">
         <i class="fa-solid fa-triangle-exclamation" id="confirmIcon"></i>
       </div>
       <h3 id="confirmTitle">Tem certeza?</h3>
       <p id="confirmMessage">Esta ação não pode ser desfeita.</p>
+      <div class="modal-actions confirm-actions">
+        <button type="button" class="btn-secondary" id="confirmBackupBtn" hidden>Baixar backup JSON</button>
+      </div>
       <div class="modal-actions confirm-actions">
         <button type="button" class="btn-secondary" id="confirmCancelBtn">Cancelar</button>
         <button type="button" class="btn-danger" id="confirmOkBtn">Confirmar</button>
@@ -766,21 +791,86 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="passwordRecoveryModal" aria-hidden="true">
+    <section class="modal-content modal-auth-content" role="dialog" aria-modal="true"
+      aria-labelledby="passwordRecoveryTitle" tabindex="-1">
+      <button type="button" class="modal-close-btn auth-close-btn" id="closePasswordRecoveryBtn" title="Fechar" aria-label="Fechar recuperação de senha">&times;</button>
+      <h2 id="passwordRecoveryTitle">Definir nova senha</h2>
+      <form id="passwordRecoveryForm" class="auth-form-body">
+        <div class="form-group auth-field">
+          <label for="recoveryPassword">Nova senha</label>
+          <div class="auth-input-wrapper">
+            <input type="password" id="recoveryPassword" placeholder="Mínimo 8 caracteres" minlength="8" required autocomplete="new-password" />
+            <button type="button" class="btn-toggle-password" id="toggleRecoveryPasswordBtn" title="Mostrar/Ocultar senha" aria-label="Mostrar senha">
+              <i class="fa-regular fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        <div class="form-group auth-field">
+          <label for="recoveryPasswordConfirm">Confirmar nova senha</label>
+          <input type="password" id="recoveryPasswordConfirm" placeholder="Repita a nova senha" minlength="8" required autocomplete="new-password" />
+        </div>
+        <p id="passwordRecoveryError" class="auth-alert-banner" role="alert" hidden></p>
+        <button type="submit" class="btn-primary btn-auth-submit" id="submitRecoveryPasswordBtn">Salvar nova senha</button>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-overlay" id="reportModal" aria-hidden="true">
+    <section class="modal-content report-modal-content" role="dialog" aria-modal="true"
+      aria-labelledby="reportModalTitle" aria-describedby="reportModalDescription" tabindex="-1">
+      <div class="modal-header">
+        <h3 id="reportModalTitle">Relatório financeiro em PDF</h3>
+        <button type="button" class="modal-close-btn" id="closeReportModalBtn" aria-label="Fechar relatório">&times;</button>
+      </div>
+      <p id="reportModalDescription" class="report-modal-description">
+        Escolha o período e se deseja incluir a lista detalhada dos lançamentos.
+      </p>
+      <form id="reportForm">
+        <label class="form-group">
+          <span>Período</span>
+          <select id="reportPeriodType" class="form-control">
+            <option value="month">Mês</option>
+            <option value="year">Ano</option>
+            <option value="range">Intervalo</option>
+          </select>
+        </label>
+        <label class="form-group" id="reportFromGroup">
+          <span id="reportFromLabel">Mês</span>
+          <input type="month" id="reportFrom" class="form-control" required />
+        </label>
+        <label class="form-group" id="reportToGroup" hidden>
+          <span id="reportToLabel">Até</span>
+          <input type="month" id="reportTo" class="form-control" />
+        </label>
+        <label class="report-details-option">
+          <input type="checkbox" id="reportIncludeDetails" checked />
+          <span>Incluir lançamentos detalhados</span>
+        </label>
+        <p id="reportError" class="report-error" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="cancelReportBtn">Cancelar</button>
+          <button type="submit" class="btn-primary" id="generateReportBtn">Gerar PDF</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
 
   <!-- ====================================================
        MODAL DE AUTENTICAÇÃO (LOGIN & CADASTRO)
        ==================================================== -->
   <div class="modal-overlay" id="authModal">
-    <div class="modal-content modal-auth-content">
+    <div class="modal-content modal-auth-content" role="dialog" aria-modal="true" aria-labelledby="authModalTitle" tabindex="-1">
       <!-- Botão Fechar -->
-      <button class="modal-close-btn auth-close-btn" id="closeAuthModalBtn" title="Fechar">&times;</button>
+      <button class="modal-close-btn auth-close-btn" id="closeAuthModalBtn" title="Fechar" aria-label="Fechar autenticação">&times;</button>
 
       <!-- Cabeçalho com Identidade Visual -->
       <div class="auth-header">
         <div class="auth-brand-badge">
           <img src="assets/logo.jpg" alt="Logo GastoPro" class="auth-logo-img" />
           <div class="auth-brand-info">
-            <h2>GastoPro</h2>
+            <h2 id="authModalTitle">GastoPro</h2>
             <span>Gestão Financeira & Nuvem</span>
           </div>
         </div>
@@ -798,7 +888,7 @@
       </div>
 
       <!-- Banner de Alerta / Mensagens -->
-      <div class="auth-alert-banner" id="authAlertBanner" style="display: none;">
+      <div class="auth-alert-banner" id="authAlertBanner" role="alert" style="display: none;">
         <i class="fa-solid fa-circle-info" id="authAlertIcon"></i>
         <span id="authAlertText">Mensagem informativa</span>
       </div>
@@ -822,7 +912,7 @@
           <div class="auth-input-wrapper">
             <i class="fa-solid fa-lock input-leading-icon"></i>
             <input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password" />
-            <button type="button" class="btn-toggle-password" id="toggleLoginPasswordBtn" title="Mostrar/Ocultar senha">
+            <button type="button" class="btn-toggle-password" id="toggleLoginPasswordBtn" title="Mostrar/Ocultar senha" aria-label="Mostrar ou ocultar senha">
               <i class="fa-regular fa-eye"></i>
             </button>
           </div>
@@ -863,8 +953,8 @@
           <label for="registerPassword">Senha</label>
           <div class="auth-input-wrapper">
             <i class="fa-solid fa-lock input-leading-icon"></i>
-            <input type="password" id="registerPassword" placeholder="Mínimo 6 caracteres" minlength="6" required autocomplete="new-password" />
-            <button type="button" class="btn-toggle-password" id="toggleRegisterPasswordBtn" title="Mostrar/Ocultar senha">
+            <input type="password" id="registerPassword" placeholder="Mínimo 8 caracteres" minlength="8" required autocomplete="new-password" />
+            <button type="button" class="btn-toggle-password" id="toggleRegisterPasswordBtn" title="Mostrar/Ocultar senha" aria-label="Mostrar ou ocultar senha">
               <i class="fa-regular fa-eye"></i>
             </button>
           </div>
@@ -874,7 +964,7 @@
           <label for="registerConfirmPassword">Confirmar Senha</label>
           <div class="auth-input-wrapper">
             <i class="fa-solid fa-shield-halved input-leading-icon"></i>
-            <input type="password" id="registerConfirmPassword" placeholder="Repita a senha" minlength="6" required autocomplete="new-password" />
+            <input type="password" id="registerConfirmPassword" placeholder="Repita a senha" minlength="8" required autocomplete="new-password" />
           </div>
         </div>
 
@@ -918,7 +1008,7 @@
        MODAL DE IMPORTAÇÃO DE EXTRATOS BANCÁRIOS
        ==================================================== -->
   <div class="modal-overlay" id="importModal">
-    <div class="modal-content modal-import-content">
+    <div class="modal-content modal-import-content" role="dialog" aria-modal="true" aria-labelledby="importModalTitle" tabindex="-1">
 
       <!-- Cabeçalho do Modal -->
       <div class="import-header">
@@ -926,10 +1016,10 @@
           <i class="fa-solid fa-file-import"></i>
         </div>
         <div class="import-header-text">
-          <h3>Importar Extrato Bancário</h3>
+          <h3 id="importModalTitle">Importar Extrato Bancário</h3>
           <p>Importe seus lançamentos via arquivo CSV ou cole o texto do extrato para revisão antes de salvar.</p>
         </div>
-        <button class="modal-close-btn" id="closeImportModalBtn" title="Fechar">&times;</button>
+        <button class="modal-close-btn" id="closeImportModalBtn" title="Fechar" aria-label="Fechar importação">&times;</button>
       </div>
 
       <!-- Abas de formato -->
@@ -951,7 +1041,7 @@
 
         <!-- Área de Drop / Upload -->
         <div class="csv-drop-zone" id="csvDropZone">
-          <input type="file" id="csvFileInput" accept=".csv,.txt" />
+          <input type="file" id="csvFileInput" accept=".csv,.txt" aria-label="Selecionar arquivo CSV ou TXT" />
           <i class="fa-solid fa-cloud-arrow-up drop-icon" id="csvDropIcon"></i>
           <p class="drop-title" id="csvDropTitle">Arraste o arquivo CSV aqui</p>
           <p class="drop-sub" id="csvDropSub">ou clique para selecionar o arquivo (.csv, .txt)</p>
@@ -972,6 +1062,7 @@
         <textarea
           class="import-textarea"
           id="importRawTextarea"
+          aria-label="Texto do extrato bancário"
           placeholder="Cole aqui o texto do extrato. Exemplo:
 15/10/2026 iFood *PEDIDO R$ 45,90
 16/10/2026 Supermercado Extra R$ 230,00
@@ -999,7 +1090,7 @@
             <input type="checkbox" id="importSelectAll" checked />
             Selecionar todos
           </label>
-          <span style="margin-left: auto; font-size: 0.72rem;">Ajuste categoria e tipo antes de importar</span>
+          <span style="margin-left: auto; font-size: 0.75rem;">Ajuste categoria e tipo antes de importar</span>
         </div>
 
         <!-- Tabela de preview -->
@@ -1035,21 +1126,21 @@
 
 
   <!-- ====================================================
-       WIZARD DE LANÇAMENTO RÁPIDO (3 PASSOS)
+       WIZARD DE LANÇAMENTO RÁPIDO (4 PASSOS)
        ==================================================== -->
   <div class="modal-overlay" id="wizardModal">
-    <div class="modal-content modal-wizard-content">
+    <div class="modal-content modal-wizard-content" role="dialog" aria-modal="true" aria-labelledby="wizardModalTitle" tabindex="-1">
 
       <!-- Cabeçalho com Stepper -->
       <div class="wizard-header">
         <div class="wizard-brand">
           <i class="fa-solid fa-wand-magic-sparkles"></i>
           <div>
-            <h3>Lançamento Rápido</h3>
-            <p>Cadastre os dados do mês em 3 passos simples</p>
+            <h3 id="wizardModalTitle">Lançamento Rápido</h3>
+            <p>Cadastre os dados do mês em 4 passos simples</p>
           </div>
         </div>
-        <button class="modal-close-btn" id="closeWizardBtn" title="Fechar">&times;</button>
+        <button class="modal-close-btn" id="closeWizardBtn" title="Fechar" aria-label="Fechar lançamento rápido">&times;</button>
       </div>
 
       <!-- Stepper Visual -->
@@ -1096,10 +1187,10 @@
 
         <!-- Formulário de adição -->
         <div class="wizard-add-row">
-          <input type="text" id="wIncomeDesc" class="wizard-input" placeholder="Descrição (ex: Salário, Freelance...)" />
-          <input type="number" id="wIncomeAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" />
-          <input type="date" id="wIncomeDate" class="wizard-input wizard-input-date" />
-          <button type="button" class="btn-wizard-add" id="wAddIncomeBtn" title="Adicionar renda">
+          <input type="text" id="wIncomeDesc" class="wizard-input" placeholder="Descrição (ex: Salário, Freelance...)" aria-label="Descrição da renda" />
+          <input type="number" id="wIncomeAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" aria-label="Valor da renda" />
+          <input type="date" id="wIncomeDate" class="wizard-input wizard-input-date" aria-label="Data da renda" />
+          <button type="button" class="btn-wizard-add" id="wAddIncomeBtn" title="Adicionar renda" aria-label="Adicionar renda">
             <i class="fa-solid fa-plus"></i>
           </button>
         </div>
@@ -1133,9 +1224,9 @@
           <span>Adicionar novo gasto fixo</span>
         </div>
         <div class="wizard-add-row">
-          <input type="text" id="wFixedDesc" class="wizard-input" placeholder="Descrição (ex: Aluguel, Plano de saúde...)" />
-          <input type="number" id="wFixedAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" />
-          <button type="button" class="btn-wizard-add" id="wAddFixedBtn" title="Adicionar gasto fixo">
+          <input type="text" id="wFixedDesc" class="wizard-input" placeholder="Descrição (ex: Aluguel, Plano de saúde...)" aria-label="Descrição do gasto fixo" />
+          <input type="number" id="wFixedAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" aria-label="Valor do gasto fixo" />
+          <button type="button" class="btn-wizard-add" id="wAddFixedBtn" title="Adicionar gasto fixo" aria-label="Adicionar gasto fixo">
             <i class="fa-solid fa-plus"></i>
           </button>
         </div>
@@ -1168,9 +1259,9 @@
           <span>Adicionar gasto avulso</span>
         </div>
         <div class="wizard-add-row">
-          <input type="text" id="wVarDesc" class="wizard-input" placeholder="Descrição" />
-          <input type="number" id="wVarAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" />
-          <button type="button" class="btn-wizard-add" id="wAddVarBtn" title="Adicionar gasto variável">
+          <input type="text" id="wVarDesc" class="wizard-input" placeholder="Descrição" aria-label="Descrição do gasto variável" />
+          <input type="number" id="wVarAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" aria-label="Valor do gasto variável" />
+          <button type="button" class="btn-wizard-add" id="wAddVarBtn" title="Adicionar gasto variável" aria-label="Adicionar gasto variável">
             <i class="fa-solid fa-plus"></i>
           </button>
         </div>
@@ -1266,10 +1357,10 @@
        MODAL — POLÍTICA DE PRIVACIDADE (LGPD)
        ==================================================== -->
   <div class="modal-overlay" id="privacyPolicyModal">
-    <div class="modal-content modal-privacy-content">
+    <div class="modal-content modal-privacy-content" role="dialog" aria-modal="true" aria-labelledby="privacyPolicyTitle" tabindex="-1">
       <div class="modal-header">
-        <h3><i class="fa-solid fa-shield-halved text-success"></i> Política de Privacidade</h3>
-        <button class="modal-close-btn" id="closePrivacyModalBtn">&times;</button>
+        <h3 id="privacyPolicyTitle"><i class="fa-solid fa-shield-halved text-success"></i> Política de Privacidade</h3>
+        <button class="modal-close-btn" id="closePrivacyModalBtn" aria-label="Fechar política de privacidade">&times;</button>
       </div>
       <div class="privacy-body">
         <p class="privacy-date"><i class="fa-regular fa-calendar"></i> Última atualização: Outubro de 2026</p>
@@ -1279,31 +1370,35 @@
 
         <h4>2. Dados coletados e finalidade</h4>
         <ul>
-          <li><strong>Dados financeiros</strong> (lançamentos, ganhos e gastos): armazenados localmente no seu navegador (localStorage) para a funcionalidade do app.</li>
-          <li><strong>Nome e foto de perfil</strong>: salvos localmente para personalização da interface.</li>
+          <li><strong>Dados financeiros</strong>: no modo local, ficam no navegador; com login, também são sincronizados com o Supabase.</li>
+          <li><strong>Nome e foto de perfil</strong>: ficam apenas no aparelho e não são sincronizados com a nuvem.</li>
+          <li><strong>Metas por categoria</strong>: ficam apenas neste aparelho e não são sincronizadas.</li>
           <li><strong>E-mail e senha</strong>: usados exclusivamente para autenticação via Supabase quando você opta por criar conta. Senhas nunca são armazenadas localmente.</li>
+          <li><strong>Sessão de login</strong>: é mantida pelo cliente Supabase no armazenamento do navegador.</li>
         </ul>
 
         <h4>3. Como os dados são armazenados</h4>
-        <p><strong>Modo Local (sem login):</strong> todos os dados ficam exclusivamente no <em>localStorage</em> do seu navegador. Nenhum dado é enviado a servidores externos.</p>
+        <p><strong>Modo Local (sem login):</strong> os dados financeiros ficam no <em>localStorage</em> deste navegador. Google Fonts e cdnjs (Font Awesome) são carregados de terceiros; esses provedores podem receber seu endereço IP e dados técnicos da conexão. Os dados financeiros não são enviados a esses provedores.</p>
         <p><strong>Modo Nuvem (com login):</strong> os dados são sincronizados com o Supabase (banco de dados seguro), protegidos por autenticação e criptografia em trânsito (HTTPS/TLS). O acesso é isolado por usuário via Row Level Security (RLS).</p>
 
         <h4>4. Seus direitos (LGPD — Lei 13.709/2018)</h4>
         <ul>
           <li>✅ <strong>Acesso</strong>: você pode exportar todos os seus dados pelo botão "Baixar Backup".</li>
-          <li>✅ <strong>Exclusão</strong>: use o botão "Reset" para apagar todos os dados locais.</li>
+          <li><strong>Reset com login</strong>: apaga os dados deste aparelho e solicita a exclusão dos dados sincronizados na nuvem.</li>
+          <li><strong>Reset sem login</strong>: apaga somente os dados deste aparelho.</li>
+          <li><strong>Logout</strong>: encerra a sessão e apaga os dados locais deste aparelho; os dados sincronizados na nuvem permanecem até que a exclusão seja solicitada.</li>
+          <li><strong>Exclusão da conta</strong>: solicite a exclusão da conta e dos dados na nuvem pelo canal privado de contato informado nesta política.</li>
           <li>✅ <strong>Portabilidade</strong>: o backup JSON pode ser importado em outras ferramentas.</li>
-          <li>✅ <strong>Revogação de consentimento</strong>: basta fazer logout — os dados locais são apagados.</li>
         </ul>
 
         <h4>5. Compartilhamento de dados</h4>
-        <p>Os dados <strong>não são compartilhados, vendidos ou utilizados para fins publicitários</strong>. O único processador externo é o Supabase (quando você usa a conta na nuvem), sediado nos EUA e com cláusulas de proteção de dados.</p>
+        <p>Os dados <strong>não são vendidos nem utilizados para fins publicitários</strong>. O Supabase processa autenticação e dados financeiros quando você usa a conta na nuvem. Google Fonts e cdnjs (Font Awesome) também são provedores externos e recebem dados técnicos de conexão, como o endereço IP.</p>
 
         <h4>6. Segurança</h4>
-        <p>O app implementa Content-Security-Policy (CSP), proteção contra XSS, integridade de CDNs (SRI) e armazenamento seguro de sessão.</p>
+        <p>O app implementa Content-Security-Policy (CSP), proteção contra XSS, bibliotecas JavaScript servidas localmente e SRI para a folha de estilos do Font Awesome. A sessão de autenticação é mantida pelo cliente Supabase no navegador.</p>
 
         <h4>7. Contato</h4>
-        <p>Para exercer seus direitos ou tirar dúvidas sobre privacidade, entre em contato com o desenvolvedor pelo GitHub ou redes sociais.</p>
+        <p>Para exercer seus direitos, inclusive solicitar exclusão dos dados na nuvem, use: [INFORMAR CONTATO]. Não envie dados financeiros em canais públicos.</p>
 
         <div class="privacy-footer-note">
           <i class="fa-solid fa-circle-info text-primary"></i>
@@ -1318,10 +1413,10 @@
 
   <!-- MODAL — METAS DE TETO DE GASTOS POR CATEGORIA -->
   <div class="modal-overlay" id="goalModal">
-    <div class="modal-content modal-goal-content">
+    <div class="modal-content modal-goal-content" role="dialog" aria-modal="true" aria-labelledby="goalModalTitle" tabindex="-1">
       <div class="modal-header">
         <h3 id="goalModalTitle"><i class="fa-solid fa-bullseye"></i> Nova Meta de Gasto</h3>
-        <button class="modal-close-btn" id="closeGoalModalBtn">&times;</button>
+        <button class="modal-close-btn" id="closeGoalModalBtn" aria-label="Fechar metas">&times;</button>
       </div>
       <div class="modal-body">
         <p class="goal-modal-hint">Defina o <strong>teto de gasto</strong> para uma categoria. Você receberá alertas ao atingir <span class="text-warning">80%</span> e <span class="text-danger">100%</span> do limite.</p>
@@ -1345,7 +1440,7 @@
         </div>
         <div class="form-group">
           <label for="goalLimitInput">Limite de Gasto (R$)</label>
-          <input type="number" id="goalLimitInput" class="form-control" placeholder="Ex: 800.00" min="1" step="0.01">
+          <input type="number" id="goalLimitInput" class="form-control" placeholder="Ex: 800,00" min="1" step="0.01">
         </div>
       </div>
       <div class="modal-actions">
@@ -1361,15 +1456,18 @@
   </div>
 
   <!-- Toast Notificação -->
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <!-- Scripts -->
-  <!-- Supabase JS Client via jsdelivr (permitido no CSP) -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Bibliotecas locais e módulos do app -->
+  <script src="js/vendor/chart.umd.js"></script>
+  <script src="js/vendor/supabase.umd.js"></script>
   <script src="js/supabase.js"></script>
   <script src="js/data.js"></script>
+  <script src="js/categories.js"></script>
   <script src="js/importer.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/a11y.js"></script>
+  <script src="js/report.js"></script>
 </body>
 
 </html>

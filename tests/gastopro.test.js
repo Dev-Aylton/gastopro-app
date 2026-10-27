@@ -22,6 +22,7 @@
       1.10 clearAll() — Limpeza total
       1.11 exportJSON() — Estrutura do backup
       1.12 getProfile / saveProfile — Perfil do usuário
+      1.13 UUIDs e fila de sincronização
 
    2. Utilitários do app (app.js)
       2.1 formatCurrency() — Formatação BRL
@@ -35,6 +36,10 @@
       3.3 Gastos fixos inativos são excluídos dos totais
       3.4 Templates expirados não aparecem no mês
       3.5 Paidmonths: baixa isolada por mês
+
+   4. Importação
+      4.1 Parsing de valores, datas e categorias
+      4.2 Limites de description e category
 
    NOTA: Os testes mockam o localStorage para isolar os dados
    de teste dos dados reais do usuário, sem nunca tocá-los.
@@ -52,6 +57,7 @@ const TestResults = {
   failed: 0,
   errors: []
 };
+const pendingTestPromises = [];
 
 /**
  * Declara um grupo de testes relacionados.
@@ -84,6 +90,25 @@ function it(testName, fn) {
     console.error(`  ❌ FAIL — ${testName}`);
     console.error(`     → ${e.message}`);
   }
+}
+
+function itAsync(testName, fn) {
+  const previous = pendingTestPromises.length
+    ? pendingTestPromises[pendingTestPromises.length - 1]
+    : Promise.resolve();
+  const pending = previous
+    .then(fn)
+    .then(() => {
+      TestResults.passed++;
+      console.log(`  ✅ PASS — ${testName}`);
+    })
+    .catch((e) => {
+      TestResults.failed++;
+      TestResults.errors.push({ test: testName, error: e.message });
+      console.error(`  ❌ FAIL — ${testName}`);
+      console.error(`     → ${e.message}`);
+    });
+  pendingTestPromises.push(pending);
 }
 
 /**
@@ -727,52 +752,391 @@ describe('FinanceData — delete()', () => {
 describe('FinanceData — clearAll()', () => {
   setupMockLocalStorage();
 
-  it('deve apagar todos os lançamentos e templates', () => {
+  itAsync('deve apagar todos os lançamentos e templates', async () => {
     FinanceData.add(makeIncome());
     FinanceData.add(makeFixed({ month: '2026-01', date: '2026-01-01' }));
     FinanceData.add(makeVariable());
-    FinanceData.clearAll();
+    await FinanceData.clearAll();
     assertEqual(FinanceData.getEntries().length, 0);
     assertEqual(FinanceData.getTemplates().length, 0);
+  });
+
+  itAsync('deve limpar metas e manter a identidade da conta, enfileirando exclusões', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-reset-test';
+    const entryId = crypto.randomUUID();
+    const templateId = crypto.randomUUID();
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: 'Pessoa', avatar: 'data:image/png;base64,abc', email: 'pessoa@example.com', userId });
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([makeIncome({ id: entryId })]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([makeFixed({ id: templateId })]));
+    FinanceData.saveGoals([{ id: 'goal-1', category: 'Casa', limit: 500 }]);
+
+    const deletedEntries = [];
+    const deletedTemplates = [];
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: async () => ({ success: true }),
+      saveCloudTemplates: async () => ({ success: true }),
+      deleteCloudEntries: async ids => { deletedEntries.push(...ids); return { success: true }; },
+      deleteCloudTemplates: async ids => { deletedTemplates.push(...ids); return { success: true }; }
+    };
+    try {
+      const result = await FinanceData.clearAll();
+      assertTrue(result.success);
+      assertEqual(FinanceData.getProfile().userId, userId);
+      assertEqual(FinanceData.getProfile().email, 'pessoa@example.com');
+      assertEqual(FinanceData.getEntries(), []);
+      assertEqual(FinanceData.getTemplates(), []);
+      assertEqual(FinanceData.getGoals(), []);
+      assertTrue(deletedEntries.includes(entryId));
+      assertTrue(deletedTemplates.includes(templateId));
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+});
+
+describe('FinanceData — mesclagem completa da nuvem', () => {
+  it('remove localmente lançamentos que já não existem na nuvem após flush concluído', () => {
+    setupMockLocalStorage();
+    const userId = 'user-merge-test';
+    const deletedLocally = makeIncome({ id: crypto.randomUUID() });
+    const retained = makeIncome({ id: crypto.randomUUID(), desc: 'Mantido na nuvem' });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([deletedLocally, retained]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    FinanceData.savePendingSync({ full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [] });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [retained], [], true));
+    assertEqual(FinanceData.getEntries().map(item => item.id), [retained.id]);
+  });
+
+  it('preserva itens locais pendentes, incompletos ou sem flush bem-sucedido', () => {
+    setupMockLocalStorage();
+    const userId = 'user-merge-pending';
+    const localItem = makeIncome({ id: crypto.randomUUID() });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([localItem]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    FinanceData.savePendingSync({
+      full: false, entries: [localItem.id], templates: [], deletedEntries: [], deletedTemplates: []
+    });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [], [], true));
+    assertEqual(FinanceData.getEntries().map(item => item.id), [localItem.id]);
+    assertFalse(FinanceData.mergeCloudData(userId, null, [], true));
+    assertEqual(FinanceData.getEntries().map(item => item.id), [localItem.id]);
+  });
+
+  it('não remove dados locais se a etapa de flush não foi confirmada', () => {
+    setupMockLocalStorage();
+    const userId = 'user-merge-failed-flush';
+    const localItem = makeIncome({ id: crypto.randomUUID() });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([localItem]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    FinanceData.savePendingSync({ full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [] });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [], [], false));
+    assertEqual(FinanceData.getEntries().map(item => item.id), [localItem.id]);
+  });
+
+  itAsync('prepara logout apenas com mudanças pendentes, sem upsert completo', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-logout-incremental';
+    const pending = makeIncome({ id: crypto.randomUUID(), desc: 'Pendente' });
+    const unchanged = makeIncome({ id: crypto.randomUUID(), desc: 'Já sincronizado' });
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', avatar: null, email: 'user@example.com', userId });
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([pending, unchanged]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    FinanceData.savePendingSync({
+      full: false, entries: [pending.id], templates: [], deletedEntries: [], deletedTemplates: []
+    });
+    const savedIds = [];
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: async items => { savedIds.push(...items.map(item => item.id)); return { success: true }; },
+      saveCloudTemplates: async () => ({ success: true }),
+      deleteCloudEntries: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true })
+    };
+    try {
+      const result = await FinanceData.prepareLocalDataForSync(userId);
+      assertTrue(result.success);
+      assertEqual(savedIds, [pending.id]);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+});
+
+describe('Privacidade, payloads e autenticação', () => {
+  it('não deve expor templates nem receitas financeiras pessoais iniciais', () => {
+    assertEqual(typeof INITIAL_REAL_TEMPLATES, 'undefined');
+    assertEqual(typeof generateRealInitialEntries, 'undefined');
+  });
+
+  it('valida payloads de nuvem por entidade e calendário', () => {
+    const entry = makeIncome({ id: crypto.randomUUID() });
+    assertEqual(validateCloudPayload(entry, 'entries'), null);
+    assertTrue(validateCloudPayload({ ...entry, date: '2026-02-30' }, 'entries'));
+    assertTrue(validateCloudPayload({ ...entry, amount: -1 }, 'entries'));
+    assertTrue(validateCloudPayload({ ...entry, type: 'unknown' }, 'entries'));
+
+    const template = makeFixed({ id: crypto.randomUUID(), startMonth: '2026-11', day: '01' });
+    assertEqual(validateCloudPayload(template, 'templates'), null);
+    assertTrue(validateCloudPayload({ ...template, startMonth: '2026-13' }, 'templates'));
+    assertTrue(validateCloudPayload({ ...template, type: 'income' }, 'templates'));
+  });
+
+  itAsync('valida todas as páginas e sinaliza falha sem entregar sincronização parcial', async () => {
+    const ranges = [];
+    const rows = await window.SupabaseAuth.fetchAllPages(async (from, to) => {
+      ranges.push([from, to]);
+      return { data: Array.from({ length: from === 0 ? 1000 : 1 }, (_, index) => ({ index: from + index })), error: null };
+    });
+    assertEqual(rows.length, 1001);
+    assertEqual(ranges, [[0, 999], [1000, 1999]]);
+    const incomplete = await window.SupabaseAuth.fetchAllPages(async () => ({ data: null, error: new Error('offline') }));
+    assertNull(incomplete);
+  });
+
+  itAsync('isola falhas do upsert em lote e mantém as linhas válidas', async () => {
+    const calls = [];
+    const result = await window.SupabaseAuth.upsertWithFallback(async payload => {
+      calls.push(payload);
+      if (Array.isArray(payload) || payload.id === 'bad') return { error: new Error('linha inválida') };
+      return { error: null };
+    }, [{ id: 'good' }, { id: 'bad' }], [{ id: 'good' }, { id: 'bad' }]);
+    assertEqual(result.failedIds, ['bad']);
+    assertEqual(calls.length, 3);
+  });
+
+  itAsync('atualiza a senha por meio do cliente autenticado', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    let updatedPassword = '';
+    window.SupabaseAuth.client = {
+      auth: {
+        updateUser: async ({ password }) => {
+          updatedPassword = password;
+          return { data: { user: { id: 'user-test' } }, error: null };
+        }
+      }
+    };
+    try {
+      await window.SupabaseAuth.updatePassword('senha-segura-8');
+      assertEqual(updatedPassword, 'senha-segura-8');
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  it('aceita somente senhas com oito ou mais caracteres', () => {
+    assertFalse(isValidPassword('1234567'));
+    assertTrue(isValidPassword('12345678'));
+  });
+});
+
+describe('Bloco 2 — dívida, orçamento, diagnóstico e categorias', () => {
+  it('não marca dívida vencida como quitada se ainda houver parcelas abertas', () => {
+    const debt = GastoProReportHelpers.getDebtCenterData('2026-12', [{
+      id: 'overdue-debt', desc: 'Financiamento', amount: 250, category: 'Empréstimo',
+      isDebt: true, active: true, startMonth: '2025-01', endMonth: '2026-10',
+      paidMonths: { '2025-01': true }
+    }]).items[0];
+    assertFalse(debt.isFinished);
+    assertTrue(debt.isOverdue);
+    assertEqual(debt.remainingMonths, 21);
+  });
+
+  it('marca dívida como quitada quando todas as parcelas foram pagas', () => {
+    const debt = GastoProReportHelpers.getDebtCenterData('2026-12', [{
+      id: 'finished-debt', desc: 'Quitada', amount: 250, category: 'Empréstimo',
+      isDebt: true, active: true, startMonth: '2025-01', endMonth: '2025-02',
+      paidMonths: { '2025-01': true, '2025-02': true }
+    }]).items[0];
+    assertTrue(debt.isFinished);
+    assertFalse(debt.isOverdue);
+    assertEqual(debt.remainingMonths, 0);
+  });
+
+  it('calcula orçamento diário para mês passado, atual e futuro', () => {
+    assertEqual(getDailyBudgetInfo(310, 2026, 8, new Date(2026, 9, 2)), {
+      status: 'past', days: 0, dailyAmount: null, message: 'Mês encerrado'
+    });
+    assertEqual(getDailyBudgetInfo(290, 2026, 10, new Date(2026, 9, 28)), {
+      status: 'current', days: 4, dailyAmount: 72.5, message: ''
+    });
+    assertEqual(getDailyBudgetInfo(300, 2026, 11, new Date(2026, 9, 28)), {
+      status: 'future', days: 30, dailyAmount: 10, message: ''
+    });
+  });
+
+  it('conta hoje no mínimo um dia e lida com virada de ano e fevereiro bissexto', () => {
+    assertEqual(getDailyBudgetInfo(100, 2026, 12, new Date(2026, 11, 31)).days, 1);
+    assertEqual(getDailyBudgetInfo(290, 2024, 2, new Date(2024, 1, 28)), {
+      status: 'current', days: 2, dailyAmount: 145, message: ''
+    });
+    assertEqual(getDailyBudgetInfo(620, 2027, 1, new Date(2026, 11, 31)).days, 31);
+  });
+
+  it('explica a faixa de alerta dos gastos fixos sem mudar o limiar e detecta variáveis altos', () => {
+    const fixedAlert = getHealthDiagnostic(1000, 100, 56, 10, 34);
+    assertEqual(fixedAlert.badge, 'Fixos Altos');
+    assertTrue(fixedAlert.description.includes('ideal até 50%; alerta acima de 55%'));
+    const variableAlert = getHealthDiagnostic(1000, 100, 50, 31, 19);
+    assertEqual(variableAlert.badge, 'Variáveis Altos');
+    assertEqual(variableAlert.badgeClass, 'badge badge-warning');
+  });
+
+  it('normaliza acentos e soma gastos Mercado em metas sem distinção de acento/caixa', () => {
+    assertEqual(GastoProCategories.normalize('Alimentação'), GastoProCategories.normalize('alimentacao'));
+    assertEqual(GastoProCategories.EXPENSE, [
+      'Moradia', 'Contas', 'Saúde', 'Esporte', 'Cartão de crédito', 'Alimentação',
+      'Mercado', 'Transporte', 'Educação', 'Empréstimo', 'Parcelamento',
+      'Assinaturas', 'Compras', 'Vestuário', 'Lazer', 'Outros'
+    ]);
+    const progress = GastoProReportHelpers.calculateGoalProgress(
+      [{ category: 'Mercado', limit: 500 }],
+      [],
+      [{ category: ' mercado ', amount: 125 }]
+    );
+    assertEqual(progress[0].spent, 125);
+  });
+});
+
+describe('Bloco 2 — backup JSON', () => {
+  it('valida o backup e aceita apenas arrays limitados e versão textual', () => {
+    const validBackup = JSON.stringify({
+      version: '3.8',
+      entries: [makeIncome({ id: crypto.randomUUID() })],
+      templates: [makeFixed({ id: crypto.randomUUID(), startMonth: '2026-01' })],
+      goals: [{ id: 'goal-1', category: 'Mercado', limit: 500 }]
+    });
+    const validated = GastoProBackupHelpers.validate(validBackup);
+    assertEqual(validated.entries.length, 1);
+    assertTrue(GastoProBackupHelpers.validate('{invalido').error);
+    assertTrue(GastoProBackupHelpers.validate(JSON.stringify({
+      version: 3, entries: [], templates: [], goals: []
+    })).error);
+    assertTrue(GastoProBackupHelpers.validate(JSON.stringify({
+      version: '3.8', entries: new Array(5001), templates: [], goals: []
+    })).error);
+  });
+
+  it('mescla por ID e substitui integralmente sem compartilhar referências', () => {
+    const current = {
+      entries: [makeIncome({ id: 'keep-entry' })],
+      templates: [],
+      goals: [{ id: 'goal-local', category: 'Casa', limit: 300 }]
+    };
+    const incoming = {
+      entries: [makeIncome({ id: 'keep-entry', amount: 500 }), makeIncome({ id: 'new-entry' })],
+      templates: [],
+      goals: [{ id: 'goal-imported', category: 'Mercado', limit: 700 }]
+    };
+    const merged = GastoProBackupHelpers.merge(current, incoming, 'merge');
+    assertEqual(merged.entries.length, 2);
+    assertEqual(merged.entries.find(item => item.id === 'keep-entry').amount, 500);
+    assertEqual(merged.goals.length, 2);
+    const goalId = crypto.randomUUID();
+    assertEqual(GastoProBackupHelpers.merge(
+      { entries: [], templates: [], goals: [{ id: `goal-${goalId}`, category: 'Mercado', limit: 500 }] },
+      { entries: [], templates: [], goals: [{ id: goalId, category: 'Mercado', limit: 700 }] },
+      'merge'
+    ).goals.length, 1);
+    const replaced = GastoProBackupHelpers.merge(current, incoming, 'replace');
+    assertEqual(replaced.entries.length, 2);
+    assertEqual(replaced.goals.length, 1);
+    assertEqual(current.entries.length, 1);
+  });
+
+  it('gera UUID novo para IDs inválidos e rejeita backups maiores que 5 MB', () => {
+    const backup = GastoProBackupHelpers.validate(JSON.stringify({
+      version: '3.8',
+      entries: [makeIncome({ id: 'legacy-id' })],
+      templates: [],
+      goals: []
+    }));
+    assertTrue(isUuid(backup.entries[0].id));
+    assertTrue(GastoProBackupHelpers.validate(' '.repeat(5 * 1024 * 1024 + 1)).error);
+  });
+
+  itAsync('limpa metas locais ao ativar uma nova conta sem dados de usuário anterior', async () => {
+    setupMockLocalStorage();
+    FinanceData.saveGoals([{ id: 'goal-guest', category: 'Mercado', limit: 500 }]);
+    assertTrue(FinanceData.activateUser('new-account'));
+    assertEqual(FinanceData.getGoals(), []);
+  });
+
+  itAsync('importJSON substitui lançamentos, templates e metas no armazenamento local', async () => {
+    setupMockLocalStorage();
+    const restoredEntry = makeIncome({ id: crypto.randomUUID(), desc: 'Restaurado' });
+    const restoredGoal = { id: crypto.randomUUID(), category: 'Mercado', limit: 900 };
+    FinanceData.saveEntries([makeIncome({ id: crypto.randomUUID(), desc: 'Antigo' })]);
+    FinanceData.saveGoals([{ id: crypto.randomUUID(), category: 'Casa', limit: 200 }]);
+    const text = JSON.stringify({
+      version: '3.8',
+      entries: [restoredEntry],
+      templates: [],
+      goals: [restoredGoal]
+    });
+
+    const result = await FinanceData.importJSON(text, 'replace');
+    assertTrue(result.success);
+    assertEqual(FinanceData.getEntries().map(item => item.desc), ['Restaurado']);
+    assertEqual(FinanceData.getTemplates(), []);
+    assertEqual(FinanceData.getGoals().map(goal => goal.category), ['Mercado']);
   });
 });
 
 describe('FinanceData — exportJSON()', () => {
   setupMockLocalStorage();
 
-  it('backup deve incluir campos version, exportDate, entries e templates', () => {
+  it('backup deve baixar JSON com Blob, URL temporária e data no nome do arquivo', () => {
     FinanceData.add(makeIncome());
     FinanceData.add(makeFixed({ month: '2026-01', date: '2026-01-01' }));
 
     const originalCreateElement = document.createElement.bind(document);
-    let backup = null;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    let downloadName = '';
+    let downloadUrl = '';
     document.createElement = (tagName) => {
       if (tagName !== 'a') return originalCreateElement(tagName);
-
-      return {
-        setAttribute(name, value) {
-          if (name !== 'href') return;
-          const jsonData = value.slice(value.indexOf(',') + 1);
-          backup = JSON.parse(decodeURIComponent(jsonData));
-        },
-        click() {}
+      const anchor = originalCreateElement(tagName);
+      const setAttribute = anchor.setAttribute.bind(anchor);
+      anchor.setAttribute = (name, value) => {
+        if (name === 'href') downloadUrl = value;
+        if (name === 'download') downloadName = value;
+        setAttribute(name, value);
       };
+      anchor.click = () => {};
+      return anchor;
     };
+    URL.createObjectURL = () => 'blob:test-backup';
+    URL.revokeObjectURL = () => {};
 
     try {
-      FinanceData.exportJSON();
+      const backup = FinanceData.exportJSON();
+      assertTrue(typeof backup.version === 'string', 'version deve ser string');
+      assertEqual(backup.version, '3.9');
+      assertTrue(typeof backup.exportDate === 'string', 'exportDate deve ser string');
+      assertTrue(Array.isArray(backup.entries), 'entries deve ser array');
+      assertTrue(Array.isArray(backup.templates), 'templates deve ser array');
+      assertTrue(Array.isArray(backup.goals), 'goals deve ser array');
+      assertEqual(backup.entries.length, 1);
+      assertEqual(backup.templates.length, 1);
     } finally {
       document.createElement = originalCreateElement;
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
     }
 
-    assertTrue(typeof backup.version === 'string', 'version deve ser string');
-    assertEqual(backup.version, '3.6');
-    assertTrue(typeof backup.exportDate === 'string', 'exportDate deve ser string');
-    assertTrue(Array.isArray(backup.entries), 'entries deve ser array');
-    assertTrue(Array.isArray(backup.templates), 'templates deve ser array');
-    assertTrue(Array.isArray(backup.goals), 'goals deve ser array');
-    assertEqual(backup.entries.length, 1);
-    assertEqual(backup.templates.length, 1);
+    assertEqual(downloadUrl, 'blob:test-backup');
+    assertTrue(/^gastopro_backup_\d{4}-\d{2}-\d{2}\.json$/.test(downloadName));
   });
 });
 
@@ -898,6 +1262,154 @@ describe('Utilitários — escapeHtml()', () => {
 
   it('não deve alterar texto simples sem caracteres especiais', () => {
     assertEqual(escapeHtml('Salário Normal'), 'Salário Normal');
+  });
+});
+
+describe('Acessibilidade dos modais', () => {
+  itAsync('foca o modal, prende Tab, fecha com Esc e devolve o foco', async () => {
+    const previousFocus = document.createElement('button');
+    previousFocus.id = 'a11yTestPreviousFocus';
+    previousFocus.textContent = 'Abrir modal de teste';
+    document.body.appendChild(previousFocus);
+    previousFocus.focus();
+
+    let overlay;
+    try {
+      overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+      <section role="dialog" aria-modal="true" aria-labelledby="a11yTestTitle" tabindex="-1">
+        <h2 id="a11yTestTitle">Modal de teste</h2>
+        <button type="button" class="modal-close-btn" id="a11yTestClose">Fechar</button>
+        <input id="a11yTestInput" aria-label="Primeiro campo">
+        <button type="button" id="a11yTestLast">Último campo</button>
+      </section>`;
+      document.body.appendChild(overlay);
+      const closeButton = overlay.querySelector('.modal-close-btn');
+      closeButton.addEventListener('click', () => overlay.classList.remove('active'));
+      overlay.classList.add('active');
+
+      const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+      await tick();
+
+      const focusable = [...overlay.querySelectorAll('button, input')];
+      assertEqual(document.activeElement.id, 'a11yTestInput', 'O primeiro campo deve receber foco');
+
+      focusable[focusable.length - 1].focus();
+      overlay.querySelector('[role="dialog"]').dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Tab',
+        bubbles: true,
+        cancelable: true
+      }));
+      assertEqual(document.activeElement.id, 'a11yTestClose', 'Tab no último controle deve voltar ao primeiro controle');
+
+      overlay.querySelector('[role="dialog"]').dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Tab',
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true
+      }));
+      assertEqual(document.activeElement.id, 'a11yTestLast', 'Shift+Tab no primeiro controle deve ir ao último');
+
+      overlay.querySelector('[role="dialog"]').dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true
+      }));
+      await tick();
+      assertFalse(overlay.classList.contains('active'), 'Esc deve acionar o botão de fechar');
+      assertEqual(document.activeElement.id, 'a11yTestPreviousFocus', 'O foco deve voltar ao elemento anterior');
+    } finally {
+      if (overlay) overlay.remove();
+      previousFocus.remove();
+    }
+  });
+});
+
+describe('Acessibilidade de painéis e navegação', () => {
+  function createKeyboardPanelTest(id, trapFocus = false) {
+    const trigger = document.createElement('button');
+    trigger.id = `${id}Trigger`;
+    const panel = document.createElement('div');
+    panel.id = id;
+    panel.className = 'open';
+    panel.tabIndex = -1;
+    panel.innerHTML = '<button type="button">Fechar</button><button type="button">Último</button>';
+    document.body.append(trigger, panel);
+    let closed = false;
+    window.GastoProKeyboardPanels.bind({
+      panel,
+      trigger,
+      isOpen: () => panel.isConnected && panel.classList.contains('open'),
+      close: () => {
+        closed = true;
+        panel.classList.remove('open');
+      },
+      trapFocus
+    });
+    return { trigger, panel, get closed() { return closed; } };
+  }
+
+  it('drawer fecha com Esc, devolve foco e mantém Tab dentro do painel', () => {
+    const testPanel = createKeyboardPanelTest('drawerKeyboardTest', true);
+    try {
+      const [first, last] = testPanel.panel.querySelectorAll('button');
+      last.focus();
+      last.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Tab', bubbles: true, cancelable: true
+      }));
+      assertEqual(document.activeElement.id, first.id, 'Tab no último controle deve voltar ao primeiro');
+
+      first.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true
+      }));
+      assertTrue(testPanel.closed, 'Esc deve fechar o drawer');
+      assertEqual(document.activeElement.id, testPanel.trigger.id, 'O foco deve voltar ao acionador');
+    } finally {
+      testPanel.trigger.remove();
+      testPanel.panel.remove();
+    }
+  });
+
+  it('calendário fecha com Esc e devolve foco ao acionador', () => {
+    const testPanel = createKeyboardPanelTest('calendarKeyboardTest');
+    try {
+      testPanel.panel.querySelector('button').focus();
+      testPanel.panel.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true
+      }));
+      assertTrue(testPanel.closed, 'Esc deve fechar o calendário');
+      assertEqual(document.activeElement.id, testPanel.trigger.id, 'O foco deve voltar ao acionador');
+    } finally {
+      testPanel.trigger.remove();
+      testPanel.panel.remove();
+    }
+  });
+
+  it('sidebar fecha com Esc e devolve foco ao botão do menu', () => {
+    const testPanel = createKeyboardPanelTest('sidebarKeyboardTest');
+    try {
+      testPanel.panel.querySelector('button').focus();
+      testPanel.panel.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true
+      }));
+      assertTrue(testPanel.closed, 'Esc deve fechar a sidebar');
+      assertEqual(document.activeElement.id, testPanel.trigger.id, 'O foco deve voltar ao botão do menu');
+    } finally {
+      testPanel.trigger.remove();
+      testPanel.panel.remove();
+    }
+  });
+});
+
+describe('Avatar — tipos de imagem suportados', () => {
+  it('aceita somente JPEG, PNG e WebP', () => {
+    assertTrue(isSupportedAvatarType('image/jpeg'));
+    assertTrue(isSupportedAvatarType('image/png'));
+    assertTrue(isSupportedAvatarType('image/webp'));
+    assertFalse(isSupportedAvatarType('image/svg+xml'));
+    assertFalse(isSupportedAvatarType('image/gif'));
+    assertFalse(isSupportedAvatarType('application/octet-stream'));
   });
 });
 
@@ -1033,6 +1545,406 @@ describe('Lógica de Negócio — paidMonths por mês isolado', () => {
   });
 });
 
+describe('GastoProImporter — parsing e limites', () => {
+  it('parseMoney deve aceitar vírgula decimal com uma ou duas casas e formatos existentes', () => {
+    assertEqual(GastoProImporter.parseMoney('45,9'), 45.9);
+    assertEqual(GastoProImporter.parseMoney('45,90'), 45.9);
+    assertEqual(GastoProImporter.parseMoney('1.234,56'), 1234.56);
+    assertEqual(GastoProImporter.parseMoney('1234.56'), 1234.56);
+  });
+
+  it('parseDate deve converter datas brasileiras e preservar ISO', () => {
+    assertEqual(GastoProImporter.parseDate('31/10/2026'), '2026-10-31');
+    assertEqual(GastoProImporter.parseDate('2026-10-31'), '2026-10-31');
+  });
+
+  it('autoDetectCategory deve inferir categoria a partir da descrição', () => {
+    assertEqual(GastoProImporter.autoDetectCategory('Compra no supermercado'), 'Mercado');
+    assertEqual(GastoProImporter.autoDetectCategory('descrição desconhecida'), 'Outros');
+  });
+
+  it('deve limitar description a 300 e category a 100 caracteres', () => {
+    const longDescription = 'D'.repeat(350);
+    const csvRows = GastoProImporter.parseCSV(
+      `date,description,amount\n2026-10-31,"${longDescription}",12.34`
+    );
+    const rawRows = GastoProImporter.parseRawText(`31/10/2026 ${longDescription} 12,34`);
+    const row = GastoProImporter.buildEntry({
+      date: '2026-10-31',
+      desc: longDescription,
+      amount: 12.34,
+      category: 'C'.repeat(120)
+    });
+    assertEqual(csvRows[0].desc.length, 300);
+    assertEqual(rawRows[0].desc.length, 300);
+    assertEqual(row.desc.length, 300);
+    assertEqual(row.category.length, 100);
+  });
+});
+
+describe('GastoProImporter — extratos bancários robustos', () => {
+  it('mantém parseMoney absoluto e expõe o valor assinado e o tipo padrão', () => {
+    assertEqual(GastoProImporter.parseMoney('-45,90'), 45.9);
+    assertEqual(GastoProImporter.parseMoneySigned('-45,90'), -45.9);
+    const mixed = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n15/10/2026;Compra mercado;-45,90\n16/10/2026;Salário;100,00'
+    );
+    assertEqual(mixed.map(row => row.signedAmount), [-45.9, 100]);
+    assertEqual(mixed.map(row => row.type), ['variable', 'income']);
+    const sameSign = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n15/10/2026;Compra mercado;45,90\n16/10/2026;Compra mercado;12,00'
+    );
+    assertEqual(sameSign.map(row => row.type), ['variable', 'variable']);
+    const receita = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n15/10/2026;Receita de venda;-45,90'
+    );
+    assertEqual(receita[0].type, 'income');
+  });
+
+  it('calcula Crédito menos Débito e identifica receita/gasto em colunas separadas', () => {
+    const rows = GastoProImporter.parseCSV(
+      'Data;Descrição;Débito;Crédito\n15/10/2026;Compra supermercado;45,90;0,00\n16/10/2026;Salário;0,00;100,00'
+    );
+    assertEqual(rows.map(row => row.signedAmount), [-45.9, 100]);
+    assertEqual(rows.map(row => row.type), ['variable', 'income']);
+  });
+
+  it('localiza o cabeçalho nas primeiras 15 linhas e ignora preâmbulo bancário', () => {
+    const rows = GastoProImporter.parseCSV(
+      'Extrato da conta\nPeríodo: outubro de 2026\nAgência;1234\nConta;5678\nData;Descrição;Valor\n15/10/2026;Compra mercado;-45,90'
+    );
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].desc, 'Compra mercado');
+    const tooLate = GastoProImporter.parseCSV(
+      `${Array.from({ length: 15 }, (_, i) => `Preâmbulo ${i}`).join('\n')}\nData;Descrição;Valor\n15/10/2026;Compra;10,00`
+    );
+    assertEqual(tooLate.length, 0);
+  });
+
+  it('valida datas reais, aceita hora e aplica ano anterior a DD/MM distante no futuro', () => {
+    assertEqual(GastoProImporter.parseDate('15/10/2026 14:32'), '2026-10-15');
+    assertEqual(GastoProImporter.parseDate('15/10/26'), '2026-10-15');
+    assertEqual(GastoProImporter.parseDate('15-10-2026'), '2026-10-15');
+    assertEqual(GastoProImporter.parseDate('2026-10-15'), '2026-10-15');
+    assertNull(GastoProImporter.parseDate('31/02/2026'));
+    assertEqual(GastoProImporter.parseDate('31/12', new Date(2026, 0, 10)), '2025-12-31');
+    const row = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n31/02/2026;Compra;10,00'
+    )[0];
+    assertTrue(row.invalid);
+    assertTrue(Boolean(row.invalidReason));
+  });
+
+  it('não substitui data ausente por hoje e marca a linha como inválida', () => {
+    const row = GastoProImporter.parseRawText('Compra supermercado 10,00')[0];
+    assertNull(row.date);
+    assertTrue(row.invalid);
+    assertTrue(Boolean(row.invalidReason));
+  });
+
+  it('impõe limites de tamanho e linhas e limita cada linha a 500 caracteres', () => {
+    const oversizedLine = `15/10/2026 ${'x'.repeat(510)} 10,00`;
+    const rows = GastoProImporter.parseRawText(
+      `15/10/2026 mercado 10,00\n${oversizedLine}`
+    );
+    assertEqual(rows.length, 1);
+    assertEqual(GastoProImporter.parseCSV('x'.repeat(1_000_001)).length, 0);
+    assertTrue(GastoProImporter.getLastWarnings().some(warning => warning.includes('1 MB')));
+    assertEqual(GastoProImporter.parseRawText('x'.repeat(200_001)).length, 0);
+    assertTrue(GastoProImporter.getLastWarnings().some(warning => warning.includes('200.000')));
+    assertEqual(GastoProImporter.parseRawText(
+      Array.from({ length: 2001 }, () => '15/10/2026 mercado 10,00').join('\n')
+    ).length, 2000);
+  });
+
+  it('processa linha longa com segurança sem regex de backtracking custoso', () => {
+    const input = `${' '.repeat(10000)}${'1'.repeat(10000)}`;
+    const start = performance.now();
+    GastoProImporter.parseRawText(input);
+    assertTrue(performance.now() - start < 200, 'O parse deve terminar em menos de 200 ms');
+  });
+
+  it('ignora totais/saldos e classifica por palavras inteiras com categorias válidas', () => {
+    const rows = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n15/10/2026;Saldo anterior;100,00\n15/10/2026;Total da fatura;100,00'
+    );
+    assertEqual(rows.length, 0);
+    assertEqual(GastoProImporter.autoDetectCategory('EXTRATO CONTA'), 'Outros');
+    assertEqual(GastoProImporter.autoDetectCategory('INTERNET CLARO'), 'Moradia');
+    assertEqual(GastoProImporter.autoDetectCategory('SUPERMERCADO EXTRA'), 'Mercado');
+    assertEqual(GastoProImporter.autoDetectCategory('UBER *TRIP'), 'Transporte');
+    assertEqual(GastoProImporter.autoDetectCategory('UBER EATS'), 'Alimentação');
+    const validCategories = [...GastoProCategories.EXPENSE, ...GastoProCategories.INCOME];
+    ['EXTRATO CONTA', 'INTERNET CLARO', 'SUPERMERCADO EXTRA', 'UBER *TRIP', 'UBER EATS']
+      .forEach(description => assertTrue(validCategories.includes(
+        GastoProImporter.autoDetectCategory(description)
+      )));
+  });
+
+  it('marca duplicados existentes e repetidos no próprio arquivo', () => {
+    const rows = [
+      { date: '2026-10-15', amount: 10, desc: 'Mercado EXTRA' },
+      { date: '2026-10-15', amount: 10, desc: 'mercado extra' },
+      { date: '2026-10-16', amount: 10, desc: 'mercado extra' }
+    ];
+    const marked = GastoProImporter.markDuplicates(rows, [
+      { date: '2026-10-15', amount: 10, desc: 'MERCADO EXTRA' }
+    ]);
+    assertEqual(marked.map(row => row.duplicate), [true, true, false]);
+    assertEqual(marked.map(row => row.selected), [false, false, true]);
+  });
+});
+
+describe('FinanceData — inserção em lote para importação', () => {
+  setupMockLocalStorage();
+
+  itAsync('addMany grava entries e templates e solicita apenas um flush', async () => {
+    setupMockLocalStorage();
+    let flushes = 0;
+    const originalFlush = FinanceData.flushPendingSync;
+    FinanceData.flushPendingSync = async () => {
+      flushes++;
+      return { success: true };
+    };
+    try {
+      const added = await FinanceData.addMany([
+        { type: 'variable', desc: 'Gasto lote', amount: 10, date: '2026-10-15', month: '2026-10' },
+        { type: 'fixed', desc: 'Fixo lote', amount: 20, date: '2026-10-15', month: '2026-10' }
+      ]);
+      assertEqual(added.items.length, 2);
+      assertEqual(FinanceData.getEntries().length, 1);
+      assertEqual(FinanceData.getTemplates().length, 1);
+      assertEqual(flushes, 1);
+      assertTrue(added.items.every(item => isUuid(item.id)));
+    } finally {
+      FinanceData.flushPendingSync = originalFlush;
+    }
+  });
+});
+
+describe('FinanceData — conversões de data local e tipo', () => {
+  setupMockLocalStorage();
+
+  it('getLocalDateString deve formatar a data do calendário local', () => {
+    assertEqual(getLocalDateString(new Date(2026, 9, 31)), '2026-10-31');
+  });
+
+  it('isUuid deve aceitar UUIDs RFC das versões 1 a 8', () => {
+    assertTrue(isUuid('01890f3e-7c00-7abc-8def-0123456789ab'));
+  });
+
+  it('edição de template não deve permitir o tipo income da família entries', () => {
+    const template = FinanceData.add(makeFixed());
+    const updated = FinanceData.update(template.id, { type: 'income' });
+    assertNull(updated);
+    assertEqual(FinanceData.getTemplates()[0].type, 'fixed');
+    assertEqual(FinanceData.getEntries(), []);
+  });
+});
+
+describe('FinanceData — exclusão durante sincronização', () => {
+  itAsync('deve manter e enviar exclusão enfileirada enquanto o upsert está pendente', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-sync-race';
+    const entryId = crypto.randomUUID();
+    localStorage.setItem('gastopro_last_uid', userId);
+    await FinanceData.saveEntries([makeIncome({ id: entryId })]);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId });
+
+    let finishEntrySave;
+    const deletedIds = [];
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: () => new Promise(resolve => { finishEntrySave = resolve; }),
+      saveCloudTemplates: async () => ({ success: true }),
+      deleteCloudEntries: async ids => {
+        deletedIds.push(...ids);
+        return { success: true };
+      },
+      deleteCloudTemplates: async () => ({ success: true })
+    };
+
+    try {
+      const firstFlush = FinanceData.flushPendingSync(userId);
+      await Promise.resolve();
+      assertTrue(typeof finishEntrySave === 'function', 'Upsert inicial deveria estar pendente');
+
+      const deletion = FinanceData.delete(entryId);
+      finishEntrySave({ success: true });
+      await Promise.all([firstFlush, deletion]);
+
+      assertTrue(deletedIds.includes(entryId), 'A exclusão concorrente deveria ser enviada à nuvem');
+      assertFalse(FinanceData.hasPendingSync(), 'A fila deveria estar limpa após o envio da exclusão');
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+});
+
+describe('Relatório Financeiro — buildReportData', () => {
+  setupMockLocalStorage();
+
+  it('deve calcular totais mensais, percentuais e totais do intervalo', () => {
+    FinanceData.saveEntries([
+      makeIncome({ id: 'report-income-jan', month: '2026-01', date: '2026-01-05', amount: 5000 }),
+      makeVariable({ id: 'report-variable-jan', month: '2026-01', date: '2026-01-10', amount: 400 }),
+      makeIncome({ id: 'report-income-feb', month: '2026-02', date: '2026-02-05', amount: 1000 })
+    ]);
+    FinanceData.saveTemplates([
+      {
+        id: 'report-fixed', desc: 'Aluguel', amount: 1000, category: 'Moradia',
+        type: 'fixed', active: true, startMonth: '2026-01', endMonth: null, day: '05', paidMonths: {}
+      },
+      {
+        id: 'report-debt', desc: 'Parcela', amount: 300, category: 'Empréstimo',
+        type: 'fixed', isDebt: true, active: true, startMonth: '2026-01',
+        endMonth: '2026-02', day: '10', paidMonths: { '2026-01': true }
+      }
+    ]);
+    FinanceData.saveProfile({ name: 'Pessoa de Teste', avatar: null });
+
+    const report = buildReportData({
+      type: 'range', from: '2026-01', to: '2026-02', includeDetails: true
+    });
+
+    assertEqual(report.meta.profileName, 'Pessoa de Teste');
+    assertEqual(report.months.length, 2);
+    assertEqual(report.months[0].totals.income, 5000);
+    assertEqual(report.months[0].totals.fixed, 1000);
+    assertEqual(report.months[0].totals.debt, 300);
+    assertEqual(report.months[0].totals.variable, 400);
+    assertEqual(report.months[0].totals.balance, 3300);
+    assertEqual(report.months[0].totals.percentages.fixed, 26);
+    assertEqual(report.months[0].totals.percentages.variable, 8);
+    assertEqual(report.months[0].totals.percentages.savings, 66);
+    assertEqual(report.totals.income, 6000);
+    assertEqual(report.totals.balance, 3000);
+  });
+
+  it('deve incluir projeções fixas ativas, respeitar pagamentos e omitir inativas', () => {
+    FinanceData.saveEntries([
+      makeIncome({ id: 'report-detail-income', month: '2026-03', date: '2026-03-01' }),
+      makeVariable({ id: 'report-detail-variable', month: '2026-03', date: '2026-03-15' })
+    ]);
+    FinanceData.saveTemplates([
+      {
+        id: 'report-active-fixed', desc: 'Conta paga', amount: 100, category: 'Casa',
+        type: 'fixed', active: true, startMonth: '2026-01', endMonth: null, day: '03',
+        paidMonths: { '2026-03': true }
+      },
+      {
+        id: 'report-inactive-fixed', desc: 'Conta pausada', amount: 900, category: 'Casa',
+        type: 'fixed', active: false, startMonth: '2026-01', endMonth: null, day: '04',
+        paidMonths: {}
+      }
+    ]);
+
+    const report = buildReportData({
+      type: 'month', from: '2026-03', to: '2026-03', includeDetails: true
+    });
+
+    assertEqual(report.details.income.length, 1);
+    assertEqual(report.details.variable.length, 1);
+    assertEqual(report.details.fixed.length, 1);
+    assertEqual(report.details.fixed[0].description, 'Conta paga');
+    assertEqual(report.details.fixed[0].status, 'Pago');
+  });
+
+  it('deve calcular metas e diagnóstico e omitir listas quando detalhes estão desativados', () => {
+    FinanceData.saveEntries([
+      makeIncome({ id: 'report-goal-income', month: '2026-04', date: '2026-04-01', amount: 1000 }),
+      makeVariable({ id: 'report-goal-variable', month: '2026-04', date: '2026-04-05', amount: 800, category: 'Mercado' })
+    ]);
+    FinanceData.saveTemplates([]);
+    FinanceData.saveGoals([{ id: 'goal-report', category: 'Mercado', limit: 1000 }]);
+
+    const report = buildReportData({
+      type: 'month', from: '2026-04', to: '2026-04', includeDetails: false
+    });
+
+    assertEqual(report.goals[0].spent, 800);
+    assertEqual(report.goals[0].percentage, 80);
+    assertEqual(report.goals[0].status, 'Atenção: 80% atingido');
+    assertEqual(report.details.income, []);
+    assertEqual(report.diagnosis.badge, 'Variáveis Altos');
+    assertTrue(report.diagnosis.title.length > 0);
+    assertTrue(report.meta.generatedAt.length > 0);
+  });
+
+  it('deve preservar texto latino e remover emoji e caracteres fora do alfabeto latino no PDF', () => {
+    assertEqual(sanitizePdfText('ç ã é ô R$ – • 😀 漢'), 'ç ã é ô R$ – •');
+  });
+
+  it('deve formatar percentuais com vírgula decimal e textos do PDF com acentuação', () => {
+    assertEqual(formatReportPercentage(60.91), '60,91');
+    assertEqual(formatReportPercentage(26.4), '26,4');
+    const labels = getReportLabels();
+    assertEqual(labels.title, 'Relatório financeiro');
+    assertEqual(labels.debts, 'Dívidas');
+    assertEqual(labels.variableExpenses, 'Despesas variáveis');
+    assertEqual(labels.description, 'Descrição');
+    assertEqual(labels.status, 'Situação');
+    assertEqual(labels.forecast, 'Previsão de quitação');
+    assertEqual(labels.settlementForecast, 'Quitação prevista');
+    assertEqual(labels.diagnosis, 'Diagnóstico financeiro');
+    assertEqual(labels.guidance, 'Orientação');
+    assertEqual(sanitizePdfText('Relatório – Dívidas • ç ã é ô Alimentação'),
+      'Relatório – Dívidas • ç ã é ô Alimentação');
+  });
+
+  it('deve documentar o cálculo atual das parcelas restantes da dívida', () => {
+    FinanceData.saveTemplates([{
+      id: 'report-debt-installments',
+      desc: 'Parcela de teste',
+      amount: 250,
+      category: 'Financiamento',
+      type: 'fixed',
+      isDebt: true,
+      active: true,
+      startMonth: '2025-01',
+      endMonth: '2026-10',
+      day: '15',
+      paidMonths: {
+        '2025-01': true,
+        '2025-02': true,
+        '2025-03': true,
+        '2025-04': true,
+        '2025-05': true,
+        '2025-06': true
+      }
+    }]);
+
+    const debt = GastoProReportHelpers.getDebtCenterData('2026-04').items[0];
+    assertEqual(debt.remainingMonths, 16);
+    assertEqual(debt.remainingAmount, 4000);
+    assertEqual(debt.forecastMonth, '2026-10');
+  });
+
+  it('inclui status de parcelas em aberto no relatório após o vencimento', () => {
+    FinanceData.saveEntries([]);
+    FinanceData.saveTemplates([{
+      id: 'report-overdue-debt',
+      desc: 'Financiamento vencido',
+      amount: 250,
+      category: 'Empréstimo',
+      type: 'fixed',
+      isDebt: true,
+      active: true,
+      startMonth: '2025-01',
+      endMonth: '2026-01',
+      day: '15',
+      paidMonths: { '2025-01': true }
+    }]);
+    const report = buildReportData({
+      type: 'month', from: '2026-02', to: '2026-02', includeDetails: true
+    });
+    assertEqual(report.debts.items[0].isFinished, false);
+    assertEqual(report.debts.items[0].isOverdue, true);
+    assertEqual(report.debts.items[0].status, '12 parcela(s) em aberto');
+    assertEqual(report.debts.totalRemaining, 3000);
+  });
+});
+
 // ================================================================
 // RELATÓRIO FINAL
 // ================================================================
@@ -1041,7 +1953,8 @@ describe('Lógica de Negócio — paidMonths por mês isolado', () => {
  * Imprime o relatório final de todos os testes executados.
  * Chame esta função após definir todos os suites de teste.
  */
-function printTestReport() {
+async function printTestReport() {
+  await Promise.all(pendingTestPromises);
   const total = TestResults.passed + TestResults.failed;
   console.log('\n' + '='.repeat(60));
   console.log('📊 RELATÓRIO FINAL DE TESTES — GastoPro');

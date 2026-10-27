@@ -17,8 +17,82 @@ const sb = (typeof window !== 'undefined' && window.supabase)
     })
   : null;
 
+function isValidCloudMonth(value) {
+  if (typeof value !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return false;
+  const [year, month] = value.split('-').map(Number);
+  return year >= 1 && month >= 1 && month <= 12;
+}
+
+function isValidCloudDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+
+function validateCloudPayload(item, kind) {
+  if (!item || typeof item !== 'object') return 'Registro inválido.';
+  if (item.amount == null || item.amount === '' || typeof item.amount === 'boolean') return 'O valor deve ser finito e maior ou igual a zero.';
+  if (!Number.isFinite(Number(item.amount)) || Number(item.amount) < 0) return 'O valor deve ser finito e maior ou igual a zero.';
+  if (typeof item.desc !== 'string' || item.desc.length < 1 || item.desc.length > 300) return 'A descrição deve ter de 1 a 300 caracteres.';
+  if (typeof item.category !== 'string' || item.category.length < 1 || item.category.length > 100) return 'A categoria deve ter de 1 a 100 caracteres.';
+
+  if (kind === 'entries') {
+    if (!['income', 'variable', 'fixed', 'debt'].includes(item.type)) return 'Tipo de lançamento inválido.';
+    if (!isValidCloudDate(item.date)) return 'A data do lançamento deve ser uma data válida no formato AAAA-MM-DD.';
+    return null;
+  }
+
+  if (kind === 'templates') {
+    if (!['fixed', 'debt', 'variable'].includes(item.type || 'fixed')) return 'Tipo de template inválido.';
+    if (!isValidCloudMonth(item.startMonth)) return 'O mês inicial deve estar no formato AAAA-MM.';
+    if (item.endMonth && !isValidCloudMonth(item.endMonth)) return 'O mês final deve estar no formato AAAA-MM.';
+    if (item.day != null && !/^\d{2}$/.test(String(item.day))) return 'O dia deve ter dois dígitos.';
+    return null;
+  }
+
+  return 'Tipo de registro inválido.';
+}
+
 const SupabaseAuth = {
   client: sb,
+
+  async fetchAllPages(fetchPage) {
+    const rows = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await fetchPage(from, from + 999);
+      if (error || !Array.isArray(data)) return null;
+      rows.push(...data);
+      if (data.length < 1000) return rows;
+    }
+  },
+
+  async upsertWithFallback(upsert, items, payloads) {
+    let batchError = null;
+    try {
+      const { error } = await upsert(payloads);
+      batchError = error;
+    } catch (error) {
+      batchError = error;
+    }
+    if (!batchError) return { failedIds: [] };
+
+    console.warn('[Supabase] Falha no upsert em lote; tentando cada linha separadamente:', batchError.message || batchError);
+    const failedIds = [];
+    for (let index = 0; index < items.length; index++) {
+      try {
+        const { error } = await upsert(payloads[index]);
+        if (error) {
+          failedIds.push(items[index].id);
+          console.warn('[Supabase] Linha não sincronizada:', { id: items[index].id, error: error.message });
+        }
+      } catch (error) {
+        failedIds.push(items[index].id);
+        console.warn('[Supabase] Linha não sincronizada:', { id: items[index].id, error: error.message || error });
+      }
+    }
+    return { failedIds };
+  },
 
   async getSessionUser() {
     if (!sb) return null;
@@ -88,6 +162,13 @@ const SupabaseAuth = {
     if (error) throw error;
   },
 
+  async updatePassword(password) {
+    if (!this.client) throw new Error('Cliente Supabase não inicializado.');
+    const { data, error } = await this.client.auth.updateUser({ password });
+    if (error) throw error;
+    return data;
+  },
+
   onAuthStateChange(callback) {
     if (!sb) return;
     sb.auth.onAuthStateChange((event, session) => {
@@ -107,16 +188,14 @@ const SupabaseAuth = {
     try {
       const sessionUserId = await this.getAuthenticatedUserId(userId);
       if (!sessionUserId) return null;
-      const { data, error } = await sb
+      const data = await this.fetchAllPages((from, to) => sb
         .from('entries')
         .select('*')
         .eq('user_id', sessionUserId)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.warn('[Supabase] Erro ao carregar entries:', error.message);
-        return null;
-      }
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to));
+      if (!data) return null;
 
       // Mapeia colunas do banco para o formato do GastoPro
       return (data || []).map(row => ({
@@ -150,12 +229,23 @@ const SupabaseAuth = {
       }
       if (!entries.length) return { success: true };
 
-      const invalidItem = entries.find(entry => !isUuid(entry.id));
-      if (invalidItem) {
-        return this.reportCloudError('ID inválido ao salvar entries', new Error(`O lançamento ${invalidItem.id} ainda não possui UUID v4.`));
+      const validEntries = [];
+      const failedIds = [];
+      entries.forEach(entry => {
+        const validationError = validateCloudPayload(entry, 'entries') ||
+          (!isUuid(entry.id) ? 'O lançamento ainda não possui um UUID válido.' : null);
+        if (validationError) {
+          failedIds.push(entry.id);
+          console.warn('[Supabase] Lançamento inválido não enviado:', { id: entry.id, error: validationError });
+        } else {
+          validEntries.push(entry);
+        }
+      });
+      if (failedIds.length && typeof window.showToast === 'function') {
+        window.showToast('Alguns lançamentos inválidos não foram sincronizados.');
       }
 
-      const payload = entries.map(entry => ({
+      const payload = validEntries.map(entry => ({
         id: entry.id,
         user_id: sessionUserId,
         description: entry.desc,
@@ -168,10 +258,17 @@ const SupabaseAuth = {
         debt_info: entry.debtInfo || null,
         active: entry.active !== false
       }));
-
-      const { error } = await sb.from('entries').upsert(payload);
-      if (error) return this.reportCloudError('Erro ao salvar entries', error);
-      return { success: true };
+      if (payload.length) {
+        const result = await this.upsertWithFallback(
+          rows => sb.from('entries').upsert(rows),
+          validEntries,
+          payload
+        );
+        failedIds.push(...result.failedIds);
+      }
+      return failedIds.length
+        ? { success: false, failedIds, error: new Error('Um ou mais lançamentos não foram sincronizados.') }
+        : { success: true };
     } catch (e) {
       return this.reportCloudError('Falha ao salvar entries na nuvem', e);
     }
@@ -218,15 +315,14 @@ const SupabaseAuth = {
     try {
       const sessionUserId = await this.getAuthenticatedUserId(userId);
       if (!sessionUserId) return null;
-      const { data, error } = await sb
+      const data = await this.fetchAllPages((from, to) => sb
         .from('fixed_templates')
         .select('*')
-        .eq('user_id', sessionUserId);
-
-      if (error) {
-        console.warn('[Supabase] Erro ao carregar templates:', error.message);
-        return null;
-      }
+        .eq('user_id', sessionUserId)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to));
+      if (!data) return null;
 
       return (data || []).map(row => ({
         id: row.id,
@@ -259,12 +355,23 @@ const SupabaseAuth = {
       }
       if (!templates.length) return { success: true };
 
-      const invalidItem = templates.find(tpl => !isUuid(tpl.id));
-      if (invalidItem) {
-        return this.reportCloudError('ID inválido ao salvar templates', new Error(`O template ${invalidItem.id} ainda não possui UUID v4.`));
+      const validTemplates = [];
+      const failedIds = [];
+      templates.forEach(tpl => {
+        const validationError = validateCloudPayload(tpl, 'templates') ||
+          (!isUuid(tpl.id) ? 'O template ainda não possui um UUID válido.' : null);
+        if (validationError) {
+          failedIds.push(tpl.id);
+          console.warn('[Supabase] Template inválido não enviado:', { id: tpl.id, error: validationError });
+        } else {
+          validTemplates.push(tpl);
+        }
+      });
+      if (failedIds.length && typeof window.showToast === 'function') {
+        window.showToast('Alguns templates inválidos não foram sincronizados.');
       }
 
-      const payload = templates.map(tpl => ({
+      const payload = validTemplates.map(tpl => ({
         id: tpl.id,
         user_id: sessionUserId,
         description: tpl.desc,
@@ -278,10 +385,17 @@ const SupabaseAuth = {
         day: tpl.day || '01',
         paid_months: tpl.paidMonths || {}
       }));
-
-      const { error } = await sb.from('fixed_templates').upsert(payload);
-      if (error) return this.reportCloudError('Erro ao salvar templates', error);
-      return { success: true };
+      if (payload.length) {
+        const result = await this.upsertWithFallback(
+          rows => sb.from('fixed_templates').upsert(rows),
+          validTemplates,
+          payload
+        );
+        failedIds.push(...result.failedIds);
+      }
+      return failedIds.length
+        ? { success: false, failedIds, error: new Error('Um ou mais templates não foram sincronizados.') }
+        : { success: true };
     } catch (e) {
       return this.reportCloudError('Falha ao salvar templates na nuvem', e);
     }
@@ -322,3 +436,4 @@ const SupabaseAuth = {
 };
 
 window.SupabaseAuth = SupabaseAuth;
+window.validateCloudPayload = validateCloudPayload;
