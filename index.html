@@ -104,6 +104,13 @@
           <span>Importar Extrato</span>
           <span class="nav-import-badge">Novo</span>
         </button>
+
+        <!-- Botão 6: Wizard de Lançamento Rápido -->
+        <button class="nav-item nav-item-wizard" id="sidebarWizardBtn" title="Lançamento rápido guiado em 3 passos">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+          <span>Lançamento Rápido</span>
+          <span class="nav-wizard-badge">Novo</span>
+        </button>
       </nav>
     </aside>
 
@@ -980,6 +987,234 @@
             <i class="fa-solid fa-check"></i> Importar Selecionados
           </button>
         </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ====================================================
+       WIZARD DE LANÇAMENTO RÁPIDO (3 PASSOS)
+       ==================================================== -->
+  <div class="modal-overlay" id="wizardModal">
+    <div class="modal-content modal-wizard-content">
+
+      <!-- Cabeçalho com Stepper -->
+      <div class="wizard-header">
+        <div class="wizard-brand">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+          <div>
+            <h3>Lançamento Rápido</h3>
+            <p>Cadastre os dados do mês em 3 passos simples</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="closeWizardBtn" title="Fechar">&times;</button>
+      </div>
+
+      <!-- Stepper Visual -->
+      <div class="wizard-stepper">
+        <div class="wizard-step active" id="wStep1">
+          <div class="step-circle"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+          <span>Renda</span>
+        </div>
+        <div class="wizard-step-line" id="wLine1"></div>
+        <div class="wizard-step" id="wStep2">
+          <div class="step-circle"><i class="fa-solid fa-house-lock"></i></div>
+          <span>Fixos</span>
+        </div>
+        <div class="wizard-step-line" id="wLine2"></div>
+        <div class="wizard-step" id="wStep3">
+          <div class="step-circle"><i class="fa-solid fa-bag-shopping"></i></div>
+          <span>Variáveis</span>
+        </div>
+        <div class="wizard-step-line" id="wLine3"></div>
+        <div class="wizard-step" id="wStep4">
+          <div class="step-circle"><i class="fa-solid fa-chart-pie"></i></div>
+          <span>Resultado</span>
+        </div>
+      </div>
+
+      <!-- ========================
+           PASSO 1: RENDA
+           ======================== -->
+      <div class="wizard-panel active" id="wPanel1">
+        <div class="wizard-panel-header">
+          <div class="wizard-panel-icon income">
+            <i class="fa-solid fa-hand-holding-dollar"></i>
+          </div>
+          <div>
+            <h4>Qual foi sua renda este mês?</h4>
+            <p>Adicione todas as fontes de renda. Você pode incluir mais de uma.</p>
+          </div>
+        </div>
+
+        <!-- Lista de rendas adicionadas -->
+        <div class="wizard-items-list" id="wizardIncomeList">
+          <!-- Itens gerados dinamicamente -->
+        </div>
+
+        <!-- Formulário de adição -->
+        <div class="wizard-add-row">
+          <input type="text" id="wIncomeDesc" class="wizard-input" placeholder="Descrição (ex: Salário, Freelance...)" />
+          <input type="number" id="wIncomeAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" />
+          <input type="date" id="wIncomeDate" class="wizard-input wizard-input-date" />
+          <button type="button" class="btn-wizard-add" id="wAddIncomeBtn" title="Adicionar renda">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
+        <p class="wizard-add-hint">Clique no <strong>+</strong> para adicionar cada fonte de renda antes de avançar.</p>
+      </div>
+
+      <!-- ========================
+           PASSO 2: GASTOS FIXOS
+           ======================== -->
+      <div class="wizard-panel" id="wPanel2">
+        <div class="wizard-panel-header">
+          <div class="wizard-panel-icon fixed">
+            <i class="fa-solid fa-house-lock"></i>
+          </div>
+          <div>
+            <h4>Seus gastos fixos este mês</h4>
+            <p>Confirme os recorrentes já cadastrados ou adicione novos rapidamente.</p>
+          </div>
+        </div>
+
+        <!-- Fixos existentes (checkboxes) -->
+        <div class="wizard-existing-fixed" id="wizardExistingFixed">
+          <p class="wizard-sub-label"><i class="fa-solid fa-list-check"></i> Fixos já cadastrados no sistema</p>
+          <div class="wizard-check-list" id="wizardFixedChecklist">
+            <!-- Gerado dinamicamente -->
+          </div>
+        </div>
+
+        <!-- Formulário para novos fixos -->
+        <div class="wizard-add-divider">
+          <span>Adicionar novo gasto fixo</span>
+        </div>
+        <div class="wizard-add-row">
+          <input type="text" id="wFixedDesc" class="wizard-input" placeholder="Descrição (ex: Aluguel, Plano de saúde...)" />
+          <input type="number" id="wFixedAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" />
+          <button type="button" class="btn-wizard-add" id="wAddFixedBtn" title="Adicionar gasto fixo">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
+        <div class="wizard-items-list" id="wizardFixedList">
+          <!-- Itens novos gerados dinamicamente -->
+        </div>
+      </div>
+
+      <!-- ========================
+           PASSO 3: VARIÁVEIS
+           ======================== -->
+      <div class="wizard-panel" id="wPanel3">
+        <div class="wizard-panel-header">
+          <div class="wizard-panel-icon variable">
+            <i class="fa-solid fa-bag-shopping"></i>
+          </div>
+          <div>
+            <h4>Estimativa de gastos variáveis</h4>
+            <p>Quanto você gastou (ou pretende gastar) em cada categoria este mês?</p>
+          </div>
+        </div>
+
+        <!-- Grid de categorias rápidas -->
+        <div class="wizard-category-grid" id="wizardCategoryGrid">
+          <!-- Gerado dinamicamente -->
+        </div>
+
+        <!-- Formulário para gasto avulso -->
+        <div class="wizard-add-divider">
+          <span>Adicionar gasto avulso</span>
+        </div>
+        <div class="wizard-add-row">
+          <input type="text" id="wVarDesc" class="wizard-input" placeholder="Descrição" />
+          <input type="number" id="wVarAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" />
+          <button type="button" class="btn-wizard-add" id="wAddVarBtn" title="Adicionar gasto variável">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
+        <div class="wizard-items-list" id="wizardVarList">
+          <!-- Itens avulsos gerados dinamicamente -->
+        </div>
+      </div>
+
+      <!-- ========================
+           PASSO 4: RESULTADO
+           ======================== -->
+      <div class="wizard-panel" id="wPanel4">
+        <div class="wizard-result-header">
+          <div class="wizard-result-emoji" id="wizardResultEmoji">🎉</div>
+          <h4 id="wizardResultTitle">Diagnóstico Financeiro</h4>
+          <p id="wizardResultSubtitle">Veja como está a saúde do seu orçamento deste mês.</p>
+        </div>
+
+        <!-- KPIs do resultado -->
+        <div class="wizard-result-kpis">
+          <div class="wizard-result-kpi income">
+            <span class="kpi-lbl"><i class="fa-solid fa-arrow-down"></i> Renda Total</span>
+            <span class="kpi-val" id="wResIncome">R$ 0,00</span>
+          </div>
+          <div class="wizard-result-kpi expense">
+            <span class="kpi-lbl"><i class="fa-solid fa-arrow-up"></i> Total Gastos</span>
+            <span class="kpi-val" id="wResExpense">R$ 0,00</span>
+          </div>
+          <div class="wizard-result-kpi balance">
+            <span class="kpi-lbl"><i class="fa-solid fa-piggy-bank"></i> Saldo Livre</span>
+            <span class="kpi-val" id="wResBalance">R$ 0,00</span>
+          </div>
+        </div>
+
+        <!-- Barras 50/30/20 -->
+        <div class="wizard-rule5030">
+          <div class="rule-label-row">
+            <span class="rule-label"><i class="fa-solid fa-house-lock"></i> Fixos Essenciais</span>
+            <span class="rule-pct" id="wRulePctFixed">0%</span>
+            <span class="rule-target">meta: ≤ 50%</span>
+          </div>
+          <div class="rule-bar-track">
+            <div class="rule-bar-fill fixed" id="wRuleBarFixed" style="width:0%"></div>
+          </div>
+
+          <div class="rule-label-row">
+            <span class="rule-label"><i class="fa-solid fa-bag-shopping"></i> Gastos Variáveis</span>
+            <span class="rule-pct" id="wRulePctVar">0%</span>
+            <span class="rule-target">meta: ≤ 30%</span>
+          </div>
+          <div class="rule-bar-track">
+            <div class="rule-bar-fill variable" id="wRuleBarVar" style="width:0%"></div>
+          </div>
+
+          <div class="rule-label-row">
+            <span class="rule-label"><i class="fa-solid fa-piggy-bank"></i> Poupança / Sobra</span>
+            <span class="rule-pct" id="wRulePctSave">0%</span>
+            <span class="rule-target">meta: ≥ 20%</span>
+          </div>
+          <div class="rule-bar-track">
+            <div class="rule-bar-fill savings" id="wRuleBarSave" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Diagnóstico textual -->
+        <div class="wizard-diagnosis-banner" id="wizardDiagnosisBanner">
+          <i class="fa-solid fa-circle-check" id="wizardDiagnosisIcon"></i>
+          <span id="wizardDiagnosisText">Seu orçamento está equilibrado!</span>
+        </div>
+      </div>
+
+      <!-- Rodapé de Navegação -->
+      <div class="wizard-footer">
+        <button type="button" class="btn-wizard-back" id="wizardBackBtn" style="display:none">
+          <i class="fa-solid fa-arrow-left"></i> Voltar
+        </button>
+        <div class="wizard-progress-dots">
+          <span class="wdot active" id="wDot1"></span>
+          <span class="wdot" id="wDot2"></span>
+          <span class="wdot" id="wDot3"></span>
+          <span class="wdot" id="wDot4"></span>
+        </div>
+        <button type="button" class="btn-wizard-next" id="wizardNextBtn">
+          Avançar <i class="fa-solid fa-arrow-right"></i>
+        </button>
       </div>
 
     </div>

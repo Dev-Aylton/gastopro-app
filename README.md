@@ -1,9 +1,9 @@
 # 💼 GastoPro — Controle de Gastos & Saúde Financeira
 
-> Aplicativo Web moderno (**Single Page Application — SPA**) de gestão financeira pessoal com Dashboard de Saúde Financeira, gerenciamento completo de receitas e despesas, rastreamento de dívidas, autenticação multi-usuário com Supabase, importação de extratos bancários e PWA para uso offline.
+> Aplicativo Web moderno (**Single Page Application — SPA**) de gestão financeira pessoal com Dashboard de Saúde Financeira, gerenciamento completo de receitas e despesas, rastreamento de dívidas, autenticação multi-usuário com Supabase, importação de extratos bancários, **Wizard de Lançamento Rápido** e PWA para uso offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Produção-10b981?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Versão-3.1-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Versão-3.2-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
 ![Testes](https://img.shields.io/badge/Testes-50%2B%20casos-10b981?style=for-the-badge)
@@ -74,6 +74,16 @@ A versão atual (v3.0) evoluiu de um app puramente local para um **SaaS multi-us
 - **Pré-visualização editável**: Revise, corrija categoria e tipo (Gasto/Receita) linha por linha antes de salvar.
 - **Seleção granular**: Selecione ou desmarque lançamentos individualmente ou todos de uma vez.
 - **Suporte a múltiplos formatos**: `DD/MM/AAAA Descrição R$ Valor`, `DD/MM Descrição Valor`, e outros padrões de extratos brasileiros.
+
+### 🪄 Wizard de Lançamento Rápido (v3.2)
+- **Fluxo guiado em 4 passos**: Renda → Gastos Fixos → Gastos Variáveis → Diagnóstico 50/30/20.
+- **Passo 1 — Renda**: Adicione múltiplas fontes de renda (salário, freelance, etc.) com valor e data.
+- **Passo 2 — Gastos Fixos**: Checklist dos gastos fixos **já cadastrados** no sistema + campo para adicionar novos.
+- **Passo 3 — Gastos Variáveis**: Grid visual com 10 categorias (Alimentação, Mercado, Transporte...) + campo avulso.
+- **Passo 4 — Resultado**: KPIs de Renda/Gastos/Saldo + barras animadas da regra 50/30/20 + diagnóstico textual inteligente.
+- **Salvamento em lote**: Todos os dados são salvos de uma vez via `FinanceData.add()` com sincronização automática no Supabase.
+- **Validação contextual**: Impede avançar sem informar renda; categoriza automaticamente gastos avulsos.
+- **Suporte a teclado**: `Enter` adiciona itens em qualquer campo de input do wizard.
 
 
 

@@ -2202,8 +2202,635 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+
   // Confirmar importação
   if (confirmImportBtn) confirmImportBtn.addEventListener('click', handleConfirmImport);
+
+
+  // ── 14. MÓDULO WIZARD DE LANÇAMENTO RÁPIDO ───────────────────
+  // Fluxo guiado em 4 passos: Renda → Fixos → Variáveis → Resultado
+  // Salva todos os lançamentos em lote ao finalizar.
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * Estado interno do Wizard.
+   * Acumulado durante a navegação e persistido apenas ao finalizar.
+   */
+  let wizardState = {
+    step: 1,              // Passo atual (1–4)
+    incomes: [],          // { desc, amount, date }
+    fixedChecked: [],     // IDs dos templates fixos marcados para baixa
+    fixedNew: [],         // { desc, amount } → novos gastos fixos digitados
+    varItems: {},         // { category: amount } → categorias com valor
+    varCustom: [],        // { desc, amount } → gastos variáveis avulsos
+  };
+
+  /** Categorias do Passo 3 — variáveis por categoria */
+  const WIZARD_VAR_CATEGORIES = [
+    { name: 'Alimentação',  icon: '🍔' },
+    { name: 'Mercado',      icon: '🛒' },
+    { name: 'Transporte',   icon: '🚗' },
+    { name: 'Saúde',        icon: '💊' },
+    { name: 'Lazer',        icon: '🎬' },
+    { name: 'Compras',      icon: '🛍️' },
+    { name: 'Assinaturas',  icon: '📺' },
+    { name: 'Esporte',      icon: '🏋️' },
+    { name: 'Educação',     icon: '📚' },
+    { name: 'Outros',       icon: '💸' },
+  ];
+
+  // Referências dos elementos do Wizard
+  const wizardModal        = document.getElementById('wizardModal');
+  const sidebarWizardBtn   = document.getElementById('sidebarWizardBtn');
+  const closeWizardBtn     = document.getElementById('closeWizardBtn');
+  const wizardNextBtn      = document.getElementById('wizardNextBtn');
+  const wizardBackBtn      = document.getElementById('wizardBackBtn');
+
+  // Passo 1 — Renda
+  const wizardIncomeList   = document.getElementById('wizardIncomeList');
+  const wIncomeDesc        = document.getElementById('wIncomeDesc');
+  const wIncomeAmount      = document.getElementById('wIncomeAmount');
+  const wIncomeDate        = document.getElementById('wIncomeDate');
+  const wAddIncomeBtn      = document.getElementById('wAddIncomeBtn');
+
+  // Passo 2 — Fixos
+  const wizardFixedChecklist = document.getElementById('wizardFixedChecklist');
+  const wizardFixedList      = document.getElementById('wizardFixedList');
+  const wFixedDesc           = document.getElementById('wFixedDesc');
+  const wFixedAmount         = document.getElementById('wFixedAmount');
+  const wAddFixedBtn         = document.getElementById('wAddFixedBtn');
+
+  // Passo 3 — Variáveis
+  const wizardCategoryGrid = document.getElementById('wizardCategoryGrid');
+  const wizardVarList      = document.getElementById('wizardVarList');
+  const wVarDesc           = document.getElementById('wVarDesc');
+  const wVarAmount         = document.getElementById('wVarAmount');
+  const wAddVarBtn         = document.getElementById('wAddVarBtn');
+
+  // Passo 4 — Resultado
+  const wResIncome         = document.getElementById('wResIncome');
+  const wResExpense        = document.getElementById('wResExpense');
+  const wResBalance        = document.getElementById('wResBalance');
+  const wRulePctFixed      = document.getElementById('wRulePctFixed');
+  const wRulePctVar        = document.getElementById('wRulePctVar');
+  const wRulePctSave       = document.getElementById('wRulePctSave');
+  const wRuleBarFixed      = document.getElementById('wRuleBarFixed');
+  const wRuleBarVar        = document.getElementById('wRuleBarVar');
+  const wRuleBarSave       = document.getElementById('wRuleBarSave');
+  const wizardResultEmoji  = document.getElementById('wizardResultEmoji');
+  const wizardResultTitle  = document.getElementById('wizardResultTitle');
+  const wizardResultSubtitle = document.getElementById('wizardResultSubtitle');
+  const wizardDiagnosisBanner = document.getElementById('wizardDiagnosisBanner');
+  const wizardDiagnosisIcon   = document.getElementById('wizardDiagnosisIcon');
+  const wizardDiagnosisText   = document.getElementById('wizardDiagnosisText');
+
+  // Stepper elementos
+  const wStep1 = document.getElementById('wStep1');
+  const wStep2 = document.getElementById('wStep2');
+  const wStep3 = document.getElementById('wStep3');
+  const wStep4 = document.getElementById('wStep4');
+  const wLine1 = document.getElementById('wLine1');
+  const wLine2 = document.getElementById('wLine2');
+  const wLine3 = document.getElementById('wLine3');
+  const wDot1  = document.getElementById('wDot1');
+  const wDot2  = document.getElementById('wDot2');
+  const wDot3  = document.getElementById('wDot3');
+  const wDot4  = document.getElementById('wDot4');
+
+  /** Abre o wizard e reseta para o passo 1. */
+  function openWizard() {
+    if (!wizardModal) return;
+    resetWizardState();
+    wizardModal.classList.add('active');
+    goToWizardStep(1, 'forward');
+    closeMobileSidebar();
+  }
+
+  /** Fecha o wizard. */
+  function closeWizard() {
+    if (!wizardModal) return;
+    wizardModal.classList.remove('active');
+  }
+
+  /** Reseta o estado interno do wizard. */
+  function resetWizardState() {
+    wizardState = {
+      step: 1,
+      incomes: [],
+      fixedChecked: [],
+      fixedNew: [],
+      varItems: {},
+      varCustom: [],
+    };
+  }
+
+  /**
+   * Navega para um passo específico do wizard.
+   * @param {number} step - Número do passo (1–4).
+   * @param {'forward'|'back'} direction - Direção de animação.
+   */
+  function goToWizardStep(step, direction = 'forward') {
+    wizardState.step = step;
+
+    // Atualiza stepper visual
+    const steps = [wStep1, wStep2, wStep3, wStep4];
+    const lines  = [wLine1, wLine2, wLine3];
+    const dots   = [wDot1, wDot2, wDot3, wDot4];
+
+    steps.forEach((el, i) => {
+      if (!el) return;
+      el.classList.remove('active', 'done');
+      if (i + 1 < step) el.classList.add('done');
+      if (i + 1 === step) el.classList.add('active');
+    });
+
+    lines.forEach((el, i) => {
+      if (!el) return;
+      el.classList.remove('done', 'active-line');
+      if (i + 1 < step) el.classList.add('done');
+      if (i + 1 === step) el.classList.add('active-line');
+    });
+
+    dots.forEach((el, i) => {
+      if (!el) return;
+      el.classList.remove('active', 'done');
+      if (i + 1 < step) el.classList.add('done');
+      if (i + 1 === step) el.classList.add('active');
+    });
+
+    // Mostra/esconde painéis
+    ['wPanel1', 'wPanel2', 'wPanel3', 'wPanel4'].forEach((id, i) => {
+      const panel = document.getElementById(id);
+      if (!panel) return;
+      panel.classList.remove('active', 'animate-back');
+      if (i + 1 === step) {
+        panel.classList.add('active');
+        if (direction === 'back') panel.classList.add('animate-back');
+      }
+    });
+
+    // Botão Voltar
+    if (wizardBackBtn) wizardBackBtn.style.display = step > 1 ? 'flex' : 'none';
+
+    // Botão Avançar / Finalizar
+    if (wizardNextBtn) {
+      if (step === 4) {
+        wizardNextBtn.innerHTML = '<i class="fa-solid fa-check"></i> Salvar tudo';
+        wizardNextBtn.classList.add('finish');
+      } else {
+        wizardNextBtn.innerHTML = 'Avançar <i class="fa-solid fa-arrow-right"></i>';
+        wizardNextBtn.classList.remove('finish');
+      }
+    }
+
+    // Renderiza conteúdo do passo
+    if (step === 1) renderWizardStep1();
+    if (step === 2) renderWizardStep2();
+    if (step === 3) renderWizardStep3();
+    if (step === 4) renderWizardStep4();
+  }
+
+  // ── Passo 1: Renda ──────────────────────────────────────────
+
+  /** Renderiza a lista de rendas adicionadas. */
+  function renderWizardStep1() {
+    if (!wizardIncomeList) return;
+    wizardIncomeList.innerHTML = '';
+
+    if (wizardState.incomes.length === 0) {
+      wizardIncomeList.innerHTML = '<p class="wizard-empty-state"><i class="fa-solid fa-circle-info" style="margin-right:0.4rem"></i>Nenhuma renda adicionada ainda.</p>';
+    } else {
+      wizardState.incomes.forEach((item, idx) => {
+        const card = document.createElement('div');
+        card.className = 'wizard-item-card';
+        card.innerHTML = `
+          <span class="wizard-item-desc">${escapeHtml(item.desc)}</span>
+          <span class="wizard-item-date">${item.date ? item.date.split('-').reverse().join('/') : ''}</span>
+          <span class="wizard-item-amount">${formatCurrency(item.amount)}</span>
+          <button class="btn-wizard-remove" data-idx="${idx}" title="Remover">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        `;
+        card.querySelector('.btn-wizard-remove').addEventListener('click', () => {
+          wizardState.incomes.splice(idx, 1);
+          renderWizardStep1();
+        });
+        wizardIncomeList.appendChild(card);
+      });
+    }
+
+    // Inicializa data com o dia atual
+    if (wIncomeDate && !wIncomeDate.value) {
+      const ym = getYearMonthString(state.currentYear, state.currentMonth);
+      wIncomeDate.value = `${ym}-01`;
+    }
+  }
+
+  /** Adiciona uma renda ao estado do wizard. */
+  function handleWizardAddIncome() {
+    const desc   = (wIncomeDesc   ? wIncomeDesc.value.trim()          : '');
+    const amount = (wIncomeAmount ? parseFloat(wIncomeAmount.value)   : 0);
+    const date   = (wIncomeDate   ? wIncomeDate.value                 : '');
+
+    if (!desc) { showToast('Informe a descrição da renda.'); return; }
+    if (!amount || amount <= 0) { showToast('Informe um valor válido.'); return; }
+
+    wizardState.incomes.push({ desc, amount, date: date || null });
+    if (wIncomeDesc)   wIncomeDesc.value   = '';
+    if (wIncomeAmount) wIncomeAmount.value = '';
+    if (wIncomeDate)   wIncomeDate.value   = '';
+    renderWizardStep1();
+    if (wIncomeDesc) wIncomeDesc.focus();
+  }
+
+  // ── Passo 2: Fixos ──────────────────────────────────────────
+
+  /** Renderiza checklist de gastos fixos existentes + lista de novos. */
+  function renderWizardStep2() {
+    const ym = getYearMonthString(state.currentYear, state.currentMonth);
+    const allTemplates = FinanceData.getTemplates().filter(t =>
+      t.type === 'fixed' && t.active !== false
+    );
+
+    // Checklist dos fixos existentes
+    if (wizardFixedChecklist) {
+      wizardFixedChecklist.innerHTML = '';
+      if (allTemplates.length === 0) {
+        wizardFixedChecklist.innerHTML = '<p class="wizard-empty-state">Nenhum gasto fixo cadastrado ainda.</p>';
+      } else {
+        allTemplates.forEach(t => {
+          const isChecked = wizardState.fixedChecked.includes(t.id);
+          const item = document.createElement('label');
+          item.className = 'wizard-check-item';
+          item.innerHTML = `
+            <input type="checkbox" ${isChecked ? 'checked' : ''} data-id="${t.id}" />
+            <span class="wizard-check-item-desc">${escapeHtml(t.desc)}</span>
+            <span class="wizard-check-item-amount">${formatCurrency(t.amount)}</span>
+          `;
+          const cb = item.querySelector('input');
+          cb.addEventListener('change', () => {
+            if (cb.checked) {
+              if (!wizardState.fixedChecked.includes(t.id)) wizardState.fixedChecked.push(t.id);
+            } else {
+              wizardState.fixedChecked = wizardState.fixedChecked.filter(id => id !== t.id);
+            }
+          });
+          wizardFixedChecklist.appendChild(item);
+        });
+      }
+    }
+
+    // Lista de novos fixos adicionados nesta sessão
+    renderWizardFixedNewList();
+  }
+
+  /** Renderiza lista de novos gastos fixos adicionados no wizard. */
+  function renderWizardFixedNewList() {
+    if (!wizardFixedList) return;
+    wizardFixedList.innerHTML = '';
+    wizardState.fixedNew.forEach((item, idx) => {
+      const card = document.createElement('div');
+      card.className = 'wizard-item-card';
+      card.innerHTML = `
+        <span class="wizard-item-desc">${escapeHtml(item.desc)}</span>
+        <span class="wizard-item-amount expense">${formatCurrency(item.amount)}</span>
+        <button class="btn-wizard-remove" data-idx="${idx}" title="Remover">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      `;
+      card.querySelector('.btn-wizard-remove').addEventListener('click', () => {
+        wizardState.fixedNew.splice(idx, 1);
+        renderWizardFixedNewList();
+      });
+      wizardFixedList.appendChild(card);
+    });
+  }
+
+  /** Adiciona um novo gasto fixo ao wizard. */
+  function handleWizardAddFixed() {
+    const desc   = (wFixedDesc   ? wFixedDesc.value.trim()          : '');
+    const amount = (wFixedAmount ? parseFloat(wFixedAmount.value)   : 0);
+
+    if (!desc)   { showToast('Informe a descrição do gasto fixo.'); return; }
+    if (!amount || amount <= 0) { showToast('Informe um valor válido.'); return; }
+
+    wizardState.fixedNew.push({ desc, amount });
+    if (wFixedDesc)   wFixedDesc.value   = '';
+    if (wFixedAmount) wFixedAmount.value = '';
+    renderWizardFixedNewList();
+    if (wFixedDesc) wFixedDesc.focus();
+  }
+
+  // ── Passo 3: Variáveis ──────────────────────────────────────
+
+  /** Renderiza o grid de categorias variáveis. */
+  function renderWizardStep3() {
+    if (!wizardCategoryGrid) return;
+    wizardCategoryGrid.innerHTML = '';
+
+    WIZARD_VAR_CATEGORIES.forEach(cat => {
+      const card = document.createElement('div');
+      card.className = 'wizard-cat-card';
+      card.innerHTML = `
+        <div class="wizard-cat-top">
+          <span class="wizard-cat-icon">${cat.icon}</span>
+          <span class="wizard-cat-name">${escapeHtml(cat.name)}</span>
+        </div>
+        <input
+          type="number"
+          class="wizard-cat-input"
+          placeholder="R$ 0,00"
+          min="0"
+          step="0.01"
+          value="${wizardState.varItems[cat.name] > 0 ? wizardState.varItems[cat.name] : ''}"
+          data-cat="${cat.name}"
+        />
+      `;
+      const input = card.querySelector('.wizard-cat-input');
+      input.addEventListener('input', () => {
+        const val = parseFloat(input.value);
+        wizardState.varItems[cat.name] = (isNaN(val) || val <= 0) ? 0 : val;
+      });
+      wizardCategoryGrid.appendChild(card);
+    });
+
+    // Lista de gastos avulsos
+    renderWizardVarList();
+  }
+
+  /** Renderiza a lista de gastos variáveis avulsos. */
+  function renderWizardVarList() {
+    if (!wizardVarList) return;
+    wizardVarList.innerHTML = '';
+    wizardState.varCustom.forEach((item, idx) => {
+      const card = document.createElement('div');
+      card.className = 'wizard-item-card';
+      card.innerHTML = `
+        <span class="wizard-item-desc">${escapeHtml(item.desc)}</span>
+        <span class="wizard-item-amount expense">${formatCurrency(item.amount)}</span>
+        <button class="btn-wizard-remove" data-idx="${idx}" title="Remover">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      `;
+      card.querySelector('.btn-wizard-remove').addEventListener('click', () => {
+        wizardState.varCustom.splice(idx, 1);
+        renderWizardVarList();
+      });
+      wizardVarList.appendChild(card);
+    });
+  }
+
+  /** Adiciona um gasto variável avulso. */
+  function handleWizardAddVar() {
+    const desc   = (wVarDesc   ? wVarDesc.value.trim()          : '');
+    const amount = (wVarAmount ? parseFloat(wVarAmount.value)   : 0);
+
+    if (!desc)   { showToast('Informe a descrição do gasto.'); return; }
+    if (!amount || amount <= 0) { showToast('Informe um valor válido.'); return; }
+
+    wizardState.varCustom.push({ desc, amount });
+    if (wVarDesc)   wVarDesc.value   = '';
+    if (wVarAmount) wVarAmount.value = '';
+    renderWizardVarList();
+    if (wVarDesc) wVarDesc.focus();
+  }
+
+  // ── Passo 4: Resultado / Diagnóstico ────────────────────────
+
+  /** Calcula totais e renderiza o diagnóstico 50/30/20. */
+  function renderWizardStep4() {
+    const totalIncome = wizardState.incomes.reduce((s, i) => s + i.amount, 0);
+
+    // Total de fixos: checados existentes + novos
+    const ym = getYearMonthString(state.currentYear, state.currentMonth);
+    const templates = FinanceData.getTemplates();
+    const checkedFixedAmt = wizardState.fixedChecked.reduce((s, id) => {
+      const t = templates.find(x => x.id === id);
+      return s + (t ? t.amount : 0);
+    }, 0);
+    const newFixedAmt = wizardState.fixedNew.reduce((s, i) => s + i.amount, 0);
+    const totalFixed = checkedFixedAmt + newFixedAmt;
+
+    // Total de variáveis: grid + avulsos
+    const catAmt = Object.values(wizardState.varItems).reduce((s, v) => s + (v || 0), 0);
+    const customAmt = wizardState.varCustom.reduce((s, i) => s + i.amount, 0);
+    const totalVar = catAmt + customAmt;
+
+    const totalExpense = totalFixed + totalVar;
+    const balance = totalIncome - totalExpense;
+
+    // KPIs
+    if (wResIncome)  wResIncome.textContent  = formatCurrency(totalIncome);
+    if (wResExpense) wResExpense.textContent  = formatCurrency(totalExpense);
+    if (wResBalance) wResBalance.textContent  = formatCurrency(balance);
+
+    // Percentuais 50/30/20
+    const pctFixed = totalIncome > 0 ? Math.round((totalFixed / totalIncome) * 100) : 0;
+    const pctVar   = totalIncome > 0 ? Math.round((totalVar   / totalIncome) * 100) : 0;
+    const pctSave  = totalIncome > 0 ? Math.round((balance    / totalIncome) * 100) : 0;
+
+    if (wRulePctFixed) wRulePctFixed.textContent = `${pctFixed}%`;
+    if (wRulePctVar)   wRulePctVar.textContent   = `${pctVar}%`;
+    if (wRulePctSave)  wRulePctSave.textContent  = `${Math.max(0, pctSave)}%`;
+
+    // Barras animadas (pequeno timeout para garantir animação)
+    setTimeout(() => {
+      if (wRuleBarFixed) {
+        wRuleBarFixed.style.width = `${Math.min(pctFixed, 100)}%`;
+        wRuleBarFixed.classList.toggle('over-limit', pctFixed > 50);
+      }
+      if (wRuleBarVar) {
+        wRuleBarVar.style.width = `${Math.min(pctVar, 100)}%`;
+        wRuleBarVar.classList.toggle('over-limit', pctVar > 30);
+      }
+      if (wRuleBarSave) {
+        wRuleBarSave.style.width = `${Math.min(Math.max(pctSave, 0), 100)}%`;
+        wRuleBarSave.classList.toggle('over-limit', pctSave < 0);
+      }
+    }, 80);
+
+    // Diagnóstico
+    const isGood = pctFixed <= 50 && pctVar <= 30 && pctSave >= 20;
+    const isWarn = !isGood && balance >= 0;
+    const isDanger = balance < 0;
+
+    if (wizardResultEmoji) wizardResultEmoji.textContent   = isDanger ? '⚠️' : isWarn ? '🤔' : '🎉';
+    if (wizardResultTitle) wizardResultTitle.textContent   = isDanger ? 'Atenção!' : isWarn ? 'Quase lá!' : 'Parabéns!';
+    if (wizardResultSubtitle) wizardResultSubtitle.textContent = isDanger
+      ? 'Seus gastos superam sua renda. Revise os valores.'
+      : isWarn
+      ? 'Orçamento positivo, mas ainda fora da regra 50/30/20.'
+      : 'Seu orçamento está dentro da regra 50/30/20!';
+
+    if (wizardDiagnosisBanner) {
+      wizardDiagnosisBanner.className = 'wizard-diagnosis-banner' + (isDanger ? ' danger' : isWarn ? ' warning' : '');
+    }
+    if (wizardDiagnosisIcon) {
+      wizardDiagnosisIcon.className = isDanger
+        ? 'fa-solid fa-triangle-exclamation'
+        : isWarn
+        ? 'fa-solid fa-circle-exclamation'
+        : 'fa-solid fa-circle-check';
+    }
+    if (wizardDiagnosisText) {
+      wizardDiagnosisText.textContent = isDanger
+        ? `Déficit de ${formatCurrency(Math.abs(balance))} — corte gastos ou adicione renda.`
+        : isWarn
+        ? `Sobra ${formatCurrency(balance)} (${pctSave}%). Meta: ≥ 20% da renda.`
+        : `Sobra ${formatCurrency(balance)} (${pctSave}%) para investir ou poupar. 🚀`;
+    }
+  }
+
+  // ── Salvar em lote ──────────────────────────────────────────
+
+  /**
+   * Persiste todos os dados coletados no wizard:
+   * rendas, baixa de fixos existentes, novos fixos e variáveis.
+   */
+  function handleWizardFinish() {
+    const ym = getYearMonthString(state.currentYear, state.currentMonth);
+    let saved = 0;
+
+    // 1. Salvar rendas
+    wizardState.incomes.forEach(item => {
+      const dateStr = item.date || `${ym}-01`;
+      FinanceData.add({
+        type:     'income',
+        desc:     item.desc,
+        amount:   item.amount,
+        category: 'Receita',
+        date:     dateStr,
+        month:    dateStr.substring(0, 7),
+        paid:     true,
+      });
+      saved++;
+    });
+
+    // 2. Registrar baixa dos fixos marcados no mês atual
+    wizardState.fixedChecked.forEach(id => {
+      FinanceData.togglePaid(id, ym);
+      saved++;
+    });
+
+    // 3. Salvar novos gastos fixos (templates)
+    wizardState.fixedNew.forEach(item => {
+      FinanceData.add({
+        type:       'fixed',
+        desc:       item.desc,
+        amount:     item.amount,
+        category:   'Moradia',
+        isDebt:     false,
+        active:     true,
+        startMonth: ym,
+        endMonth:   null,
+        day:        '01',
+      });
+      saved++;
+    });
+
+    // 4. Salvar gastos variáveis por categoria
+    WIZARD_VAR_CATEGORIES.forEach(cat => {
+      const amount = wizardState.varItems[cat.name];
+      if (amount && amount > 0) {
+        FinanceData.add({
+          type:     'variable',
+          desc:     cat.name,
+          amount:   amount,
+          category: cat.name,
+          date:     `${ym}-01`,
+          month:    ym,
+          paid:     false,
+        });
+        saved++;
+      }
+    });
+
+    // 5. Salvar gastos variáveis avulsos
+    wizardState.varCustom.forEach(item => {
+      FinanceData.add({
+        type:     'variable',
+        desc:     item.desc,
+        amount:   item.amount,
+        category: GastoProImporter ? GastoProImporter.autoDetectCategory(item.desc) : 'Outros',
+        date:     `${ym}-01`,
+        month:    ym,
+        paid:     false,
+      });
+      saved++;
+    });
+
+    if (saved > 0) {
+      showToast(`✅ ${saved} lançamento${saved > 1 ? 's' : ''} salvo${saved > 1 ? 's' : ''} com sucesso!`);
+      renderAll();
+    } else {
+      showToast('Nenhum dado foi informado para salvar.');
+    }
+
+    closeWizard();
+  }
+
+  // ── Navegação ────────────────────────────────────────────────
+
+  /** Avança para o próximo passo ou finaliza. */
+  function handleWizardNext() {
+    const step = wizardState.step;
+
+    if (step === 1) {
+      if (wizardState.incomes.length === 0) {
+        showToast('Adicione ao menos uma fonte de renda antes de avançar.');
+        return;
+      }
+      goToWizardStep(2, 'forward');
+
+    } else if (step === 2) {
+      goToWizardStep(3, 'forward');
+
+    } else if (step === 3) {
+      goToWizardStep(4, 'forward');
+
+    } else if (step === 4) {
+      handleWizardFinish();
+    }
+  }
+
+  /** Volta para o passo anterior. */
+  function handleWizardBack() {
+    if (wizardState.step > 1) goToWizardStep(wizardState.step - 1, 'back');
+  }
+
+  // ── Event Listeners do Wizard ────────────────────────────────
+
+  if (sidebarWizardBtn) sidebarWizardBtn.addEventListener('click', openWizard);
+  if (closeWizardBtn)   closeWizardBtn.addEventListener('click',   closeWizard);
+  if (wizardNextBtn)    wizardNextBtn.addEventListener('click',    handleWizardNext);
+  if (wizardBackBtn)    wizardBackBtn.addEventListener('click',    handleWizardBack);
+
+  // Fechar ao clicar no overlay
+  if (wizardModal) {
+    wizardModal.addEventListener('click', (e) => {
+      if (e.target === wizardModal) closeWizard();
+    });
+  }
+
+  // Botões de adicionar item
+  if (wAddIncomeBtn) wAddIncomeBtn.addEventListener('click', handleWizardAddIncome);
+  if (wAddFixedBtn)  wAddFixedBtn.addEventListener('click',  handleWizardAddFixed);
+  if (wAddVarBtn)    wAddVarBtn.addEventListener('click',    handleWizardAddVar);
+
+  // Enter nos inputs de renda
+  [wIncomeDesc, wIncomeAmount, wIncomeDate].forEach(el => {
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') handleWizardAddIncome(); });
+  });
+
+  // Enter nos inputs de fixos
+  [wFixedDesc, wFixedAmount].forEach(el => {
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') handleWizardAddFixed(); });
+  });
+
+  // Enter nos inputs de variáveis
+  [wVarDesc, wVarAmount].forEach(el => {
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') handleWizardAddVar(); });
+  });
 
 
   // Pull-to-refresh para telas touch em smartphones / PWA
@@ -2244,3 +2871,4 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
