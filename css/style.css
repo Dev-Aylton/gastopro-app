@@ -1666,6 +1666,58 @@ button:active { transform: scale(0.98); }
   margin-top: 1.5rem;
 }
 
+.discard-pending-actions {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.discard-pending-actions > button {
+  width: 100%;
+}
+
+.avatar-crop-dialog {
+  max-width: 420px;
+}
+
+.avatar-crop-frame {
+  position: relative;
+  width: min(256px, 70vw);
+  height: min(256px, 70vw);
+  margin: 1.25rem auto;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #080b12;
+  touch-action: none;
+  cursor: grab;
+}
+
+.avatar-crop-frame:active {
+  cursor: grabbing;
+}
+
+.avatar-crop-frame img {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.avatar-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.avatar-zoom-controls input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--primary);
+}
+
+.avatar-crop-dialog > p {
+  line-height: 1.5;
+}
+
 /* Chart */
 .chart-wrapper {
   position: relative;
@@ -2357,6 +2409,21 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   background: rgba(239, 68, 68, 0.22);
 }
 
+.btn-delete-account {
+  margin-top: 0.55rem;
+}
+
+.account-delete-warning {
+  color: var(--danger-text);
+  line-height: 1.55;
+}
+
+.account-delete-error {
+  color: var(--danger-text);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 /* Modal de Autenticação */
 .modal-auth-content {
   max-width: 440px;
@@ -2577,29 +2644,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 
 .btn-toggle-password:hover {
   color: var(--text-main);
-}
-
-/* Opções adicionais (Lembrar-me) */
-.auth-options-row {
-  display: flex;
-  align-items: center;
-}
-
-.auth-remember-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  cursor: pointer;
-  user-select: none;
-}
-
-.auth-remember-label input[type="checkbox"] {
-  accent-color: var(--primary);
-  width: 15px;
-  height: 15px;
-  cursor: pointer;
 }
 
 /* Nota de Segurança */

@@ -28,6 +28,107 @@
 
 'use strict';
 
+window.GastoProSessionHelpers = {
+  shouldClearLocalData(status, hasLocalUserId, hasPendingSync = false) {
+    return status === 'signed_out' && Boolean(hasLocalUserId) && !hasPendingSync;
+  },
+
+  getSignedOutAction(hasLocalUserId, hasPendingSync) {
+    if (!hasLocalUserId) return 'preserve';
+    return hasPendingSync ? 'preserve-and-login' : 'clear';
+  },
+
+  getAccountSwitchAction(activeUserId, nextUserId, hasPendingSync, discardConfirmed = false) {
+    if (!activeUserId || activeUserId === nextUserId || !hasPendingSync) return 'continue';
+    return discardConfirmed ? 'discard-and-continue' : 'confirm-discard';
+  }
+};
+
+window.GastoProProfileHelpers = {
+  getInitialName(localName, cloudName, metadataName, emailPrefix) {
+    return (typeof cloudName === 'string' && cloudName.trim()) ||
+      (typeof localName === 'string' && localName.trim()) ||
+      (typeof metadataName === 'string' && metadataName.trim()) ||
+      emailPrefix || '';
+  }
+};
+
+window.GastoProAvatarCrop = {
+  computeCropRect(imageWidth, imageHeight, zoom = 1, offsetX = 0, offsetY = 0, frameSize = 256) {
+    const width = Number(imageWidth);
+    const height = Number(imageHeight);
+    const frame = Number(frameSize);
+    if (![width, height, frame].every(Number.isFinite) || width <= 0 || height <= 0 || frame <= 0) {
+      throw new RangeError('Dimensões de recorte inválidas.');
+    }
+    const safeZoom = Math.min(3, Math.max(1, Number.isFinite(Number(zoom)) ? Number(zoom) : 1));
+    const scale = Math.max(frame / width, frame / height) * safeZoom;
+    const cropWidth = Math.min(width, frame / scale);
+    const cropHeight = Math.min(height, frame / scale);
+    const maxX = width - cropWidth;
+    const maxY = height - cropHeight;
+    const x = Math.min(maxX, Math.max(0, width / 2 - (Number(offsetX) || 0) / scale - cropWidth / 2));
+    const y = Math.min(maxY, Math.max(0, height / 2 - (Number(offsetY) || 0) / scale - cropHeight / 2));
+    return { x, y, width: cropWidth, height: cropHeight, zoom: safeZoom, scale };
+  }
+};
+
+function readAvatarDimensions(file) {
+  return file.arrayBuffer().then(buffer => {
+    const bytes = new Uint8Array(buffer);
+    const view = new DataView(buffer);
+    let dimensions = null;
+    if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50 &&
+      bytes[2] === 0x4e && bytes[3] === 0x47) {
+      dimensions = { width: view.getUint32(16), height: view.getUint32(20) };
+    } else if (bytes.length >= 30 && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' &&
+      String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP') {
+      const chunk = String.fromCharCode(...bytes.slice(12, 16));
+      if (chunk === 'VP8X') {
+        dimensions = {
+          width: 1 + bytes[24] + (bytes[25] << 8) + (bytes[26] << 16),
+          height: 1 + bytes[27] + (bytes[28] << 8) + (bytes[29] << 16)
+        };
+      } else if (chunk === 'VP8L' && bytes[20] === 0x2f) {
+        dimensions = {
+          width: 1 + (((bytes[22] & 0x3f) << 8) | bytes[21]),
+          height: 1 + (((bytes[24] & 0x0f) << 10) | (bytes[23] << 2) | ((bytes[22] & 0xc0) >> 6))
+        };
+      } else if (chunk === 'VP8 ' && bytes[23] === 0x9d &&
+        bytes[24] === 0x01 && bytes[25] === 0x2a) {
+        dimensions = {
+          width: ((bytes[27] & 0x3f) << 8) | bytes[26],
+          height: ((bytes[29] & 0x3f) << 8) | bytes[28]
+        };
+      }
+    } else if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+      let offset = 2;
+      while (offset + 9 < bytes.length) {
+        if (bytes[offset] !== 0xff) break;
+        const marker = bytes[offset + 1];
+        const segmentLength = view.getUint16(offset + 2);
+        if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker)) {
+          dimensions = {
+            height: view.getUint16(offset + 5),
+            width: view.getUint16(offset + 7)
+          };
+          break;
+        }
+        if (segmentLength < 2) break;
+        offset += segmentLength + 2;
+      }
+    }
+    if (!dimensions || !dimensions.width || !dimensions.height) {
+      throw new Error('Não foi possível verificar as dimensões da imagem.');
+    }
+    if (dimensions.width > 12000 || dimensions.height > 12000 ||
+      dimensions.width * dimensions.height > 40000000) {
+      throw new Error('A imagem tem dimensões muito grandes. Escolha uma imagem com até 40 megapixels.');
+    }
+    return dimensions;
+  });
+}
+
 // ================================================================
 // 1. ESTADO GLOBAL DA APLICAÇÃO
 // Objeto em memória que controla o que está sendo exibido.
@@ -424,6 +525,26 @@ function renderHealthDiagnostic(income, balance, pctFixed, pctVar, pctSave) {
 window.GastoProReportHelpers = {
   getHealthDiagnostic,
   getDailyBudgetInfo
+};
+
+window.GastoProAccountDeletion = {
+  isConfirmationValid(value) {
+    return value === 'EXCLUIR';
+  },
+
+  async deleteAccountAndClearPendingSync(auth, financeData) {
+    const result = await auth.deleteAccount();
+    if (result && result.success) {
+      try {
+        await auth.signOut('local');
+      } catch (error) {
+        console.error('[GastoPro] Falha ao encerrar a sessão local após excluir a conta:', error);
+      } finally {
+        financeData.clearUserData();
+      }
+    }
+    return result;
+  }
 };
 
 // ================================================================
@@ -1052,32 +1173,22 @@ function isSupportedAvatarType(type) {
   return ['image/jpeg', 'image/png', 'image/webp'].includes(type);
 }
 
-function resizeAvatarToJpeg(file) {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      try {
-        const scale = Math.min(1, 256 / image.width, 256 / image.height);
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(image.width * scale));
-        canvas.height = Math.max(1, Math.round(image.height * scale));
-        const context = canvas.getContext('2d');
-        if (!context) throw new Error('Não foi possível processar a imagem.');
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
-      } catch (error) {
-        reject(error);
-      } finally {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('Não foi possível abrir a imagem.'));
-    };
-    image.src = objectUrl;
-  });
+function renderAvatarCropToJpeg(image, cropRect) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Não foi possível processar a imagem.');
+  context.drawImage(
+    image,
+    cropRect.x, cropRect.y, cropRect.width, cropRect.height,
+    0, 0, canvas.width, canvas.height
+  );
+  for (let quality = 0.9; quality >= 0.45; quality -= 0.05) {
+    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+    if (dataUrl.length <= 400000) return dataUrl;
+  }
+  throw new Error('A foto excede o limite de armazenamento permitido.');
 }
 
 // ================================================================
@@ -1383,6 +1494,11 @@ document.addEventListener('DOMContentLoaded', () => {
     FinanceData.flushPendingSync().catch(error => {
       console.error('[GastoPro] Falha ao retomar sincronização:', error);
     });
+    if (localStorage.getItem('gastopro_last_uid')) {
+      initializeAuthenticatedView().catch(error => {
+        console.error('[GastoPro] Falha ao revalidar a sessão após reconexão:', error);
+      });
+    }
   });
 
   // ── Navegação e ações delegadas ───────────────────────────────
@@ -1964,10 +2080,31 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveProfileNameBtn    = document.getElementById('saveProfileNameBtn');
   const changeAvatarBtn       = document.getElementById('changeAvatarBtn');
   const avatarFileInput       = document.getElementById('avatarFileInput');
+  const avatarCropModal       = document.getElementById('avatarCropModal');
+  const avatarCropFrame       = document.getElementById('avatarCropFrame');
+  const avatarCropImage       = document.getElementById('avatarCropImage');
+  const avatarZoomSlider      = document.getElementById('avatarZoomSlider');
+  const avatarCropError       = document.getElementById('avatarCropError');
+  const saveAvatarCropBtn     = document.getElementById('saveAvatarCropBtn');
+  const cancelAvatarCropBtn   = document.getElementById('cancelAvatarCropBtn');
+  const closeAvatarCropBtn    = document.getElementById('closeAvatarCropBtn');
+  let avatarCropState = null;
   // Nota: drawerAvatarDisplay e topbarAvatarContainer são buscados por ID
   // dentro de renderUserProfile() para garantir que existem no DOM
   const drawerAvatarDisplay   = document.getElementById('drawerAvatarDisplay');
   const topbarAvatarContainer = document.getElementById('topbarAvatarContainer');
+
+  function syncEditedProfile(profile) {
+    if (!profile.userId) return;
+    FinanceData.flushPendingSync(profile.userId).then(result => {
+      if (!result.success) {
+        showToast('Perfil salvo neste aparelho; a sincronização permanece pendente.');
+      }
+    }).catch(error => {
+      console.error('[GastoPro] Erro ao sincronizar perfil editado:', error);
+      showToast('Perfil salvo neste aparelho; a sincronização permanece pendente.');
+    });
+  }
 
   function renderUserProfile() {
     const profile = FinanceData.getProfile();
@@ -2002,7 +2139,9 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       if (accountGuestCard)  accountGuestCard.style.display = 'flex';
       if (accountLoggedCard) accountLoggedCard.style.display = 'none';
-      if (accountStatusText) accountStatusText.textContent = 'Modo Local (Não conectado)';
+      if (accountStatusText) {
+        accountStatusText.textContent = 'Modo Local (Não conectado)';
+      }
     }
   }
 
@@ -2018,12 +2157,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const authSubtitleText     = document.getElementById('authSubtitleText');
   const authAlertBanner      = document.getElementById('authAlertBanner');
   const authAlertText        = document.getElementById('authAlertText');
+  const discardPendingModal = document.getElementById('discardPendingModal');
+  const cancelDiscardPendingBtn = document.getElementById('cancelDiscardPendingBtn');
+  const exportBeforeDiscardBtn = document.getElementById('exportBeforeDiscardBtn');
+  const confirmDiscardPendingBtn = document.getElementById('confirmDiscardPendingBtn');
   const logoutBtn            = document.getElementById('logoutBtn');
+  const deleteAccountBtn     = document.getElementById('deleteAccountBtn');
+  const deleteAccountModal   = document.getElementById('deleteAccountModal');
+  const closeDeleteAccountModalBtn = document.getElementById('closeDeleteAccountModalBtn');
+  const cancelDeleteAccountBtn = document.getElementById('cancelDeleteAccountBtn');
+  const deleteAccountConfirmation = document.getElementById('deleteAccountConfirmation');
+  const deleteAccountError   = document.getElementById('deleteAccountError');
+  const confirmDeleteAccountBtn = document.getElementById('confirmDeleteAccountBtn');
+  const downloadBackupBeforeAccountDeletion = document.getElementById('downloadBackupBeforeAccountDeletion');
   const passwordRecoveryModal = document.getElementById('passwordRecoveryModal');
   const passwordRecoveryDialog = passwordRecoveryModal && passwordRecoveryModal.querySelector('[role="dialog"]');
   const passwordRecoveryForm = document.getElementById('passwordRecoveryForm');
   const passwordRecoveryError = document.getElementById('passwordRecoveryError');
   let recoveryPreviousFocus = null;
+  let pendingAccountSwitchUser = null;
   if (passwordRecoveryError) passwordRecoveryError.style.display = 'none';
 
   function closePasswordRecovery() {
@@ -2099,6 +2251,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if (authModal) authModal.classList.add('active');
   }
 
+  function closeDiscardPendingModal() {
+    if (!discardPendingModal) return;
+    discardPendingModal.classList.remove('active');
+    discardPendingModal.setAttribute('aria-hidden', 'true');
+  }
+
+  function requestDiscardForAccountSwitch(user) {
+    pendingAccountSwitchUser = user;
+    if (!discardPendingModal) {
+      showAuthAlert('Há alterações não sincronizadas. Entre novamente na mesma conta ou descarte as alterações antes de trocar de conta.');
+      return;
+    }
+    discardPendingModal.classList.add('active');
+    discardPendingModal.setAttribute('aria-hidden', 'false');
+  }
+
   function closeAuth() {
     if (authModal) authModal.classList.remove('active');
     hideAuthAlert();
@@ -2116,6 +2284,64 @@ document.addEventListener('DOMContentLoaded', () => {
     continueAsGuestBtn.addEventListener('click', () => {
       closeAuth();
       showToast('Continuando no Modo Local.');
+    });
+  }
+
+  if (cancelDiscardPendingBtn) {
+    cancelDiscardPendingBtn.addEventListener('click', async () => {
+      const user = pendingAccountSwitchUser;
+      closeDiscardPendingModal();
+      try {
+        await window.SupabaseAuth.signOut();
+        pendingAccountSwitchUser = null;
+      } catch (error) {
+        console.warn('[GastoPro] Não foi possível cancelar a troca de conta:', error);
+        pendingAccountSwitchUser = user;
+        if (discardPendingModal) {
+          discardPendingModal.classList.add('active');
+          discardPendingModal.setAttribute('aria-hidden', 'false');
+        }
+        showAuthAlert('Não foi possível cancelar a troca. Seus dados pendentes continuam preservados.');
+      }
+    });
+  }
+
+  if (exportBeforeDiscardBtn) {
+    exportBeforeDiscardBtn.addEventListener('click', () => {
+      FinanceData.exportJSON();
+      showToast('Backup JSON exportado. Guarde-o antes de descartar as alterações.');
+    });
+  }
+
+  if (confirmDiscardPendingBtn) {
+    confirmDiscardPendingBtn.addEventListener('click', async () => {
+      const user = pendingAccountSwitchUser;
+      if (!user || window.GastoProSessionHelpers.getAccountSwitchAction(
+        FinanceData.getActiveUserId(),
+        user.id,
+        FinanceData.hasPendingSync(),
+        true
+      ) !== 'discard-and-continue') return;
+
+      confirmDiscardPendingBtn.disabled = true;
+      try {
+        FinanceData.clearUserData();
+        if (!FinanceData.activateUser(user.id)) {
+          throw new Error('Não foi possível preparar os dados da nova conta.');
+        }
+        pendingAccountSwitchUser = null;
+        closeDiscardPendingModal();
+        closeAuth();
+        await prepareAuthenticatedUser(user);
+        await syncUserDataFromCloud(user.id);
+        renderUserProfile();
+        renderAll();
+      } catch (error) {
+        console.error('[GastoPro] Falha ao descartar alterações e trocar de conta:', error);
+        showAuthAlert('Não foi possível trocar de conta. Os dados locais foram limpos após sua confirmação; tente entrar novamente.');
+      } finally {
+        confirmDiscardPendingBtn.disabled = false;
+      }
     });
   }
 
@@ -2204,7 +2430,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const localSync = await FinanceData.prepareLocalDataForSync(userId);
         if (!localSync.success) return false;
 
-        const [cloudEntries, cloudTemplates, cloudGoals] = await Promise.all([
+        const [cloudEntries, cloudTemplates, cloudGoals, cloudAccounts, cloudProfileResult] = await Promise.all([
           window.SupabaseAuth.fetchCloudEntries(userId),
           window.SupabaseAuth.fetchCloudTemplates(userId),
           Promise.resolve()
@@ -2212,16 +2438,37 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(error => {
               console.warn('[GastoPro] Não foi possível buscar metas na nuvem:', error);
               return null;
-            })
+            }),
+          Promise.resolve()
+            .then(() => window.SupabaseAuth.fetchCloudAccounts(userId))
+            .catch(error => {
+              console.warn('[GastoPro] Não foi possível buscar contas na nuvem:', error);
+              return null;
+            }),
+          window.SupabaseAuth.fetchCloudProfile
+            ? window.SupabaseAuth.fetchCloudProfile(userId)
+            : { success: false, error: new Error('Busca de perfil não disponível.') }
         ]);
 
-        if (!Array.isArray(cloudEntries) || !Array.isArray(cloudTemplates)) {
+        if (!Array.isArray(cloudEntries) || !Array.isArray(cloudTemplates) ||
+          !Array.isArray(cloudAccounts)) {
           console.warn('[GastoPro] Sincronização incompleta; os dados locais foram mantidos.');
           showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
           return false;
         }
 
-        if (!FinanceData.mergeCloudData(userId, cloudEntries, cloudTemplates, localSync.success, cloudGoals)) {
+        if (cloudProfileResult.success) {
+          if (cloudProfileResult.profile) {
+            FinanceData.mergeCloudProfile(cloudProfileResult.profile);
+          }
+        } else {
+          console.warn('[GastoPro] Não foi possível buscar o perfil na nuvem:', cloudProfileResult.error);
+          showToast('O perfil local foi preservado; não foi possível buscar o perfil na nuvem.');
+        }
+
+        if (!FinanceData.mergeCloudData(
+          userId, cloudEntries, cloudTemplates, localSync.success, cloudGoals, cloudAccounts
+        )) {
           console.warn('[GastoPro] Sincronização ignorada: o usuário local não corresponde à sessão.');
           showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
           return false;
@@ -2263,9 +2510,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function prepareAuthenticatedUser(user) {
     if (!user || !user.id) return null;
+    const switchAction = window.GastoProSessionHelpers.getAccountSwitchAction(
+      FinanceData.getActiveUserId(),
+      user.id,
+      FinanceData.hasPendingSync()
+    );
+    if (switchAction === 'confirm-discard') {
+      requestDiscardForAccountSwitch(user);
+      return null;
+    }
     const switchedUser = FinanceData.activateUser(user.id);
     if (FinanceData.getActiveUserId() !== user.id) {
-      showToast('Há dados não sincronizados da conta anterior. Eles foram preservados neste aparelho.');
+      showAuthAlert('Há alterações não sincronizadas da conta anterior. Entre novamente nessa conta para sincronizá-las.');
       try {
         const activeSession = await window.SupabaseAuth.getSessionUser();
         if (activeSession && activeSession.id === user.id) {
@@ -2276,11 +2532,34 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return null;
     }
+    const cloudProfileResult = window.SupabaseAuth.fetchCloudProfile
+      ? await window.SupabaseAuth.fetchCloudProfile(user.id)
+      : { success: false, error: new Error('Busca de perfil não disponível.') };
+    const profilePending = FinanceData.getPendingSync().profile;
+    if (cloudProfileResult.success && cloudProfileResult.profile) {
+      FinanceData.mergeCloudProfile(cloudProfileResult.profile);
+    } else if (!cloudProfileResult.success) {
+      console.warn('[GastoPro] Não foi possível buscar perfil antes de preparar a sessão:', cloudProfileResult.error);
+    }
+
     const profile = FinanceData.getProfile();
     profile.userId = user.id;
     profile.email = user.email;
-    profile.name = (user.user_metadata && user.user_metadata.name) || profile.name || user.email.split('@')[0];
-    FinanceData.saveProfile(profile);
+    if (!profilePending) {
+      const cloudName = cloudProfileResult.success && cloudProfileResult.profile
+        ? cloudProfileResult.profile.name
+        : '';
+      profile.name = window.GastoProProfileHelpers.getInitialName(
+        profile.name,
+        cloudName,
+        user.user_metadata && user.user_metadata.name,
+        user.email.split('@')[0]
+      );
+    }
+    const queueInitialProfile = cloudProfileResult.success && !profilePending &&
+      (!cloudProfileResult.profile || !cloudProfileResult.profile.name) &&
+      Boolean(profile.name || profile.avatar);
+    FinanceData.saveProfile(profile, { queueSync: queueInitialProfile });
     renderUserProfile();
     return profile;
   }
@@ -2293,7 +2572,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (event === 'SIGNED_OUT' || (!user && event === 'TOKEN_REFRESHED')) {
         if (FinanceData.hasPendingSync()) {
-          showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
+          openAuth('login');
+          showAuthAlert('Sua sessão expirou e há alterações não sincronizadas neste aparelho. Entre novamente na mesma conta para sincronizá-las.');
           return;
         }
         clearUserSessionData();
@@ -2343,7 +2623,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const { user } = await window.SupabaseAuth.signIn(email, password);
         const profile = await prepareAuthenticatedUser(user);
         if (!profile) {
-          showAuthAlert('Os dados pendentes da conta anterior foram preservados. Entre novamente nessa conta para sincronizá-los.');
+          if (!pendingAccountSwitchUser) {
+            showAuthAlert('Há alterações não sincronizadas. Entre novamente na mesma conta para sincronizá-las.');
+          }
           return;
         }
         closeAuth();
@@ -2474,6 +2756,115 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function closeDeleteAccountModal() {
+    if (!deleteAccountModal) return;
+    deleteAccountModal.classList.remove('active');
+    deleteAccountModal.setAttribute('aria-hidden', 'true');
+  }
+
+  function showDeleteAccountError(message) {
+    if (!deleteAccountError) return;
+    deleteAccountError.textContent = message;
+    deleteAccountError.hidden = false;
+  }
+
+  function openDeleteAccountModal() {
+    if (!deleteAccountModal) return;
+    if (deleteAccountConfirmation) {
+      deleteAccountConfirmation.value = '';
+      deleteAccountConfirmation.disabled = false;
+    }
+    if (deleteAccountError) {
+      deleteAccountError.textContent = '';
+      deleteAccountError.hidden = true;
+    }
+    if (confirmDeleteAccountBtn) {
+      confirmDeleteAccountBtn.disabled = true;
+      confirmDeleteAccountBtn.textContent = 'Excluir conta';
+    }
+    if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = false;
+    if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = false;
+    deleteAccountModal.classList.add('active');
+    deleteAccountModal.setAttribute('aria-hidden', 'false');
+  }
+
+  if (deleteAccountBtn) deleteAccountBtn.addEventListener('click', openDeleteAccountModal);
+  if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.addEventListener('click', closeDeleteAccountModal);
+  if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.addEventListener('click', closeDeleteAccountModal);
+  if (deleteAccountModal) {
+    deleteAccountModal.addEventListener('click', event => {
+      if (event.target === deleteAccountModal) closeDeleteAccountModal();
+    });
+  }
+
+  if (deleteAccountConfirmation && confirmDeleteAccountBtn) {
+    deleteAccountConfirmation.addEventListener('input', () => {
+      confirmDeleteAccountBtn.disabled = !window.GastoProAccountDeletion.isConfirmationValid(
+        deleteAccountConfirmation.value
+      );
+      if (deleteAccountError) {
+        deleteAccountError.textContent = '';
+        deleteAccountError.hidden = true;
+      }
+    });
+
+    confirmDeleteAccountBtn.addEventListener('click', async () => {
+      if (!window.GastoProAccountDeletion.isConfirmationValid(deleteAccountConfirmation.value)) return;
+
+      confirmDeleteAccountBtn.disabled = true;
+      confirmDeleteAccountBtn.textContent = 'Excluindo...';
+      if (deleteAccountConfirmation) deleteAccountConfirmation.disabled = true;
+      if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = true;
+      if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = true;
+
+      try {
+        const result = await window.GastoProAccountDeletion.deleteAccountAndClearPendingSync(
+          window.SupabaseAuth,
+          FinanceData
+        );
+        if (!result || !result.success) {
+          showDeleteAccountError(
+            result && result.error && result.error.message
+              ? result.error.message
+              : 'Não foi possível excluir a conta. Tente novamente.'
+          );
+          if (deleteAccountConfirmation) deleteAccountConfirmation.disabled = false;
+          if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = false;
+          if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = false;
+          confirmDeleteAccountBtn.disabled = !window.GastoProAccountDeletion.isConfirmationValid(
+            deleteAccountConfirmation.value
+          );
+          confirmDeleteAccountBtn.textContent = 'Excluir conta';
+          return;
+        }
+      } catch (error) {
+        console.error('[GastoPro] Falha ao concluir a exclusão da conta:', error);
+        showDeleteAccountError('Não foi possível concluir a exclusão da conta. Verifique a conexão e tente novamente.');
+        if (deleteAccountConfirmation) deleteAccountConfirmation.disabled = false;
+        if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = false;
+        if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = false;
+        confirmDeleteAccountBtn.disabled = !window.GastoProAccountDeletion.isConfirmationValid(
+          deleteAccountConfirmation.value
+        );
+        confirmDeleteAccountBtn.textContent = 'Excluir conta';
+        return;
+      }
+
+      closeDeleteAccountModal();
+      closeProfileDrawer();
+      renderUserProfile();
+      renderAll();
+      showToast('Conta e dados excluídos. O GastoPro está pronto para começar novamente.');
+    });
+  }
+
+  if (downloadBackupBeforeAccountDeletion) {
+    downloadBackupBeforeAccountDeletion.addEventListener('click', () => {
+      FinanceData.exportJSON();
+      showToast('Backup JSON exportado. Guarde-o antes de excluir a conta.');
+    });
+  }
+
   // Link Esqueceu a Senha — envia e-mail real de recuperação via Supabase
   const forgotPasswordLink = document.getElementById('forgotPasswordLink');
   if (forgotPasswordLink) {
@@ -2513,8 +2904,86 @@ document.addEventListener('DOMContentLoaded', () => {
       avatarFileInput.click();
     });
 
+    function closeAvatarCrop() {
+      if (avatarCropModal) {
+        avatarCropModal.classList.remove('active');
+        avatarCropModal.setAttribute('aria-hidden', 'true');
+      }
+      if (avatarCropState && avatarCropState.objectUrl) {
+        URL.revokeObjectURL(avatarCropState.objectUrl);
+      }
+      avatarCropState = null;
+      if (avatarCropImage) avatarCropImage.removeAttribute('src');
+      if (changeAvatarBtn) changeAvatarBtn.focus();
+    }
+
+    function updateAvatarCropPreview() {
+      if (!avatarCropState || !avatarCropImage) return;
+      const { image, zoom, offsetX, offsetY } = avatarCropState;
+      const crop = window.GastoProAvatarCrop.computeCropRect(
+        image.naturalWidth, image.naturalHeight, zoom, offsetX, offsetY
+      );
+      avatarCropState.crop = crop;
+      const previewScale = (avatarCropFrame.clientWidth || 256) / crop.width;
+      avatarCropImage.style.width = `${image.naturalWidth * previewScale}px`;
+      avatarCropImage.style.height = `${image.naturalHeight * previewScale}px`;
+      avatarCropImage.style.left = `${-crop.x * previewScale}px`;
+      avatarCropImage.style.top = `${-crop.y * previewScale}px`;
+      if (avatarZoomSlider) avatarZoomSlider.value = String(crop.zoom);
+    }
+
+    function setAvatarZoom(zoom) {
+      if (!avatarCropState) return;
+      avatarCropState.zoom = Math.min(3, Math.max(1, zoom));
+      updateAvatarCropPreview();
+    }
+
+    async function openAvatarCrop(file) {
+      let objectUrl = null;
+      try {
+        const dimensions = await readAvatarDimensions(file);
+        objectUrl = URL.createObjectURL(file);
+        const image = new Image();
+        await new Promise((resolve, reject) => {
+          image.onload = resolve;
+          image.onerror = () => reject(new Error('Não foi possível decodificar a imagem.'));
+          image.src = objectUrl;
+        });
+        const decodedWidth = image.naturalWidth;
+        const decodedHeight = image.naturalHeight;
+        const validDecodedDimensions = decodedWidth > 0 && decodedHeight > 0 &&
+          decodedWidth <= 12000 && decodedHeight <= 12000 &&
+          decodedWidth * decodedHeight <= 40000000;
+        const matchingDimensions = (decodedWidth === dimensions.width &&
+          decodedHeight === dimensions.height) ||
+          (decodedWidth === dimensions.height && decodedHeight === dimensions.width);
+        if (!validDecodedDimensions || !matchingDimensions) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+          throw new Error('As dimensões da imagem não puderam ser confirmadas.');
+        }
+        avatarCropState = { image, objectUrl, zoom: 1, offsetX: 0, offsetY: 0, crop: null };
+        if (avatarCropImage) avatarCropImage.src = objectUrl;
+        if (avatarCropError) {
+          avatarCropError.hidden = true;
+          avatarCropError.textContent = '';
+        }
+        updateAvatarCropPreview();
+        if (avatarCropModal) {
+          avatarCropModal.classList.add('active');
+          avatarCropModal.setAttribute('aria-hidden', 'false');
+          avatarCropModal.querySelector('[role="dialog"]')?.focus();
+        }
+      } catch (error) {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        console.error('[GastoPro] Erro ao abrir a foto:', error);
+        showToast(error.message || 'Não foi possível abrir a imagem.');
+      }
+    }
+
     avatarFileInput.addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
+      avatarFileInput.value = '';
       if (!file) return;
 
       if (!isSupportedAvatarType(file.type)) {
@@ -2529,10 +2998,89 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      resizeAvatarToJpeg(file).then(avatar => {
+      openAvatarCrop(file);
+    });
+
+    if (avatarCropFrame) {
+      avatarCropFrame.addEventListener('pointerdown', event => {
+        if (!avatarCropState) return;
+        avatarCropState.pointer = {
+          id: event.pointerId,
+          x: event.clientX,
+          y: event.clientY
+        };
+        avatarCropFrame.setPointerCapture(event.pointerId);
+      });
+      avatarCropFrame.addEventListener('pointermove', event => {
+        if (!avatarCropState || !avatarCropState.pointer ||
+          avatarCropState.pointer.id !== event.pointerId) return;
+        const ratio = 256 / (avatarCropFrame.clientWidth || 256);
+        avatarCropState.offsetX += (event.clientX - avatarCropState.pointer.x) * ratio;
+        avatarCropState.offsetY += (event.clientY - avatarCropState.pointer.y) * ratio;
+        avatarCropState.pointer.x = event.clientX;
+        avatarCropState.pointer.y = event.clientY;
+        updateAvatarCropPreview();
+      });
+      const stopDragging = event => {
+        if (avatarCropState && avatarCropState.pointer &&
+          avatarCropState.pointer.id === event.pointerId) avatarCropState.pointer = null;
+      };
+      avatarCropFrame.addEventListener('pointerup', stopDragging);
+      avatarCropFrame.addEventListener('pointercancel', stopDragging);
+      avatarCropFrame.addEventListener('wheel', event => {
+        if (!avatarCropState) return;
+        event.preventDefault();
+        setAvatarZoom(avatarCropState.zoom + (event.deltaY < 0 ? 0.1 : -0.1));
+      }, { passive: false });
+      avatarCropFrame.addEventListener('keydown', event => {
+        if (!avatarCropState) return;
+        const step = (event.shiftKey ? 30 : 10) * 256 / (avatarCropFrame.clientWidth || 256);
+        if (event.key === 'ArrowLeft') avatarCropState.offsetX -= step;
+        else if (event.key === 'ArrowRight') avatarCropState.offsetX += step;
+        else if (event.key === 'ArrowUp') avatarCropState.offsetY -= step;
+        else if (event.key === 'ArrowDown') avatarCropState.offsetY += step;
+        else if (event.key === '+' || event.key === '=') setAvatarZoom(avatarCropState.zoom + 0.1);
+        else if (event.key === '-') setAvatarZoom(avatarCropState.zoom - 0.1);
+        else return;
+        event.preventDefault();
+        updateAvatarCropPreview();
+      });
+    }
+
+    const zoomOutBtn = document.getElementById('avatarZoomOutBtn');
+    const zoomInBtn = document.getElementById('avatarZoomInBtn');
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => {
+      if (avatarCropState) setAvatarZoom(avatarCropState.zoom - 0.1);
+    });
+    if (zoomInBtn) zoomInBtn.addEventListener('click', () => {
+      if (avatarCropState) setAvatarZoom(avatarCropState.zoom + 0.1);
+    });
+    if (avatarZoomSlider) avatarZoomSlider.addEventListener('input', () => {
+      setAvatarZoom(Number(avatarZoomSlider.value));
+    });
+    [cancelAvatarCropBtn, closeAvatarCropBtn].forEach(button => {
+      if (button) button.addEventListener('click', closeAvatarCrop);
+    });
+    if (avatarCropModal) avatarCropModal.addEventListener('click', event => {
+      if (event.target === avatarCropModal) closeAvatarCrop();
+    });
+    if (avatarCropModal) {
+      const avatarCropDialog = avatarCropModal.querySelector('[role="dialog"]');
+      window.GastoProKeyboardPanels.bind({
+        panel: avatarCropDialog,
+        trigger: changeAvatarBtn,
+        isOpen: () => avatarCropModal.classList.contains('active'),
+        close: closeAvatarCrop,
+        trapFocus: true
+      });
+    }
+    if (saveAvatarCropBtn) saveAvatarCropBtn.addEventListener('click', () => {
+      if (!avatarCropState) return;
+      try {
+        const avatar = renderAvatarCropToJpeg(avatarCropState.image, avatarCropState.crop);
         const profile = FinanceData.getProfile();
         profile.avatar = avatar;
-        const result = FinanceData.saveProfile(profile);
+        const result = FinanceData.saveProfile(profile, { queueSync: true });
         if (!result.success) {
           if (result.error && result.error.name === 'QuotaExceededError') {
             showToast('O armazenamento do navegador está cheio. Remova alguns dados e tente novamente.');
@@ -2541,12 +3089,17 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           return;
         }
+        closeAvatarCrop();
         renderUserProfile();
         showToast('Foto de perfil atualizada com sucesso!');
-      }).catch(error => {
+        syncEditedProfile(profile);
+      } catch (error) {
         console.error('[GastoPro] Erro ao processar avatar:', error);
-        showToast('Não foi possível processar a imagem. Tente outro arquivo.');
-      });
+        if (avatarCropError) {
+          avatarCropError.textContent = error.message || 'Não foi possível salvar a foto.';
+          avatarCropError.hidden = false;
+        }
+      }
     });
   }
 
@@ -2561,9 +3114,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const profile = FinanceData.getProfile();
     profile.name = newName;
-    FinanceData.saveProfile(profile);
+    FinanceData.saveProfile(profile, { queueSync: true });
     renderUserProfile();
     showToast(`Nome alterado para "${newName}"!`);
+    syncEditedProfile(profile);
   }
 
   if (saveProfileNameBtn) {
@@ -3764,28 +4318,59 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── Inicialização: renderiza perfil e interface ao carregar ───
+  let sessionInitializationPromise = null;
   async function initializeAuthenticatedView() {
-    let user = null;
-    try {
-      user = window.SupabaseAuth
-        ? await window.SupabaseAuth.getSessionUser()
-        : null;
-
-      if (user) {
-        const profile = await prepareAuthenticatedUser(user);
-        if (!profile) user = null;
-      } else if (localStorage.getItem('gastopro_last_uid')) {
-        clearUserSessionData();
+    if (sessionInitializationPromise) return sessionInitializationPromise;
+    sessionInitializationPromise = (async () => {
+      let user = null;
+      const localUserId = localStorage.getItem('gastopro_last_uid');
+      try {
+        const sessionState = window.SupabaseAuth
+          ? await window.SupabaseAuth.getSessionState()
+          : { status: 'indeterminate' };
+        if (sessionState.status === 'authenticated') {
+          user = sessionState.user;
+          const profile = await prepareAuthenticatedUser(user);
+          if (!profile) user = null;
+        } else if (sessionState.status === 'indeterminate') {
+          if (localUserId) {
+            console.warn('[GastoPro] Sessão indeterminada; os dados locais foram preservados.');
+            showToast('Não foi possível verificar a sessão. Seus dados locais foram preservados.');
+          }
+        } else if (sessionState.status === 'signed_out') {
+          const action = window.GastoProSessionHelpers.getSignedOutAction(
+            Boolean(localUserId),
+            FinanceData.hasPendingSync()
+          );
+          if (action === 'clear' && window.GastoProSessionHelpers.shouldClearLocalData(
+            sessionState.status,
+            localUserId,
+            FinanceData.hasPendingSync()
+          )) {
+            clearUserSessionData();
+          } else if (action === 'preserve-and-login') {
+            openAuth('login');
+            showAuthAlert('Sua sessão expirou e há alterações não sincronizadas neste aparelho. Entre novamente na mesma conta para sincronizá-las.');
+          }
+        }
+      } catch (e) {
+        console.warn('[GastoPro] Falha ao restaurar sessão; os dados locais foram preservados:', e);
+        if (localUserId) {
+          showToast('Não foi possível verificar a sessão. Seus dados locais foram preservados.');
+        }
       }
-    } catch (e) {
-      console.warn('[GastoPro] Falha ao restaurar sessão:', e);
+
+      renderUserProfile();
+      renderAll();
+      document.body.classList.remove('auth-checking');
+
+      if (user) await syncUserDataFromCloud(user.id);
+    })();
+    try {
+      return await sessionInitializationPromise;
+    } finally {
+      sessionInitializationPromise = null;
     }
-
-    renderUserProfile();
-    renderAll();
-    document.body.classList.remove('auth-checking');
-
-    if (user) await syncUserDataFromCloud(user.id);
   }
 
   initializeAuthenticatedView().catch(e => {

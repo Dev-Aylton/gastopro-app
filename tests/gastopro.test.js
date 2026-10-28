@@ -23,6 +23,7 @@
       1.11 exportJSON() — Estrutura do backup
       1.12 getProfile / saveProfile — Perfil do usuário
       1.13 UUIDs e fila de sincronização
+      1.14 Contas bancárias PF/PJ
 
    2. Utilitários do app (app.js)
       2.1 formatCurrency() — Formatação BRL
@@ -416,6 +417,219 @@ describe('FinanceData — Metas por Categoria', () => {
   });
 });
 
+describe('FinanceData — Contas Bancárias', () => {
+  setupMockLocalStorage();
+
+  itAsync('cria, edita e valida contas PF/PJ', async () => {
+    const created = await FinanceData.addAccount({
+      name: '  Conta pessoal  ',
+      institution: '  Banco Exemplo  ',
+      type: 'PF',
+      initialBalance: 125.5
+    });
+    assertTrue(created.success);
+    assertTrue(isUuid(created.account.id));
+    assertEqual(created.account.name, 'Conta pessoal');
+    assertEqual(created.account.institution, 'Banco Exemplo');
+
+    const updated = await FinanceData.updateAccount(created.account.id, {
+      name: 'Conta empresa',
+      type: 'PJ',
+      initialBalance: 800
+    });
+    assertTrue(updated.success);
+    assertEqual(FinanceData.getAccounts()[0].type, 'PJ');
+    assertEqual(FinanceData.getAccounts()[0].initialBalance, 800);
+    const linkedEntry = FinanceData.add(makeIncome({ accountId: created.account.id }));
+    const linkedTemplate = FinanceData.add(makeFixed({ accountId: created.account.id }));
+    assertEqual(linkedEntry.accountId, created.account.id);
+    assertEqual(linkedTemplate.accountId, created.account.id);
+    assertNull(window.validateCloudPayload(linkedEntry, 'entries'));
+    assertNull(window.validateCloudPayload(linkedTemplate, 'templates'));
+
+    assertFalse((await FinanceData.addAccount({ name: ' ', type: 'PF' })).success);
+    assertFalse((await FinanceData.addAccount({ name: 'Inválida', type: 'Mista' })).success);
+    assertFalse((await FinanceData.addAccount({
+      name: 'Saldo inválido', type: 'PF', initialBalance: 'invalido'
+    })).success);
+    assertFalse((await FinanceData.updateAccount(created.account.id, { type: 'Mista' })).success);
+    assertEqual(FinanceData.getAccounts().length, 1);
+    assertNull(window.validateCloudPayload(created.account, 'accounts'));
+  });
+
+  itAsync('calcula saldo considerando somente receitas e gastos pagos', async () => {
+    setupMockLocalStorage();
+    const account = await FinanceData.addAccount({ name: 'Conta', type: 'PF', initialBalance: 100 });
+    FinanceData.saveEntries([
+      makeIncome({ id: crypto.randomUUID(), accountId: account.account.id, amount: 100, paid: true }),
+      makeIncome({ id: crypto.randomUUID(), accountId: account.account.id, amount: 500, paid: false }),
+      makeVariable({ id: crypto.randomUUID(), accountId: account.account.id, amount: 25, paid: true }),
+      makeVariable({ id: crypto.randomUUID(), accountId: account.account.id, amount: 40, paid: false })
+    ]);
+    FinanceData.saveTemplates([{
+      ...makeFixed({ id: crypto.randomUUID(), accountId: account.account.id, amount: 30 }),
+      paidMonths: { '2026-10': true, '2026-11': false }
+    }]);
+
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 145);
+  });
+
+  itAsync('consolida saldos PF e PJ sem incluir movimentações sem conta', async () => {
+    setupMockLocalStorage();
+    const personal = await FinanceData.addAccount({ name: 'PF', type: 'PF', initialBalance: 200 });
+    await FinanceData.addAccount({ name: 'PJ', type: 'PJ', initialBalance: 300 });
+    FinanceData.add(makeIncome({ amount: 999, paid: true }));
+
+    assertEqual(FinanceData.getAccountBalances(), { total: 500, PF: 200, PJ: 300 });
+    assertEqual(FinanceData.getAccountBalance(personal.account.id), 200);
+  });
+
+  itAsync('ajuste rápido recalcula o saldo inicial para atingir o saldo informado', async () => {
+    setupMockLocalStorage();
+    const created = await FinanceData.addAccount({ name: 'Conta', type: 'PF', initialBalance: 100 });
+    FinanceData.saveEntries([
+      makeIncome({ id: crypto.randomUUID(), accountId: created.account.id, amount: 20, paid: true }),
+      makeVariable({ id: crypto.randomUUID(), accountId: created.account.id, amount: 10, paid: true })
+    ]);
+
+    const adjusted = await FinanceData.adjustAccountBalance(created.account.id, 500);
+    assertTrue(adjusted.success);
+    assertEqual(FinanceData.getAccounts()[0].initialBalance, 490);
+    assertEqual(FinanceData.getAccountBalance(created.account.id), 500);
+  });
+
+  itAsync('excluir uma conta desvincula lançamentos e templates sem apagá-los', async () => {
+    setupMockLocalStorage();
+    const created = await FinanceData.addAccount({ name: 'Conta', type: 'PF' });
+    const entry = makeIncome({ id: crypto.randomUUID(), accountId: created.account.id });
+    const template = {
+      ...makeFixed({ id: crypto.randomUUID(), accountId: created.account.id }),
+      paidMonths: {}
+    };
+    FinanceData.saveEntries([entry]);
+    FinanceData.saveTemplates([template]);
+
+    const result = await FinanceData.deleteAccount(created.account.id);
+    assertTrue(result.success);
+    assertEqual(FinanceData.getAccounts(), []);
+    assertEqual(FinanceData.getEntries(), [{ ...entry, accountId: null }]);
+    assertEqual(FinanceData.getTemplates()[0].accountId, null);
+    assertEqual(FinanceData.getTemplates()[0].id, template.id);
+  });
+
+  itAsync('reset mantém contas cadastradas e remove lançamentos/templates vinculados', async () => {
+    setupMockLocalStorage();
+    const created = await FinanceData.addAccount({ name: 'Conta mantida', type: 'PF' });
+    FinanceData.saveEntries([
+      makeIncome({ id: crypto.randomUUID(), accountId: created.account.id })
+    ]);
+    FinanceData.saveTemplates([{
+      ...makeFixed({ id: crypto.randomUUID(), accountId: created.account.id }),
+      paidMonths: {}
+    }]);
+
+    await FinanceData.clearAll();
+    assertEqual(FinanceData.getAccounts(), []);
+    assertEqual(FinanceData.getEntries(), []);
+    assertEqual(FinanceData.getTemplates(), []);
+  });
+
+  itAsync('enfileira upserts e exclusões de contas e retém falhas para nova tentativa', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-account-queue';
+    const account = {
+      id: crypto.randomUUID(), name: 'Conta', institution: null, type: 'PF', initialBalance: 0
+    };
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId });
+    const previousAuth = window.SupabaseAuth;
+    let fail = true;
+    const callOrder = [];
+    window.SupabaseAuth = {
+      saveCloudEntries: async () => { callOrder.push('entries'); return { success: true }; },
+      saveCloudTemplates: async () => ({ success: true }),
+      deleteCloudEntries: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true }),
+      saveCloudGoals: async () => ({ success: true }),
+      deleteCloudGoals: async () => ({ success: true }),
+      saveCloudAccounts: async accounts => {
+        callOrder.push('accounts');
+        return { success: !fail, failedIds: fail ? accounts.map(item => item.id) : [] };
+      },
+      deleteCloudAccounts: async () => ({ success: !fail })
+    };
+    try {
+      await FinanceData.saveAccounts([account], { flush: false });
+      await FinanceData.saveEntries([
+        makeIncome({ id: crypto.randomUUID(), accountId: account.id })
+      ], { flush: false });
+      await FinanceData.flushPendingSync(userId);
+      assertEqual(FinanceData.getPendingSync().accounts, [account.id]);
+      assertEqual(callOrder.slice(0, 2), ['accounts', 'entries']);
+      await FinanceData.deleteAccount(account.id);
+      assertEqual(FinanceData.getPendingSync().deletedAccounts, [account.id]);
+      assertEqual(FinanceData.getEntries()[0].accountId, null);
+
+      fail = false;
+      const result = await FinanceData.flushPendingSync(userId);
+      assertTrue(result.success);
+      assertEqual(FinanceData.getPendingSync().accounts, []);
+      assertEqual(FinanceData.getPendingSync().deletedAccounts, []);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  it('mescla contas da nuvem preservando alterações locais pendentes', () => {
+    setupMockLocalStorage();
+    const userId = 'user-account-merge';
+    const local = {
+      id: crypto.randomUUID(), name: 'Nome local', type: 'PF', institution: null, initialBalance: 10
+    };
+    const remote = {
+      id: crypto.randomUUID(), name: 'Remota', type: 'PJ', institution: 'Banco', initialBalance: 20
+    };
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveAccounts([local], { flush: false });
+    FinanceData.savePendingSync({
+      full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
+      goals: [], deletedGoals: [], accounts: [local.id], deletedAccounts: []
+    });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [], [], false, [], [
+      { ...local, name: 'Nome remoto' }, remote
+    ]));
+    assertEqual(FinanceData.getAccounts().find(item => item.id === local.id).name, 'Nome local');
+    assertTrue(FinanceData.getAccounts().some(item => item.id === remote.id));
+  });
+
+  itAsync('inclui contas e vínculos no backup, na validação e na restauração', async () => {
+    setupMockLocalStorage();
+    const accountId = crypto.randomUUID();
+    const account = {
+      id: accountId, name: 'Conta backup', institution: null, type: 'PF', initialBalance: 250
+    };
+    const entry = makeIncome({
+      id: crypto.randomUUID(), accountId, date: '2026-11-05', month: '2026-11'
+    });
+    const text = JSON.stringify({
+      version: '4.0',
+      entries: [entry],
+      templates: [],
+      goals: [],
+      accounts: [account]
+    });
+    const validated = GastoProBackupHelpers.validate(text);
+    assertEqual(validated.accounts, [account]);
+    assertEqual(validated.entries[0].accountId, accountId);
+
+    const result = await FinanceData.importJSON(text, 'replace');
+    assertTrue(result.success);
+    assertEqual(FinanceData.getAccounts(), [account]);
+    assertEqual(FinanceData.getEntries()[0].accountId, accountId);
+  });
+});
+
 describe('FinanceData — Templates de Gastos Fixos', () => {
   setupMockLocalStorage();
 
@@ -761,26 +975,33 @@ describe('FinanceData — clearAll()', () => {
     assertEqual(FinanceData.getTemplates().length, 0);
   });
 
-  itAsync('deve limpar metas e manter a identidade da conta, enfileirando exclusões', async () => {
+  itAsync('deve limpar metas e contas, mantendo perfil e esvaziando a fila após sync', async () => {
     setupMockLocalStorage();
     const userId = 'user-reset-test';
     const entryId = crypto.randomUUID();
     const templateId = crypto.randomUUID();
+    const accountId = crypto.randomUUID();
     localStorage.setItem('gastopro_last_uid', userId);
     FinanceData.saveProfile({ name: 'Pessoa', avatar: 'data:image/png;base64,abc', email: 'pessoa@example.com', userId });
     localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([makeIncome({ id: entryId })]));
     localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([makeFixed({ id: templateId })]));
     FinanceData.saveGoals([{ id: 'goal-1', category: 'Casa', limit: 500 }]);
+    localStorage.setItem('gastopro_accounts_v1', JSON.stringify([
+      { id: accountId, name: 'Conta teste', institution: null, type: 'PF', initialBalance: 25 }
+    ]));
 
     const deletedEntries = [];
     const deletedTemplates = [];
+    const deletedAccounts = [];
     const previousAuth = window.SupabaseAuth;
     window.SupabaseAuth = {
       saveCloudEntries: async () => ({ success: true }),
       saveCloudTemplates: async () => ({ success: true }),
+      saveCloudAccounts: async () => ({ success: true }),
       saveCloudGoals: async () => ({ success: true }),
       deleteCloudEntries: async ids => { deletedEntries.push(...ids); return { success: true }; },
       deleteCloudTemplates: async ids => { deletedTemplates.push(...ids); return { success: true }; },
+      deleteCloudAccounts: async ids => { deletedAccounts.push(...ids); return { success: true }; },
       deleteCloudGoals: async categories => { assertTrue(categories.includes('Casa')); return { success: true }; }
     };
     try {
@@ -791,8 +1012,48 @@ describe('FinanceData — clearAll()', () => {
       assertEqual(FinanceData.getEntries(), []);
       assertEqual(FinanceData.getTemplates(), []);
       assertEqual(FinanceData.getGoals(), []);
+      assertEqual(FinanceData.getAccounts(), []);
       assertTrue(deletedEntries.includes(entryId));
       assertTrue(deletedTemplates.includes(templateId));
+      assertTrue(deletedAccounts.includes(accountId));
+      assertFalse(FinanceData.hasPendingSync(), 'A fila não deve ressuscitar dados após reset concluído');
+      assertEqual(FinanceData.getProfile().name, 'Pessoa');
+      assertEqual(FinanceData.getProfile().avatar, 'data:image/png;base64,abc');
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('mantém exclusões de contas pendentes sem enfileirar upserts após falha do reset', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-reset-account-pending';
+    const account = {
+      id: crypto.randomUUID(), name: 'Conta pendente', institution: null, type: 'PF', initialBalance: 0
+    };
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: 'Pessoa', email: 'pessoa@example.com', userId });
+    await FinanceData.saveAccounts([account], { flush: false });
+    const savedAccounts = [];
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: async () => ({ success: true }),
+      saveCloudTemplates: async () => ({ success: true }),
+      saveCloudAccounts: async accounts => { savedAccounts.push(...accounts); return { success: true }; },
+      saveCloudGoals: async () => ({ success: true }),
+      deleteCloudEntries: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true }),
+      deleteCloudAccounts: async () => ({ success: false }),
+      deleteCloudGoals: async () => ({ success: true })
+    };
+    try {
+      const result = await FinanceData.clearAll();
+      assertFalse(result.success);
+      assertEqual(FinanceData.getAccounts(), []);
+      assertEqual(savedAccounts, []);
+      assertEqual(FinanceData.getPendingSync().accounts, []);
+      assertEqual(FinanceData.getPendingSync().deletedAccounts, [account.id]);
+      assertEqual(FinanceData.getPendingSync().entries, []);
+      assertEqual(FinanceData.getPendingSync().templates, []);
     } finally {
       window.SupabaseAuth = previousAuth;
     }
@@ -916,6 +1177,34 @@ describe('Privacidade, payloads e autenticação', () => {
     assertEqual(calls.length, 3);
   });
 
+  itAsync('faz upsert do perfil com o UID autenticado na tabela profiles', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    let upsertTable = '';
+    let upsertPayload = null;
+    window.SupabaseAuth.client = {
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'profile-user' } } }, error: null }) },
+      from(table) {
+        upsertTable = table;
+        return { upsert: async payload => { upsertPayload = payload; return { error: null }; } };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.saveCloudProfile(
+        { name: 'Nome', avatar: 'data:image/jpeg;base64,abc' },
+        'profile-user'
+      );
+      assertTrue(result.success);
+      assertEqual(upsertTable, 'profiles');
+      assertEqual(upsertPayload, {
+        id: 'profile-user',
+        name: 'Nome',
+        avatar: 'data:image/jpeg;base64,abc'
+      });
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
   itAsync('atualiza a senha por meio do cliente autenticado', async () => {
     const previousClient = window.SupabaseAuth.client;
     let updatedPassword = '';
@@ -935,9 +1224,190 @@ describe('Privacidade, payloads e autenticação', () => {
     }
   });
 
+  describe('Perfil — sincronização e enquadramento do avatar', () => {
+    it('calcula um recorte que cobre o quadro, limita deslocamento e respeita zoom mínimo/máximo', () => {
+      const crop = window.GastoProAvatarCrop.computeCropRect(800, 400, 1, 900, -900);
+      assertTrue(crop.width <= 800 && crop.height <= 400);
+      assertTrue(crop.x >= 0 && crop.y >= 0);
+      assertTrue(crop.x + crop.width <= 800 && crop.y + crop.height <= 400);
+      const minimum = window.GastoProAvatarCrop.computeCropRect(800, 400, 0.1, 0, 0);
+      const maximum = window.GastoProAvatarCrop.computeCropRect(800, 400, 20, 0, 0);
+      assertEqual(minimum.zoom, 1);
+      assertEqual(maximum.zoom, 3);
+      assertTrue(maximum.width <= 800 && maximum.height <= 400);
+    });
+
+    itAsync('mantém perfil pendente após falha de upsert e tenta novamente', async () => {
+      setupMockLocalStorage();
+      const userId = 'profile-pending-user';
+      localStorage.setItem('gastopro_last_uid', userId);
+      FinanceData.saveProfile({ name: 'Editado', avatar: 'foto', userId }, { queueSync: true });
+      const attempts = [];
+      const previousAuth = window.SupabaseAuth;
+      window.SupabaseAuth = {
+        saveCloudProfile: async profile => {
+          attempts.push(profile);
+          return attempts.length === 1
+            ? { success: false, error: new Error('offline') }
+            : { success: true };
+        },
+        saveCloudEntries: async () => ({ success: true }),
+        saveCloudTemplates: async () => ({ success: true }),
+        deleteCloudEntries: async () => ({ success: true }),
+        deleteCloudTemplates: async () => ({ success: true }),
+        saveCloudGoals: async () => ({ success: true }),
+        deleteCloudGoals: async () => ({ success: true }),
+        saveCloudAccounts: async () => ({ success: true }),
+        deleteCloudAccounts: async () => ({ success: true })
+      };
+      try {
+        const failed = await FinanceData.flushPendingSync(userId);
+        assertFalse(failed.success);
+        assertTrue(FinanceData.getPendingSync().profile);
+        const retried = await FinanceData.flushPendingSync(userId);
+        assertTrue(retried.success);
+        assertFalse(FinanceData.getPendingSync().profile);
+        assertEqual(attempts.length, 2);
+      } finally {
+        window.SupabaseAuth = previousAuth;
+      }
+    });
+
+    it('mantém edição local de perfil pendente; sem pendência, aplica dados da nuvem', () => {
+      setupMockLocalStorage();
+      FinanceData.saveProfile({ name: 'Local', avatar: 'foto-local', userId: 'profile-merge-user' });
+      FinanceData.savePendingSync({ ...FinanceData.getPendingSync(), profile: true });
+      FinanceData.mergeCloudProfile({ id: 'profile-merge-user', name: 'Nuvem', avatar: 'foto-nuvem' });
+      assertEqual(FinanceData.getProfile().name, 'Local');
+      assertEqual(FinanceData.getProfile().avatar, 'foto-local');
+      FinanceData.savePendingSync({ ...FinanceData.getPendingSync(), profile: false });
+      FinanceData.mergeCloudProfile({ id: 'profile-merge-user', name: 'Nuvem', avatar: 'foto-nuvem' });
+      assertEqual(FinanceData.getProfile().name, 'Nuvem');
+      assertEqual(FinanceData.getProfile().avatar, 'foto-nuvem');
+    });
+
+    it('usa o nome do cadastro somente quando não há nome local nem de profiles', () => {
+      assertEqual(window.GastoProProfileHelpers.getInitialName('', '', 'Cadastro', 'email'), 'Cadastro');
+      assertEqual(window.GastoProProfileHelpers.getInitialName('Local', 'Nuvem', 'Cadastro', 'email'), 'Nuvem');
+      assertEqual(window.GastoProProfileHelpers.getInitialName('Local', '', 'Cadastro', 'email'), 'Local');
+    });
+  });
+
+  itAsync('distingue sessão válida, ausência confirmada e verificação indeterminada', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const user = { id: 'user-session-state' };
+    const responses = [
+      { data: { session: { user } }, error: null },
+      { data: { session: null }, error: null },
+      { data: { session: null }, error: new Error('offline') },
+      { data: { session: null }, error: null },
+      { data: { session: { user } }, error: null }
+    ];
+    window.SupabaseAuth.client = {
+      auth: { getSession: async () => responses.shift() }
+    };
+    try {
+      assertEqual(await window.SupabaseAuth.getSessionState(), { status: 'authenticated', user });
+      assertEqual(await window.SupabaseAuth.getSessionState(), { status: 'signed_out', user: null });
+      const indeterminate = await window.SupabaseAuth.getSessionState();
+      assertEqual(indeterminate.status, 'indeterminate');
+      assertNull(await window.SupabaseAuth.getSessionUser());
+      assertEqual(await window.SupabaseAuth.getSessionUser(), user);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
   it('aceita somente senhas com oito ou mais caracteres', () => {
     assertFalse(isValidPassword('1234567'));
     assertTrue(isValidPassword('12345678'));
+  });
+});
+
+describe('Recuperação de sessão', () => {
+  it('limpa dados de sessão expirada somente quando a fila está vazia', () => {
+    assertEqual(window.GastoProSessionHelpers.getSignedOutAction(true, false), 'clear');
+    assertEqual(window.GastoProSessionHelpers.getSignedOutAction(true, true), 'preserve-and-login');
+    assertEqual(window.GastoProSessionHelpers.getSignedOutAction(false, true), 'preserve');
+    assertFalse(window.GastoProSessionHelpers.shouldClearLocalData('indeterminate', true, false));
+    assertFalse(window.GastoProSessionHelpers.shouldClearLocalData('signed_out', true, true));
+    assertTrue(window.GastoProSessionHelpers.shouldClearLocalData('signed_out', true, false));
+  });
+
+  it('preserva a sessão expirada com cada tipo de alteração pendente', () => {
+    const pendingChanges = [
+      { entries: ['entry'] },
+      { templates: ['template'] },
+      { goals: ['Mercado'] },
+      { accounts: ['account'] },
+      { deletedEntries: ['entry'] },
+      { deletedTemplates: ['template'] },
+      { deletedGoals: ['Mercado'] },
+      { deletedAccounts: ['account'] }
+    ];
+    pendingChanges.forEach(changes => {
+      setupMockLocalStorage();
+      FinanceData.savePendingSync({ full: false, ...changes });
+      assertEqual(
+        window.GastoProSessionHelpers.getSignedOutAction(true, FinanceData.hasPendingSync()),
+        'preserve-and-login'
+      );
+    });
+  });
+
+  itAsync('login na mesma conta mantém a fila e sincroniza as alterações pendentes', async () => {
+    setupMockLocalStorage();
+    const userId = 'same-account';
+    const entry = makeIncome({ id: crypto.randomUUID(), desc: 'Mudança pendente' });
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveEntries([entry], { flush: false });
+    const sentEntries = [];
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: async entries => { sentEntries.push(...entries); return { success: true }; },
+      saveCloudTemplates: async () => ({ success: true }),
+      deleteCloudEntries: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true }),
+      saveCloudGoals: async () => ({ success: true }),
+      deleteCloudGoals: async () => ({ success: true }),
+      saveCloudAccounts: async () => ({ success: true }),
+      deleteCloudAccounts: async () => ({ success: true })
+    };
+    try {
+      assertEqual(
+        window.GastoProSessionHelpers.getAccountSwitchAction(userId, userId, true),
+        'continue'
+      );
+      assertFalse(FinanceData.activateUser(userId));
+      const result = await FinanceData.prepareLocalDataForSync(userId);
+      assertTrue(result.success);
+      assertEqual(sentEntries, [entry]);
+      assertFalse(FinanceData.hasPendingSync());
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  it('bloqueia login em outra conta quando há alterações pendentes', () => {
+    assertEqual(
+      window.GastoProSessionHelpers.getAccountSwitchAction('account-a', 'account-b', true),
+      'confirm-discard'
+    );
+    assertEqual(
+      window.GastoProSessionHelpers.getAccountSwitchAction('account-a', 'account-b', false),
+      'continue'
+    );
+  });
+
+  it('só permite descartar alterações de outra conta após confirmação explícita', () => {
+    assertEqual(
+      window.GastoProSessionHelpers.getAccountSwitchAction('account-a', 'account-b', true, false),
+      'confirm-discard'
+    );
+    assertEqual(
+      window.GastoProSessionHelpers.getAccountSwitchAction('account-a', 'account-b', true, true),
+      'discard-and-continue'
+    );
   });
 });
 
@@ -1010,6 +1480,14 @@ describe('Bloco 2 — dívida, orçamento, diagnóstico e categorias', () => {
 });
 
 describe('Bloco 2 — backup JSON', () => {
+  const validateBackup = overrides => GastoProBackupHelpers.validate(JSON.stringify({
+    version: '4.0',
+    entries: [],
+    templates: [],
+    goals: [],
+    ...overrides
+  }));
+
   it('valida o backup e aceita apenas arrays limitados e versão textual', () => {
     const validBackup = JSON.stringify({
       version: '3.8',
@@ -1026,6 +1504,138 @@ describe('Bloco 2 — backup JSON', () => {
     assertTrue(GastoProBackupHelpers.validate(JSON.stringify({
       version: '3.8', entries: new Array(5001), templates: [], goals: []
     })).error);
+  });
+
+  it('rejeita booleanos não reais nos lançamentos e templates', () => {
+    const entryId = crypto.randomUUID();
+    const templateId = crypto.randomUUID();
+    const invalidEntries = validateBackup({
+      entries: [makeIncome({ id: entryId, paid: 'false' })]
+    });
+    assertTrue(invalidEntries.error.includes(`Lançamento ${entryId}`));
+    assertTrue(validateBackup({
+      templates: [makeFixed({
+        id: templateId, startMonth: '2026-01', isDebt: 0, active: true
+      })]
+    }).error.includes(`Gasto fixo ${templateId}`));
+    assertTrue(validateBackup({
+      templates: [makeFixed({
+        id: templateId, startMonth: '2026-01', isDebt: false, active: 'true'
+      })]
+    }).error.includes(`Gasto fixo ${templateId}`));
+  });
+
+  it('valida objeto, meses civis, valores booleanos e período de paidMonths', () => {
+    const id = crypto.randomUUID();
+    const template = makeFixed({
+      id, startMonth: '2026-01', endMonth: '2026-03',
+      isDebt: false, active: true, paidMonths: { '2026-02': true }
+    });
+    assertFalse(validateBackup({ templates: [template] }).error);
+    for (const paidMonths of [
+      [],
+      { '2026-02': 'true' },
+      { '2026-13': true },
+      { '2025-12': true },
+      { '2026-04': false }
+    ]) {
+      const result = validateBackup({ templates: [{ ...template, paidMonths }] });
+      assertTrue(result.error.includes(`Gasto fixo ${id}`), JSON.stringify(paidMonths));
+    }
+  });
+
+  it('aceita somente valores amount numéricos finitos dentro do limite do banco', () => {
+    assertFalse(validateBackup({
+      entries: [makeIncome({ id: crypto.randomUUID(), amount: 9999999999.99 })]
+    }).error);
+    for (const amount of ['25.50', -0.01, 10000000000, 1e100]) {
+      const id = crypto.randomUUID();
+      const result = validateBackup({ entries: [makeIncome({ id, amount })] });
+      assertTrue(result.error.includes(`Lançamento ${id}`), String(amount));
+    }
+  });
+
+  it('rejeita datas civis impossíveis e aceita somente tipos conhecidos', () => {
+    const dateId = crypto.randomUUID();
+    const typeId = crypto.randomUUID();
+    assertTrue(validateBackup({
+      entries: [makeIncome({ id: dateId, date: '2026-02-31' })]
+    }).error.includes(`Lançamento ${dateId}`));
+    assertTrue(validateBackup({
+      entries: [makeIncome({ id: typeId, type: 'expense' })]
+    }).error.includes(`Lançamento ${typeId}`));
+  });
+
+  it('aplica limites de descrição e categoria das constraints do banco', () => {
+    const id = crypto.randomUUID();
+    assertTrue(validateBackup({
+      entries: [makeIncome({ id, desc: 'x'.repeat(301) })]
+    }).error.includes(`Lançamento ${id}`));
+    assertTrue(validateBackup({
+      entries: [makeIncome({ id, category: '' })]
+    }).error.includes(`Lançamento ${id}`));
+    assertTrue(validateBackup({
+      goals: [{ id: 'goal-1', category: 'x'.repeat(101), limit: 1 }]
+    }).error.includes('Meta'));
+  });
+
+  it('rejeita IDs duplicados no arquivo de backup', () => {
+    const id = crypto.randomUUID();
+    const result = validateBackup({
+      entries: [makeIncome({ id }), makeIncome({ id, desc: 'Duplicado' })]
+    });
+    assertTrue(result.error.includes(id));
+    assertTrue(result.error.includes('duplicado'));
+  });
+
+  it('valida contas, e desvincula accountId ausente sem rejeitar o lançamento', () => {
+    const accountId = crypto.randomUUID();
+    const orphanEntryId = crypto.randomUUID();
+    for (const account of [
+      { id: accountId, name: '', type: 'PF', initialBalance: 0 },
+      { id: accountId, name: 'Conta', type: 'conta', initialBalance: 0 },
+      { id: accountId, name: 'Conta', type: 'PJ', initialBalance: '10' },
+      { id: accountId, name: 'Conta', type: 'PJ', initialBalance: 10000000000 }
+    ]) {
+      assertTrue(validateBackup({ accounts: [account] }).error.includes('Conta'));
+    }
+    const valid = validateBackup({
+      entries: [makeIncome({ id: orphanEntryId, accountId })]
+    });
+    assertFalse(valid.error);
+    assertEqual(valid.entries[0].accountId, null);
+  });
+
+  itAsync('rejeita todo o arquivo antes de alterar dados locais e informa tipo e ID do primeiro erro', async () => {
+    setupMockLocalStorage();
+    const existing = makeIncome({ id: crypto.randomUUID(), desc: 'Já existente' });
+    FinanceData.saveEntries([existing]);
+    const invalidId = crypto.randomUUID();
+    const result = await FinanceData.importJSON(JSON.stringify({
+      version: '4.0',
+      entries: [makeIncome({ id: invalidId, paid: 'false' })],
+      templates: [],
+      goals: []
+    }), 'replace');
+    assertFalse(result.success);
+    assertTrue(result.error.includes(`Lançamento ${invalidId}`));
+    assertEqual(FinanceData.getEntries(), [existing]);
+  });
+
+  it('continua aceitando backups antigos válidos sem accounts e flags opcionais', () => {
+    const backup = validateBackup({
+      version: '3.8',
+      entries: [makeIncome({ id: crypto.randomUUID() })],
+      templates: [makeFixed({ id: crypto.randomUUID(), startMonth: '2026-01' })],
+      goals: [{ id: 'goal-1', category: 'Mercado', limit: 500 }]
+    });
+    assertFalse(backup.error);
+    assertEqual(backup.accounts, []);
+    assertEqual(backup.entries[0].paid, true);
+    assertEqual(backup.entries[0].isDebt, false);
+    assertEqual(backup.entries[0].active, true);
+    assertEqual(backup.templates[0].isDebt, false);
+    assertEqual(backup.templates[0].active, true);
   });
 
   it('mescla por ID e substitui integralmente sem compartilhar referências', () => {
@@ -1129,6 +1739,7 @@ describe('FinanceData — exportJSON()', () => {
       assertTrue(Array.isArray(backup.entries), 'entries deve ser array');
       assertTrue(Array.isArray(backup.templates), 'templates deve ser array');
       assertTrue(Array.isArray(backup.goals), 'goals deve ser array');
+      assertTrue(Array.isArray(backup.accounts), 'accounts deve ser array');
       assertEqual(backup.entries.length, 1);
       assertEqual(backup.templates.length, 1);
     } finally {
@@ -2436,6 +3047,149 @@ describe('FinanceData — exclusão durante sincronização', () => {
     assertTrue(goals.find(goal => goal.category === 'Moradia').id.startsWith('goal-'));
   });
 
+  itAsync('preserva edição local de lançamento após falha de envio e merge da nuvem', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-entry-merge-after-failure';
+    const local = makeIncome({ id: crypto.randomUUID(), desc: 'Edição local' });
+    const remote = { ...local, desc: 'Versão antiga da nuvem' };
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([local]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    FinanceData.savePendingSync({
+      full: false, entries: [local.id], templates: [], deletedEntries: [], deletedTemplates: []
+    });
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: async entries => ({ success: false, failedIds: entries.map(item => item.id) }),
+      saveCloudTemplates: async () => ({ success: true }),
+      deleteCloudEntries: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true })
+    };
+    try {
+      assertFalse((await FinanceData.flushPendingSync(userId)).success);
+      assertTrue(FinanceData.mergeCloudData(userId, [remote], [], false));
+      assertEqual(FinanceData.getEntries()[0].desc, 'Edição local');
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('preserva edição local de template após falha de envio e merge da nuvem', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-template-merge-after-failure';
+    const local = makeFixed({ id: crypto.randomUUID(), desc: 'Edição local' });
+    const remote = { ...local, desc: 'Versão antiga da nuvem' };
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([local]));
+    FinanceData.savePendingSync({
+      full: false, entries: [], templates: [local.id], deletedEntries: [], deletedTemplates: []
+    });
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: async () => ({ success: true }),
+      saveCloudTemplates: async templates => ({ success: false, failedIds: templates.map(item => item.id) }),
+      deleteCloudEntries: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true })
+    };
+    try {
+      assertFalse((await FinanceData.flushPendingSync(userId)).success);
+      assertTrue(FinanceData.mergeCloudData(userId, [], [remote], false));
+      assertEqual(FinanceData.getTemplates()[0].desc, 'Edição local');
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  it('não recria lançamento com exclusão pendente durante o merge', () => {
+    setupMockLocalStorage();
+    const userId = 'user-entry-delete-merge';
+    const deleted = makeIncome({ id: crypto.randomUUID() });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    FinanceData.savePendingSync({
+      full: false, entries: [], templates: [], deletedEntries: [deleted.id], deletedTemplates: []
+    });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [deleted], [], false));
+    assertEqual(FinanceData.getEntries(), []);
+  });
+
+  it('não recria template com exclusão pendente durante o merge', () => {
+    setupMockLocalStorage();
+    const userId = 'user-template-delete-merge';
+    const deleted = makeFixed({ id: crypto.randomUUID() });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    FinanceData.savePendingSync({
+      full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [deleted.id]
+    });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [], [deleted], false));
+    assertEqual(FinanceData.getTemplates(), []);
+  });
+
+  it('atualiza lançamentos e templates não pendentes com a versão da nuvem', () => {
+    setupMockLocalStorage();
+    const userId = 'user-cloud-updates-nonpending';
+    const localEntry = makeIncome({ id: crypto.randomUUID(), desc: 'Antigo' });
+    const localTemplate = makeFixed({ id: crypto.randomUUID(), desc: 'Antigo template' });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([localEntry]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([localTemplate]));
+    FinanceData.savePendingSync({
+      full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: []
+    });
+
+    assertTrue(FinanceData.mergeCloudData(
+      userId,
+      [{ ...localEntry, desc: 'Atualizado' }],
+      [{ ...localTemplate, desc: 'Template atualizado' }],
+      false
+    ));
+    assertEqual(FinanceData.getEntries()[0].desc, 'Atualizado');
+    assertEqual(FinanceData.getTemplates()[0].desc, 'Template atualizado');
+  });
+
+  it('não recria meta por categoria com exclusão pendente durante o merge', () => {
+    setupMockLocalStorage();
+    const userId = 'user-goal-delete-merge';
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_goals_v1', JSON.stringify([]));
+    FinanceData.savePendingSync({
+      full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
+      goals: [], deletedGoals: ['Mercado']
+    });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [], [], false, [
+      { category: 'Mercado', limit: 500 }
+    ]));
+    assertEqual(FinanceData.getGoals(), []);
+  });
+
+  it('não recria conta com exclusão pendente durante o merge', () => {
+    setupMockLocalStorage();
+    const userId = 'user-account-delete-merge';
+    const deleted = {
+      id: crypto.randomUUID(), name: 'Removida', institution: null, type: 'PF', initialBalance: 0
+    };
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_accounts_v1', JSON.stringify([]));
+    FinanceData.savePendingSync({
+      full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
+      goals: [], deletedGoals: [], accounts: [], deletedAccounts: [deleted.id]
+    });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [], [], false, [], [deleted]));
+    assertEqual(FinanceData.getAccounts(), []);
+  });
+
   itAsync('clearAll enfileira a exclusão de todas as metas locais', async () => {
     setupMockLocalStorage();
     const userId = 'user-clear-goals';
@@ -2662,6 +3416,102 @@ describe('Relatório Financeiro — buildReportData', () => {
     assertEqual(report.debts.items[0].isOverdue, true);
     assertEqual(report.debts.items[0].status, '12 parcela(s) em aberto');
     assertEqual(report.debts.totalRemaining, 3000);
+  });
+});
+
+describe('Exclusão de conta do usuário', () => {
+  itAsync('deleteAccount chama delete_my_account e informa sucesso', async () => {
+    const previousClient = SupabaseAuth.client;
+    let rpcName = null;
+    SupabaseAuth.client = {
+      rpc: async name => {
+        rpcName = name;
+        return { error: null };
+      }
+    };
+    try {
+      assertEqual(await SupabaseAuth.deleteAccount(), { success: true });
+      assertEqual(rpcName, 'delete_my_account');
+    } finally {
+      SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('deleteAccount retorna o erro recebido do RPC sem lançar exceção', async () => {
+    const previousClient = SupabaseAuth.client;
+    const rpcError = { message: 'Falha simulada', code: 'TEST' };
+    SupabaseAuth.client = {
+      rpc: async () => ({ error: rpcError })
+    };
+    try {
+      const result = await SupabaseAuth.deleteAccount();
+      assertFalse(result.success);
+      assertEqual(result.error.message, rpcError.message);
+      assertEqual(result.error.code, rpcError.code);
+    } finally {
+      SupabaseAuth.client = previousClient;
+    }
+  });
+
+  it('só aceita o texto exato EXCLUIR', () => {
+    assertTrue(window.GastoProAccountDeletion.isConfirmationValid('EXCLUIR'));
+    assertFalse(window.GastoProAccountDeletion.isConfirmationValid('excluir'));
+    assertFalse(window.GastoProAccountDeletion.isConfirmationValid(' EXCLUIR'));
+    assertFalse(window.GastoProAccountDeletion.isConfirmationValid('EXCLUIR '));
+  });
+
+  itAsync('limpa todos os dados e a sessão local após excluir a conta com sucesso', async () => {
+    setupMockLocalStorage();
+    FinanceData.savePendingSync({
+      full: true,
+      entries: ['entry-pending'],
+      templates: ['template-pending'],
+      deletedEntries: ['entry-deleted'],
+      deletedTemplates: ['template-deleted'],
+      goals: ['Mercado'],
+      deletedGoals: ['Transporte'],
+      accounts: ['account-pending'],
+      deletedAccounts: ['account-deleted']
+    });
+    localStorage.setItem('gastopro_entries_v4', JSON.stringify([{ id: 'local-entry' }]));
+    localStorage.setItem('gastopro_profile_real_v2', JSON.stringify({ name: 'Pessoa', avatar: 'foto' }));
+    localStorage.setItem('gastopro_last_uid', 'user-delete');
+    localStorage.setItem('sb-project-auth-token', 'sessao');
+    let signOutScope = null;
+
+    const result = await window.GastoProAccountDeletion.deleteAccountAndClearPendingSync({
+      deleteAccount: async () => ({ success: true }),
+      signOut: async scope => {
+        signOutScope = scope;
+        localStorage.removeItem('sb-project-auth-token');
+      }
+    }, FinanceData);
+
+    assertTrue(result.success);
+    assertFalse(FinanceData.hasPendingSync());
+    assertEqual(signOutScope, 'local');
+    assertEqual(localStorage.length, 0);
+  });
+
+  itAsync('preserva dados, fila e sessão se a exclusão no servidor falhar', async () => {
+    setupMockLocalStorage();
+    FinanceData.savePendingSync({ full: true, entries: ['pending-entry'] });
+    localStorage.setItem('gastopro_entries_v4', JSON.stringify([{ id: 'local-entry' }]));
+    localStorage.setItem('gastopro_last_uid', 'user-delete');
+    localStorage.setItem('sb-project-auth-token', 'sessao');
+    let signedOut = false;
+
+    const result = await window.GastoProAccountDeletion.deleteAccountAndClearPendingSync({
+      deleteAccount: async () => ({ success: false, error: new Error('RPC falhou') }),
+      signOut: async () => { signedOut = true; }
+    }, FinanceData);
+
+    assertFalse(result.success);
+    assertTrue(FinanceData.hasPendingSync());
+    assertEqual(localStorage.getItem('gastopro_entries_v4'), JSON.stringify([{ id: 'local-entry' }]));
+    assertEqual(localStorage.getItem('gastopro_last_uid'), 'user-delete');
+    assertEqual(localStorage.getItem('sb-project-auth-token'), 'sessao');
+    assertFalse(signedOut);
   });
 });
 

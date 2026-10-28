@@ -233,6 +233,9 @@
               <button type="button" id="logoutBtn" class="btn-auth-logout">
                 <i class="fa-solid fa-arrow-right-from-bracket"></i> Sair da Conta
               </button>
+              <button type="button" id="deleteAccountBtn" class="btn-auth-logout btn-delete-account">
+                <i class="fa-solid fa-user-xmark"></i> Excluir minha conta
+              </button>
             </div>
           </div>
 
@@ -791,6 +794,31 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="deleteAccountModal" aria-hidden="true">
+    <section class="modal-content modal-auth-content" role="dialog" aria-modal="true"
+      aria-labelledby="deleteAccountTitle" tabindex="-1">
+      <button type="button" class="modal-close-btn auth-close-btn" id="closeDeleteAccountModalBtn"
+        title="Fechar" aria-label="Fechar exclusão da conta">&times;</button>
+      <h2 id="deleteAccountTitle">Excluir minha conta</h2>
+      <p class="account-delete-warning">
+        Esta ação apagará permanentemente a conta e os dados da nuvem e deste aparelho. É irreversível.
+        Recomendamos exportar um backup JSON antes de continuar.
+      </p>
+      <button type="button" id="downloadBackupBeforeAccountDeletion" class="btn-secondary">
+        <i class="fa-solid fa-download"></i> Baixar backup JSON
+      </button>
+      <div class="form-group auth-field">
+        <label for="deleteAccountConfirmation">Digite EXCLUIR para confirmar</label>
+        <input type="text" id="deleteAccountConfirmation" autocomplete="off" spellcheck="false" />
+      </div>
+      <p id="deleteAccountError" class="account-delete-error" role="alert" hidden></p>
+      <div class="modal-actions">
+        <button type="button" id="cancelDeleteAccountBtn" class="btn-secondary" data-modal-cancel>Cancelar</button>
+        <button type="button" id="confirmDeleteAccountBtn" class="btn-danger" disabled>Excluir conta</button>
+      </div>
+    </section>
+  </div>
+
   <div class="modal-overlay" id="passwordRecoveryModal" aria-hidden="true">
     <section class="modal-content modal-auth-content" role="dialog" aria-modal="true"
       aria-labelledby="passwordRecoveryTitle" tabindex="-1">
@@ -918,13 +946,6 @@
           </div>
         </div>
 
-        <div class="auth-options-row">
-          <label class="auth-remember-label">
-            <input type="checkbox" id="loginRemember" checked />
-            <span>Manter-me conectado</span>
-          </label>
-        </div>
-
         <button type="submit" class="btn-primary btn-auth-submit" id="submitLoginBtn">
           <span>Entrar no GastoPro</span>
           <i class="fa-solid fa-arrow-right"></i>
@@ -1001,6 +1022,55 @@
         </button>
       </div>
     </div>
+  </div>
+
+  <div class="modal-overlay" id="discardPendingModal" aria-hidden="true">
+    <section class="modal-content modal-auth-content" role="dialog" aria-modal="true"
+      aria-labelledby="discardPendingTitle" aria-describedby="discardPendingDescription" tabindex="-1">
+      <h2 id="discardPendingTitle">Alterações não sincronizadas</h2>
+      <p id="discardPendingDescription" class="account-delete-warning">
+        Há alterações da conta anterior que ainda não foram enviadas. Se entrar em outra conta, elas não serão
+        sincronizadas. Você pode cancelar e entrar novamente na conta anterior, ou descartar permanentemente
+        essas alterações deste aparelho e continuar.
+      </p>
+      <p>Se quiser guardar uma cópia, exporte o backup JSON antes de descartar.</p>
+      <div class="modal-actions discard-pending-actions">
+        <button type="button" class="btn-secondary" id="cancelDiscardPendingBtn" data-modal-cancel>
+          Cancelar e entrar na mesma conta
+        </button>
+        <button type="button" class="btn-secondary" id="exportBeforeDiscardBtn">
+          Exportar backup JSON
+        </button>
+        <button type="button" class="btn-danger" id="confirmDiscardPendingBtn">
+          Descartar alterações e entrar
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-overlay" id="avatarCropModal" aria-hidden="true">
+    <section class="modal-content avatar-crop-dialog" role="dialog" aria-modal="true"
+      aria-labelledby="avatarCropTitle" aria-describedby="avatarCropHelp" tabindex="-1">
+      <button type="button" class="modal-close-btn" id="closeAvatarCropBtn"
+        aria-label="Cancelar ajuste da foto" data-modal-cancel>&times;</button>
+      <h2 id="avatarCropTitle">Ajustar foto do perfil</h2>
+      <p id="avatarCropHelp">Arraste para posicionar. Use as setas para mover e +/− para ajustar o zoom.</p>
+      <div id="avatarCropFrame" class="avatar-crop-frame" tabindex="0" role="img"
+        aria-label="Prévia circular da foto; use as setas para posicionar e mais ou menos para ajustar o zoom">
+        <img id="avatarCropImage" alt="" draggable="false" />
+      </div>
+      <div class="avatar-zoom-controls">
+        <button type="button" id="avatarZoomOutBtn" class="btn-secondary" aria-label="Diminuir zoom">−</button>
+        <input type="range" id="avatarZoomSlider" min="1" max="3" step="0.01" value="1"
+          aria-label="Zoom da foto" />
+        <button type="button" id="avatarZoomInBtn" class="btn-secondary" aria-label="Aumentar zoom">+</button>
+      </div>
+      <p id="avatarCropError" class="account-delete-error" role="alert" hidden></p>
+      <div class="modal-actions">
+        <button type="button" id="cancelAvatarCropBtn" class="btn-secondary" data-modal-cancel>Cancelar</button>
+        <button type="button" id="saveAvatarCropBtn" class="btn-primary">Salvar foto</button>
+      </div>
+    </section>
   </div>
 
 
@@ -1396,10 +1466,9 @@
 
         <h4>2. Dados coletados e finalidade</h4>
         <ul>
-          <li><strong>Dados financeiros</strong>: no modo local, ficam no navegador; com login, também são sincronizados com o Supabase.</li>
-          <li><strong>Nome e foto de perfil</strong>: ficam apenas no aparelho e não são sincronizados com a nuvem.</li>
-          <li><strong>Metas por categoria</strong>: ficam neste aparelho e, com login, também são sincronizadas com o Supabase.</li>
-          <li><strong>E-mail e senha</strong>: usados exclusivamente para autenticação via Supabase quando você opta por criar conta. Senhas nunca são armazenadas localmente.</li>
+          <li><strong>Lançamentos, gastos fixos/dívidas, metas e contas cadastradas</strong>: no modo local, ficam no navegador; com login, são sincronizados com o Supabase e protegidos por RLS.</li>
+          <li><strong>Nome e foto de perfil</strong>: quando você usa login, são enviados à tabela <code>profiles</code> do Supabase, protegida por RLS; também ficam armazenados neste aparelho.</li>
+          <li><strong>E-mail e senha</strong>: usados para autenticação via Supabase quando você cria uma conta; o e-mail e o nome informado no cadastro são guardados pela conta de login. Senhas não são armazenadas pelo app no localStorage.</li>
           <li><strong>Sessão de login</strong>: é mantida pelo cliente Supabase no armazenamento do navegador.</li>
         </ul>
 
@@ -1410,12 +1479,11 @@
 
         <h4>4. Seus direitos (LGPD — Lei 13.709/2018)</h4>
         <ul>
-          <li>✅ <strong>Acesso</strong>: você pode exportar todos os seus dados pelo botão "Baixar Backup".</li>
-          <li><strong>Reset com login</strong>: apaga os dados deste aparelho e solicita a exclusão dos dados sincronizados na nuvem.</li>
-          <li><strong>Reset sem login</strong>: apaga somente os dados deste aparelho.</li>
-          <li><strong>Logout</strong>: encerra a sessão e apaga os dados locais deste aparelho; os dados sincronizados na nuvem permanecem até que a exclusão seja solicitada.</li>
-          <li><strong>Exclusão da conta</strong>: solicite a exclusão da conta e dos dados na nuvem pelo canal privado de contato informado nesta política.</li>
-          <li>✅ <strong>Portabilidade</strong>: o backup JSON pode ser importado em outras ferramentas.</li>
+          <li><strong>Acesso e portabilidade</strong>: o backup JSON exporta exatamente versão, data de exportação, lançamentos, templates, metas e contas cadastradas. Não inclui perfil, nome, foto, e-mail, UID nem sessão.</li>
+          <li><strong>Reset com login</strong>: apaga lançamentos, templates, metas e contas deste aparelho e solicita a exclusão desses dados sincronizados na nuvem. Mantém a sessão de login, o nome e a foto locais.</li>
+          <li><strong>Reset sem login</strong>: apaga lançamentos, templates, metas e contas somente deste aparelho; mantém o nome e a foto locais.</li>
+          <li><strong>Logout</strong>: encerra a sessão e apaga os dados locais deste aparelho; os dados sincronizados na nuvem permanecem.</li>
+          <li><strong>Exclusão da conta</strong>: o botão "Excluir minha conta" apaga a conta de login e os dados na nuvem e neste aparelho. A ação é irreversível; recomendamos exportar o backup antes.</li>
         </ul>
 
         <h4>5. Compartilhamento de dados</h4>

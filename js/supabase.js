@@ -30,8 +30,29 @@ function isValidCloudDate(value) {
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 }
 
+function isValidCloudUuid(value) {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function validateCloudPayload(item, kind) {
   if (!item || typeof item !== 'object') return 'Registro inválido.';
+  if (kind === 'accounts') {
+    const balance = item.initialBalance;
+    if (typeof item.name !== 'string' || !item.name.trim() || item.name.trim().length > 100) {
+      return 'O nome da conta deve ter de 1 a 100 caracteres.';
+    }
+    if (item.institution != null &&
+      (typeof item.institution !== 'string' || item.institution.length > 100)) {
+      return 'A instituição deve ter até 100 caracteres.';
+    }
+    if (!['PF', 'PJ'].includes(item.type)) return 'O tipo da conta deve ser PF ou PJ.';
+    if (balance == null || balance === '' || typeof balance === 'boolean' ||
+      !Number.isFinite(Number(balance)) || Math.abs(Number(balance)) > 9999999999.99) {
+      return 'O saldo inicial da conta deve ser válido.';
+    }
+    return null;
+  }
   if (item.amount == null || item.amount === '' || typeof item.amount === 'boolean') return 'O valor deve ser finito e maior ou igual a zero.';
   if (!Number.isFinite(Number(item.amount)) || Number(item.amount) < 0) return 'O valor deve ser finito e maior ou igual a zero.';
   if (typeof item.desc !== 'string' || item.desc.length < 1 || item.desc.length > 300) return 'A descrição deve ter de 1 a 300 caracteres.';
@@ -40,6 +61,7 @@ function validateCloudPayload(item, kind) {
   if (kind === 'entries') {
     if (!['income', 'variable', 'fixed', 'debt'].includes(item.type)) return 'Tipo de lançamento inválido.';
     if (!isValidCloudDate(item.date)) return 'A data do lançamento deve ser uma data válida no formato AAAA-MM-DD.';
+    if (item.accountId != null && !isValidCloudUuid(item.accountId)) return 'A conta do lançamento deve ter um UUID válido.';
     return null;
   }
 
@@ -48,6 +70,7 @@ function validateCloudPayload(item, kind) {
     if (!isValidCloudMonth(item.startMonth)) return 'O mês inicial deve estar no formato AAAA-MM.';
     if (item.endMonth && !isValidCloudMonth(item.endMonth)) return 'O mês final deve estar no formato AAAA-MM.';
     if (item.day != null && !/^\d{2}$/.test(String(item.day))) return 'O dia deve ter dois dígitos.';
+    if (item.accountId != null && !isValidCloudUuid(item.accountId)) return 'A conta do template deve ter um UUID válido.';
     return null;
   }
 
@@ -94,16 +117,29 @@ const SupabaseAuth = {
     return { failedIds };
   },
 
-  async getSessionUser() {
-    if (!sb) return null;
-    try {
-      const { data: { session }, error } = await sb.auth.getSession();
-      if (error || !session) return null;
-      return session.user;
-    } catch (e) {
-      console.warn('[Supabase] Erro ao obter sessão:', e);
-      return null;
+  async getSessionState() {
+    if (!this.client) {
+      return { status: 'indeterminate', error: new Error('Cliente Supabase não inicializado.') };
     }
+    try {
+      const { data, error } = await this.client.auth.getSession();
+      if (error) {
+        console.warn('[Supabase] Não foi possível verificar a sessão:', error);
+        return { status: 'indeterminate', error };
+      }
+      const user = data && data.session && data.session.user;
+      return user
+        ? { status: 'authenticated', user }
+        : { status: 'signed_out', user: null };
+    } catch (e) {
+      console.warn('[Supabase] Não foi possível verificar a sessão:', e);
+      return { status: 'indeterminate', error: e };
+    }
+  },
+
+  async getSessionUser() {
+    const state = await this.getSessionState();
+    return state.status === 'authenticated' ? state.user : null;
   },
 
   async getAuthenticatedUserId(expectedUserId) {
@@ -145,12 +181,25 @@ const SupabaseAuth = {
     return data;
   },
 
-  async signOut() {
+  async signOut(scope = 'global') {
     if (!sb) return;
-    const { error } = await sb.auth.signOut();
+    const { error } = await sb.auth.signOut({ scope });
     if (error) {
       console.error('[Supabase] Erro ao deslogar:', error);
       throw error;
+    }
+  },
+
+  async deleteAccount() {
+    if (!this.client) {
+      return this.reportCloudError('Cliente não inicializado ao excluir a conta', new Error('Cliente Supabase não inicializado.'));
+    }
+    try {
+      const { error } = await this.client.rpc('delete_my_account');
+      if (error) return this.reportCloudError('Erro ao excluir a conta', error);
+      return { success: true };
+    } catch (e) {
+      return this.reportCloudError('Falha ao excluir a conta', e);
     }
   },
 
@@ -209,7 +258,8 @@ const SupabaseAuth = {
         paid: Boolean(row.paid),
         isDebt: Boolean(row.is_debt),
         debtInfo: row.debt_info,
-        active: row.active !== false
+        active: row.active !== false,
+        accountId: row.account_id || null
       }));
     } catch (e) {
       console.warn('[Supabase] Falha de conexão ao buscar entries:', e);
@@ -256,7 +306,8 @@ const SupabaseAuth = {
         paid: Boolean(entry.paid),
         is_debt: Boolean(entry.isDebt),
         debt_info: entry.debtInfo || null,
-        active: entry.active !== false
+        active: entry.active !== false,
+        account_id: entry.accountId || null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(
@@ -335,7 +386,8 @@ const SupabaseAuth = {
         startMonth: row.start_month,
         endMonth: row.end_month || null,
         day: row.day || '01',
-        paidMonths: row.paid_months || {}
+        paidMonths: row.paid_months || {},
+        accountId: row.account_id || null
       }));
     } catch (e) {
       console.warn('[Supabase] Falha ao buscar templates:', e);
@@ -383,7 +435,8 @@ const SupabaseAuth = {
         start_month: tpl.startMonth,
         end_month: tpl.endMonth || null,
         day: tpl.day || '01',
-        paid_months: tpl.paidMonths || {}
+        paid_months: tpl.paidMonths || {},
+        account_id: tpl.accountId || null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(
@@ -431,6 +484,154 @@ const SupabaseAuth = {
       return { success: true };
     } catch (e) {
       return this.reportCloudError('Falha ao excluir templates na nuvem', e);
+    }
+  },
+
+  async fetchCloudAccounts(userId) {
+    if (!sb) return null;
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return null;
+      const data = await this.fetchAllPages((from, to) => sb
+        .from('accounts')
+        .select('*')
+        .eq('user_id', sessionUserId)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to));
+      if (!data) return null;
+      return data.map(row => ({
+        id: row.id,
+        name: row.name,
+        institution: row.institution || null,
+        type: row.type,
+        initialBalance: Number(row.initial_balance),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }));
+    } catch (e) {
+      console.warn('[Supabase] Falha ao buscar contas:', e);
+      return null;
+    }
+  },
+
+  async saveCloudAccounts(accounts, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao salvar accounts', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao salvar accounts', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      if (!accounts.length) return { success: true };
+
+      const validAccounts = [];
+      const failedIds = [];
+      accounts.forEach(account => {
+        const validationError = validateCloudPayload(account, 'accounts') ||
+          (!isValidCloudUuid(account.id) ? 'A conta ainda não possui um UUID válido.' : null);
+        if (validationError) {
+          failedIds.push(account.id);
+          console.warn('[Supabase] Conta inválida não enviada:', { id: account.id, error: validationError });
+        } else {
+          validAccounts.push(account);
+        }
+      });
+      if (failedIds.length && typeof window.showToast === 'function') {
+        window.showToast('Algumas contas inválidas não foram sincronizadas.');
+      }
+
+      const payload = validAccounts.map(account => ({
+        id: account.id,
+        user_id: sessionUserId,
+        name: account.name.trim(),
+        institution: account.institution || null,
+        type: account.type,
+        initial_balance: Math.round(Number(account.initialBalance) * 100) / 100,
+        ...(account.createdAt ? { created_at: account.createdAt } : {})
+      }));
+      if (payload.length) {
+        const result = await this.upsertWithFallback(
+          rows => sb.from('accounts').upsert(rows),
+          validAccounts,
+          payload
+        );
+        failedIds.push(...result.failedIds);
+      }
+      return failedIds.length
+        ? { success: false, failedIds, error: new Error('Uma ou mais contas não foram sincronizadas.') }
+        : { success: true };
+    } catch (e) {
+      return this.reportCloudError('Falha ao salvar contas na nuvem', e);
+    }
+  },
+
+  async deleteCloudAccounts(accountIds, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao excluir accounts', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao excluir accounts', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      const validIds = accountIds.filter(isValidCloudUuid);
+      if (validIds.length !== accountIds.length) {
+        return this.reportCloudError('ID inválido ao excluir accounts', new Error('A exclusão contém um ID que não é UUID válido.'));
+      }
+      if (!validIds.length) return { success: true };
+      const { error } = await sb.from('accounts').delete()
+        .in('id', validIds)
+        .eq('user_id', sessionUserId);
+      if (error) return this.reportCloudError('Erro ao excluir accounts', error);
+      return { success: true };
+    } catch (e) {
+      return this.reportCloudError('Falha ao excluir contas na nuvem', e);
+    }
+  },
+
+  async fetchCloudProfile(userId) {
+    if (!this.client) return { success: false, error: new Error('Cliente Supabase não inicializado.') };
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return { success: false, error: new Error('Não há uma sessão autenticada correspondente.') };
+      }
+      const { data, error } = await this.client.from('profiles')
+        .select('id,name,avatar')
+        .eq('id', sessionUserId)
+        .maybeSingle();
+      if (error) {
+        return this.reportCloudError('Falha ao buscar perfil', error);
+      }
+      return {
+        success: true,
+        profile: data ? { id: data.id, name: data.name || '', avatar: data.avatar || null } : null
+      };
+    } catch (error) {
+      return this.reportCloudError('Falha ao buscar perfil', error);
+    }
+  },
+
+  async saveCloudProfile(profile, userId) {
+    if (!this.client) return this.reportCloudError('Cliente não inicializado ao salvar perfil', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao salvar perfil', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      if (!profile || typeof profile !== 'object' ||
+        typeof profile.name !== 'string' || profile.name.length > 300 ||
+        (profile.avatar != null &&
+          (typeof profile.avatar !== 'string' || profile.avatar.length > 400000))) {
+        return this.reportCloudError('Perfil inválido ao sincronizar', new Error('Nome ou foto de perfil excede os limites permitidos.'));
+      }
+      const { error } = await this.client.from('profiles').upsert({
+        id: sessionUserId,
+        name: profile.name.trim() || null,
+        avatar: profile.avatar || null
+      });
+      if (error) return this.reportCloudError('Erro ao salvar perfil', error);
+      return { success: true };
+    } catch (error) {
+      return this.reportCloudError('Falha ao salvar perfil na nuvem', error);
     }
   },
 

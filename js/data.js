@@ -13,6 +13,7 @@
    • STORAGE_TEMPLATES → Templates de gastos fixos recorrentes
    • STORAGE_PROFILE   → Dados de perfil do usuário (nome e avatar Base64)
    • STORAGE_GOALS     → Metas por categoria
+   • STORAGE_ACCOUNTS  → Contas bancárias PF/PJ
    • STORAGE_LAST_UID  → UID dono dos dados locais ativos
 
    ESQUEMA DE UM LANÇAMENTO (entry):
@@ -65,8 +66,10 @@ const STORAGE_PROFILE = 'gastopro_profile_real_v2';
 
 /** Chave das metas de teto de gastos por categoria. */
 const STORAGE_GOALS = 'gastopro_goals_v1';
+const STORAGE_ACCOUNTS = 'gastopro_accounts_v1';
 const STORAGE_LAST_UID = 'gastopro_last_uid';
 const STORAGE_PENDING_SYNC = 'gastopro_pending_sync_v1';
+const MAX_ACCOUNT_BALANCE = 9999999999.99;
 
 function getLocalDateString(date = new Date()) {
   const year = date.getFullYear();
@@ -95,35 +98,193 @@ function validateBackupText(text) {
     return { error: 'O backup precisa conter uma versão textual.' };
   }
 
+  const recordError = (kind, item, message) => {
+    const labels = {
+      entries: 'Lançamento',
+      templates: 'Gasto fixo',
+      goals: 'Meta',
+      accounts: 'Conta'
+    };
+    const id = item && item.id != null ? String(item.id) : '(sem ID)';
+    return `${labels[kind]} ${id}: ${message}`;
+  };
+  const isRecord = value => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+  const textLength = value => Array.from(value).length;
+  const validText = (value, max) =>
+    typeof value === 'string' && textLength(value) >= 1 && textLength(value) <= max;
+  const validAmount = value =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_ACCOUNT_BALANCE;
+  const validMonth = value => {
+    if (typeof value !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return false;
+    return Number(value.slice(0, 4)) > 0;
+  };
+  const validDate = value => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const [year, month, day] = value.split('-').map(Number);
+    if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+    const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    const monthDays = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    return day <= monthDays[month - 1];
+  };
+  const validateBooleanFields = (kind, item, fields) => {
+    for (const field of fields) {
+      if (Object.prototype.hasOwnProperty.call(item, field) && typeof item[field] !== 'boolean') {
+        return recordError(kind, item, `${field} precisa ser booleano.`);
+      }
+    }
+    return null;
+  };
+
   const collections = ['entries', 'templates', 'goals'];
   for (const key of collections) {
     if (!Array.isArray(parsed[key])) return { error: `A coleção ${key} precisa ser uma lista.` };
     if (parsed[key].length > 5000) return { error: `A coleção ${key} excede o limite de 5.000 itens.` };
   }
 
-  const entries = parsed.entries.map(item => ({ ...item }));
-  const templates = parsed.templates.map(item => ({ ...item }));
-  const goals = parsed.goals.map(item => ({ ...item }));
+  const entries = parsed.entries.map(item => isRecord(item) ? { ...item } : item);
+  const templates = parsed.templates.map(item => isRecord(item) ? { ...item } : item);
+  const goals = parsed.goals.map(item => isRecord(item) ? { ...item } : item);
+  const accounts = parsed.accounts === undefined
+    ? []
+    : Array.isArray(parsed.accounts) ? parsed.accounts.map(item => isRecord(item) ? { ...item } : item) : parsed.accounts;
+  if (!Array.isArray(accounts)) return { error: 'A coleção accounts precisa ser uma lista.' };
+  if (accounts.length > 5000) return { error: 'A coleção accounts excede o limite de 5.000 itens.' };
+  const seenIds = new Set();
+  const checkId = (kind, item) => {
+    if (item.id == null || item.id === '') return null;
+    const rawId = String(item.id);
+    const key = kind === 'goals' ? rawId.replace(/^goal-/, '') : rawId;
+    if (seenIds.has(key)) return recordError(kind, item, 'ID duplicado no backup.');
+    seenIds.add(key);
+    return null;
+  };
+  const accountIds = new Map();
+  for (const [index, account] of accounts.entries()) {
+    if (!isRecord(account)) return { error: recordError('accounts', account, 'registro inválido.') };
+    const duplicateError = checkId('accounts', account);
+    if (duplicateError) return { error: duplicateError };
+    if (!validText(account.name, 100) || !account.name.trim()) {
+      return { error: recordError('accounts', account, 'o nome deve ter de 1 a 100 caracteres.') };
+    }
+    if (account.institution != null &&
+      (typeof account.institution !== 'string' || textLength(account.institution) > 100)) {
+      return { error: recordError('accounts', account, 'a instituição deve ter até 100 caracteres.') };
+    }
+    if (!['PF', 'PJ'].includes(account.type)) {
+      return { error: recordError('accounts', account, 'o tipo deve ser PF ou PJ.') };
+    }
+    if (account.initialBalance != null &&
+      (typeof account.initialBalance !== 'number' || !Number.isFinite(account.initialBalance) ||
+        Math.abs(account.initialBalance) > MAX_ACCOUNT_BALANCE)) {
+      return { error: recordError('accounts', account, 'o saldo inicial deve ser um número finito dentro do limite permitido.') };
+    }
+    const originalId = account.id;
+    account.id = isUuid(originalId) ? originalId : crypto.randomUUID();
+    account.initialBalance = account.initialBalance == null ? 0 : account.initialBalance;
+    account.name = account.name.trim();
+    account.institution = typeof account.institution === 'string' && account.institution.trim()
+      ? account.institution.trim()
+      : null;
+    if (originalId != null) accountIds.set(String(originalId), account.id);
+  }
+
   for (const [index, item] of entries.entries()) {
-    const error = window.validateCloudPayload(item, 'entries');
-    if (error) return { error: `Lançamento ${index + 1}: ${error}` };
-    item.amount = Number(item.amount);
+    if (!isRecord(item)) return { error: recordError('entries', item, 'registro inválido.') };
+    const duplicateError = checkId('entries', item);
+    if (duplicateError) return { error: duplicateError };
+    const booleanError = validateBooleanFields('entries', item, ['paid', 'isDebt', 'active']);
+    if (booleanError) return { error: booleanError };
+    if (!validAmount(item.amount)) {
+      return { error: recordError('entries', item, 'amount deve ser um número finito entre 0 e 9999999999.99.') };
+    }
+    if (!validText(item.desc, 300)) {
+      return { error: recordError('entries', item, 'description deve ter de 1 a 300 caracteres.') };
+    }
+    if (!validText(item.category, 100)) {
+      return { error: recordError('entries', item, 'category deve ter de 1 a 100 caracteres.') };
+    }
+    if (!['income', 'variable', 'fixed', 'debt'].includes(item.type)) {
+      return { error: recordError('entries', item, 'tipo de lançamento inválido.') };
+    }
+    if (!validDate(item.date)) {
+      return { error: recordError('entries', item, 'date deve ser uma data civil válida no formato AAAA-MM-DD.') };
+    }
+    if (item.paid === undefined) item.paid = true;
+    if (item.isDebt === undefined) item.isDebt = false;
+    if (item.active === undefined) item.active = true;
     item.month = item.date.substring(0, 7);
     if (!isUuid(item.id)) item.id = crypto.randomUUID();
+    if (item.accountId != null) {
+      item.accountId = accountIds.get(String(item.accountId)) || null;
+    }
   }
   for (const [index, item] of templates.entries()) {
-    const error = window.validateCloudPayload(item, 'templates');
-    if (error) return { error: `Gasto fixo ${index + 1}: ${error}` };
-    item.amount = Number(item.amount);
+    if (!isRecord(item)) return { error: recordError('templates', item, 'registro inválido.') };
+    const duplicateError = checkId('templates', item);
+    if (duplicateError) return { error: duplicateError };
+    const booleanError = validateBooleanFields('templates', item, ['isDebt', 'active']);
+    if (booleanError) return { error: booleanError };
+    if (!validAmount(item.amount)) {
+      return { error: recordError('templates', item, 'amount deve ser um número finito entre 0 e 9999999999.99.') };
+    }
+    if (!validText(item.desc, 300)) {
+      return { error: recordError('templates', item, 'description deve ter de 1 a 300 caracteres.') };
+    }
+    if (!validText(item.category, 100)) {
+      return { error: recordError('templates', item, 'category deve ter de 1 a 100 caracteres.') };
+    }
+    if (!['fixed', 'debt', 'variable'].includes(item.type === undefined ? 'fixed' : item.type)) {
+      return { error: recordError('templates', item, 'tipo de template inválido.') };
+    }
+    if (item.type === undefined) item.type = 'fixed';
+    if (!validMonth(item.startMonth)) {
+      return { error: recordError('templates', item, 'startMonth deve ser um mês válido no formato AAAA-MM.') };
+    }
+    if (item.endMonth != null && !validMonth(item.endMonth)) {
+      return { error: recordError('templates', item, 'endMonth deve ser um mês válido no formato AAAA-MM.') };
+    }
+    if (item.day != null && !/^(0[1-9]|[12]\d|3[01])$/.test(String(item.day))) {
+      return { error: recordError('templates', item, 'day deve estar entre 01 e 31.') };
+    }
+    const paidMonths = item.paidMonths === undefined ? {} : item.paidMonths;
+    if (!isRecord(paidMonths)) {
+      return { error: recordError('templates', item, 'paidMonths deve ser um objeto de meses e valores booleanos.') };
+    }
+    for (const [month, paid] of Object.entries(paidMonths)) {
+      if (!validMonth(month) || typeof paid !== 'boolean') {
+        return { error: recordError('templates', item, 'paidMonths deve conter meses AAAA-MM válidos e valores booleanos.') };
+      }
+      if (month < item.startMonth ||
+        (item.endMonth && month > item.endMonth)) {
+        return { error: recordError('templates', item, `paidMonths contém ${month} fora do período do template.`) };
+      }
+    }
+    item.paidMonths = paidMonths;
+    if (item.isDebt === undefined) {
+      item.isDebt = item.type === 'debt' || Boolean(item.endMonth) ||
+        item.category === 'Empréstimo' || item.category === 'Parcelamento';
+    }
+    if (item.active === undefined) item.active = true;
     if (!isUuid(item.id)) item.id = crypto.randomUUID();
+    if (item.accountId != null) {
+      item.accountId = accountIds.get(String(item.accountId)) || null;
+    }
   }
+  const goalCategories = new Set();
   for (const [index, goal] of goals.entries()) {
-    if (!goal || typeof goal.category !== 'string' || !goal.category.trim() ||
-      goal.category.length > 100 || !Number.isFinite(Number(goal.limit)) || Number(goal.limit) <= 0) {
-      return { error: `Meta ${index + 1}: informe categoria e limite válido.` };
+    if (!isRecord(goal)) return { error: recordError('goals', goal, 'registro inválido.') };
+    const duplicateError = checkId('goals', goal);
+    if (duplicateError) return { error: duplicateError };
+    if (!validText(goal.category, 100) || !goal.category.trim() ||
+      typeof goal.limit !== 'number' || !Number.isFinite(goal.limit) ||
+      goal.limit < 0 || goal.limit > MAX_ACCOUNT_BALANCE) {
+      return { error: recordError('goals', goal, 'category deve ter de 1 a 100 caracteres e limit deve ser um número válido.') };
     }
     goal.category = goal.category.trim();
-    goal.limit = Number(goal.limit);
+    if (goalCategories.has(goal.category)) {
+      return { error: recordError('goals', goal, 'categoria duplicada no backup.') };
+    }
+    goalCategories.add(goal.category);
     const goalId = String(goal.id || '').replace(/^goal-/, '');
     goal.id = isUuid(goalId) ? goalId : crypto.randomUUID();
   }
@@ -133,7 +294,8 @@ function validateBackupText(text) {
     exportDate: typeof parsed.exportDate === 'string' ? parsed.exportDate : null,
     entries,
     templates,
-    goals
+    goals,
+    accounts
   };
 }
 
@@ -154,8 +316,27 @@ function mergeBackupData(current, incoming, mode) {
   return {
     entries: mergeById(current.entries, incoming.entries),
     templates: mergeById(current.templates, incoming.templates),
-    goals: mergeById(current.goals, incoming.goals, true)
+    goals: mergeById(current.goals, incoming.goals, true),
+    accounts: mergeById(current.accounts || [], incoming.accounts || [])
   };
+}
+
+function validateAccount(account) {
+  if (!account || typeof account !== 'object') return 'Registro inválido.';
+  if (typeof account.name !== 'string' || !account.name.trim() || account.name.trim().length > 100) {
+    return 'O nome deve ter de 1 a 100 caracteres.';
+  }
+  if (account.institution != null &&
+    (typeof account.institution !== 'string' || account.institution.length > 100)) {
+    return 'A instituição deve ter até 100 caracteres.';
+  }
+  if (!['PF', 'PJ'].includes(account.type)) return 'O tipo deve ser PF ou PJ.';
+  const balance = account.initialBalance == null ? 0 : account.initialBalance;
+  if (typeof balance === 'boolean' || balance === '' || !Number.isFinite(Number(balance)) ||
+    Math.abs(Number(balance)) > MAX_ACCOUNT_BALANCE) {
+    return 'O saldo inicial deve ser um valor numérico válido.';
+  }
+  return null;
 }
 
 window.GastoProBackupHelpers = {
@@ -179,11 +360,20 @@ const FinanceData = {
     try {
       const stored = localStorage.getItem(STORAGE_PENDING_SYNC);
       return stored
-        ? { full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [], goals: [], deletedGoals: [], ...JSON.parse(stored) }
-        : { full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [], goals: [], deletedGoals: [] };
+        ? {
+          full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
+          goals: [], deletedGoals: [], accounts: [], deletedAccounts: [], profile: false, ...JSON.parse(stored)
+        }
+        : {
+          full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
+          goals: [], deletedGoals: [], accounts: [], deletedAccounts: [], profile: false
+        };
     } catch (e) {
       console.error('[GastoPro] Erro ao ler alterações pendentes:', e);
-      return { full: true, entries: [], templates: [], deletedEntries: [], deletedTemplates: [], goals: [], deletedGoals: [] };
+      return {
+        full: true, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
+        goals: [], deletedGoals: [], accounts: [], deletedAccounts: [], profile: true
+      };
     }
   },
 
@@ -200,7 +390,10 @@ const FinanceData = {
       pending.deletedEntries.length ||
       pending.deletedTemplates.length ||
       pending.goals.length ||
-      pending.deletedGoals.length
+      pending.deletedGoals.length ||
+      pending.accounts.length ||
+      pending.deletedAccounts.length ||
+      pending.profile
     );
   },
 
@@ -217,7 +410,8 @@ const FinanceData = {
   queueLocalChanges(kind, previousItems, nextItems) {
     const pending = this.getPendingSync();
     const pendingIds = pending[kind];
-    const deletedIds = pending[kind === 'entries' ? 'deletedEntries' : 'deletedTemplates'];
+    const deletedIds = pending[kind === 'entries' ? 'deletedEntries' :
+      kind === 'templates' ? 'deletedTemplates' : 'deletedAccounts'];
     const previousById = new Map(previousItems.map(item => [item.id, item]));
     const nextById = new Map(nextItems.map(item => [item.id, item]));
 
@@ -291,6 +485,8 @@ const FinanceData = {
     const entries = this.getEntries();
     const templates = this.getTemplates();
     const goals = this.getGoals();
+    const accounts = this.getAccounts();
+    const localProfile = this.getProfile();
     const migratedEntries = entries.map(item => isUuid(item.id) ? item : { ...item, id: crypto.randomUUID() });
     const migratedTemplates = templates.map(item => isUuid(item.id) ? item : { ...item, id: crypto.randomUUID() });
 
@@ -301,6 +497,11 @@ const FinanceData = {
     if (migratedTemplates.some((item, index) => item.id !== templates[index].id)) {
       localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(migratedTemplates));
       this.queueLocalChanges('templates', templates, migratedTemplates);
+    }
+    const migratedAccounts = accounts.map(item => isUuid(item.id) ? item : { ...item, id: crypto.randomUUID() });
+    if (migratedAccounts.some((item, index) => item.id !== accounts[index].id)) {
+      localStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify(migratedAccounts));
+      this.queueLocalChanges('accounts', accounts, migratedAccounts);
     }
 
     return this.flushPendingSync(userId);
@@ -331,6 +532,8 @@ const FinanceData = {
       const entries = this.getEntries();
       const templates = this.getTemplates();
       const goals = this.getGoals();
+      const accounts = this.getAccounts();
+      const localProfile = this.getProfile();
       const entriesToSave = fullSync
         ? entries
         : entries.filter(item => pending.entries.includes(item.id));
@@ -341,13 +544,23 @@ const FinanceData = {
         ? goals
         : goals.filter(goal => pending.goals.includes(goal.category));
 
+      const accountsToSave = fullSync
+        ? accounts
+        : accounts.filter(account => pending.accounts.includes(account.id));
+      const accountResult = accountsToSave.length
+        ? await window.SupabaseAuth.saveCloudAccounts(accountsToSave, targetUserId)
+        : { success: true };
+      const profileResult = pending.profile
+        ? await window.SupabaseAuth.saveCloudProfile(localProfile, targetUserId)
+        : { success: true };
       const results = await Promise.all([
         entriesToSave.length ? window.SupabaseAuth.saveCloudEntries(entriesToSave, targetUserId) : { success: true },
         templatesToSave.length ? window.SupabaseAuth.saveCloudTemplates(templatesToSave, targetUserId) : { success: true },
         pending.deletedEntries.length ? window.SupabaseAuth.deleteCloudEntries(pending.deletedEntries, targetUserId) : { success: true },
         pending.deletedTemplates.length ? window.SupabaseAuth.deleteCloudTemplates(pending.deletedTemplates, targetUserId) : { success: true },
         goalsToSave.length ? window.SupabaseAuth.saveCloudGoals(goalsToSave, targetUserId) : { success: true },
-        pending.deletedGoals.length ? window.SupabaseAuth.deleteCloudGoals(pending.deletedGoals, targetUserId) : { success: true }
+        pending.deletedGoals.length ? window.SupabaseAuth.deleteCloudGoals(pending.deletedGoals, targetUserId) : { success: true },
+        pending.deletedAccounts.length ? window.SupabaseAuth.deleteCloudAccounts(pending.deletedAccounts, targetUserId) : { success: true }
       ]);
 
       const latestPending = this.getPendingSync();
@@ -363,11 +576,16 @@ const FinanceData = {
         results[4],
         goalsToSave.map(goal => ({ ...goal, id: goal.category }))
       );
+      const failedAccountIds = getFailedIds(accountResult, accountsToSave);
+      const failedProfile = !profileResult || !profileResult.success;
       const failedEntryDeletes = !results[2] || !results[2].success;
       const failedTemplateDeletes = !results[3] || !results[3].success;
       const failedGoalDeletes = !results[5] || !results[5].success;
+      const failedAccountDeletes = !results[6] || !results[6].success;
       const hasFailures = failedEntryIds.length > 0 || failedTemplateIds.length > 0 ||
-        failedGoalCategories.length > 0 || failedEntryDeletes || failedTemplateDeletes || failedGoalDeletes;
+        failedGoalCategories.length > 0 || failedAccountIds.length > 0 ||
+        failedEntryDeletes || failedTemplateDeletes || failedGoalDeletes || failedAccountDeletes ||
+        failedProfile;
       const removeSyncedIds = (kind, sentItems, currentItems, failedIds) => {
         const sentById = new Map(sentItems.map(item => [item.id, JSON.stringify(item)]));
         latestPending[kind] = latestPending[kind].filter(id => {
@@ -381,6 +599,7 @@ const FinanceData = {
       };
       removeSyncedIds('entries', entriesToSave, this.getEntries(), failedEntryIds);
       removeSyncedIds('templates', templatesToSave, this.getTemplates(), failedTemplateIds);
+      removeSyncedIds('accounts', accountsToSave, this.getAccounts(), failedAccountIds);
       const sentGoalsByCategory = new Map(goalsToSave.map(goal => [goal.category, JSON.stringify(goal)]));
       latestPending.goals = latestPending.goals.filter(category => {
         if (failedGoalCategories.includes(category)) return true;
@@ -400,12 +619,18 @@ const FinanceData = {
       if (!failedGoalDeletes) {
         latestPending.deletedGoals = latestPending.deletedGoals.filter(category => !pending.deletedGoals.includes(category));
       }
+      if (!failedAccountDeletes) {
+        latestPending.deletedAccounts = latestPending.deletedAccounts.filter(id => !pending.deletedAccounts.includes(id));
+      }
+      if (pending.profile && !failedProfile) latestPending.profile = false;
+      if (failedProfile) latestPending.profile = true;
 
       if (fullSync) {
         latestPending.full = !hasFailures && (
           JSON.stringify(entries) !== JSON.stringify(this.getEntries()) ||
           JSON.stringify(templates) !== JSON.stringify(this.getTemplates()) ||
-          JSON.stringify(goals) !== JSON.stringify(this.getGoals())
+          JSON.stringify(goals) !== JSON.stringify(this.getGoals()) ||
+          JSON.stringify(accounts) !== JSON.stringify(this.getAccounts())
         );
       }
       this.savePendingSync(latestPending);
@@ -413,7 +638,9 @@ const FinanceData = {
         if (typeof showToast === 'function') {
           showToast('Não foi possível sincronizar todos os dados; os itens pendentes continuam salvos neste aparelho');
         }
-        return results.find(result => !result || !result.success) ||
+        return (accountResult && !accountResult.success ? accountResult : null) ||
+          (profileResult && !profileResult.success ? profileResult : null) ||
+          results.find(result => !result || !result.success) ||
           { success: false, error: new Error('Alguns itens não puderam ser sincronizados.') };
       }
       return { success: true };
@@ -425,33 +652,62 @@ const FinanceData = {
     return currentSync;
   },
 
-  mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded = false, cloudGoals = null) {
+  mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded = false, cloudGoals = null, cloudAccounts = null) {
     if (
       !userId ||
       localStorage.getItem(STORAGE_LAST_UID) !== userId ||
       !Array.isArray(cloudEntries) ||
       !Array.isArray(cloudTemplates) ||
-      (cloudGoals !== null && !Array.isArray(cloudGoals))
+      (cloudGoals !== null && !Array.isArray(cloudGoals)) ||
+      (cloudAccounts !== null && !Array.isArray(cloudAccounts))
     ) return false;
 
     const pending = this.getPendingSync();
     const canRemoveCloudDeleted = flushSucceeded && !this.hasPendingSync();
-    const mergeById = (localItems, cloudItems, pendingIds) => {
+    const mergeById = (localItems, cloudItems, pendingIds, deletedIds) => {
       const merged = new Map(localItems.map(item => [item.id, item]));
-      cloudItems.forEach(item => merged.set(item.id, item));
+      const pendingSet = new Set(pendingIds);
+      const deletedSet = new Set(deletedIds);
+      cloudItems.forEach(item => {
+        if (deletedSet.has(item.id)) return;
+        if (pendingSet.has(item.id)) return;
+        merged.set(item.id, item);
+      });
       if (canRemoveCloudDeleted) {
         localItems.forEach(item => {
-          if (!isUuid(item.id) || pendingIds.includes(item.id)) merged.set(item.id, item);
+          if (!isUuid(item.id) || pendingSet.has(item.id)) merged.set(item.id, item);
           else if (!cloudItems.some(cloudItem => cloudItem.id === item.id)) merged.delete(item.id);
         });
       }
       return [...merged.values()];
     };
 
-    const entries = mergeById(this.getEntries(), cloudEntries, pending.entries);
-    const templates = mergeById(this.getTemplates(), cloudTemplates, pending.templates);
+    const entries = mergeById(
+      this.getEntries(), cloudEntries, pending.entries, pending.deletedEntries
+    );
+    const templates = mergeById(
+      this.getTemplates(), cloudTemplates, pending.templates, pending.deletedTemplates
+    );
+    const accounts = this.getAccounts();
     localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
     localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
+    if (cloudAccounts !== null) {
+      const pendingAccounts = new Set(pending.accounts);
+      const deletedAccounts = new Set(pending.deletedAccounts);
+      const mergedAccounts = new Map();
+      cloudAccounts.forEach(account => {
+        if (deletedAccounts.has(account.id)) return;
+        const local = accounts.find(item => item.id === account.id);
+        mergedAccounts.set(account.id, local && pendingAccounts.has(account.id) ? local : account);
+      });
+      accounts.forEach(account => {
+        if (mergedAccounts.has(account.id) || deletedAccounts.has(account.id)) return;
+        if (pendingAccounts.has(account.id) || !canRemoveCloudDeleted) {
+          mergedAccounts.set(account.id, account);
+        }
+      });
+      localStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify([...mergedAccounts.values()]));
+    }
     if (cloudGoals !== null) {
       const localGoals = this.getGoals();
       const pendingGoals = new Set(pending.goals);
@@ -479,6 +735,26 @@ const FinanceData = {
       localStorage.setItem(STORAGE_GOALS, JSON.stringify([...mergedGoals.values()]));
     }
     return true;
+  },
+
+  mergeCloudProfile(cloudProfile) {
+    if (!cloudProfile || typeof cloudProfile !== 'object') return this.getProfile();
+    const pending = this.getPendingSync();
+    if (pending.profile) return this.getProfile();
+    const profile = this.getProfile();
+    return this.saveProfile({
+      ...profile,
+      name: typeof cloudProfile.name === 'string' ? cloudProfile.name : profile.name,
+      avatar: typeof cloudProfile.avatar === 'string' || cloudProfile.avatar === null
+        ? cloudProfile.avatar
+        : profile.avatar
+    }, { queueSync: false });
+  },
+
+  queueProfileSync() {
+    const pending = this.getPendingSync();
+    pending.profile = true;
+    this.savePendingSync(pending);
   },
 
   // ================================================================
@@ -563,6 +839,152 @@ const FinanceData = {
     }
   },
 
+  getAccounts() {
+    try {
+      const stored = localStorage.getItem(STORAGE_ACCOUNTS);
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      console.error('[GastoPro] Erro ao ler contas:', e);
+      return [];
+    }
+  },
+
+  async saveAccounts(accounts, options = {}) {
+    try {
+      if (!Array.isArray(accounts)) return { success: false, error: 'As contas precisam ser uma lista.' };
+      const ids = new Set();
+      for (const account of accounts) {
+        const error = validateAccount(account);
+        if (error) return { success: false, error };
+        if (!isUuid(account.id) || ids.has(account.id)) {
+          return { success: false, error: 'Cada conta deve ter um UUID válido e exclusivo.' };
+        }
+        ids.add(account.id);
+      }
+      const normalizedAccounts = accounts.map(account => account && ({
+        ...account,
+        name: typeof account.name === 'string' ? account.name.trim() : account.name,
+        institution: typeof account.institution === 'string' && account.institution.trim()
+          ? account.institution.trim()
+          : null,
+        initialBalance: Math.round(Number(account.initialBalance == null ? 0 : account.initialBalance) * 100) / 100
+      }));
+      const previousAccounts = this.getAccounts();
+      localStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify(normalizedAccounts));
+      this.queueLocalChanges('accounts', previousAccounts, normalizedAccounts);
+      const profile = this.getProfile();
+      return options.flush === false
+        ? { success: true, queued: true }
+        : await this.flushPendingSync(profile && profile.userId);
+    } catch (e) {
+      console.error('[GastoPro] Erro ao salvar contas localmente:', e);
+      return { success: false, error: e };
+    }
+  },
+
+  async addAccount(account) {
+    const candidate = {
+      name: account && account.name,
+      institution: account && account.institution,
+      type: account && account.type,
+      initialBalance: account && account.initialBalance != null ? account.initialBalance : 0
+    };
+    const error = validateAccount(candidate);
+    if (error) return { success: false, error };
+    const created = {
+      ...candidate,
+      id: crypto.randomUUID(),
+      name: candidate.name.trim(),
+      institution: typeof candidate.institution === 'string' && candidate.institution.trim()
+        ? candidate.institution.trim()
+        : null,
+      initialBalance: Math.round(Number(candidate.initialBalance) * 100) / 100
+    };
+    const result = await this.saveAccounts([...this.getAccounts(), created]);
+    return result.success ? { success: true, account: created } : { success: false, error: result.error };
+  },
+
+  async updateAccount(id, fields) {
+    const accounts = this.getAccounts();
+    const index = accounts.findIndex(account => account.id === id);
+    if (index < 0) return { success: false, error: 'Conta não encontrada.' };
+    const candidate = { ...accounts[index], ...fields, id };
+    const error = validateAccount(candidate);
+    if (error) return { success: false, error };
+    candidate.name = candidate.name.trim();
+    candidate.institution = typeof candidate.institution === 'string' && candidate.institution.trim()
+      ? candidate.institution.trim()
+      : null;
+    candidate.initialBalance = Math.round(Number(candidate.initialBalance) * 100) / 100;
+    accounts[index] = candidate;
+    const result = await this.saveAccounts(accounts);
+    return result.success ? { success: true, account: candidate } : { success: false, error: result.error };
+  },
+
+  async deleteAccount(id) {
+    const accounts = this.getAccounts();
+    if (!accounts.some(account => account.id === id)) {
+      return { success: false, error: 'Conta não encontrada.' };
+    }
+    const entries = this.getEntries().map(entry =>
+      entry.accountId === id ? { ...entry, accountId: null } : entry
+    );
+    const templates = this.getTemplates().map(template =>
+      template.accountId === id ? { ...template, accountId: null } : template
+    );
+    const entryResult = await this.saveEntries(entries, { flush: false });
+    const templateResult = await this.saveTemplates(templates, { flush: false });
+    if (!entryResult.success || !templateResult.success) {
+      return { success: false, error: entryResult.error || templateResult.error };
+    }
+    const accountResult = await this.saveAccounts(accounts.filter(account => account.id !== id), { flush: false });
+    if (!accountResult.success) return accountResult;
+    const syncResult = await this.flushPendingSync(this.getProfile().userId);
+    return syncResult.success ? { success: true } : { success: false, error: syncResult.error };
+  },
+
+  getAccountBalance(accountId) {
+    const account = this.getAccounts().find(item => item.id === accountId);
+    if (!account) return null;
+    let activity = 0;
+    this.getEntries().forEach(entry => {
+      if (entry.accountId !== accountId || !entry.paid) return;
+      activity += entry.type === 'income' ? Number(entry.amount) : -Number(entry.amount);
+    });
+    this.getTemplates().forEach(template => {
+      if (template.accountId !== accountId || !template.paidMonths) return;
+      const paidCount = Object.values(template.paidMonths).filter(paid => paid === true).length;
+      activity -= Number(template.amount) * paidCount;
+    });
+    return Math.round((Number(account.initialBalance) + activity) * 100) / 100;
+  },
+
+  getAccountBalances() {
+    const totals = { total: 0, PF: 0, PJ: 0 };
+    this.getAccounts().forEach(account => {
+      const balance = this.getAccountBalance(account.id);
+      totals.total += balance;
+      totals[account.type] += balance;
+    });
+    Object.keys(totals).forEach(key => {
+      totals[key] = Math.round(totals[key] * 100) / 100;
+    });
+    return totals;
+  },
+
+  async adjustAccountBalance(accountId, currentBalance) {
+    const account = this.getAccounts().find(item => item.id === accountId);
+    if (!account) return { success: false, error: 'Conta não encontrada.' };
+    if (typeof currentBalance === 'boolean' || currentBalance === '' ||
+      !Number.isFinite(Number(currentBalance)) || Math.abs(Number(currentBalance)) > MAX_ACCOUNT_BALANCE) {
+      return { success: false, error: 'Informe um saldo atual válido.' };
+    }
+    const activityBalance = this.getAccountBalance(accountId) - Number(account.initialBalance);
+    return this.updateAccount(accountId, {
+      initialBalance: Math.round((Number(currentBalance) - activityBalance) * 100) / 100
+    });
+  },
+
   // ================================================================
   // CONSULTA COMBINADA POR MÊS
   // Função principal usada pelo app.js para renderizar cada tela.
@@ -618,6 +1040,7 @@ const FinanceData = {
           date:       `${yearMonth}-${String(tpl.day || '05').padStart(2, '0')}`,
           startMonth: tpl.startMonth,
           endMonth:   tpl.endMonth || null,
+          accountId:  tpl.accountId || null,
           paid:       isPaidThisMonth
         });
       }
@@ -766,6 +1189,7 @@ const FinanceData = {
       endMonth:   tpl.endMonth || null,  // null = sem data de quitação prevista
       day:        day,    // Usado para calcular a data de vencimento projetada
       date:       dateStr,
+      accountId:  tpl.accountId || null,
       paidMonths: {}      // Mapa de baixas por mês — começa vazio
     };
 
@@ -907,6 +1331,7 @@ const FinanceData = {
     const profile = this.getProfile();
     await this.saveEntries([], { flush: false });
     await this.saveTemplates([], { flush: false });
+    await this.saveAccounts([], { flush: false });
     this.saveGoals([]);
     return this.flushPendingSync(profile.userId);
   },
@@ -925,7 +1350,8 @@ const FinanceData = {
    *   exportDate: "2026-11-05T10:00:00.000Z",
    *   entries:    [...],    // Todos os lançamentos pontuais
    *   templates:  [...],    // Todos os templates de gastos fixos
-   *   goals:      [...]      // Metas de gastos por categoria
+   *   goals:      [...],     // Metas de gastos por categoria
+   *   accounts:   [...]      // Contas bancárias
    * }
    */
   exportJSON() {
@@ -934,7 +1360,8 @@ const FinanceData = {
       exportDate: new Date().toISOString(),
       entries:    this.getEntries(),
       templates:  this.getTemplates(),
-      goals:      this.getGoals()
+      goals:      this.getGoals(),
+      accounts:   this.getAccounts()
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const objectUrl = URL.createObjectURL(blob);
@@ -957,12 +1384,14 @@ const FinanceData = {
       restored = mergeBackupData({
         entries: this.getEntries(),
         templates: this.getTemplates(),
-        goals: this.getGoals()
+        goals: this.getGoals(),
+        accounts: this.getAccounts()
       }, imported, mode);
     } catch (error) {
       return { success: false, error: error.message };
     }
 
+    const accountsResult = await this.saveAccounts(restored.accounts);
     const [entriesResult, templatesResult] = await Promise.all([
       this.saveEntries(restored.entries),
       this.saveTemplates(restored.templates)
@@ -971,7 +1400,7 @@ const FinanceData = {
       return { success: false, error: 'Lançamentos e gastos fixos restaurados, mas não foi possível salvar as metas localmente.' };
     }
     const goalsSyncResult = await this.flushPendingSync(this.getProfile().userId);
-    if (!entriesResult.success || !templatesResult.success || !goalsSyncResult.success) {
+    if (!accountsResult.success || !entriesResult.success || !templatesResult.success || !goalsSyncResult.success) {
       return { success: false, error: 'O backup foi restaurado localmente, mas há alterações pendentes de sincronização.' };
     }
     return { success: true };
@@ -1004,9 +1433,10 @@ const FinanceData = {
    *
    * @param {{ name: string, avatar: string|null }} profile - Dados do perfil.
    */
-  saveProfile(profile) {
+  saveProfile(profile, { queueSync = false } = {}) {
     try {
       localStorage.setItem(STORAGE_PROFILE, JSON.stringify(profile));
+      if (queueSync && profile && profile.userId) this.queueProfileSync();
       return { success: true };
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar perfil no localStorage:', e);

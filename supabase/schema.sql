@@ -1,5 +1,5 @@
 -- GastoPro — Esquema do banco (Supabase / PostgreSQL)
--- Reflete o banco de produção em 28/10/2026.
+-- Reflete o banco de produção em 28/10/2026 e as alterações pendentes registradas em migrations.
 -- Pode ser executado mais de uma vez sem erro (idempotente).
 -- Qualquer mudança no banco deve ser registrada neste arquivo.
 
@@ -8,6 +8,18 @@ create extension if not exists "uuid-ossp" with schema extensions;
 -- ============================================================
 -- TABELAS
 -- ============================================================
+create table if not exists public.accounts (
+  id              uuid primary key default uuid_generate_v4(),
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  name            text not null,
+  institution     text,
+  type            text not null,
+  initial_balance numeric(12,2) not null default 0,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  constraint accounts_user_id_id_key unique (user_id, id)
+);
+
 create table if not exists public.entries (
   id          uuid primary key default uuid_generate_v4(),
   user_id     uuid not null references auth.users(id) on delete cascade,
@@ -20,6 +32,7 @@ create table if not exists public.entries (
   is_debt     boolean not null default false,
   debt_info   jsonb,
   active      boolean not null default true,
+  account_id  uuid,
   created_at  timestamptz default now(),
   updated_at  timestamptz not null default now()
 );
@@ -37,6 +50,7 @@ create table if not exists public.fixed_templates (
   end_month   text,
   day         text default '01',
   paid_months jsonb default '{}'::jsonb,
+  account_id  uuid,
   created_at  timestamptz default now(),
   updated_at  timestamptz not null default now()
 );
@@ -56,6 +70,30 @@ create table if not exists public.goals (
   updated_at   timestamptz not null default now(),
   primary key (user_id, category)
 );
+
+alter table public.accounts drop constraint if exists accounts_name_chk;
+alter table public.accounts drop constraint if exists accounts_institution_chk;
+alter table public.accounts drop constraint if exists accounts_type_chk;
+alter table public.accounts drop constraint if exists accounts_initial_balance_chk;
+alter table public.accounts
+  add constraint accounts_name_chk check (
+    char_length(name) between 1 and 100 and char_length(btrim(name)) > 0),
+  add constraint accounts_institution_chk check (institution is null or char_length(institution) <= 100),
+  add constraint accounts_type_chk check (type in ('PF', 'PJ')),
+  add constraint accounts_initial_balance_chk check (abs(initial_balance) <= 9999999999.99);
+
+alter table public.entries add column if not exists account_id uuid;
+alter table public.fixed_templates add column if not exists account_id uuid;
+alter table public.entries drop constraint if exists entries_account_owner_fk;
+alter table public.entries
+  add constraint entries_account_owner_fk
+  foreign key (user_id, account_id) references public.accounts(user_id, id)
+  on delete set null (account_id);
+alter table public.fixed_templates drop constraint if exists templates_account_owner_fk;
+alter table public.fixed_templates
+  add constraint templates_account_owner_fk
+  foreign key (user_id, account_id) references public.accounts(user_id, id)
+  on delete set null (account_id);
 
 -- ============================================================
 -- REGRAS DE VALIDAÇÃO (CHECK)
@@ -105,6 +143,7 @@ alter table public.entries         enable row level security;
 alter table public.fixed_templates enable row level security;
 alter table public.profiles        enable row level security;
 alter table public.goals           enable row level security;
+alter table public.accounts        enable row level security;
 
 drop policy if exists entries_own on public.entries;
 create policy entries_own on public.entries
@@ -130,20 +169,27 @@ create policy goals_own on public.goals
   using ((select auth.uid()) = user_id)
   with check ((select auth.uid()) = user_id);
 
+drop policy if exists accounts_own on public.accounts;
+create policy accounts_own on public.accounts
+  for all to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
 -- ============================================================
 -- ÍNDICES
 -- ============================================================
 create index if not exists entries_user_date_idx on public.entries (user_id, date);
 create index if not exists fixed_templates_user_idx on public.fixed_templates (user_id);
+create index if not exists accounts_user_idx on public.accounts (user_id);
 
 -- ============================================================
 -- PERMISSÕES (privilégio mínimo)
 -- ============================================================
-revoke all on public.entries, public.fixed_templates, public.profiles, public.goals from anon;
+revoke all on public.entries, public.fixed_templates, public.profiles, public.goals, public.accounts from anon;
 revoke truncate, references, trigger
-  on public.entries, public.fixed_templates, public.profiles, public.goals from authenticated;
+  on public.entries, public.fixed_templates, public.profiles, public.goals, public.accounts from authenticated;
 grant select, insert, update, delete
-  on public.entries, public.fixed_templates, public.profiles, public.goals to authenticated;
+  on public.entries, public.fixed_templates, public.profiles, public.goals, public.accounts to authenticated;
 
 -- ============================================================
 -- updated_at AUTOMÁTICO
@@ -178,6 +224,31 @@ create trigger profiles_set_updated_at before update on public.profiles
 drop trigger if exists goals_set_updated_at on public.goals;
 create trigger goals_set_updated_at before update on public.goals
   for each row execute function public.set_updated_at();
+
+drop trigger if exists accounts_set_updated_at on public.accounts;
+create trigger accounts_set_updated_at before update on public.accounts
+  for each row execute function public.set_updated_at();
+
+-- ============================================================
+-- EXCLUSÃO DA PRÓPRIA CONTA (LGPD)
+-- ============================================================
+create or replace function public.delete_my_account()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+revoke execute on function public.delete_my_account() from public, anon;
+grant execute on function public.delete_my_account() to authenticated;
 
 -- ============================================================
 -- PENDENTE

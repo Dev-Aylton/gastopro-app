@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-178%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-220%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -82,7 +82,7 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 ### 🔐 Autenticação, perfil e backups
 - Cadastro e login com e-mail e senha, recuperação de senha por e-mail e sincronização multiusuário.
 - Dados isolados por usuário via Row Level Security (RLS).
-- Nome e foto de perfil personalizados localmente; imagens JPEG, PNG ou WebP são redimensionadas para no máximo 256×256 e salvas como JPEG.
+- Nome e foto de perfil personalizados e sincronizados com `profiles` ao usar login; imagens JPEG, PNG ou WebP podem ser recortadas e salvas como JPEG 256×256.
 - Status da conta Conectado (Nuvem) ou Modo Local.
 - Exportação de backup JSON e restauração com prévia, mesclagem por ID ou substituição.
 - Regras de logout, login, reset e troca de conta: consulte [Segurança e privacidade](#-segurança-e-privacidade).
@@ -148,9 +148,11 @@ financeiro-app/
 ├── supabase/
 │   ├── schema.sql             # Tabelas, validações, RLS, índices, permissões e triggers
 │   └── migrations/
-│       └── 20261027_hardening.sql # Hardening aplicado e validado em 28/10/2026
+│       ├── 20261027_hardening.sql # Hardening aplicado e validado em 28/10/2026
+│       ├── 20261028_accounts.sql  # RM-025 parte A; aplicar manualmente no Supabase
+│       └── 20261028_delete_my_account.sql # Exclusão de conta; aplicar manualmente no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 178 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 220 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -186,6 +188,7 @@ localStorage               Supabase Auth + PostgreSQL
 | `gastopro_templates_v4_oct` | Templates de gastos fixos recorrentes |
 | `gastopro_profile_real_v2` | Perfil local: nome, e-mail, userId e avatar |
 | `gastopro_goals_v1` | Metas por categoria |
+| `gastopro_accounts_v1` | Contas bancárias PF/PJ |
 | `gastopro_last_uid` | UID da conta dona dos dados locais ativos |
 | `gastopro_pending_sync_v1` | Fila de sincronização pendente |
 
@@ -227,11 +230,16 @@ Meta:
 { "id": "goal-550e8400-e29b-41d4-a716-446655440002", "category": "Mercado", "limit": 800 }
 ```
 
-Lançamentos e templates usam UUID v4; metas usam um ID local com prefixo `goal-`.
+Conta bancária:
+```json
+{ "id": "550e8400-e29b-41d4-a716-446655440003", "name": "Conta principal", "institution": null, "type": "PF", "initialBalance": 1250.00 }
+```
+
+Lançamentos e templates usam UUID v4; metas usam um ID local com prefixo `goal-`. Lançamentos e templates podem incluir `accountId`; nulo significa que não pertencem a uma conta.
 
 ### Fila de sincronização
 
-O registro pendente contém `full`, `entries`, `templates`, `deletedEntries`, `deletedTemplates`, `goals` e `deletedGoals`. Entradas e templates são identificados por ID; metas e exclusões de metas são identificadas pela categoria. Alterações são enfileiradas localmente e removidas da fila após sincronização bem-sucedida.
+O registro pendente contém `full`, `entries`, `templates`, `deletedEntries`, `deletedTemplates`, `goals`, `deletedGoals`, `accounts` e `deletedAccounts`. Entradas, templates e contas são identificados por ID; metas e exclusões de metas são identificadas pela categoria. Alterações são enfileiradas localmente e removidas da fila após sincronização bem-sucedida.
 
 Metas são gravadas em `public.goals` por categoria, com upsert usando `onConflict: 'user_id,category'`; exclusões enfileiradas são enviadas pela fila pendente.
 
@@ -251,7 +259,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | `prepareLocalDataForSync(userId)` | Prepara dados locais e envia a fila pendente. |
 | `syncAllToCloud(userId)` | Marca e envia uma sincronização completa. |
 | `flushPendingSync(userId)` | Envia e atualiza a fila pendente na nuvem. |
-| `mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded, cloudGoals)` | Mescla dados locais e recebidos da nuvem. |
+| `mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded, cloudGoals)` | Mescla dados locais e recebidos da nuvem sem substituir alterações ou exclusões pendentes. |
 | `getEntries()` | Lê lançamentos pontuais locais. |
 | `saveEntries(entries, options)` | Persiste lançamentos e atualiza sincronização. |
 | `getTemplates()` | Lê templates recorrentes locais. |
@@ -267,15 +275,21 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | `markPaidMany(payments)` | Marca várias baixas em lote. |
 | `toggleActive(id)` | Pausa ou reativa um template. |
 | `delete(id)` | Exclui um item. |
-| `clearAll()` | Apaga lançamentos, templates e metas, e envia exclusões pendentes. |
-| `exportJSON()` | Gera e baixa backup JSON. |
+| `clearAll()` | Apaga lançamentos, templates, metas e contas, mantendo o perfil e enfileirando exclusões. |
+| `exportJSON()` | Gera e baixa JSON com `version`, `exportDate`, `entries`, `templates`, `goals` e `accounts`; não inclui perfil nem dados de login. |
 | `importJSON(text, mode)` | Valida e restaura backup, com modo merge ou replace. |
 | `getProfile()` | Lê o perfil local. |
-| `saveProfile(profile)` | Persiste o perfil local. |
+| `saveProfile(profile)` | Persiste o perfil local e enfileira a sincronização quando há usuário autenticado. |
+| `queueProfileSync()` | Marca nome e foto como pendentes de sincronização. |
+| `mergeCloudProfile(profile)` | Mescla o perfil recebido sem substituir uma edição local pendente. |
 | `getGoals()` | Lê metas locais. |
 | `saveGoals(goals)` | Persiste metas e enfileira alterações. |
 | `saveGoal(category, limit)` | Cria ou atualiza uma meta. |
 | `deleteGoal(category)` | Exclui uma meta e solicita sincronização. |
+| `getAccounts()` / `saveAccounts(accounts)` | Lê ou persiste contas bancárias. |
+| `addAccount(account)` / `updateAccount(id, fields)` / `deleteAccount(id)` | CRUD local de contas; exclusão desvincula lançamentos e templates. |
+| `getAccountBalance(id)` / `getAccountBalances()` | Calcula saldo de uma conta e consolidados PF/PJ. |
+| `adjustAccountBalance(id, currentBalance)` | Ajusta o saldo inicial para atingir o saldo informado. |
 
 ### API pública de `SupabaseAuth` (`js/supabase.js`)
 
@@ -284,11 +298,13 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | `fetchAllPages(fetchPage)` | Busca registros paginados. |
 | `upsertWithFallback(upsert, items, payloads)` | Tenta upsert em lote e recorre a linhas individuais em caso de falha. |
 | `getSessionUser()` | Obtém o usuário da sessão Supabase ativa. |
+| `getSessionState()` | Distingue sessão autenticada, ausência confirmada de sessão e erro de verificação. |
 | `getAuthenticatedUserId(expectedUserId)` | Valida o usuário autenticado esperado. |
 | `reportCloudError(operation, error)` | Registra e formata erro de operação na nuvem. |
 | `signUp(name, email, password)` | Cria uma conta com metadados de nome. |
 | `signIn(email, password)` | Autentica com e-mail e senha. |
-| `signOut()` | Encerra a sessão de autenticação. |
+| `signOut(scope)` | Encerra a sessão de autenticação no escopo solicitado. |
+| `deleteAccount()` | Solicita a exclusão da conta Auth pela função `delete_my_account`. |
 | `resetPasswordForEmail(email)` | Solicita redefinição de senha por e-mail. |
 | `updatePassword(password)` | Atualiza a senha da sessão. |
 | `onAuthStateChange(callback)` | Registra callback de mudanças de autenticação. |
@@ -305,6 +321,11 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | `fetchCloudGoals(userId)` | Busca metas por categoria e converte o limite para número. |
 | `saveCloudGoals(goals, userId)` | Valida e faz upsert das metas por categoria. |
 | `deleteCloudGoals(categories, userId)` | Exclui metas do usuário pelas categorias. |
+| `fetchCloudAccounts(userId)` | Busca contas bancárias do usuário. |
+| `saveCloudAccounts(accounts, userId)` | Valida e faz upsert das contas. |
+| `deleteCloudAccounts(accountIds, userId)` | Exclui contas do usuário pelos IDs. |
+| `fetchCloudProfile(userId)` | Busca nome e foto na tabela `profiles`, indicando separadamente falhas e ausência de registro. |
+| `saveCloudProfile(profile, userId)` | Valida e sincroniza nome e foto na tabela `profiles`. |
 
 ---
 
@@ -312,11 +333,14 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 
 - **RLS:** cada usuário autenticado só acessa registros associados ao próprio `auth.uid()`.
 - **Logout:** encerra a sessão e remove os dados `gastopro_*` locais deste aparelho; os dados na nuvem permanecem.
+- **Exclusão de conta:** após sucesso da função `delete_my_account`, encerra a sessão e apaga os dados locais `gastopro_*`; a exclusão na nuvem é irreversível.
 - **Login:** sincroniza os dados da conta autenticada com os dados locais, conforme a fila pendente.
-- **Reset logado:** apaga lançamentos, templates e metas deste aparelho e envia a exclusão para a nuvem; se o envio falhar, a exclusão fica pendente e é reenviada na próxima sincronização. Mantém a identidade da conta (`userId` e e-mail do perfil).
+- **Dados sincronizados:** lançamentos, templates de gastos fixos/dívidas, metas e contas cadastradas são sincronizados com o Supabase e protegidos por RLS.
+- **Reset logado:** apaga lançamentos, templates, metas e contas deste aparelho e envia as exclusões para a nuvem; se o envio falhar, elas ficam pendentes para nova tentativa. Mantém a sessão, o nome e a foto locais.
 - **Reset sem login:** apaga somente os dados deste aparelho.
 - **Troca de conta:** os dados locais da conta anterior são limpos quando não há sincronização pendente.
-- Nome e foto do perfil continuam locais; a sessão de autenticação fica no cliente Supabase no navegador.
+- O Supabase Auth guarda o e-mail e o nome informado no cadastro. Com login, nome e foto do perfil são enviados à tabela `profiles`, protegida por RLS; edições locais pendentes prevalecem sobre os dados recebidos da nuvem.
+- O backup JSON exporta exatamente `version`, `exportDate`, `entries`, `templates`, `goals` e `accounts`; não inclui perfil, nome, foto, e-mail, UID nem sessão.
 - Os arquivos PDF são lidos no próprio aparelho; não são enviados nem armazenados. A leitura de PDF é de texto selecionável, não de imagem escaneada.
 - O `defaultProfile` não inclui dados pessoais hardcoded.
 - Google Fonts e cdnjs (Font Awesome) são carregados de terceiros e podem receber endereço IP e dados técnicos de conexão; dados financeiros não são enviados a esses provedores.
@@ -328,7 +352,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
-As tabelas `entries`, `fixed_templates`, `goals` e `profiles` têm RLS ativo. A tabela `profiles` guarda o identificador Auth do usuário, nome e avatar; o app mantém nome e foto localmente e não grava nessa tabela. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
+As tabelas `entries`, `fixed_templates`, `goals`, `accounts` e `profiles` têm RLS ativo. `public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) está pendente de aplicação manual no painel. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) também precisa ser aplicada manualmente. O app envia nome e avatar para `profiles` ao editar o perfil autenticado; alterações pendentes são mantidas para nova tentativa. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
 
 Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Consulte também [Executar, configurar e publicar](#-executar-configurar-e-publicar).
 
@@ -336,13 +360,16 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **178 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **220 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
 | `FinanceData — Lançamentos Pontuais` | CRUD e persistência de lançamentos. |
 | `FinanceData — Isolamento entre usuários` | Isolamento de dados locais entre usuários e troca de conta. |
+| `Recuperação de sessão` | Preservação de alterações pendentes após expiração, sincronização ao entrar na mesma conta e confirmação antes de descartar dados para trocar de conta. |
 | `FinanceData — Metas por Categoria` | Criação, edição, remoção e alertas de metas. |
+| `FinanceData — Contas Bancárias` | CRUD, validação, saldos, ajuste, exclusão, sincronização e backup de contas. |
+| `Exclusão de conta do usuário` | RPC, resposta de sucesso/erro, texto exato de confirmação, limpeza dos dados/sessão locais e preservação após falha. |
 | `FinanceData — Templates de Gastos Fixos` | Leitura e gravação de templates. |
 | `FinanceData — add() Lançamentos` | Inserção de tipos de lançamento. |
 | `FinanceData — addTemplate() Gastos Fixos` | Criação de gastos recorrentes. |
@@ -351,13 +378,14 @@ Suite com **178 casos de teste** em JavaScript puro, sem frameworks. Os testes u
 | `FinanceData — togglePaid()` | Baixa mensal. |
 | `FinanceData — toggleActive()` | Ativação de templates. |
 | `FinanceData — delete()` | Exclusões. |
-| `FinanceData — clearAll()` | Reset de dados. |
+| `FinanceData — clearAll()` | Reset de lançamentos, templates, metas e contas, com exclusões pendentes. |
 | `FinanceData — mesclagem completa da nuvem` | Merge e sincronização de dados. |
 | `Privacidade, payloads e autenticação` | Privacidade e validação de payloads. |
 | `Bloco 2 — dívida, orçamento, diagnóstico e categorias` | Regras de dívida, orçamento e categorias. |
-| `Bloco 2 — backup JSON` | Validação e mesclagem de backup. |
+| `Bloco 2 — backup JSON` | Validação estrita dos dados, período de baixas, IDs, restauração atômica e compatibilidade com backups antigos. |
 | `FinanceData — exportJSON()` | Exportação de backup. |
 | `FinanceData — Perfil do Usuário` | Leitura e gravação de perfil. |
+| `Perfil — sincronização e enquadramento do avatar` | Recorte, limites de zoom, sincronização pendente e precedência do perfil local/nuvem. |
 | `FinanceData — getAll()` | Consulta de todos os itens. |
 | `Utilitários — formatCurrency()` | Formatação monetária. |
 | `Utilitários — getYearMonthString()` | Formatação de ano e mês. |
@@ -506,6 +534,13 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 - O Roadmap foi atualizado com RM-025 a RM-027.
 - RM-027: ampliadas as palavras-chave da categorização automática, corrigida a classificação de 'Mercado Livre' para Compras, removidas palavras ambíguas e 'Mercado Pago' direcionado para Outros.
 - Adicionados quatro testes de `autoDetectCategory`, incluindo palavras-chave, normalização e precedência da categoria informada no CSV.
+- RM-025 parte A: contas PF/PJ, vínculos opcionais em lançamentos/templates, saldos, sincronização e backup implementados sem interface; migração SQL pendente de aplicação manual.
+- Exclusão da própria conta Supabase pela função `public.delete_my_account()`, com confirmação explícita e limpeza dos dados/sessão locais após sucesso; migração pendente de aplicação manual.
+- Reset agora também apaga contas bancárias, preservando sessão, nome e foto; testes cobrem fila de exclusões e limpeza após apagar a conta de login.
+- Sessão expirada preserva alterações pendentes, orienta o login na mesma conta e exige confirmação explícita antes de descartá-las para trocar de conta.
+- Validação estrita do backup JSON impede restauração parcial de dados inválidos e mantém compatibilidade com backups antigos.
+- Erros ao verificar a sessão preservam os dados locais; merges da nuvem respeitam alterações e exclusões pendentes.
+- Nome e foto agora são sincronizados com `profiles` sob RLS; o modal de recorte do avatar permite arrastar, teclado e zoom, e o backup permanece sem dados de perfil.
 
 ### v4.0 — 28/10/2026 (versão atual)
 
