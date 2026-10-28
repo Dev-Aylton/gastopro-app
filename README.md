@@ -18,7 +18,7 @@
 4. Respeite as **Decisões de produto**: Pix entra como Gasto (pago); boleto, empréstimos, parcelamentos e contas parceladas entram como "a pagar" nos meses seguintes e só o usuário marca como pago; sem foto, print nem OCR.
 5. Não deduza informações nem o escopo da mudança: confirme com o Aylton antes de alterar.
 6. Mudanças no banco são feitas no painel do Supabase e registradas em `supabase/schema.sql`.
-7. Não proponha nem implemente soluções pagas. Use apenas planos e serviços gratuitos até que o app tenha usuários; a monetização vem depois (veja o Roadmap).
+7. Não proponha nem implemente soluções pagas. Use apenas planos e serviços gratuitos até que o app tenha usuários; não há monetização por ora.
 
 ---
 
@@ -455,7 +455,7 @@ O SHA-512 de pdfjs-dist foi conferido antes da extração; o pacote foi publicad
 - Boleto, empréstimos, parcelamentos e contas parceladas, depois de lançados, aparecem como **"a pagar"** em cada mês seguinte do período; **só o usuário marca como pago**, mês a mês.
 - O app não terá importação por foto, print nem OCR; a decisão é manter o app leve.
 - O uso de PDF é limitado a documentos com texto selecionável; a prévia deve ser conferida.
-- Desenvolvimento 100% em planos gratuitos até o app estar funcionando e com vários usuários; a monetização vem depois.
+- Desenvolvimento 100% em planos gratuitos até o app estar funcionando e com vários usuários; não há monetização por ora.
 
 ---
 
@@ -485,24 +485,28 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 - [ ] **RM-018 — Notificações de alertas de gastos** / Descrição: Parte 1 (sem custo): central de notificações dentro do app, com histórico dos alertas de metas (80% e 100%). Parte 2 (somente se couber no plano gratuito): notificações push via Service Worker com o app fechado, enviadas por Edge Function do Supabase com agendamento; avaliar se o plano gratuito permite o agendamento. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-019 — Offline-First aprimorado com IndexedDB** / Descrição: migrar de localStorage para IndexedDB para maior capacidade e performance; manter fila para operações offline e envio ao reconectar; exibir status de conectividade na UI. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-020 — Ampliar cobertura de testes automatizados** / Descrição: testes para o fluxo completo de quatro passos do Wizard. / Critério de pronto: a definir. / Arquivos: a definir.
-- [ ] **RM-021 — Plano Freemium (Free vs. Pro)** / Descrição: separar funcionalidades entre plano Gratuito e Pro; considerar PDF/Excel, histórico ilimitado e backup automático agendado no Pro. / Critério de pronto: a definir. / Arquivos: a definir.
-- [ ] **RM-022 — Integração com Gateway de Pagamento** / Descrição: avaliar Mercado Pago, Asaas ou Stripe para assinaturas Pro e webhook para liberar acesso automaticamente após confirmação. / Critério de pronto: a definir. / Arquivos: a definir.
-- [ ] **RM-023 — Backend Python (FastAPI + Supabase)** / Descrição: API RESTful com FastAPI e SQLAlchemy; hospedagem Render/Railway; parser CSV com pandas; cron jobs de backup; endpoints protegidos com JWT integrado ao Supabase Auth. / Critério de pronto: a definir. / Arquivos: a definir.
-- [ ] **RM-024 — Sistema de Afiliados** / Descrição: recomendação inteligente de cartões e contas para receita passiva do app. / Critério de pronto: a definir. / Arquivos: a definir.
 
 ### Descartado
 
 - Importação por foto de cupom (6E) — motivo: decisão do autor: o app não terá foto/OCR.
+- [ ] **RM-021 — Plano Freemium (Free vs. Pro)** / Descrição: separar funcionalidades entre plano Gratuito e Pro; considerar PDF/Excel, histórico ilimitado e backup automático agendado no Pro. / Critério de pronto: a definir. / Arquivos: a definir. — motivo: decisão do autor: sem gastos por ora; serviços pagos e monetização foram descartados
+- [ ] **RM-022 — Integração com Gateway de Pagamento** / Descrição: avaliar Mercado Pago, Asaas ou Stripe para assinaturas Pro e webhook para liberar acesso automaticamente após confirmação. / Critério de pronto: a definir. / Arquivos: a definir. — motivo: decisão do autor: sem gastos por ora; serviços pagos e monetização foram descartados
+- [ ] **RM-023 — Backend Python (FastAPI + Supabase)** / Descrição: API RESTful com FastAPI e SQLAlchemy; hospedagem Render/Railway; parser CSV com pandas; cron jobs de backup; endpoints protegidos com JWT integrado ao Supabase Auth. / Critério de pronto: a definir. / Arquivos: a definir. — motivo: decisão do autor: sem gastos por ora; serviços pagos e monetização foram descartados
+- [ ] **RM-024 — Sistema de Afiliados** / Descrição: recomendação inteligente de cartões e contas para receita passiva do app. / Critério de pronto: a definir. / Arquivos: a definir. — motivo: decisão do autor: sem gastos por ora; serviços pagos e monetização foram descartados
+- Propaganda no app — motivo: descartada por enquanto; depende de muitos usuários e exige revisar a política de privacidade.
+- Apoio voluntário por Pix (antigo RM-028) — motivo: decisão do autor: excluído por enquanto.
 
-### Novas melhorias (a preencher)
+### Novas melhorias
 
-- [ ] **RM-025 — Título** / Descrição: a preencher. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-025 — Contas bancárias PF/PJ** / Descrição: cadastro de contas (nome, instituição, tipo PF ou PJ, saldo inicial, saldo atual); campo de conta nos lançamentos atualizando o saldo; saldo consolidado e filtro Todos/PF/PJ no Dashboard; ajuste rápido manual de saldo; sincronização com Supabase. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-026 — Cartões de crédito e limites** / Descrição: cadastro de cartão (nome, limite total, dia de fechamento, dia de vencimento, conta vinculada); compras parceladas de 1x a 24x com abatimento do limite disponível e parcelas projetadas nos meses futuros; barra de uso do limite e alerta em 80%. Antes de implementar, confirmar com o Aylton como isso convive com as parcelas e dívidas "a pagar" já existentes. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-027 — Mais palavras-chave na categorização** / Descrição: ampliar as regras de categoria automática do importador. / Critério de pronto: a definir. / Arquivos: a definir.
 
 ---
 
 ## 📋 Changelog
 
-### v4.0 — 28/10/2026 (versão atual)
+### Planejamento (sem versão)
 
 - Bloco 5.1: melhorias de acessibilidade na navegação e nos modais.
 - Bloco 6A: reconhecimento e tratamento de parcelas durante a importação.
