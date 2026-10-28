@@ -547,6 +547,10 @@ const GastoProImporter = (() => {
     const warnings = [];
     const rows = [];
     const blocks = [...text.matchAll(/<STMTTRN\b([\s\S]*?)(?=<\/STMTTRN\b|<STMTTRN\b|<\/BANKTRANLIST\b|$)(?:<\/STMTTRN\b[^>]*>)?/gi)];
+    if (blocks.length === 0) {
+      setWarnings(['Nenhuma transação encontrada no arquivo OFX.']);
+      return [];
+    }
     const getField = (block, tag) => {
       const match = block.match(new RegExp(`<${tag}>([^<\\r\\n]*)`, 'i'));
       return match ? match[1].trim() : '';
@@ -558,6 +562,7 @@ const GastoProImporter = (() => {
       '&quot;': '"',
       '&apos;': "'"
     })[entity]);
+    const defaultTypeRows = [];
 
     blocks.slice(0, MAX_ROWS).forEach(match => {
       const block = `<STMTTRN${match[1]}`;
@@ -570,22 +575,33 @@ const GastoProImporter = (() => {
         : null;
       const signedAmount = parseMoneySigned(getField(block, 'TRNAMT'));
       const memo = getField(block, 'MEMO');
-      const desc = truncateText(decodeDescription(memo || getField(block, 'NAME')), 300);
-      rows.push({
+      const originalDesc = decodeDescription(memo || getField(block, 'NAME'));
+      const desc = truncateText(originalDesc || 'Lançamento importado', 300);
+      const row = {
         date,
         desc,
         amount: Math.abs(signedAmount),
         signedAmount,
-        category: truncateText(autoDetectCategory(desc), 100),
+        category: truncateText(autoDetectCategory(originalDesc), 100),
         invalid: !date,
         invalidReason: date ? '' : 'Data inválida ou ausente.',
         raw: truncateText(match[0].trim(), MAX_LINE_CHARS)
-      });
+      };
+      const transactionType = getField(block, 'TRNTYPE').toUpperCase();
+      if (['CREDIT', 'DEP', 'DIRECTDEP', 'INT', 'DIV'].includes(transactionType)) {
+        row.type = 'income';
+      } else if (['DEBIT', 'PAYMENT', 'CHECK', 'ATM', 'FEE', 'SRVCHG', 'POS', 'CASH',
+        'REPEATPMT', 'DIRECTDEBIT'].includes(transactionType)) {
+        row.type = 'variable';
+      } else {
+        defaultTypeRows.push(row);
+      }
+      rows.push(row);
     });
     if (blocks.length > MAX_ROWS) {
       warnings.push('O extrato excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.');
     }
-    applyDefaultTypes(rows);
+    applyDefaultTypes(defaultTypeRows);
     applyInstallments(rows);
     setWarnings(warnings);
     return rows;
@@ -902,7 +918,7 @@ const GastoProImporter = (() => {
   // API PÚBLICA
   // ================================================================
   return {
-    parseCSV, parseRawText, parsePixPayload, parseBoletoLine, groupTextItemsIntoLines,
+    parseCSV, parseRawText, parseOFX, parsePixPayload, parseBoletoLine, groupTextItemsIntoLines,
     autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
     parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, shiftMonth, detectInstallment, matchDebtTemplate,
     buildInstallmentDebt, parseFile

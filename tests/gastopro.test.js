@@ -2037,6 +2037,30 @@ describe('GastoProImporter — importação de arquivos', () => {
     assertEqual(rows.map(row => row.type), ['income', 'variable']);
   });
 
+  it('parseOFX usa descrição padrão quando MEMO e NAME estão ausentes', () => {
+    const rows = GastoProImporter.parseOFX(
+      '<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261015<TRNAMT>-10.00</STMTTRN></BANKTRANLIST></OFX>'
+    );
+    assertEqual(rows[0].desc, 'Lançamento importado');
+  });
+
+  it('parseOFX avisa quando o arquivo não contém transações', () => {
+    const rows = GastoProImporter.parseOFX('<OFX><BANKTRANLIST></BANKTRANLIST></OFX>');
+    assertEqual(rows, []);
+    assertTrue(GastoProImporter.getLastWarnings().includes('Nenhuma transação encontrada no arquivo OFX.'));
+  });
+
+  it('parseOFX prioriza TRNTYPE e usa sinal para tipos desconhecidos', () => {
+    const rows = GastoProImporter.parseOFX(
+      '<OFX><BANKTRANLIST>' +
+      '<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261015<TRNAMT>-10.00<MEMO>Crédito fictício</STMTTRN>' +
+      '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261016<TRNAMT>10.00<MEMO>Débito fictício</STMTTRN>' +
+      '<STMTTRN><TRNTYPE>XFER<DTPOSTED>20261017<TRNAMT>-5.00<MEMO>Transferência fictícia</STMTTRN>' +
+      '</BANKTRANLIST></OFX>'
+    );
+    assertEqual(rows.map(row => row.type), ['income', 'variable', 'variable']);
+  });
+
   itAsync('parseFile marca data inválida em OFX', async () => {
     const ofx = '<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261340' +
       '<TRNAMT>-10.00<MEMO>Compra</BANKTRANLIST></OFX>';

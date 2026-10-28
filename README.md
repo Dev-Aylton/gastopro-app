@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-166%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-169%20casos-10b981?style=for-the-badge)
 
 
 ---
@@ -91,7 +91,7 @@ Integridade SHA-512 dos tarballs oficiais do registry npm, verificada antes da e
 
 ### 📥 Importação de Extratos Bancários (v3.1)
 - **Upload de CSV/PDF**: Arraste e solte ou selecione um arquivo `.csv` para importação em lote ou um PDF de extrato/fatura com texto selecionável (até 10 MB e 30 páginas).
-- **Extratos OFX**: Importe arquivos `.ofx` em formato SGML ou XML, incluindo descrições e acentos em Windows-1252.
+- **Extratos OFX**: Importe arquivos `.ofx` em formato SGML ou XML, incluindo descrições e acentos em Windows-1252. O tipo (receita ou gasto) usa o TRNTYPE quando presente.
 - **Notas fiscais XML**: Importe notas NF-e/NFC-e para criar um lançamento de despesa com emitente, número e valor total.
 - **PDF de extrato ou fatura**: Leitura local do texto selecionável para a prévia; PDFs escaneados não são reconhecidos automaticamente.
 - **Texto Bruto**: Cole diretamente o texto copiado do app ou site do banco, um código Pix copia e cola ou uma linha digitável de boleto.
@@ -168,7 +168,7 @@ financeiro-app/
 │       └── 20261027_hardening.sql # Migração para aplicação manual; não executada
 │
 ├── tests/
-│   ├── gastopro.test.js    # Suite de testes (166 casos, vanilla JS, sem framework)
+│   ├── gastopro.test.js    # Suite de testes (169 casos, vanilla JS, sem framework)
 │   └── test-runner.html    # Página de execução dos testes no navegador
 │
 └── README.md               # Esta documentação
@@ -321,7 +321,7 @@ A tabela `profiles` guarda o identificador Auth do usuário, nome e avatar; o ap
 
 ## 🧪 Testes Automatizados
 
-Suite com **166 casos de teste** em JavaScript puro (sem frameworks).
+Suite com **169 casos de teste** em JavaScript puro (sem frameworks).
 
 ### Como executar
 1. Abra `tests/test-runner.html` no Chrome ou Edge.
@@ -412,7 +412,7 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 - Bloco 6D: importação de Pix copia e cola e linhas digitáveis de boleto.
 - Bloco 6C: leitura local de PDFs de extrato e fatura com texto selecionável.
 - Ajuda embutida no modal de importação, com orientações sobre formatos, prévia, parcelas e privacidade.
-- Cobertura atual: 166 testes automatizados.
+- Cobertura atual: 169 testes automatizados.
 
 ### v3.8 — 27/10/2026
 
