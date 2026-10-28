@@ -1606,6 +1606,65 @@ describe('GastoProImporter — parsing e limites', () => {
   });
 });
 
+describe('GastoProImporter — autoDetectCategory', () => {
+  it('classifica Mercado Livre, Supermercado Extra e Amazon Prime', () => {
+    assertEqual(GastoProImporter.autoDetectCategory('Mercado Livre'), 'Compras');
+    assertEqual(GastoProImporter.autoDetectCategory('MercadoLivre'), 'Compras');
+    assertEqual(GastoProImporter.autoDetectCategory('Supermercado Extra'), 'Mercado');
+    assertEqual(GastoProImporter.autoDetectCategory('Amazon Prime'), 'Assinaturas');
+  });
+
+  it('evita categorias ambíguas e reconhece descrições específicas', () => {
+    const cases = [
+      ['Mercado Pago', 'Outros'],
+      ['Pix enviado Mateus Silva', 'Outros'],
+      ['Tenda do Churrasco', 'Outros'],
+      ['Pix recebido Joao Vivo', 'Receita'],
+      ['Vivo Fibra', 'Moradia'],
+      ['Claro Fatura', 'Moradia'],
+      ['Claro Internet', 'Moradia'],
+      ['Mercado Livre', 'Compras'],
+      ['Supermercado Extra', 'Mercado']
+    ];
+    cases.forEach(([description, category]) => {
+      assertEqual(GastoProImporter.autoDetectCategory(description), category);
+    });
+  });
+
+  it('classifica novas palavras-chave em suas categorias', () => {
+    const cases = [
+      ['Hamburgueria Central', 'Alimentação'],
+      ['Makro Atacado', 'Mercado'],
+      ['Shell Select', 'Transporte'],
+      ['DROGASIL FILIAL 12', 'Saúde'],
+      ['Wellhub', 'Esporte'],
+      ['Duolingo', 'Educação'],
+      ['Prime Video', 'Assinaturas'],
+      ['Neoenergia', 'Moradia'],
+      ['Kabum', 'Compras'],
+      ['Cashback', 'Receita'],
+      ['Cinemark', 'Lazer']
+    ];
+    cases.forEach(([description, category]) => {
+      assertEqual(GastoProImporter.autoDetectCategory(description), category);
+    });
+  });
+
+  it('normaliza acentos e maiúsculas e trata descrições vazias', () => {
+    assertEqual(GastoProImporter.autoDetectCategory('Açougue Bom Preço'), 'Mercado');
+    assertEqual(GastoProImporter.autoDetectCategory(''), 'Outros');
+    assertEqual(GastoProImporter.autoDetectCategory(null), 'Outros');
+  });
+
+  it('mantém categoria informada no CSV acima da detecção automática', () => {
+    const rows = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor;categoria\n' +
+      '15/10/2026;Compra no supermercado;45,90; alimentacao '
+    );
+    assertEqual(rows[0].category, 'Alimentação');
+  });
+});
+
 describe('GastoProImporter — Pix e boletos', () => {
   const crc16 = value => {
     let crc = 0xFFFF;

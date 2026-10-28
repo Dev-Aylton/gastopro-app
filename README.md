@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-173%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-178%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -150,7 +150,7 @@ financeiro-app/
 │   └── migrations/
 │       └── 20261027_hardening.sql # Hardening aplicado e validado em 28/10/2026
 ├── tests/
-│   ├── gastopro.test.js       # 173 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 178 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -336,7 +336,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **173 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **178 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -371,6 +371,7 @@ Suite com **173 casos de teste** em JavaScript puro, sem frameworks. Os testes u
 | `Lógica de Negócio — Regra 50/30/20` | Cálculo de percentuais. |
 | `Lógica de Negócio — paidMonths por mês isolado` | Baixa por mês independente. |
 | `GastoProImporter — parsing e limites` | Parsing, categorias e limites de importação. |
+| `GastoProImporter — autoDetectCategory` | Palavras-chave, prioridade, normalização e categoria CSV informada. |
 | `GastoProImporter — Pix e boletos` | Pix e linhas digitáveis. |
 | `GastoProImporter — texto extraído de PDF` | Agrupamento e parsing de PDF. |
 | `GastoProImporter — extratos bancários robustos` | CSV, parcelas, limites e deduplicação. |
@@ -494,7 +495,7 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 
 - [ ] **RM-025 — Contas bancárias PF/PJ** / Descrição: cadastro de contas (nome, instituição, tipo PF ou PJ, saldo inicial, saldo atual); campo de conta nos lançamentos atualizando o saldo; saldo consolidado e filtro Todos/PF/PJ no Dashboard; ajuste rápido manual de saldo; sincronização com Supabase. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-026 — Cartões de crédito e limites** / Descrição: cadastro de cartão (nome, limite total, dia de fechamento, dia de vencimento, conta vinculada); compras parceladas de 1x a 24x com abatimento do limite disponível e parcelas projetadas nos meses futuros; barra de uso do limite e alerta em 80%. Antes de implementar, confirmar com o Aylton como isso convive com as parcelas e dívidas "a pagar" já existentes. / Critério de pronto: a definir. / Arquivos: a definir.
-- [ ] **RM-027 — Mais palavras-chave na categorização** / Descrição: ampliar as regras de categoria automática do importador. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-027 — Mais palavras-chave na categorização** / Descrição: ampliar as regras de categoria automática do importador. / Critério de pronto: a definir. / Arquivos: a definir.
 
 ---
 
@@ -503,6 +504,8 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 ### Planejamento (sem versão)
 
 - O Roadmap foi atualizado com RM-025 a RM-027.
+- RM-027: ampliadas as palavras-chave da categorização automática, corrigida a classificação de 'Mercado Livre' para Compras, removidas palavras ambíguas e 'Mercado Pago' direcionado para Outros.
+- Adicionados quatro testes de `autoDetectCategory`, incluindo palavras-chave, normalização e precedência da categoria informada no CSV.
 
 ### v4.0 — 28/10/2026 (versão atual)
 
