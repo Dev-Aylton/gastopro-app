@@ -10,6 +10,17 @@
 
 ---
 
+## 🤖 Guia para IAs (leia antes de editar)
+
+1. O estado do projeto está no **Roadmap**: `[ ]` pendente, `[x]` implementado e ainda não testado, `[V]` testado e validado.
+2. Quem concluir um item (pessoa ou IA) deve marcá-lo `[x]` **antes de seguir para o próximo**; marque `[V]` depois que o teste for feito e der certo.
+3. Ao marcar, atualize no mesmo passo o Changelog e, se mudar a quantidade de testes, o total no README.
+4. Respeite as **Decisões de produto**: Pix entra como Gasto (pago); boleto, empréstimos, parcelamentos e contas parceladas entram como "a pagar" nos meses seguintes e só o usuário marca como pago; sem foto, print nem OCR.
+5. Não deduza informações nem o escopo da mudança: confirme com o Aylton antes de alterar.
+6. Mudanças no banco são feitas no painel do Supabase e registradas em `supabase/schema.sql`.
+
+---
+
 ## 📚 Sumário
 
 1. [Título, badges e resumo](#-gastopro--controle-de-gastos--saúde-financeira)
@@ -440,7 +451,7 @@ O SHA-512 de pdfjs-dist foi conferido antes da extração; o pacote foi publicad
 ## 🧭 Decisões de produto
 
 - Pix importado entra como **Gasto (pago)**.
-- Apenas boleto importado entra como **a pagar**.
+- Boleto, empréstimos, parcelamentos e contas parceladas, depois de lançados, aparecem como **"a pagar"** em cada mês seguinte do período; **só o usuário marca como pago**, mês a mês.
 - O app não terá importação por foto, print nem OCR; a decisão é manter o app leve.
 - O uso de PDF é limitado a documentos com texto selecionável; a prévia deve ser conferida.
 
