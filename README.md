@@ -1,6 +1,6 @@
 # 💼 GastoPro — Controle de Gastos & Saúde Financeira
 
-> Aplicativo Web moderno (**Single Page Application — SPA**) de gestão financeira pessoal com Dashboard de Saúde Financeira, gerenciamento completo de receitas e despesas, rastreamento de dívidas, autenticação multi-usuário com Supabase, importação de extratos bancários, **Wizard de Lançamento Rápido** e PWA para uso offline.
+> Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
@@ -8,412 +8,502 @@
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
 ![Testes](https://img.shields.io/badge/Testes-173%20casos-10b981?style=for-the-badge)
 
+---
+
+## 📚 Sumário
+
+1. [Título, badges e resumo](#-gastopro--controle-de-gastos--saúde-financeira)
+2. [Sumário](#-sumário)
+3. [Sobre o projeto e autor](#-sobre-o-projeto-e-autor)
+4. [Funcionalidades](#-funcionalidades)
+5. [Arquitetura e estrutura de arquivos](#-arquitetura-e-estrutura-de-arquivos)
+6. [Referência técnica](#-referência-técnica)
+7. [Segurança e privacidade](#-segurança-e-privacidade)
+8. [Banco de dados](#-banco-de-dados)
+9. [Testes](#-testes)
+10. [Executar, configurar e publicar](#-executar-configurar-e-publicar)
+11. [Dependências e integridade](#-dependências-e-integridade)
+12. [Decisões de produto](#-decisões-de-produto)
+13. [Roadmap](#-roadmap)
+14. [Changelog](#-changelog)
+15. [Licença](#-licença)
 
 ---
 
-## 👨‍💻 Sobre o Projeto & Autor
+## 👨‍💻 Sobre o projeto e autor
 
-O **GastoPro** foi idealizado e desenvolvido por **Aylton Alberto**, estudante do curso de **Análise e Desenvolvimento de Sistemas (ADS)**. O projeto nasceu da necessidade real de transformar uma planilha complexa de controle orçamentário pessoal em uma aplicação web interativa, elegante e segura.
+O **GastoPro** foi idealizado e desenvolvido por **Aylton Alberto**, estudante de **Análise e Desenvolvimento de Sistemas (ADS)**. O projeto nasceu da necessidade de transformar uma planilha complexa de controle orçamentário pessoal em uma aplicação web interativa, elegante e segura.
 
-A versão atual (v4.0) evoluiu de um app puramente local para um **SaaS multi-usuário com banco de dados em nuvem**, mantendo a simplicidade de uso e adicionando autenticação segura via Supabase.
+A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com banco de dados em nuvem, mantendo a simplicidade de uso e adicionando autenticação via Supabase.
 
 ---
 
-## ✨ Funcionalidades Principais
+## ✨ Funcionalidades
 
-### 📊 Dashboard & Saúde Financeira
-- Resumo em tempo real dos 4 KPIs: **Total Recebido**, **Gastos Fixos**, **Gastos Variáveis** e **Saldo Livre**.
-- Diagnóstico visual baseado na metodologia **50/30/20** com barras de progresso coloridas.
-- Cálculo automático da **sobra média diária** até o fim do mês.
-- Gráfico de rosca (doughnut) com distribuição de gastos por categoria via **Chart.js**.
+### 📊 Dashboard e saúde financeira
+- Resumo em tempo real de Total Recebido, Gastos Fixos, Gastos Variáveis e Saldo Livre.
+- Diagnóstico visual baseado na metodologia 50/30/20, com barras de progresso.
+- Cálculo automático da sobra média diária até o fim do mês.
+- Gráfico de rosca com distribuição de gastos por categoria via Chart.js.
 - Orçamento diário ajustado ao mês selecionado e alertas para dívidas vencidas ainda não baixadas.
 
-### 💳 Centro de Dívidas & Previsão de Quitação
-- Rastreamento dinâmico de parcelamentos, empréstimos e financiamentos.
-- Barras de progresso com contagem regressiva de parcelas restantes.
-- Cálculo automático do total devedor consolidado.
-- Badge **"🎉 Quitada!"** automático ao quitar todas as parcelas.
+### 💳 Dívidas e gastos recorrentes
+- Rastreamento de parcelamentos, empréstimos e financiamentos.
+- Barras de progresso, parcelas restantes e total devedor consolidado.
+- Badge automático “🎉 Quitada!” ao quitar todas as parcelas.
+- Gastos fixos repetidos nos meses do período definido; baixa independente por mês.
+- Alternância Ativo/Inativo para pausar despesas sem excluí-las e filtros por tipo.
 
-### 💰 Gerenciador Completo de Ganhos (CRUD)
-- Cadastro rápido, edição e exclusão de receitas.
-- Categorias: Salário, Adiantamento, Renda Extra, Rendimentos, Outros.
+### 💰 Receitas e despesas
+- Cadastro, edição e exclusão de receitas e gastos.
+- Categorias de receita: Salário, Adiantamento, Renda Extra, Rendimentos e Outros.
 - Lançamentos vinculados ao mês de competência da data informada.
 
-### 🧾 Gerenciador de Gastos & Fixos Recorrentes
-- Gastos fixos **repetem automaticamente** em todos os meses dentro do período definido.
-- **Baixa de pagamento** independente por mês (não afeta outros meses).
-- Toggle **Ativo/Inativo** para pausar despesas temporariamente sem excluí-las.
-- Filtros rápidos: Todos / Fixos & Dívidas / Variáveis.
-
-### 🗓️ Navegação Inteligente de Meses
+### 🗓️ Navegação
 - Setas de navegação rápida com virada automática de ano.
-- **Mini Calendário Popover**: acesse qualquer mês/ano diretamente.
-- Indicador visual de meses com dados cadastrados.
+- Mini Calendário Popover para acesso direto a qualquer mês/ano e indicador de meses com dados.
 
-### 🔐 Autenticação & Sincronização Multi-Usuário (Supabase)
-- Cadastro e login com **e-mail e senha**.
-- Recuperação de senha via e-mail (**resetPasswordForEmail**).
-- Dados isolados por usuário via **Row Level Security (RLS)** no PostgreSQL.
-- Sincronização automática ao logar — dados carregados da nuvem.
-- As metas sincronizam com a tabela goals.
-- **Logout**: encerra a sessão e limpa os dados locais deste aparelho; os dados sincronizados na nuvem permanecem.
+### 🎯 Metas e alertas
+- Metas de teto de gastos por categoria sincronizadas com a tabela `goals` do Supabase.
+- Alertas visuais nos limiares exatos de 80% e 100%, com seção no dashboard, cards e modal de criação/edição.
 
-### 👤 Painel do Usuário (Offcanvas Drawer)
-- Personalização de nome e foto de perfil local; imagens JPEG, PNG ou WebP são redimensionadas para no máximo 256×256 e salvas como JPEG.
-- Status da conta: Conectado (Nuvem) ou Modo Local.
-- Exportação de backup completo em JSON.
-- Restauração de backup JSON com prévia, mesclagem por ID ou substituição dos dados.
-- Reset completo com confirmação de segurança; com login, também apaga os dados sincronizados na nuvem, e sem login apaga apenas os dados deste aparelho.
-- As metas por categoria permanecem apenas neste aparelho; não são sincronizadas com o Supabase e são removidas no reset ou na troca de usuário.
+### 🔐 Autenticação, perfil e backups
+- Cadastro e login com e-mail e senha, recuperação de senha por e-mail e sincronização multiusuário.
+- Dados isolados por usuário via Row Level Security (RLS).
+- Nome e foto de perfil personalizados localmente; imagens JPEG, PNG ou WebP são redimensionadas para no máximo 256×256 e salvas como JPEG.
+- Status da conta Conectado (Nuvem) ou Modo Local.
+- Exportação de backup JSON e restauração com prévia, mesclagem por ID ou substituição.
+- Regras de logout, login, reset e troca de conta: consulte [Segurança e privacidade](#-segurança-e-privacidade).
 
-### 📄 Relatório Financeiro em PDF
+### 📄 Relatórios em PDF
 - Relatório mensal, anual ou por intervalo, gerado localmente no navegador.
-- Inclui totais, distribuição por categoria, dívidas, metas, diagnóstico e lançamentos detalhados opcionais.
-- Usa jsPDF 4.2.1 e jspdf-autotable 5.0.9, carregados sob demanda a partir de arquivos locais.
-- No celular, permite compartilhar o arquivo PDF; em outros casos, oferece download ou abertura do PDF.
+- Totais, distribuição por categoria, dívidas, metas, diagnóstico e detalhamento opcional dos lançamentos.
+- Compartilhamento em dispositivos compatíveis; nos demais casos, download ou abertura do PDF.
 
-Os bundles UMD do jsPDF e Chart.js mantêm seus cabeçalhos de licença MIT. O bundle UMD do Supabase não inclui cabeçalho no arquivo oficial; a licença MIT oficial do pacote está preservada em `js/vendor/LICENSE.supabase.txt`. SHA-256 dos arquivos locais:
-- `js/vendor/jspdf.umd.min.js` (jsPDF 4.2.1): `E6551FCDC32F09D6853B2C5126D18D01D9447E0DA618A41A11EBEEE0F6C20D54`
-- `js/vendor/jspdf.plugin.autotable.min.js` (jspdf-autotable 5.0.9): `83DD8E5AE29436BD3D3EF4F4A915125B3951264994C25DE0359D3FBD105ABE15`
-- `js/vendor/supabase.umd.js` (@supabase/supabase-js 2.117.3, publicado em 07/10/2026): `D6A5C4414A5D4CE646D9C1DE223AA7067D3FF664C15394FFEB7FCFFC763354A3`
-- `js/vendor/chart.umd.js` (Chart.js 4.4.1): `74401D738DD3E03EE5DFB3B6841210FE2C4EAD8A960C4011CA4BA0B78A9FD8F3`
-- `js/vendor/pdf.mjs` (pdfjs-dist 6.4.299, legacy): `BC51F4874A66E3853189CB5D50ABA4B3096AFA83ED433B885D293A3D94583CDC`
-- `js/vendor/pdf.worker.mjs` (pdfjs-dist 6.4.299, legacy): `BB422F60804477DE4A0B09091D8347A916A387755ED1CBAD24CCAEC1D09C78BF`
-- `js/vendor/LICENSE.pdfjs.txt` (Apache-2.0): `0D542E0C8804E39AA7F37EB00DA5A762149DC682D7829451287E11B938E94594`
+### 📥 Importação de extratos
+- Arraste e solte ou selecione um arquivo (.csv, .ofx, .xml ou .pdf).
+- PDF de extrato ou fatura com texto selecionável, até 10 MB e 30 páginas. A leitura é local e aproximada; PDFs escaneados não são reconhecidos automaticamente. Confira os dados na prévia.
+- Detecção automática de colunas Data, Descrição e Valor, sem configuração manual.
+- OFX em formato SGML ou XML, incluindo descrições e acentos em Windows-1252. O tipo (receita ou gasto) usa `TRNTYPE` quando presente.
+- XML de nota fiscal NF-e/NFC-e: gera um lançamento com emitente, número e valor total.
+- Texto bruto: cole linhas do extrato, um código Pix copia e cola ou uma linha digitável de boleto.
+- CSV: colunas Data, Descrição e Valor; colunas opcionais `categoria`, `tipo`, `mes_inicio`, `mes_fim`, `dia_venc` e `ativo`.
+- Pré-visualização editável: Gasto (pago), Gasto a pagar, Conta fixa, Dívida ou Receita.
+- Categorização automática por mais de 80 palavras-chave; seleção granular, detecção de parcelas e deduplicação.
 
-Integridade SHA-512 dos tarballs oficiais do registry npm, verificada antes da extração:
-- `@supabase/supabase-js@2.117.3`: `K+f8PimXDunPWQ63CKRXaF5pbVPJxmfw5ryAnh0s9S9PkwcuqBjiSpIaqpF7KLDljeYwXIL85ST8QxaO0+XuvA==`
-- `chart.js@4.4.1`: `C74QN1bxwV1v2PEujhmKjOZ7iUM4w6BWs23Md/6aOZZSlwMzeCIDGuZay++rBgChYru7/+QFeoQW0fQoP534Dg==`
-- `pdfjs-dist@6.4.299` (publicado em 03/10/2026; SHA-512 conferido antes da extração): `AVl138zALtfaAPvADulE0PZThbYzCBS79nL4pOSL/6Sm/4AH5A21BD9VHt97OlCuzJuCpmeZtAtkinisF4Vb1g==`
+### 🪄 Wizard de Lançamento Rápido
+- Fluxo em quatro passos: Renda → Gastos Fixos → Gastos Variáveis → Diagnóstico 50/30/20.
+- Fontes de renda múltiplas; checklist de gastos fixos cadastrados; grid de dez categorias para gastos variáveis.
+- KPIs de renda, gastos e saldo, diagnóstico textual e salvamento em lote com sincronização automática.
+- **Validação contextual:** impede avançar sem informar renda; categoriza automaticamente gastos avulsos.
 
-### 📱 PWA (Progressive Web App)
-- Instalável como app nativo no celular ou desktop.
-- Funciona offline com Service Worker (Network First + Cache Fallback).
-
-### 📥 Importação de Extratos Bancários (v3.1)
-- **Upload de CSV/PDF**: Arraste e solte ou selecione um arquivo `.csv` para importação em lote ou um PDF de extrato/fatura com texto selecionável (até 10 MB e 30 páginas).
-- **Extratos OFX**: Importe arquivos `.ofx` em formato SGML ou XML, incluindo descrições e acentos em Windows-1252. O tipo (receita ou gasto) usa o TRNTYPE quando presente.
-- **Notas fiscais XML**: Importe notas NF-e/NFC-e para criar um lançamento de despesa com emitente, número e valor total.
-- **PDF de extrato ou fatura**: Leitura local do texto selecionável para a prévia; PDFs escaneados não são reconhecidos automaticamente.
-- **Texto Bruto**: Cole diretamente o texto copiado do app ou site do banco, um código Pix copia e cola ou uma linha digitável de boleto.
-- **Ajuda do importador**: O modal explica os formatos aceitos, a prévia, parcelas, duplicados e privacidade.
-- **Detecção automática de colunas**: O parser identifica colunas de Data, Descrição e Valor sem configuração manual.
-- O CSV aceita a coluna opcional categoria.
-- **Contas a pagar em CSV**: Além das colunas básicas, aceite `tipo` (`income`, `fixed`, `debt` ou `variable`), `mes_inicio`, `mes_fim`, `dia_venc` e `ativo` (`não`, `false` ou `0` desativa a linha).
-- **Categorização automática**: +80 palavras-chave mapeiam automaticamente lançamentos para categorias (iFood → Alimentação, Spotify → Assinaturas, etc.).
-- **Pré-visualização editável**: Em todas as importações, revise categoria e selecione o tipo linha por linha: Gasto (pago), Gasto a pagar, Conta fixa, Dívida ou Receita.
-- **Seleção granular**: Selecione ou desmarque lançamentos individualmente ou todos de uma vez.
-- **Detecção de parcelas**: Identifica parcelas em descrições e permite criar a dívida com as parcelas anteriores baixadas ou dar baixa automática em uma dívida já cadastrada.
-- **Suporte a múltiplos formatos**: `DD/MM/AAAA Descrição R$ Valor`, `DD/MM Descrição Valor`, e outros padrões de extratos brasileiros.
-
-### 🪄 Wizard de Lançamento Rápido (v3.2)
-- **Fluxo guiado em 4 passos**: Renda → Gastos Fixos → Gastos Variáveis → Diagnóstico 50/30/20.
-- **Passo 1 — Renda**: Adicione múltiplas fontes de renda (salário, freelance, etc.) com valor e data.
-- **Passo 2 — Gastos Fixos**: Checklist dos gastos fixos **já cadastrados** no sistema + campo para adicionar novos.
-- **Passo 3 — Gastos Variáveis**: Grid visual com 10 categorias (Alimentação, Mercado, Transporte...) + campo avulso.
-- **Passo 4 — Resultado**: KPIs de Renda/Gastos/Saldo + barras animadas da regra 50/30/20 + diagnóstico textual inteligente.
-- **Salvamento em lote**: Todos os dados são salvos de uma vez via `FinanceData.add()` com sincronização automática no Supabase.
-- **Validação contextual**: Impede avançar sem informar renda; categoriza automaticamente gastos avulsos.
-
-### 🔐 Dados locais, login, logout e reset
-- Ao criar conta ou entrar, lançamentos e templates são sincronizados para a conta Supabase autenticada.
-- O logout encerra a sessão e remove os dados financeiros locais deste aparelho; os registros na nuvem permanecem até que o Reset logado solicite sua exclusão.
-- O Reset com sessão ativa remove os dados locais e apaga os dados sincronizados na nuvem. Sem sessão ativa, remove somente os dados deste aparelho.
-- Metas por categoria, nome e foto do perfil ficam apenas no aparelho. A sessão de autenticação é mantida pelo cliente Supabase no navegador.
-### 🧭 Navegação Lateral (Sidebar) & Sincronização
+### 🧭 Navegação lateral e sincronização
 - **Indicadores em tempo real**: Badges numéricos com o total de receitas e despesas cadastradas no mês selecionado.
 - **Ferramentas de produtividade**: Acesso direto ao **Importador de Extratos** e ao **Wizard de Lançamento Rápido**.
 - **Botão Atualizar Dados**: Posicionado na base da barra lateral (rodapé da sidebar), permitindo sincronizar dados locais com o Supabase a qualquer momento com animação visual e feedback ao usuário.
 
-## 📁 Estrutura de Arquivos
+### ♿ Acessibilidade e PWA
+- Gerenciamento de foco, navegação por Tab e fechamento de modais por Esc.
+- Instalável em celular ou desktop; Service Worker com funcionamento offline (Network First + Cache Fallback).
 
-```
+---
+
+## 🏗️ Arquitetura e estrutura de arquivos
+
+```text
 financeiro-app/
-│
-├── index.html              # Estrutura SPA: sidebar, topbar, telas, modais, auth modal e drawer
-├── manifest.json           # Manifesto PWA (nome, ícones, cores, orientação)
-├── sw.js                   # Service Worker (cache offline e atualização automática)
-│
+├── index.html                 # Estrutura SPA, sidebar, telas, modais, autenticação e drawer
+├── manifest.json              # Manifesto PWA: nome, ícones, cores e orientação
+├── sw.js                      # Service Worker: cache offline e atualização automática
 ├── assets/
-│   ├── logo.jpg            # Logotipo do app
-│   ├── default_avatar.jpg  # Avatar padrão do usuário
-│   ├── icon-192.png        # Ícone PWA 192x192
-│   ├── icon-512.png        # Ícone PWA 512x512
-│   ├── icon-maskable-512.png # Ícone maskable
-│   └── apple-touch-icon.png # Ícone para iOS
-│
+│   ├── logo.jpg               # Logotipo do app
+│   ├── default_avatar.jpg     # Avatar padrão
+│   ├── icon-192.png           # Ícone PWA 192x192
+│   ├── icon-512.png           # Ícone PWA 512x512
+│   ├── icon-maskable-512.png  # Ícone maskable
+│   └── apple-touch-icon.png   # Ícone para iOS
 ├── css/
-│   └── style.css           # Design System completo: dark mode, variáveis CSS, animações
-│
+│   └── style.css              # Design System, dark mode, variáveis e animações
 ├── js/
-│   ├── data.js             # Camada de Dados: CRUD local (localStorage) + sync cloud
-│   ├── supabase.js         # Módulo Supabase: auth (email e senha) + CRUD PostgreSQL
-│   ├── categories.js       # Categorias compartilhadas e normalização
-│   ├── importer.js         # Módulo de Importação: parser CSV/Texto + categorização automática (v3.1)
-│   ├── app.js              # Controller: lógica, renderização, eventos, gráficos e auth
-│   ├── report.js           # Dados e renderização do relatório PDF
-│   ├── a11y.js             # Gerencia foco, navegação por Tab e fechamento por Esc nos modais
-│   └── vendor/
-│       ├── chart.umd.js
-│       ├── supabase.umd.js
-│       ├── LICENSE.supabase.txt
-│       ├── jspdf.umd.min.js
-│       ├── jspdf.plugin.autotable.min.js
-│       ├── pdf.mjs              # pdf.js legacy (carregado sob demanda)
-│       ├── pdf.worker.mjs       # Worker local do pdf.js
-│       └── LICENSE.pdfjs.txt    # Licença Apache-2.0
-│
+│   ├── app.js                 # Controller: lógica, renderização, eventos, gráficos e auth
+│   ├── data.js                # Camada de dados: CRUD local e sincronização
+│   ├── supabase.js            # Autenticação e persistência Supabase
+│   ├── categories.js          # Categorias compartilhadas e normalização
+│   ├── importer.js            # Parsers e categorização automática
+│   ├── report.js              # Dados e renderização do relatório PDF
+│   ├── a11y.js                # Foco, Tab e fechamento acessível de modais
+│   └── vendor/                # Chart.js, Supabase, jsPDF, PDF.js e licenças
 ├── supabase/
-│   ├── schema.sql          # Esquema do banco: tabelas, RLS, índices, permissões e triggers
+│   ├── schema.sql             # Tabelas, validações, RLS, índices, permissões e triggers
 │   └── migrations/
-│       └── 20261027_hardening.sql # Migração para aplicação manual; não executada
-│
+│       └── 20261027_hardening.sql # Hardening aplicado e validado em 28/10/2026
 ├── tests/
-│   ├── gastopro.test.js    # Suite de testes (173 casos, vanilla JS, sem framework)
-│   └── test-runner.html    # Página de execução dos testes no navegador
-│
-└── README.md               # Esta documentação
+│   ├── gastopro.test.js       # 173 testes em JavaScript puro, sem framework
+│   ├── test-runner.html       # Página de execução dos testes no navegador
+│   └── test-runner.js         # Runner dos testes no navegador
+└── README.md                  # Esta documentação
+```
+
+```text
+index.html (View)
+       │ eventos DOM
+       ▼
+js/app.js (Controller) ── renderAll() · switchToView() · syncUserDataFromCloud()
+       │                         │
+       │ CRUD local              │ autenticação e sincronização
+       ▼                         ▼
+js/data.js                 js/supabase.js
+FinanceData                SupabaseAuth
+localStorage               Supabase Auth + PostgreSQL
+       │
+       ├── categories.js: categorias e normalização compartilhadas
+       ├── importer.js: parsing e categorização de importações
+       ├── report.js: relatório PDF
+       └── a11y.js: comportamento acessível dos modais
 ```
 
 ---
 
-## 🏗️ Arquitetura do Código
+## 🧩 Referência técnica
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                      index.html (View)                  │
-│   SPA com 3 telas, auth modal, drawer e modais nativos  │
-└───────────────────────┬─────────────────────────────────┘
-                        │ eventos DOM
-┌───────────────────────▼─────────────────────────────────┐
-│                   js/app.js (Controller)                │
-│   renderAll() · switchToView() · syncUserDataFromCloud() │
-└───────────┬───────────────────────────┬─────────────────┘
-            │ CRUD local                │ auth + cloud sync
-┌───────────▼──────────┐   ┌───────────▼─────────────────┐
-│    js/data.js        │   │      js/supabase.js          │
-│  FinanceData         │   │      SupabaseAuth            │
-│  localStorage CRUD   │   │  Supabase Auth + PostgreSQL  │
-└──────────────────────┘   └─────────────────────────────┘
-```
-
----
-
-### `js/data.js` — Camada de Dados (Model)
-
-Objeto singleton `FinanceData` — única camada que acessa o `localStorage`.
-
-**Chaves de armazenamento:**
+### Chaves do localStorage
 
 | Chave | Conteúdo |
 |---|---|
-| `gastopro_entries_v4_oct` | Lançamentos pontuais (ganhos e variáveis) |
+| `gastopro_entries_v4_oct` | Lançamentos pontuais |
 | `gastopro_templates_v4_oct` | Templates de gastos fixos recorrentes |
-| `gastopro_profile_real_v2` | Perfil do usuário (nome, email, userId, avatar) |
+| `gastopro_profile_real_v2` | Perfil local: nome, e-mail, userId e avatar |
+| `gastopro_goals_v1` | Metas por categoria |
+| `gastopro_last_uid` | UID da conta dona dos dados locais ativos |
+| `gastopro_pending_sync_v1` | Fila de sincronização pendente |
 
-**IDs:** lançamentos e templates usam UUID v4; o tipo de registro é determinado pela coleção correspondente, não por prefixos no ID.
+### Esquemas locais
 
-**API pública:**
-
-| Método | Descrição |
-|---|---|
-| `getEntries()` | Lê lançamentos pontuais |
-| `getTemplates()` | Lê templates de gastos fixos |
-| `getByMonth(ym)` | Retorna itens do mês (pontuais + projeções fixas) |
-| `getAll()` | Retorna todos os itens |
-| `add(item)` | Insere lançamento ou template conforme o tipo |
-| `update(id, fields)` | Atualiza campos de um item existente |
-| `togglePaid(id, ym)` | Inverte status de pagamento por mês |
-| `toggleActive(id)` | Pausa/reativa um template fixo |
-| `delete(id)` | Remove permanentemente um item (local + nuvem) |
-| `clearAll()` | Apaga todos os dados |
-| `exportJSON()` | Download do backup em JSON |
-| `getProfile()` / `saveProfile()` | Lê/salva perfil do usuário |
-
-**Esquema — Lançamento Pontual:**
+Lançamento pontual:
 ```json
 {
-  "id":       "550e8400-e29b-41d4-a716-446655440000",
-  "month":    "2026-11",
-  "type":     "income",
-  "desc":     "Salário",
-  "amount":   2710.00,
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "month": "2026-11",
+  "type": "income",
+  "desc": "Salário",
+  "amount": 2710.00,
   "category": "Salário",
-  "paid":     true,
-  "date":     "2026-11-05"
+  "paid": true,
+  "date": "2026-11-05"
 }
 ```
 
-**Esquema — Template de Gasto Fixo:**
+Template de gasto fixo:
 ```json
 {
-  "id":         "550e8400-e29b-41d4-a716-446655440001",
-  "desc":       "Plano de saúde – Isabella",
-  "amount":     480.00,
-  "category":   "Saúde",
-  "type":       "fixed",
-  "isDebt":     false,
-  "active":     true,
+  "id": "550e8400-e29b-41d4-a716-446655440001",
+  "desc": "Plano de saúde – Isabella",
+  "amount": 480.00,
+  "category": "Saúde",
+  "type": "fixed",
+  "isDebt": false,
+  "active": true,
   "startMonth": "2026-01",
-  "endMonth":   null,
-  "day":        "05",
+  "endMonth": null,
+  "day": "05",
   "paidMonths": { "2026-10": true, "2026-11": false }
 }
 ```
 
----
+Meta:
+```json
+{ "id": "goal-550e8400-e29b-41d4-a716-446655440002", "category": "Mercado", "limit": 800 }
+```
 
-### `js/supabase.js` — Integração Supabase
+Lançamentos e templates usam UUID v4; metas usam um ID local com prefixo `goal-`.
 
-Módulo `SupabaseAuth` com responsabilidades de autenticação e sincronização cloud.
+### Fila de sincronização
 
-**Métodos de Autenticação:**
+O registro pendente contém `full`, `entries`, `templates`, `deletedEntries`, `deletedTemplates`, `goals` e `deletedGoals`. Entradas e templates são identificados por ID; metas e exclusões de metas são identificadas pela categoria. Alterações são enfileiradas localmente e removidas da fila após sincronização bem-sucedida.
+
+Metas são gravadas em `public.goals` por categoria, com upsert usando `onConflict: 'user_id,category'`; exclusões enfileiradas são enviadas pela fila pendente.
+
+### API pública de `FinanceData` (`js/data.js`)
 
 | Método | Descrição |
 |---|---|
-| `getSessionUser()` | Retorna o usuário da sessão ativa, ou null |
-| `signUp(name, email, password)` | Cria nova conta com metadados de nome |
-| `signIn(email, password)` | Login com credenciais |
-| `resetPasswordForEmail(email)` | Envia link de redefinição de senha para o e-mail |
-| `signOut()` | Encerra a sessão no Supabase |
-| `onAuthStateChange(cb)` | Escuta mudanças de sessão em tempo real |
+| `clearUserData()` | Remove chaves locais `gastopro_*`. |
+| `getPendingSync()` | Lê a fila pendente de sincronização. |
+| `savePendingSync(pending)` | Persiste a fila pendente. |
+| `hasPendingSync()` | Indica se há sincronização pendente. |
+| `getActiveUserId()` | Retorna o UID local ativo. |
+| `markFullSync()` | Marca a sincronização completa como pendente. |
+| `queueLocalChanges(kind, previousItems, nextItems)` | Enfileira alterações e exclusões de entradas ou templates. |
+| `queueGoalChanges(previousGoals, nextGoals)` | Enfileira alterações e exclusões de metas por categoria. |
+| `activateUser(userId)` | Ativa o usuário e prepara o isolamento local. |
+| `prepareLocalDataForSync(userId)` | Prepara dados locais e envia a fila pendente. |
+| `syncAllToCloud(userId)` | Marca e envia uma sincronização completa. |
+| `flushPendingSync(userId)` | Envia e atualiza a fila pendente na nuvem. |
+| `mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded, cloudGoals)` | Mescla dados locais e recebidos da nuvem. |
+| `getEntries()` | Lê lançamentos pontuais locais. |
+| `saveEntries(entries, options)` | Persiste lançamentos e atualiza sincronização. |
+| `getTemplates()` | Lê templates recorrentes locais. |
+| `saveTemplates(templates, options)` | Persiste templates e atualiza sincronização. |
+| `getByMonth(yearMonth)` | Combina lançamentos e projeções de templates do mês. |
+| `getAll()` | Retorna todos os itens financeiros. |
+| `addMany(items)` | Insere itens em lote. |
+| `add(item)` | Insere lançamento ou template conforme o tipo. |
+| `addTemplate(tpl)` | Cria um template recorrente. |
+| `update(id, updatedFields)` | Atualiza um item existente. |
+| `togglePaid(id, currentYm)` | Alterna a baixa de pagamento do mês. |
+| `markPaid(id, ym)` | Marca um template como pago no mês. |
+| `markPaidMany(payments)` | Marca várias baixas em lote. |
+| `toggleActive(id)` | Pausa ou reativa um template. |
+| `delete(id)` | Exclui um item. |
+| `clearAll()` | Apaga lançamentos, templates e metas, e envia exclusões pendentes. |
+| `exportJSON()` | Gera e baixa backup JSON. |
+| `importJSON(text, mode)` | Valida e restaura backup, com modo merge ou replace. |
+| `getProfile()` | Lê o perfil local. |
+| `saveProfile(profile)` | Persiste o perfil local. |
+| `getGoals()` | Lê metas locais. |
+| `saveGoals(goals)` | Persiste metas e enfileira alterações. |
+| `saveGoal(category, limit)` | Cria ou atualiza uma meta. |
+| `deleteGoal(category)` | Exclui uma meta e solicita sincronização. |
 
-**Métodos de Sincronização Cloud:**
+### API pública de `SupabaseAuth` (`js/supabase.js`)
 
 | Método | Descrição |
 |---|---|
-| `fetchCloudEntries(userId)` | Busca lançamentos do usuário na nuvem |
-| `saveCloudEntry(entry, userId)` | Upsert de lançamento na tabela `entries` |
-| `deleteCloudEntry(id, userId)` | Remove lançamento da nuvem |
-| `fetchCloudTemplates(userId)` | Busca templates do usuário na nuvem |
-| `saveCloudTemplate(tpl, userId)` | Upsert de template na tabela `fixed_templates` |
-| `deleteCloudTemplate(id, userId)` | Remove template da nuvem |
+| `fetchAllPages(fetchPage)` | Busca registros paginados. |
+| `upsertWithFallback(upsert, items, payloads)` | Tenta upsert em lote e recorre a linhas individuais em caso de falha. |
+| `getSessionUser()` | Obtém o usuário da sessão Supabase ativa. |
+| `getAuthenticatedUserId(expectedUserId)` | Valida o usuário autenticado esperado. |
+| `reportCloudError(operation, error)` | Registra e formata erro de operação na nuvem. |
+| `signUp(name, email, password)` | Cria uma conta com metadados de nome. |
+| `signIn(email, password)` | Autentica com e-mail e senha. |
+| `signOut()` | Encerra a sessão de autenticação. |
+| `resetPasswordForEmail(email)` | Solicita redefinição de senha por e-mail. |
+| `updatePassword(password)` | Atualiza a senha da sessão. |
+| `onAuthStateChange(callback)` | Registra callback de mudanças de autenticação. |
+| `fetchCloudEntries(userId)` | Busca lançamentos do usuário. |
+| `saveCloudEntries(entries, userId)` | Salva lançamentos em lote. |
+| `saveCloudEntry(entry, userId)` | Salva um lançamento. |
+| `deleteCloudEntry(entryId, userId)` | Exclui um lançamento. |
+| `deleteCloudEntries(entryIds, userId)` | Exclui lançamentos em lote. |
+| `fetchCloudTemplates(userId)` | Busca templates recorrentes. |
+| `saveCloudTemplates(templates, userId)` | Salva templates em lote. |
+| `saveCloudTemplate(tpl, userId)` | Salva um template. |
+| `deleteCloudTemplate(tplId, userId)` | Exclui um template. |
+| `deleteCloudTemplates(templateIds, userId)` | Exclui templates em lote. |
+| `fetchCloudGoals(userId)` | Busca metas por categoria e converte o limite para número. |
+| `saveCloudGoals(goals, userId)` | Valida e faz upsert das metas por categoria. |
+| `deleteCloudGoals(categories, userId)` | Exclui metas do usuário pelas categorias. |
 
 ---
 
-## 🔒 Modelo de Segurança & Isolamento de Dados
+## 🔒 Segurança e privacidade
 
-### 1. Row Level Security (RLS) — PostgreSQL
-As tabelas `entries` e `fixed_templates` têm RLS ativo. Cada query retorna **apenas registros com `user_id = auth.uid()`**.
-
-### 2. Limpeza de localStorage no Login/Logout
-
-```
-Logout      → encerra a sessao e remove os dados financeiros locais; a nuvem permanece
-Login       → sincroniza os dados da conta ativa com a nuvem
-Reset logado → remove os dados locais e apaga os dados sincronizados na nuvem
-Reset local  → remove somente os dados deste aparelho
-```
-
-Ao trocar de conta, os dados locais da conta anterior são limpos quando não há sincronização pendente. Metas, nome e foto de perfil permanecem locais e não são sincronizados.
-
-### 3. Perfil Sem Dados Hardcoded
-O `defaultProfile` retorna `{ name: '', email: '', avatar: null }` — sem dados pessoais fixos no código.
+- **RLS:** cada usuário autenticado só acessa registros associados ao próprio `auth.uid()`.
+- **Logout:** encerra a sessão e remove os dados `gastopro_*` locais deste aparelho; os dados na nuvem permanecem.
+- **Login:** sincroniza os dados da conta autenticada com os dados locais, conforme a fila pendente.
+- **Reset logado:** apaga lançamentos, templates e metas também na nuvem e mantém a identidade da conta (`userId` e e-mail do perfil).
+- **Reset sem login:** apaga somente os dados deste aparelho.
+- **Troca de conta:** os dados locais da conta anterior são limpos quando não há sincronização pendente.
+- Nome e foto do perfil continuam locais; a sessão de autenticação fica no cliente Supabase no navegador.
+- Os arquivos PDF são lidos no próprio aparelho; não são enviados nem armazenados. A leitura de PDF é de texto selecionável, não de imagem escaneada.
+- O `defaultProfile` não inclui dados pessoais hardcoded.
+- Google Fonts e cdnjs (Font Awesome) são carregados de terceiros e podem receber endereço IP e dados técnicos de conexão; dados financeiros não são enviados a esses provedores.
+- A sincronização Supabase usa HTTPS/TLS e isolamento por usuário via RLS.
 
 ---
 
-## 🗄️ Banco de Dados (Supabase)
+## 🗄️ Banco de dados
 
-O arquivo [`supabase/schema.sql`](./supabase/schema.sql) espelha o banco de produção. Para criar um projeto novo, execute seu conteúdo no SQL Editor do Supabase. Toda mudança no banco deve ser feita no painel e registrada neste arquivo.
+[`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
-A tabela `profiles` guarda o identificador Auth do usuário, nome e avatar; o app atual ainda mantém o perfil localmente e não grava nessa tabela. `entries.debt_info` é um JSONB opcional, mas o código atual não define uma estrutura para seu conteúdo.
+As tabelas `entries`, `fixed_templates`, `goals` e `profiles` têm RLS ativo. A tabela `profiles` guarda o identificador Auth do usuário, nome e avatar; o app mantém nome e foto localmente e não grava nessa tabela. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
+
+Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Consulte também [Executar, configurar e publicar](#-executar-configurar-e-publicar).
 
 ---
 
-## 🧪 Testes Automatizados
+## 🧪 Testes
 
-Suite com **173 casos de teste** em JavaScript puro (sem frameworks).
+Suite com **173 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
-### Como executar
-1. Abra `tests/test-runner.html` no Chrome ou Edge.
-2. Os testes rodam automaticamente.
-3. Detalhes (✅/❌) no **Console (F12)**.
-
-> Os testes usam mock do `localStorage` — seus dados reais não são afetados.
-
-### Cobertura
-
-| Suite | O que é testado |
+| Suite (`describe`) | Área coberta |
 |---|---|
-| `FinanceData — Lançamentos` | getEntries, saveEntries |
-| `FinanceData — Templates` | getTemplates, saveTemplates |
-| `FinanceData — add()` | income, variable, fixed, debt |
-| `FinanceData — getByMonth()` | Projeção de templates, filtro por período |
-| `FinanceData — update()` | Lançamentos, templates, sincronização do `day` |
-| `FinanceData — togglePaid()` | Baixa por mês isolado |
-| `FinanceData — toggleActive()` | Ativar/inativar |
-| `FinanceData — delete()` | Exclusão isolada |
-| `FinanceData — clearAll()` | Limpeza total |
-| `FinanceData — exportJSON()` | Estrutura do backup |
-| `FinanceData — Perfil` | getProfile, saveProfile, merge com defaults |
-| `Utilitários` | formatCurrency, formatDate, escapeHtml |
-| `Lógica de Negócio` | Totais, saldo, regra 50/30/20 |
+| `FinanceData — Lançamentos Pontuais` | CRUD e persistência de lançamentos. |
+| `FinanceData — Isolamento entre usuários` | Isolamento de dados locais entre usuários e troca de conta. |
+| `FinanceData — Metas por Categoria` | Criação, edição, remoção e alertas de metas. |
+| `FinanceData — Templates de Gastos Fixos` | Leitura e gravação de templates. |
+| `FinanceData — add() Lançamentos` | Inserção de tipos de lançamento. |
+| `FinanceData — addTemplate() Gastos Fixos` | Criação de gastos recorrentes. |
+| `FinanceData — getByMonth()` | Projeções e filtros por período. |
+| `FinanceData — update()` | Atualização de lançamentos e templates. |
+| `FinanceData — togglePaid()` | Baixa mensal. |
+| `FinanceData — toggleActive()` | Ativação de templates. |
+| `FinanceData — delete()` | Exclusões. |
+| `FinanceData — clearAll()` | Reset de dados. |
+| `FinanceData — mesclagem completa da nuvem` | Merge e sincronização de dados. |
+| `Privacidade, payloads e autenticação` | Privacidade e validação de payloads. |
+| `Bloco 2 — dívida, orçamento, diagnóstico e categorias` | Regras de dívida, orçamento e categorias. |
+| `Bloco 2 — backup JSON` | Validação e mesclagem de backup. |
+| `FinanceData — exportJSON()` | Exportação de backup. |
+| `FinanceData — Perfil do Usuário` | Leitura e gravação de perfil. |
+| `FinanceData — getAll()` | Consulta de todos os itens. |
+| `Utilitários — formatCurrency()` | Formatação monetária. |
+| `Utilitários — getYearMonthString()` | Formatação de ano e mês. |
+| `Utilitários — formatDate()` | Formatação de data. |
+| `Utilitários — escapeHtml()` | Escape de HTML. |
+| `Acessibilidade dos modais` | Interação acessível em modais. |
+| `Acessibilidade de painéis e navegação` | Painéis e navegação acessíveis. |
+| `Avatar — tipos de imagem suportados` | Tipos de imagem aceitos pelo avatar. |
+| `Lógica de Negócio — Cálculo de Totais` | Totais financeiros. |
+| `Lógica de Negócio — Gastos Fixos Inativos` | Tratamento de templates inativos. |
+| `Lógica de Negócio — Regra 50/30/20` | Cálculo de percentuais. |
+| `Lógica de Negócio — paidMonths por mês isolado` | Baixa por mês independente. |
+| `GastoProImporter — parsing e limites` | Parsing, categorias e limites de importação. |
+| `GastoProImporter — Pix e boletos` | Pix e linhas digitáveis. |
+| `GastoProImporter — texto extraído de PDF` | Agrupamento e parsing de PDF. |
+| `GastoProImporter — extratos bancários robustos` | CSV, parcelas, limites e deduplicação. |
+| `GastoProImporter — importação de arquivos` | CSV, OFX, XML e PDF. |
+| `FinanceData — inserção em lote para importação` | Inserção em lote e baixa de parcelas. |
+| `FinanceData — conversões de data local e tipo` | Datas, UUIDs e tipos de registros. |
+| `FinanceData — exclusão durante sincronização` | Concorrência de sincronização e exclusões. |
+| `Relatório Financeiro — buildReportData` | Dados do relatório financeiro. |
+
+Para executar, abra `tests/test-runner.html` no Chrome ou Edge; os testes rodam automaticamente e os detalhes aparecem no Console (F12).
 
 ---
 
-## 🚀 Como Executar Localmente
+## 🚀 Executar, configurar e publicar
 
-**Método 1 — Live Server (Recomendado):**
-1. Instale a extensão **Live Server** no VS Code.
-2. Clique com o botão direito em `index.html` → **"Open with Live Server"**.
-3. App em `http://127.0.0.1:5500/` com hot-reload.
+### Executar localmente
 
-**Método 2 — Direto no Navegador:**
-- Duplo clique em `index.html` (Service Worker não funciona via `file://`, demais funcionalidades sim).
+**Live Server (recomendado):**
+1. Instale a extensão Live Server no VS Code.
+2. Clique com o botão direito em `index.html` e escolha **Open with Live Server**.
+3. O app abre em `http://127.0.0.1:5500/` com hot-reload.
 
----
+Também é possível abrir `index.html` diretamente no navegador; o Service Worker não funciona via `file://`, mas as demais funcionalidades funcionam.
 
-## 🌐 Como Publicar no GitHub Pages
-
-```bash
-git init
-git add .
-git commit -m "feat: GastoPro v3.0 - Supabase auth + multi-user"
-git branch -M main
-git remote add origin https://github.com/SEU-USUARIO/gastopro.git
-git push -u origin main
-```
-
-No repositório: **Settings → Pages → Branch: main / (root) → Save**.
-
-> ⚠️ Adicione a URL publicada nas **Redirect URLs** do Supabase em `Authentication → URL Configuration`.
-
----
-
-## 🛠️ Configuração do Supabase
-
-1. Criar projeto em [supabase.com](https://supabase.com).
-2. No SQL Editor do projeto, execute `supabase/schema.sql` para criar o esquema documentado.
-3. Em **Authentication → Providers**: certificar-se de que o provedor **Email** está habilitado.
-4. Em **Authentication → URL Configuration**: adicionar a URL do app em **Redirect URLs**.
-5. Inserir as credenciais em `js/supabase.js`:
+### Configurar Supabase
+1. Crie um projeto em [supabase.com](https://supabase.com).
+2. Execute `supabase/schema.sql` no SQL Editor.
+3. Em **Authentication → Providers**, habilite o provedor Email.
+4. Em **Authentication → URL Configuration**, adicione a URL do app em **Redirect URLs**.
+5. Configure as credenciais em `js/supabase.js`:
 
 ```js
 const SUPABASE_URL = 'https://SEU-PROJETO.supabase.co';
 const SUPABASE_KEY = 'sua-chave-anon-publica'; // Chave pública — segura no front-end com RLS
 ```
 
+### Publicar no GitHub Pages
+
+Configure **Settings → Pages → Branch: main / (root) → Save**. Para enviar as alterações existentes:
+
+```bash
+git add .
+git commit -m "feat: descreva a alteração"
+git push origin main
+```
+
+> ⚠️ Adicione a URL publicada nas **Redirect URLs** do Supabase em **Authentication → URL Configuration**.
+
 ---
 
-## 📜 Licença
+## 📦 Dependências e integridade
 
-Desenvolvido por **Aylton Alberto** • Estudante de Análise e Desenvolvimento de Sistemas (ADS).  
-Projeto livre para fins educacionais e estudo de arquitetura web front-end.
+Os bundles UMD do jsPDF e Chart.js mantêm seus cabeçalhos de licença MIT. O bundle UMD do Supabase não inclui cabeçalho no arquivo oficial; a licença MIT oficial está em `js/vendor/LICENSE.supabase.txt`. PDF.js é distribuído localmente com sua licença Apache-2.0.
 
+### SHA-256 dos arquivos locais
+
+| Biblioteca/arquivo | Versão ou observação | SHA-256 |
+|---|---|---|
+| `js/vendor/jspdf.umd.min.js` | jsPDF 4.2.1 | `E6551FCDC32F09D6853B2C5126D18D01D9447E0DA618A41A11EBEEE0F6C20D54` |
+| `js/vendor/jspdf.plugin.autotable.min.js` | jspdf-autotable 5.0.9 | `83DD8E5AE29436BD3D3EF4F4A915125B3951264994C25DE0359D3FBD105ABE15` |
+| `js/vendor/supabase.umd.js` | @supabase/supabase-js 2.117.3, publicado em 07/10/2026 | `D6A5C4414A5D4CE646D9C1DE223AA7067D3FF664C15394FFEB7FCFFC763354A3` |
+| `js/vendor/chart.umd.js` | Chart.js 4.4.1 | `74401D738DD3E03EE5DFB3B6841210FE2C4EAD8A960C4011CA4BA0B78A9FD8F3` |
+| `js/vendor/pdf.mjs` | pdfjs-dist 6.4.299, legacy | `BC51F4874A66E3853189CB5D50ABA4B3096AFA83ED433B885D293A3D94583CDC` |
+| `js/vendor/pdf.worker.mjs` | pdfjs-dist 6.4.299, legacy | `BB422F60804477DE4A0B09091D8347A916A387755ED1CBAD24CCAEC1D09C78BF` |
+| `js/vendor/LICENSE.pdfjs.txt` | pdfjs-dist, licença Apache-2.0 | `0D542E0C8804E39AA7F37EB00DA5A762149DC682D7829451287E11B938E94594` |
+
+### SHA-512 dos tarballs oficiais do registry npm
+
+| Biblioteca | SHA-512 |
+|---|---|
+| `@supabase/supabase-js@2.117.3` | `K+f8PimXDunPWQ63CKRXaF5pbVPJxmfw5ryAnh0s9S9PkwcuqBjiSpIaqpF7KLDljeYwXIL85ST8QxaO0+XuvA==` |
+| `chart.js@4.4.1` | `C74QN1bxwV1v2PEujhmKjOZ7iUM4w6BWs23Md/6aOZZSlwMzeCIDGuZay++rBgChYru7/+QFeoQW0fQoP534Dg==` |
+| `pdfjs-dist@6.4.299` | `AVl138zALtfaAPvADulE0PZThbYzCBS79nL4pOSL/6Sm/4AH5A21BD9VHt97OlCuzJuCpmeZtAtkinisF4Vb1g==` |
+
+O SHA-512 de pdfjs-dist foi conferido antes da extração; o pacote foi publicado em 03/10/2026. A integridade dos demais tarballs foi verificada antes da extração.
+
+---
+
+## 🧭 Decisões de produto
+
+- Pix importado entra como **Gasto (pago)**.
+- Apenas boleto importado entra como **a pagar**.
+- O app não terá importação por foto, print nem OCR; a decisão é manter o app leve.
+- O uso de PDF é limitado a documentos com texto selecionável; a prévia deve ser conferida.
+
+---
+
+## 🗺️ Roadmap
+
+Legenda: `[ ]` pendente | `[~]` implementado, aguardando teste do Aylton | `[x]` concluído e validado pelo Aylton. Regra: o Copilot marca `[~]` ao terminar; só o Aylton muda para `[x]`.
+
+### Itens
+
+- [x] **RM-001 — Acessibilidade na navegação e nos modais** / Descrição: melhorias de acessibilidade no bloco 5.1. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-002 — Reconhecimento de parcelas na importação** / Descrição: reconhecer parcelas, criar dívida com parcelas anteriores baixadas ou dar baixa em dívida existente (bloco 6A). / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-003 — Importação de OFX e XML de nota fiscal** / Descrição: importar OFX e NF-e/NFC-e (bloco 6B). / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-004 — Importação de Pix e linhas digitáveis de boleto** / Descrição: importar Pix copia e cola e boletos (bloco 6D). / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-005 — Ajuda embutida no modal do importador** / Descrição: orientar sobre formatos, prévia, parcelas, duplicados e privacidade. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-006 — Importação de PDF de extrato ou fatura** / Descrição: ler localmente PDFs com texto selecionável (bloco 6C). / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-007 — Metas e alertas de teto por categoria** / Descrição: seção no dashboard, cards, modal, edição e alertas em 80% e 100%. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-008 — Relatório financeiro em PDF** / Descrição: relatório mensal, anual ou por intervalo com totais, categorias, dívidas, metas, diagnóstico e detalhamento opcional. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-009 — Deduplicação na importação de extratos** / Descrição: desmarcar duplicatas existentes ou repetidas no arquivo, permitindo importação manual forçada. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-010 — Metas sincronizadas com a nuvem** / Descrição: sincronizar metas por categoria com `public.goals`, incluindo upserts e exclusões pendentes. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-011 — Hardening do banco aplicado** / Descrição: aplicar a migração `supabase/migrations/20261027_hardening.sql` ao banco. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-012 — Contas a pagar em CSV** / Descrição: aceitar colunas `tipo`, `mes_inicio`, `mes_fim`, `dia_venc` e `ativo`. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-013 — Categoria no CSV** / Descrição: aceitar a coluna opcional `categoria`. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-014 — Tipo OFX por TRNTYPE e descrição padrão** / Descrição: usar TRNTYPE conhecido, fallback de descrição vazia e aviso para OFX sem transações. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-015 — Reset sem apagar perfil** / Descrição: reset financeiro preserva identidade da conta e perfil. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-016 — Simulador de Cenários Futuros (“E se...”)** / Descrição: simular pagamento extra de dívida e estimar quitação; projetar amortização com gráfico de linha; simular corte de categoria (por exemplo, reduzir Alimentação em 20%); comparar antes/depois em painel lateral. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-017 — Exportação de dados adicionais** / Descrição: exportar lançamentos em Excel/CSV filtrados por período e oferecer exportações adicionais em Excel/CSV. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-018 — Notificações In-App de Alertas de Gastos** / Descrição: alertas visuais quando a meta de categoria estiver próxima do limite e base para futuras notificações push via Service Worker. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-019 — Offline-First aprimorado com IndexedDB** / Descrição: migrar de localStorage para IndexedDB para maior capacidade e performance; manter fila para operações offline e envio ao reconectar; exibir status de conectividade na UI. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-020 — Ampliar cobertura de testes automatizados** / Descrição: testes para o fluxo completo de quatro passos do Wizard. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-021 — Plano Freemium (Free vs. Pro)** / Descrição: separar funcionalidades entre plano Gratuito e Pro; considerar PDF/Excel, histórico ilimitado e backup automático agendado no Pro. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-022 — Integração com Gateway de Pagamento** / Descrição: avaliar Mercado Pago, Asaas ou Stripe para assinaturas Pro e webhook para liberar acesso automaticamente após confirmação. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-023 — Backend Python (FastAPI + Supabase)** / Descrição: API RESTful com FastAPI e SQLAlchemy; hospedagem Render/Railway; parser CSV com pandas; cron jobs de backup; endpoints protegidos com JWT integrado ao Supabase Auth. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-024 — Sistema de Afiliados** / Descrição: recomendação inteligente de cartões e contas para receita passiva do app. / Critério de pronto: a definir. / Arquivos: a definir.
+
+### Descartado
+
+- Importação por foto de cupom (6E) — motivo: decisão do autor: o app não terá foto/OCR.
+
+### Novas melhorias (a preencher)
+
+- [ ] **RM-025 — Título** / Descrição: a preencher. / Critério de pronto: a definir. / Arquivos: a definir.
 
 ---
 
 ## 📋 Changelog
 
-### v4.0 — 28/10/2026 (Versão atual)
+### v4.0 — 28/10/2026 (versão atual)
 
 - Bloco 5.1: melhorias de acessibilidade na navegação e nos modais.
 - Bloco 6A: reconhecimento e tratamento de parcelas durante a importação.
 - Bloco 6B: importação de extratos OFX e notas fiscais XML (NF-e/NFC-e).
 - Bloco 6D: importação de Pix copia e cola e linhas digitáveis de boleto.
 - Bloco 6C: leitura local de PDFs de extrato e fatura com texto selecionável.
-- Ajuda embutida no modal de importação, com orientações sobre formatos, prévia, parcelas e privacidade.
-- Cobertura atual: 173 testes automatizados.
+- Importação CSV com contas a pagar pelas colunas `tipo`, `mes_inicio`, `mes_fim`, `dia_venc` e `ativo`.
+- Importação CSV aceita a coluna opcional `categoria`.
+- OFX com descrição padrão, aviso para arquivo sem transações e tipo baseado em `TRNTYPE`.
+- Reset financeiro sem apagar o perfil da conta.
+- Metas sincronizadas com a tabela `goals`; tabela criada e trigger `updated_at` de `profiles` incluído.
+- Migração de hardening aplicada e validada no banco em 28/10/2026.
+- Ajuda embutida no modal do importador.
+- Cobertura: 173 testes automatizados.
 
 ### v3.8 — 27/10/2026
 
@@ -424,11 +514,10 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 - Avatares aceitam JPEG, PNG e WebP, são redimensionados para até 256x256 e salvos como JPEG; erro de cota recebe aviso.
 - Escapados valores de data, previsão de dívida e IDs interpolados em HTML.
 - Política de privacidade corrigida para refletir provedores externos, dados locais, sessão, logout e Reset.
-- Criada a migração de hardening `supabase/migrations/20261027_hardening.sql`; ela **não foi executada**. `supabase/schema.sql` apenas a referencia para aplicação manual.
+- Migração de hardening `supabase/migrations/20261027_hardening.sql` criada; aplicada e validada em 28/10/2026.
 - `.gitignore` atualizado para arquivos `.env*`, com exceção de `.env.example`, temporários locais do Supabase e backups.
 - Importador aprimorado com sinais, débito/crédito, cabeçalhos com preâmbulo, validação de datas, limites, deduplicação e gravação em lote.
-- Cobertura atual: 127 testes automatizados aprovados.
-- Os termos de licença ainda precisam ser esclarecidos: o rodapé informa "Todos os direitos reservados", enquanto esta documentação descreve o projeto como livre para fins educacionais.
+- Cobertura histórica: 127 testes automatizados aprovados.
 
 ### v3.7 — 27/10/2026
 
@@ -441,9 +530,9 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 - Service Worker v3.7 pré-cacheia assets locais; os CDNs permitidos usam stale-while-revalidate e domínios Supabase nunca são interceptados.
 - Evento `online` tenta retomar a sincronização pendente.
 - Percentuais do PDF formatados no padrão pt-BR; textos fixos revisados para preservar acentuação e colunas numéricas alinhadas à direita.
-- Download agora tenta o compartilhamento de arquivos compatível com iOS, depois o download por link e, por fim, a abertura do PDF com aviso.
-- A regra atual de parcelas restantes está documentada e coberta por teste: período total menos a quantidade de meses marcados como pagos.
-- Validação final: 92 testes automatizados aprovados e PDF fictício gerado para conferência.
+- Download tenta compartilhamento de arquivos compatível com iOS, depois download por link e, por fim, abertura do PDF com aviso.
+- A regra de parcelas restantes está documentada e coberta por teste: período total menos a quantidade de meses marcados como pagos.
+- Validação final histórica: 92 testes automatizados aprovados e PDF fictício gerado para conferência.
 
 #### 📦 Integridade dos bundles locais
 
@@ -452,7 +541,7 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 
 ### v3.6 — 27/10/2026
 
-#### 🎯 Metas & Alertas de Teto de Gastos por Categoria
+#### 🎯 Metas e alertas de teto de gastos por categoria
 
 - Conclusão da interface da feature: seção no Dashboard, estado vazio, cards e modal de criação/edição.
 - Metas podem ser criadas, editadas e removidas; alertas visuais usam os limiares exatos de 80% e 100%.
@@ -468,162 +557,31 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 
 - Os estados de atenção e limite ultrapassado agora são determinados pela porcentagem real, sem antecipação causada pelo arredondamento do valor exibido.
 
----
+### Histórico anterior
 
-### v3.3.1 — 27/10/2026 — Correção Crítica: PWA não recebia atualizações no celular
+#### v3.3.1 — 27/10/2026
+- Corrigido o cache do PWA: o `CACHE_NAME` não era atualizado, então o evento `activate` não removia o cache antigo e o celular servia arquivos indefinidamente.
+- Atualizado o cache de `gastopro-v2.5` para `gastopro-v3.3`; o cache anterior passa a ser removido na ativação do novo Service Worker.
+- Para forçar atualização no celular, fechar completamente o app e abri-lo novamente.
 
-#### 🐛 Bug: Atualizações não chegavam ao celular (PWA instalado)
+#### v3.3 — 27/10/2026
+- Implementados dados locais de metas por categoria e CRUD em `js/data.js`.
+- Renderização, modal, alertas, seção Dashboard e estilos de metas adicionados.
+- As metas passaram a sincronizar com a nuvem na v4.0.
 
-**Causa raiz:** O `CACHE_NAME` no `sw.js` nunca era atualizado (`gastopro-v2.5`), então o evento `activate` do Service Worker nunca encontrava um cache "antigo" para deletar. O celular continuava servindo os arquivos em cache indefinidamente, mesmo com código novo no servidor.
+#### v2.5 — 27/10/2026
+- Corrigidos o fechamento instantâneo do Mini Calendário Popover, a detecção de meses com gastos fixos e o listener da sidebar.
+- Adicionada política de privacidade e LGPD, link no rodapé/drawer e consentimento no cadastro.
+- Atualizados layout da sidebar, badge v2.5 e cache PWA.
 
-**Como o Service Worker funciona:**
-```
-1. Novo SW detectado → entra em estado "waiting"
-2. skipWaiting() (já existia) → ativa imediatamente
-3. activate: filtra caches com nome DIFERENTE do CACHE_NAME atual
-4. Se o nome não muda → nenhum cache é deletado → celular serve arquivos velhos
-```
-
-**Correção aplicada:**
-
-| Arquivo | Antes | Depois |
-|---|---|---|
-| `sw.js` linha 10 | `CACHE_NAME = 'gastopro-v2.5'` | `CACHE_NAME = 'gastopro-v3.3'` |
-| `js/data.js` linha 698 | `version: '2.5'` | `version: '3.3'` |
-
-**Resultado:** Ao abrir o app no celular após a atualização, o novo SW é ativado, o cache `gastopro-v2.5` é deletado automaticamente e os arquivos atualizados são baixados.
-
-> 💡 **Para forçar atualização imediata no celular:** Feche completamente o app (remova dos recentes) e abra novamente.
+#### v2.4 Pro — versão anterior
+- Wizard de Lançamento Rápido, importação CSV/texto, autenticação multiusuário e Centro de Dívidas.
+- Modal de confirmação customizado e pull-to-refresh mobile (PWA).
 
 ---
 
-### v3.3 — 27/10/2026
+## 📜 Licença
 
-#### 🎯 Metas & Alertas de Teto de Gastos por Categoria
+Todos os direitos reservados © Aylton Alberto.
 
-| Componente | Status | Arquivo |
-|---|---|---|
-| **Camada de dados** — `getGoals()`, `saveGoals()`, `saveGoal()`, `deleteGoal()` com chave `gastopro_goals_v1` | ✅ Concluído | `js/data.js` |
-| **Renderização** — `renderGoalsSection()` integrada ao `renderAll()`, barras de progresso e alertas visuais | ✅ Concluído | `js/app.js` |
-| **Modal de Meta** — `openGoalModal()`, `closeGoalModal()`, `initGoalModalListeners()` | ✅ Concluído | `js/app.js` |
-| **Seção HTML no Dashboard** — seção, container, estado vazio e botão "Nova Meta" | ✅ Concluído | `index.html` |
-| **Modal HTML** — estrutura do `goalModal` com select, input e botões | ✅ Concluído | `index.html` |
-| **Estilos CSS** — `.goal-card`, `.goal-bar-fill--*`, `.goal-status`, `.goal-amounts`, `.goal-pct-badge` | ✅ Concluído | `css/style.css` |
-
----
-
-### v2.5 — 27/10/2026
-
-#### 🐛 Correções de Bugs
-
-| # | Severidade | Correção | Arquivo |
-|---|---|---|---|
-| 1 | 🔴 Crítico | **Calendário Popover corrigido**: e.stopPropagation() adicionado no trigger do month picker — o popover estava fechando instantaneamente por borbulhamento de evento | js/app.js |
-| 2 | 🟡 Médio | **Logout limpa perfil completo**: gastopro_profile_real_v2 agora é removido no logout, evitando vazamento de nome, avatar e e-mail entre usuários no mesmo dispositivo | js/app.js |
-| 3 | 🟡 Médio | **Calendário has-data corrigido**: mini-calendário agora detecta meses com gastos fixos ativos (não apenas lançamentos pontuais) | js/app.js |
-| 4 | 🟡 Baixo | **Sidebar listener corrigido**: seletor [data-view] evita que botões de ação (Import, Wizard, Refresh) disparem switchToView(null) | js/app.js |
-
-#### ⚖️ Conformidade LGPD (Lei 13.709/2018)
-
-| Melhoria | Arquivos |
-|---|---|
-| **Modal de Política de Privacidade** com 7 seções: Quem somos, Dados coletados, Armazenamento, Direitos LGPD, Compartilhamento, Segurança e Contato | index.html + js/app.js + css/style.css |
-| **Link "Privacidade e LGPD"** no rodapé da aplicação | index.html |
-| **Link "Política de Privacidade"** no Drawer do Usuário | index.html |
-| **Checkbox de Consentimento** no formulário de cadastro com referência à LGPD | index.html |
-| Estilos CSS para todos os novos elementos de privacidade | css/style.css |
-
-#### 🎨 Reformulação de Layout & Experiência do Usuário (Sidebar & UI)
-
-| # | Melhoria | Descrição | Arquivo |
-|---|---|---|---|
-| 1 | ⚡ **Lançamento Rápido reposicionado** | Botão movido para logo abaixo de "Dashboard & Saúde", facilitando o acesso instantâneo ao wizard guiado de lançamentos | index.html + css/style.css |
-| 2 | 💎 **Importar Extrato em Destaque** | Reposicionado no final da sidebar (imediatamente acima de "Atualizar Dados") com estilo Fintech Verde Esmeralda (gradiente, brilho e realce no hover) | index.html + css/style.css |
-| 3 | 🏷️ **Versão v2.5 sincronizada no app** | Badge de versão atualizado para v2.5 no rodapé do sistema; Service Worker atualizado para cache `gastopro-v2.5` com suporte offline a `importer.js` | index.html + sw.js |
-
-### v2.4 Pro — versão anterior
-- Wizard de Lançamento Rápido (4 passos)
-- Importação de Extratos CSV/Texto
-- Autenticação multi-usuário com Supabase
-- Centro de Dívidas e Previsão de Quitação
-- Modal de Confirmação Customizado
-- Pull-to-refresh mobile (PWA)
-
----
-
-## 🗺️ Roadmap de Melhorias Pendentes
-
-> Lista gerada a partir dos documentos de planejamento (PDFs) do projeto.
-> Marcar cada item como concluído (`[x]`) à medida que for implementado.
-
-### 🔴 Alta Prioridade
-
-- [x] **Acessibilidade na navegação e nos modais** — bloco 5.1
-- [x] **Reconhecimento de parcelas na importação** — bloco 6A
-- [x] **Importação de OFX e XML de nota fiscal** — bloco 6B
-- [x] **Importação de Pix e linhas digitáveis de boleto** — bloco 6D
-- [x] **Ajuda embutida no modal do importador**
-- [x] **Importação de PDF de extrato ou fatura** — bloco 6C
-- [ ] **Importação por foto de cupom** — bloco 6E
-
-- [x] **🎯 Metas & Alertas de Teto de Gastos por Categoria** — concluído na v3.6
-  - [x] `getGoals()`, `saveGoal()`, `deleteGoal()` implementados em `js/data.js`
-  - [x] `renderGoalsSection()` e modal de meta implementados em `js/app.js`
-  - [x] Seção HTML no Dashboard (`index.html`)
-  - [x] Modal HTML `goalModal` (`index.html`)
-  - [x] Estilos CSS das metas (`css/style.css`)
-
-- [ ] **🔮 Simulador de Cenários Futuros ("E se...")**
-  - Simular: *"E se eu pagar R$ 500 a mais nessa dívida? Quando quito?"*
-  - Projeção de amortização de dívidas com gráfico de linha
-  - Simulação de corte de categoria: *"E se eu reduzir Alimentação em 20%?"*
-  - Comparativo antes/depois exibido em painel lateral
-
-- [x] **📄 Exportação de relatório financeiro em PDF** — concluído na v3.7
-  - [x] Relatório por mês, ano ou intervalo, com totais, categorias, dívidas, metas e diagnóstico
-  - [x] Detalhamento opcional dos lançamentos e geração local no navegador
-- [ ] **📊 Exportação de dados adicionais**
-  - Exportar lançamentos em Excel/CSV filtrado por período
-  - Exportações adicionais em Excel/CSV
-
----
-
-### 🟡 Média Prioridade
-
-- [x] **🏷️ Deduplicação na Importação de Extratos** — concluída na v3.8
-  - Duplicatas existentes ou repetidas no arquivo são desmarcadas inicialmente; o usuário pode forçar a importação.
-
-- [ ] **🔔 Notificações In-App de Alertas de Gastos**
-  - Alertas visuais quando meta de categoria estiver próxima do limite
-  - Base para notificações push futuras via Service Worker
-
-- [ ] **💡 Offline-First Aprimorado com IndexedDB**
-  - Migrar de localStorage para IndexedDB (maior capacidade e performance)
-  - Fila de sync: registrar operações offline e enviar ao reconectar
-  - Indicador de status de conectividade visível na UI
-
-- [ ] **🧪 Ampliar Cobertura de Testes Automatizados**
-  - [x] Testes do módulo `importer.js` (parser CSV/Texto e casos de borda)
-  - Testes para o Wizard (fluxo completo de 4 passos)
-  - Testes automatizados para Metas por Categoria
-
----
-
-### 🟢 Baixa Prioridade / Futuro SaaS
-
-- [ ] **💳 Plano Freemium (Free vs. Pro)**
-  - Separar funcionalidades entre plano Gratuito e Pro
-  - Pro: Exportação PDF/Excel, histórico ilimitado, backup automático agendado
-
-- [ ] **💰 Integração com Gateway de Pagamento**
-  - Mercado Pago / Asaas / Stripe para cobrar assinaturas do plano Pro
-  - Webhook de confirmação de pagamento → liberar acesso Pro automaticamente
-
-- [ ] **🐍 Backend Python (FastAPI + Supabase)**
-  - API RESTful com FastAPI + SQLAlchemy hospedada no Render/Railway (free)
-  - Parser CSV mais robusto no servidor com pandas
-  - Cron Jobs para backup automático de dados
-  - Endpoints protegidos com JWT integrado ao Supabase Auth
-
-- [ ] **🤝 Sistema de Afiliados**
-  - Recomendação inteligente de cartões e contas para receita passiva do app
+Projeto pessoal de estudante de ADS, com intenção de monetização futura.
