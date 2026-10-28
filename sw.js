@@ -13,6 +13,7 @@ const ESSENTIAL_ASSETS = [
   './js/data.js',
   './js/categories.js',
   './js/importer.js',
+  './js/onboarding.js',
   './js/app.js',
   './js/a11y.js',
   './js/report.js',

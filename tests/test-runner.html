@@ -160,13 +160,16 @@
   <!--
     ORDEM DE CARREGAMENTO OBRIGATÓRIA:
     1. supabase.js — Define o cliente e helpers de sincronização/validação
-    2. data.js     — Define FinanceData (necessário para os testes)
-    3. app.js      — Define formatCurrency, escapeHtml, etc. (necessário para os testes)
-    4. report.js   — Camada de dados do relatório financeiro
-    5. importer.js — Parsing de importações
-    6. gastopro.test.js — Suite de testes (usa as funções acima)
+    2. onboarding.js — Conteúdo e navegação do tutorial
+    3. data.js     — Define FinanceData (necessário para os testes)
+    4. categories.js — Categorias compartilhadas
+    5. app.js      — Define formatCurrency, escapeHtml, etc. (necessário para os testes)
+    6. report.js   — Camada de dados do relatório financeiro
+    7. importer.js — Parsing de importações
+    8. gastopro.test.js — Suite de testes (usa as funções acima)
   -->
   <script src="../js/supabase.js"></script>
+  <script src="../js/onboarding.js"></script>
   <script src="../js/data.js"></script>
   <script src="../js/categories.js"></script>
   <script src="../js/app.js"></script>

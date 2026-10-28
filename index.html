@@ -239,6 +239,20 @@
             </div>
           </div>
 
+          <div class="drawer-section how-to-use-section">
+            <span class="drawer-section-title">Como usar</span>
+            <div class="how-to-use-topics" id="howToUseTopics"></div>
+            <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-play text-primary"></i>
+              </div>
+              <div class="action-text">
+                <strong>Ver tutorial de novo</strong>
+                <span>Rever as dicas de primeiro acesso</span>
+              </div>
+            </button>
+          </div>
+
           <!-- Seção de Ações de Dados -->
           <div class="drawer-section">
             <span class="drawer-section-title">Gerenciamento de Dados</span>
@@ -421,6 +435,7 @@
               <div id="chartEmptyMessage" class="chart-empty" style="display: none;">
                 <i class="fa-solid fa-chart-simple"></i>
                 <p>Nenhum gasto lançado neste mês ainda.</p>
+                <span class="empty-state-tip">Use “Inserir Gasto” para registrar uma saída e ver o gráfico por categoria.</span>
               </div>
             </div>
           </div>
@@ -446,6 +461,7 @@
               <i class="fa-solid fa-bullseye"></i>
               <p>Nenhuma meta definida ainda.</p>
               <span>Clique em <strong>+ Nova Meta</strong> para definir um teto de gastos por categoria.</span>
+              <small class="empty-state-tip">A tela mostra o progresso ao atingir 80% e 100% do limite.</small>
             </div>
           </div>
 
@@ -1550,6 +1566,27 @@
     </div>
   </div>
 
+  <div class="modal-overlay onboarding-modal" id="onboardingModal" aria-hidden="true">
+    <div class="modal-content onboarding-modal-content" role="dialog" aria-modal="true"
+      aria-labelledby="onboardingTitle" aria-describedby="onboardingText" tabindex="-1">
+      <div class="modal-header onboarding-modal-header">
+        <span class="onboarding-label">Primeiros passos</span>
+        <button type="button" class="modal-close-btn" id="closeOnboardingBtn" aria-label="Fechar tutorial">&times;</button>
+      </div>
+      <div class="onboarding-step-content" aria-live="polite" aria-atomic="true">
+        <div class="onboarding-icon" aria-hidden="true"><i id="onboardingIcon" class="fa-solid fa-chart-pie"></i></div>
+        <h2 id="onboardingTitle"></h2>
+        <p id="onboardingText"></p>
+      </div>
+      <p class="onboarding-counter" id="onboardingCounter" aria-live="polite"></p>
+      <div class="onboarding-navigation">
+        <button type="button" class="btn-secondary" id="onboardingBackBtn">Voltar</button>
+        <button type="button" class="btn-secondary" id="onboardingSkipBtn">Pular</button>
+        <button type="button" class="btn-primary" id="onboardingNextBtn">Próximo</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notificação -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
@@ -1560,6 +1597,7 @@
   <script src="js/data.js"></script>
   <script src="js/categories.js"></script>
   <script src="js/importer.js"></script>
+  <script src="js/onboarding.js"></script>
   <script src="js/app.js"></script>
   <script src="js/a11y.js"></script>
   <script src="js/report.js"></script>

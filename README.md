@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-220%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-226%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -142,6 +142,7 @@ financeiro-app/
 │   ├── supabase.js            # Autenticação e persistência Supabase
 │   ├── categories.js          # Categorias compartilhadas e normalização
 │   ├── importer.js            # Parsers e categorização automática
+│   ├── onboarding.js          # Conteúdo, persistência e navegação do tutorial
 │   ├── report.js              # Dados e renderização do relatório PDF
 │   ├── a11y.js                # Foco, Tab e fechamento acessível de modais
 │   └── vendor/                # Chart.js, Supabase, jsPDF, PDF.js e licenças
@@ -152,7 +153,7 @@ financeiro-app/
 │       ├── 20261028_accounts.sql  # RM-025 parte A; aplicar manualmente no Supabase
 │       └── 20261028_delete_my_account.sql # Exclusão de conta; aplicar manualmente no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 220 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 226 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -360,7 +361,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **220 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **226 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -541,6 +542,8 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 - Validação estrita do backup JSON impede restauração parcial de dados inválidos e mantém compatibilidade com backups antigos.
 - Erros ao verificar a sessão preservam os dados locais; merges da nuvem respeitam alterações e exclusões pendentes.
 - Nome e foto agora são sincronizados com `profiles` sob RLS; o modal de recorte do avatar permite arrastar, teclado e zoom, e o backup permanece sem dados de perfil.
+- Tema claro em preparação: a folha de estilos usa tokens semânticos com paleta escura preservada e uma paleta clara em validação.
+- Tutorial de primeiro acesso com dicas sobre lançamentos, contas fixas, dívidas, metas, importação, relatórios e dados; disponível novamente em “Como usar” no perfil.
 
 ### v4.0 — 28/10/2026 (versão atual)
 

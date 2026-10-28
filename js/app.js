@@ -541,11 +541,97 @@ window.GastoProAccountDeletion = {
         console.error('[GastoPro] Falha ao encerrar a sessão local após excluir a conta:', error);
       } finally {
         financeData.clearUserData();
+        if (window.GastoProOnboarding) {
+          window.GastoProOnboarding.clearSeen();
+        } else {
+          localStorage.removeItem('gastopro_tutorial_seen');
+        }
       }
     }
     return result;
   }
 };
+
+function initOnboarding() {
+  const tutorial = window.GastoProOnboarding;
+  const modal = document.getElementById('onboardingModal');
+  const title = document.getElementById('onboardingTitle');
+  const text = document.getElementById('onboardingText');
+  const icon = document.getElementById('onboardingIcon');
+  const counter = document.getElementById('onboardingCounter');
+  const backButton = document.getElementById('onboardingBackBtn');
+  const nextButton = document.getElementById('onboardingNextBtn');
+  const skipButton = document.getElementById('onboardingSkipBtn');
+  const closeButton = document.getElementById('closeOnboardingBtn');
+  const manualButton = document.getElementById('reopenOnboardingBtn');
+  const topicsContainer = document.getElementById('howToUseTopics');
+
+  if (!tutorial || !modal || !title || !text || !icon || !counter ||
+    !backButton || !nextButton || !skipButton || !closeButton || !topicsContainer) return;
+
+  const topics = tutorial.getTopics();
+  let currentIndex = tutorial.getStartIndex();
+
+  topics.forEach(topic => {
+    const details = document.createElement('details');
+    details.className = 'how-to-use-topic';
+    const summary = document.createElement('summary');
+    const topicIcon = document.createElement('i');
+    topicIcon.className = topic.icon;
+    topicIcon.setAttribute('aria-hidden', 'true');
+    const topicTitle = document.createElement('span');
+    topicTitle.textContent = topic.title;
+    const description = document.createElement('p');
+    description.textContent = topic.text;
+    summary.append(topicIcon, topicTitle);
+    details.append(summary, description);
+    topicsContainer.appendChild(details);
+  });
+
+  function renderStep() {
+    const topic = topics[currentIndex];
+    title.textContent = topic.title;
+    text.textContent = topic.text;
+    icon.className = topic.icon;
+    counter.textContent = `${currentIndex + 1} de ${topics.length}`;
+    backButton.disabled = currentIndex === 0;
+    nextButton.textContent = currentIndex === topics.length - 1 ? 'Concluir' : 'Próximo';
+  }
+
+  function closeTutorial() {
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function openTutorial() {
+    currentIndex = tutorial.getStartIndex();
+    tutorial.markSeen();
+    renderStep();
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function move(action) {
+    const result = tutorial.navigate(currentIndex, action);
+    currentIndex = result.index;
+    if (result.close) {
+      closeTutorial();
+      return;
+    }
+    renderStep();
+  }
+
+  backButton.addEventListener('click', () => move('back'));
+  nextButton.addEventListener('click', () => move('next'));
+  skipButton.addEventListener('click', () => move('skip'));
+  closeButton.addEventListener('click', closeTutorial);
+  if (manualButton) manualButton.addEventListener('click', openTutorial);
+  modal.addEventListener('click', event => {
+    if (event.target === modal) closeTutorial();
+  });
+
+  if (tutorial.shouldShowOnFirstAccess()) openTutorial();
+}
 
 // ================================================================
 // 7. CENTRO DE DÍVIDAS & PREVISÃO DE QUITAÇÃO
@@ -638,6 +724,7 @@ function renderDebtCenter(currentYm) {
         <i class="fa-solid fa-flag-checkered" style="font-size: 2rem; margin-bottom: 0.6rem; opacity: 0.4;"></i>
         <p style="font-weight: 500; margin-bottom: 0.25rem;">Nenhum parcelamento ou empréstimo em andamento</p>
         <span style="font-size: 0.85rem;">Ao cadastrar um gasto fixo com data final ou categoria de empréstimo/parcelamento, o cronograma de quitação aparecerá aqui automaticamente.</span>
+        <small class="empty-state-tip">Informe a data final no cadastro para ver a previsão de término.</small>
       </div>
     `;
     if (totalRemainingEl) totalRemainingEl.textContent = formatCurrency(0);
@@ -797,6 +884,7 @@ function renderIncomesView(incomes, totalIncome) {
         <i class="fa-solid fa-hand-holding-dollar" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.4;"></i>
         <p>Nenhum ganho cadastrado para este mês ainda.</p>
         <span>Use o formulário acima para adicionar seu salário ou rendas extras.</span>
+        <small class="empty-state-tip">Depois de salvar, você pode editar ou excluir o lançamento nesta lista.</small>
       </div>
     `;
     return;
@@ -872,6 +960,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
         <i class="fa-solid fa-receipt" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.4;"></i>
         <p>Nenhum gasto encontrado para este filtro.</p>
         <span>Cadastre uma nova despesa no formulário acima.</span>
+        <small class="empty-state-tip">Escolha a categoria e confira se o gasto é fixo ou variável antes de salvar.</small>
       </div>
     `;
     return;
@@ -4390,6 +4479,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 13. Metas por Categoria — Event Listeners ─────────────────
   initGoalModalListeners();
+  initOnboarding();
 });
 
 // ================================================================

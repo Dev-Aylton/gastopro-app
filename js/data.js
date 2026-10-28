@@ -69,6 +69,7 @@ const STORAGE_GOALS = 'gastopro_goals_v1';
 const STORAGE_ACCOUNTS = 'gastopro_accounts_v1';
 const STORAGE_LAST_UID = 'gastopro_last_uid';
 const STORAGE_PENDING_SYNC = 'gastopro_pending_sync_v1';
+const STORAGE_TUTORIAL_SEEN = 'gastopro_tutorial_seen';
 const MAX_ACCOUNT_BALANCE = 9999999999.99;
 
 function getLocalDateString(date = new Date()) {
@@ -351,7 +352,7 @@ const FinanceData = {
     const keysToRemove = [];
     for (let index = 0; index < localStorage.length; index++) {
       const key = localStorage.key(index);
-      if (key && key.startsWith('gastopro_')) keysToRemove.push(key);
+      if (key && key.startsWith('gastopro_') && key !== STORAGE_TUTORIAL_SEEN) keysToRemove.push(key);
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
   },

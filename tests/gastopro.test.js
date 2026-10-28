@@ -203,6 +203,50 @@ function setupMockLocalStorage() {
   });
 }
 
+describe('Tutorial de primeiro acesso', () => {
+  setupMockLocalStorage();
+
+  it('oferece sete tópicos com título, texto e ícone', () => {
+    const topics = window.GastoProOnboarding.getTopics();
+    assertEqual(topics.length, 7);
+    assertTrue(topics.every(topic => topic.title && topic.text && topic.icon));
+  });
+
+  it('aparece no primeiro acesso e não aparece novamente após ser visto', () => {
+    assertTrue(window.GastoProOnboarding.shouldShowOnFirstAccess());
+    window.GastoProOnboarding.markSeen();
+    assertTrue(window.GastoProOnboarding.hasSeen());
+    assertFalse(window.GastoProOnboarding.shouldShowOnFirstAccess());
+  });
+
+  it('permite reabrir manualmente começando pelo primeiro tópico', () => {
+    window.GastoProOnboarding.markSeen();
+    assertEqual(window.GastoProOnboarding.getStartIndex(), 0);
+    assertTrue(window.GastoProOnboarding.hasSeen());
+  });
+
+  it('navega para trás e para frente e fecha ao pular ou concluir', () => {
+    assertEqual(window.GastoProOnboarding.navigate(0, 'back'), { index: 0, close: false });
+    assertEqual(window.GastoProOnboarding.navigate(0, 'next'), { index: 1, close: false });
+    assertEqual(window.GastoProOnboarding.navigate(6, 'next'), { index: 6, close: true });
+    assertEqual(window.GastoProOnboarding.navigate(2, 'skip'), { index: 2, close: true });
+  });
+
+  itAsync('preserva a marca de visto após reset', async () => {
+    setupMockLocalStorage();
+    window.GastoProOnboarding.markSeen();
+    const result = await FinanceData.clearAll();
+    assertTrue(result.success);
+    assertTrue(window.GastoProOnboarding.hasSeen());
+  });
+
+  it('preserva a marca de visto após a limpeza do logout', () => {
+    window.GastoProOnboarding.markSeen();
+    FinanceData.clearUserData();
+    assertTrue(window.GastoProOnboarding.hasSeen());
+  });
+});
+
 // ================================================================
 // HELPERS DE TESTE
 // ================================================================
@@ -324,17 +368,18 @@ describe('FinanceData — Isolamento entre usuários', () => {
     assertEqual(localStorage.getItem('gastopro_last_uid'), 'user-b');
   });
 
-  it('logout deve limpar todas as chaves gastopro_*', () => {
+  it('logout limpa dados locais e preserva a marca do tutorial', () => {
     setupMockLocalStorage();
     localStorage.setItem('gastopro_entries_v4_oct', '[]');
     localStorage.setItem('gastopro_goals_v1', '[]');
     localStorage.setItem('gastopro_avatar_cache', 'avatar');
+    localStorage.setItem('gastopro_tutorial_seen', 'true');
     localStorage.setItem('sb-project-auth-token', 'session');
 
     FinanceData.clearUserData();
 
     const remainingKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
-    assertEqual(remainingKeys, ['sb-project-auth-token']);
+    assertEqual(remainingKeys, ['gastopro_tutorial_seen', 'sb-project-auth-token']);
   });
 
   it('falha ou resposta vazia da nuvem não deve zerar dados locais do mesmo usuário', () => {
@@ -3462,6 +3507,7 @@ describe('Exclusão de conta do usuário', () => {
 
   itAsync('limpa todos os dados e a sessão local após excluir a conta com sucesso', async () => {
     setupMockLocalStorage();
+    window.GastoProOnboarding.markSeen();
     FinanceData.savePendingSync({
       full: true,
       entries: ['entry-pending'],
@@ -3489,12 +3535,14 @@ describe('Exclusão de conta do usuário', () => {
 
     assertTrue(result.success);
     assertFalse(FinanceData.hasPendingSync());
+    assertFalse(window.GastoProOnboarding.hasSeen());
     assertEqual(signOutScope, 'local');
     assertEqual(localStorage.length, 0);
   });
 
   itAsync('preserva dados, fila e sessão se a exclusão no servidor falhar', async () => {
     setupMockLocalStorage();
+    window.GastoProOnboarding.markSeen();
     FinanceData.savePendingSync({ full: true, entries: ['pending-entry'] });
     localStorage.setItem('gastopro_entries_v4', JSON.stringify([{ id: 'local-entry' }]));
     localStorage.setItem('gastopro_last_uid', 'user-delete');
@@ -3511,6 +3559,7 @@ describe('Exclusão de conta do usuário', () => {
     assertEqual(localStorage.getItem('gastopro_entries_v4'), JSON.stringify([{ id: 'local-entry' }]));
     assertEqual(localStorage.getItem('gastopro_last_uid'), 'user-delete');
     assertEqual(localStorage.getItem('sb-project-auth-token'), 'sessao');
+    assertTrue(window.GastoProOnboarding.hasSeen());
     assertFalse(signedOut);
   });
 });
