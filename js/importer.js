@@ -276,6 +276,7 @@ const GastoProImporter = (() => {
     }
     if (lines.length > lastLine) warnings.push('O extrato excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.');
     applyDefaultTypes(rows);
+    applyInstallments(rows);
     setWarnings(warnings);
     return rows;
   }
@@ -292,6 +293,210 @@ const GastoProImporter = (() => {
       row.type = row.category === 'Receita' ||
         (mixedSigns && row.signedAmount > 0) ? 'income' : 'variable';
     });
+  }
+
+  function applyInstallments(rows) {
+    rows.forEach(row => {
+      if (row.type === 'income') return;
+      const installment = detectInstallment(row.desc);
+      if (!installment) return;
+      row.installment = { current: installment.current, total: installment.total };
+      row.installmentBase = installment.baseDesc;
+    });
+  }
+
+  function shiftMonth(ym, delta) {
+    const [year, month] = ym.split('-').map(Number);
+    const monthIndex = year * 12 + month - 1 + delta;
+    const nextYear = Math.floor(monthIndex / 12);
+    const nextMonth = ((monthIndex % 12) + 12) % 12 + 1;
+    return `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}`;
+  }
+
+  function detectInstallment(desc) {
+    if (!desc) return null;
+    const match = desc.match(
+      /\b(?:parc(?:ela)?|pcl|prest|cota)\b\s*(\d{1,3})\s*(?:\/|de)\s*(\d{1,3})\b|\((\d{1,3})\s*\/\s*(\d{1,3})\)/i
+    );
+    if (!match) return null;
+    const current = Number(match[1] || match[3]);
+    const total = Number(match[2] || match[4]);
+    if (current < 1 || current > total || total < 2 || total > 360) return null;
+    return {
+      current,
+      total,
+      baseDesc: (desc.slice(0, match.index) + desc.slice(match.index + match[0].length)).trim()
+    };
+  }
+
+  function matchDebtTemplate(row, templates) {
+    if (!row.date || !row.installmentBase) return null;
+    const month = row.date.substring(0, 7);
+    return templates.find(tpl =>
+      tpl.isDebt === true &&
+      normalize(tpl.desc) === normalize(row.installmentBase) &&
+      Math.abs(Number(tpl.amount) - Number(row.amount)) <= Number(row.amount) * 0.1 &&
+      month >= tpl.startMonth &&
+      (!tpl.endMonth || month <= tpl.endMonth)
+    ) || null;
+  }
+
+  function buildInstallmentDebt(row, category) {
+    const month = row.date.substring(0, 7);
+    const startMonth = shiftMonth(month, -(row.installment.current - 1));
+    const paidMonths = {};
+    for (let offset = 0; offset < row.installment.current; offset++) {
+      paidMonths[shiftMonth(startMonth, offset)] = true;
+    }
+    return {
+      type: 'debt',
+      desc: row.installmentBase,
+      amount: row.amount,
+      category,
+      startMonth,
+      endMonth: shiftMonth(startMonth, row.installment.total - 1),
+      date: `${startMonth}-${row.date.substring(8, 10)}`,
+      paidMonths
+    };
+  }
+
+  function decodeBytes(bytes) {
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      return new TextDecoder('windows-1252').decode(bytes);
+    }
+  }
+
+  async function parseFile(file) {
+    if (file.size > MAX_CSV_CHARS) {
+      setWarnings(['O arquivo excede 1 MB; reduza o arquivo e tente novamente.']);
+      return [];
+    }
+    const extensionMatch = file.name.toLowerCase().match(/\.[^.]+$/);
+    const extension = extensionMatch ? extensionMatch[0] : '';
+    if (!['.csv', '.txt', '.ofx', '.xml'].includes(extension)) {
+      setWarnings(['Formato de arquivo não suportado.']);
+      return [];
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let text;
+    if (extension === '.ofx' &&
+        /CHARSET:1252/i.test(new TextDecoder('windows-1252').decode(bytes.slice(0, 500)))) {
+      text = new TextDecoder('windows-1252').decode(bytes);
+    } else {
+      text = decodeBytes(bytes);
+    }
+    if (extension === '.csv' || extension === '.txt') return parseCSV(text);
+    if (extension === '.ofx') return parseOFX(text);
+    if (extension === '.xml') return parseNFeXML(text);
+    return [];
+  }
+
+  function parseOFX(text) {
+    setWarnings();
+    if (text.length > MAX_CSV_CHARS) {
+      setWarnings(['O extrato OFX excede 1 MB; reduza o arquivo e tente novamente.']);
+      return [];
+    }
+    const warnings = [];
+    const rows = [];
+    const blocks = [...text.matchAll(/<STMTTRN\b([\s\S]*?)(?=<\/STMTTRN\b|<STMTTRN\b|<\/BANKTRANLIST\b|$)(?:<\/STMTTRN\b[^>]*>)?/gi)];
+    const getField = (block, tag) => {
+      const match = block.match(new RegExp(`<${tag}>([^<\\r\\n]*)`, 'i'));
+      return match ? match[1].trim() : '';
+    };
+    const decodeDescription = value => value.replace(/&(amp|lt|gt|quot|apos);/g, entity => ({
+      '&amp;': '&',
+      '&lt;': '<',
+      '&gt;': '>',
+      '&quot;': '"',
+      '&apos;': "'"
+    })[entity]);
+
+    blocks.slice(0, MAX_ROWS).forEach(match => {
+      const block = `<STMTTRN${match[1]}`;
+      const rawDate = getField(block, 'DTPOSTED').match(/^\d{8}/);
+      const year = rawDate ? Number(rawDate[0].slice(0, 4)) : 0;
+      const month = rawDate ? Number(rawDate[0].slice(4, 6)) : 0;
+      const day = rawDate ? Number(rawDate[0].slice(6, 8)) : 0;
+      const date = rawDate && validDateParts(year, month, day)
+        ? formatIsoDate(year, month, day)
+        : null;
+      const signedAmount = parseMoneySigned(getField(block, 'TRNAMT'));
+      const memo = getField(block, 'MEMO');
+      const desc = truncateText(decodeDescription(memo || getField(block, 'NAME')), 300);
+      rows.push({
+        date,
+        desc,
+        amount: Math.abs(signedAmount),
+        signedAmount,
+        category: truncateText(autoDetectCategory(desc), 100),
+        invalid: !date,
+        invalidReason: date ? '' : 'Data inválida ou ausente.',
+        raw: truncateText(match[0].trim(), MAX_LINE_CHARS)
+      });
+    });
+    if (blocks.length > MAX_ROWS) {
+      warnings.push('O extrato excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.');
+    }
+    applyDefaultTypes(rows);
+    applyInstallments(rows);
+    setWarnings(warnings);
+    return rows;
+  }
+
+  function parseNFeXML(text) {
+    setWarnings();
+    if (/<!DOCTYPE|<!ENTITY/i.test(text)) {
+      setWarnings(['XML inválido.']);
+      return [];
+    }
+    const document = new DOMParser().parseFromString(text, 'application/xml');
+    if (document.getElementsByTagName('parsererror').length) {
+      setWarnings(['XML inválido.']);
+      return [];
+    }
+    const rootName = (document.documentElement.localName || document.documentElement.nodeName)
+      .split(':').pop().toLowerCase();
+    if (!['nfeproc', 'nfe', 'infnfe'].includes(rootName)) {
+      setWarnings(['XML não reconhecido como nota fiscal.']);
+      return [];
+    }
+    const elements = (parent, name) => Array.from(parent.getElementsByTagNameNS('*', name));
+    const firstText = (parent, name) => {
+      const element = elements(parent, name)[0];
+      return element ? element.textContent.trim() : '';
+    };
+    const emit = elements(document, 'emit')[0];
+    const infNFe = rootName === 'infnfe'
+      ? document.documentElement
+      : elements(document, 'infNFe')[0] || document.documentElement;
+    const dateText = firstText(infNFe, 'dhEmi') || firstText(infNFe, 'dEmi');
+    const datePart = dateText.substring(0, 10);
+    const dateMatch = datePart.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const date = dateMatch && validDateParts(
+      Number(dateMatch[1]), Number(dateMatch[2]), Number(dateMatch[3])
+    ) ? datePart : null;
+    const emitente = emit ? firstText(emit, 'xNome') : '';
+    const number = firstText(infNFe, 'nNF');
+    const icmsTot = elements(infNFe, 'ICMSTot')[0];
+    const totalText = icmsTot ? firstText(icmsTot, 'vNF') : firstText(infNFe, 'vNF');
+    const amount = totalText ? parseMoney(totalText) : 0;
+    const products = elements(infNFe, 'xProd').slice(0, 3).map(item => item.textContent.trim());
+    const desc = truncateText(`${emitente} — NF ${number}`, 300);
+    const invalid = !date || !totalText;
+    return [{
+      date,
+      desc,
+      amount,
+      signedAmount: -amount,
+      category: truncateText(autoDetectCategory(`${emitente} ${products.join(' ')}`), 100),
+      type: 'variable',
+      invalid,
+      invalidReason: invalid ? 'Data de emissão ou valor total ausente ou inválido.' : '',
+      raw: truncateText(text, MAX_LINE_CHARS)
+    }];
   }
 
   function parseRawText(text) {
@@ -353,6 +558,7 @@ const GastoProImporter = (() => {
     }
     if (lines.length > MAX_ROWS) warnings.push('O texto excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.');
     applyDefaultTypes(result);
+    applyInstallments(result);
     setWarnings(warnings);
     return result;
   }
@@ -399,7 +605,8 @@ const GastoProImporter = (() => {
   // ================================================================
   return {
     parseCSV, parseRawText, autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
-    parseDate, markDuplicates, getLastWarnings
+    parseDate, markDuplicates, getLastWarnings, shiftMonth, detectInstallment, matchDebtTemplate,
+    buildInstallmentDebt, parseFile
   };
 
 })();

@@ -1642,6 +1642,74 @@ describe('GastoProImporter — extratos bancários robustos', () => {
     assertTrue(Boolean(row.invalidReason));
   });
 
+  it('detecta parcelas com marcador e entre parênteses, mas não confunde datas', () => {
+    assertEqual(GastoProImporter.detectInstallment('FACULDADE X PARC 03/48'), {
+      current: 3, total: 48, baseDesc: 'FACULDADE X'
+    });
+    assertEqual(GastoProImporter.detectInstallment('Compra Parcela 3 de 12'), {
+      current: 3, total: 12, baseDesc: 'Compra'
+    });
+    assertEqual(GastoProImporter.detectInstallment('Compra (3/12)'), {
+      current: 3, total: 12, baseDesc: 'Compra'
+    });
+    assertEqual(GastoProImporter.detectInstallment('PCL 2/10').current, 2);
+    assertEqual(GastoProImporter.detectInstallment('Prest 5/36').total, 36);
+    assertEqual(GastoProImporter.detectInstallment('Cota 5/10').current, 5);
+    assertNull(GastoProImporter.detectInstallment('COMPRA 03/12'));
+    assertNull(GastoProImporter.detectInstallment('PARC 13/12'));
+    assertNull(GastoProImporter.detectInstallment('PARC 0/12'));
+  });
+
+  it('shiftMonth atravessa a virada de ano nos dois sentidos', () => {
+    assertEqual(GastoProImporter.shiftMonth('2026-01', -1), '2025-12');
+    assertEqual(GastoProImporter.shiftMonth('2026-12', 1), '2027-01');
+  });
+
+  it('matchDebtTemplate encontra apenas dívida compatível com descrição, valor e período', () => {
+    const template = {
+      id: 'debt-1',
+      desc: 'Faculdade X',
+      amount: 105,
+      isDebt: true,
+      startMonth: '2026-08',
+      endMonth: '2030-07'
+    };
+    const row = {
+      date: '2026-10-15',
+      desc: 'FACULDADE X PARC 03/48',
+      amount: 100,
+      installmentBase: 'FACULDADE X'
+    };
+    assertEqual(GastoProImporter.matchDebtTemplate(row, [template]), template);
+    assertNull(GastoProImporter.matchDebtTemplate({ ...row, amount: 120 }, [template]));
+    assertNull(GastoProImporter.matchDebtTemplate({ ...row, date: '2026-07-15' }, [template]));
+  });
+
+  it('parseRawText anota parcelas em gastos, mas não em receitas', () => {
+    const rows = GastoProImporter.parseRawText(
+      '15/10/2026 FACULDADE X PARC 03/48 -500,00\n' +
+      '16/10/2026 Receita de venda PARC 03/12 100,00'
+    );
+    assertEqual(rows[0].installment, { current: 3, total: 48 });
+    assertEqual(rows[0].installmentBase, 'FACULDADE X');
+    assertEqual(rows[1].type, 'income');
+    assertFalse(Boolean(rows[1].installment));
+  });
+
+  it('calcula o exemplo 03/48 com três meses pagos e 45 restantes', () => {
+    const debt = GastoProImporter.buildInstallmentDebt({
+      date: '2026-10-15',
+      amount: 500,
+      installmentBase: 'FACULDADE X',
+      installment: { current: 3, total: 48 }
+    }, 'Educação');
+    assertEqual(debt.startMonth, '2026-08');
+    assertEqual(debt.endMonth, '2030-07');
+    assertEqual(debt.date, '2026-08-15');
+    assertEqual(Object.keys(debt.paidMonths).length, 3);
+    assertEqual(48 - Object.keys(debt.paidMonths).length, 45);
+  });
+
   it('impõe limites de tamanho e linhas e limita cada linha a 500 caracteres', () => {
     const oversizedLine = `15/10/2026 ${'x'.repeat(510)} 10,00`;
     const rows = GastoProImporter.parseRawText(
@@ -1695,6 +1763,94 @@ describe('GastoProImporter — extratos bancários robustos', () => {
   });
 });
 
+describe('GastoProImporter — importação de arquivos', () => {
+  itAsync('parseFile mantém o parsing CSV e decodifica CSV Windows-1252', async () => {
+    const csv = 'Data;Descrição;Valor\n15/10/2026;Café;12,50';
+    const utf8File = new File([csv], 'extrato.csv');
+    assertEqual(await GastoProImporter.parseFile(utf8File), GastoProImporter.parseCSV(csv));
+
+    const legacyCsv = 'Data;Descrição;Valor\n15/10/2026;Café;12,50';
+    const bytes = Uint8Array.from(legacyCsv, char => char.charCodeAt(0));
+    const windowsFile = new File([bytes], 'extrato.csv');
+    const rows = await GastoProImporter.parseFile(windowsFile);
+    assertEqual(rows[0].desc, 'Café');
+  });
+
+  itAsync('parseFile interpreta OFX SGML Windows-1252 com crédito e débito', async () => {
+    const ofx = 'OFXHEADER:100\nCHARSET:1252\n<OFX><BANKTRANLIST>' +
+      '<STMTTRN><DTPOSTED>20261015000000<TRNAMT>1500.00<NAME>SALÁRIO' +
+      '<STMTTRN><DTPOSTED>20261016000000<TRNAMT>-45.90<MEMO>PADARIA CAFÉ' +
+      '</BANKTRANLIST></OFX>';
+    const bytes = Uint8Array.from(ofx, char => char.charCodeAt(0));
+    const rows = await GastoProImporter.parseFile(new File([bytes], 'extrato.ofx'));
+    assertEqual(rows.map(row => row.date), ['2026-10-15', '2026-10-16']);
+    assertEqual(rows.map(row => row.amount), [1500, 45.9]);
+    assertEqual(rows.map(row => row.signedAmount), [1500, -45.9]);
+    assertEqual(rows[1].desc, 'PADARIA CAFÉ');
+    assertEqual(rows.map(row => row.type), ['income', 'variable']);
+  });
+
+  itAsync('parseFile interpreta OFX XML', async () => {
+    const ofx = '<?xml version="1.0"?><OFX><BANKTRANLIST>' +
+      '<STMTTRN><DTPOSTED>20261015<TRNAMT>1500.00<MEMO>Salário</STMTTRN>' +
+      '<STMTTRN><DTPOSTED>20261016<TRNAMT>-45.90<MEMO>PADARIA CAFÉ</STMTTRN>' +
+      '</BANKTRANLIST></OFX>';
+    const rows = await GastoProImporter.parseFile(new File([ofx], 'extrato.ofx'));
+    assertEqual(rows.map(row => row.signedAmount), [1500, -45.9]);
+    assertEqual(rows[1].desc, 'PADARIA CAFÉ');
+    assertEqual(rows.map(row => row.type), ['income', 'variable']);
+  });
+
+  itAsync('parseFile marca data inválida em OFX', async () => {
+    const ofx = '<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261340' +
+      '<TRNAMT>-10.00<MEMO>Compra</BANKTRANLIST></OFX>';
+    const rows = await GastoProImporter.parseFile(new File([ofx], 'extrato.ofx'));
+    assertTrue(rows[0].invalid);
+    assertNull(rows[0].date);
+  });
+
+  itAsync('parseFile detecta parcela em descrição OFX', async () => {
+    const ofx = '<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261015' +
+      '<TRNAMT>-500.00<MEMO>FACULDADE X PARC 03/48</BANKTRANLIST></OFX>';
+    const rows = await GastoProImporter.parseFile(new File([ofx], 'extrato.ofx'));
+    assertEqual(rows[0].installment, { current: 3, total: 48 });
+    assertEqual(rows[0].installmentBase, 'FACULDADE X');
+  });
+
+  itAsync('parseFile importa XML de NFC-e usando emitente e valor da nota', async () => {
+    const xml = '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe>' +
+      '<infNFe><ide><dhEmi>2026-10-15T10:00:00-03:00</dhEmi><nNF>123</nNF></ide>' +
+      '<emit><xNome>PADARIA CAFÉ</xNome></emit><dest><xNome>DESTINATÁRIO DIFERENTE</xNome></dest>' +
+      '<det><prod><xProd>Pão francês</xProd></prod></det>' +
+      '<total><ICMSTot><vNF>45.90</vNF></ICMSTot></total></infNFe></NFe></nfeProc>';
+    const rows = await GastoProImporter.parseFile(new File([xml], 'nota.xml'));
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].desc, 'PADARIA CAFÉ — NF 123');
+    assertEqual(rows[0].amount, 45.9);
+    assertEqual(rows[0].type, 'variable');
+    assertFalse(rows[0].desc.includes('DESTINATÁRIO'));
+  });
+
+  itAsync('parseFile avisa sobre XML malformado', async () => {
+    const rows = await GastoProImporter.parseFile(new File(['<nfeProc><NFe>'], 'nota.xml'));
+    assertEqual(rows, []);
+    assertTrue(GastoProImporter.getLastWarnings().includes('XML inválido.'));
+  });
+
+  itAsync('parseFile rejeita XML com DOCTYPE', async () => {
+    const xml = '<!DOCTYPE nfeProc [<!ENTITY x "x">]><nfeProc></nfeProc>';
+    const rows = await GastoProImporter.parseFile(new File([xml], 'nota.xml'));
+    assertEqual(rows, []);
+    assertTrue(GastoProImporter.getLastWarnings().includes('XML inválido.'));
+  });
+
+  itAsync('parseFile rejeita extensão não suportada', async () => {
+    const rows = await GastoProImporter.parseFile(new File(['documento'], 'nota.pdf'));
+    assertEqual(rows, []);
+    assertTrue(GastoProImporter.getLastWarnings().includes('Formato de arquivo não suportado.'));
+  });
+});
+
 describe('FinanceData — inserção em lote para importação', () => {
   setupMockLocalStorage();
 
@@ -1717,6 +1873,103 @@ describe('FinanceData — inserção em lote para importação', () => {
       assertEqual(flushes, 1);
       assertTrue(added.items.every(item => isUuid(item.id)));
     } finally {
+      FinanceData.flushPendingSync = originalFlush;
+    }
+  });
+
+  itAsync('addMany preserva paidMonths fornecido em dívida', async () => {
+    setupMockLocalStorage();
+    const originalFlush = FinanceData.flushPendingSync;
+    FinanceData.flushPendingSync = async () => ({ success: true });
+    try {
+      await FinanceData.addMany([{
+        type: 'debt',
+        desc: 'Faculdade X',
+        amount: 500,
+        date: '2026-08-15',
+        startMonth: '2026-08',
+        endMonth: '2030-07',
+        paidMonths: { '2026-08': true, '2026-09': true, '2026-10': true }
+      }]);
+      assertEqual(FinanceData.getTemplates()[0].paidMonths, {
+        '2026-08': true, '2026-09': true, '2026-10': true
+      });
+    } finally {
+      FinanceData.flushPendingSync = originalFlush;
+    }
+  });
+
+  itAsync('markPaid define baixa verdadeira e é idempotente', async () => {
+    setupMockLocalStorage();
+    const originalFlush = FinanceData.flushPendingSync;
+    FinanceData.flushPendingSync = async () => ({ success: true });
+    try {
+      const { items } = await FinanceData.addMany([{
+        type: 'debt',
+        desc: 'Faculdade X',
+        amount: 500,
+        date: '2026-08-15',
+        startMonth: '2026-08'
+      }]);
+      const first = await FinanceData.markPaid(items[0].id, '2026-10');
+      const second = await FinanceData.markPaid(items[0].id, '2026-10');
+      assertTrue(first.success);
+      assertTrue(second.success);
+      assertEqual(FinanceData.getTemplates()[0].paidMonths, { '2026-10': true });
+    } finally {
+      FinanceData.flushPendingSync = originalFlush;
+    }
+  });
+
+  itAsync('markPaid não grava quando o template não existe', async () => {
+    setupMockLocalStorage();
+    let saves = 0;
+    const originalSaveTemplates = FinanceData.saveTemplates;
+    FinanceData.saveTemplates = async () => {
+      saves++;
+      return { success: true };
+    };
+    try {
+      const result = await FinanceData.markPaid('missing-template', '2026-10');
+      assertEqual(result, { success: false, error: 'Template não encontrado.' });
+      assertEqual(saves, 0);
+    } finally {
+      FinanceData.saveTemplates = originalSaveTemplates;
+    }
+  });
+
+  itAsync('markPaidMany grava duas baixas uma vez e mantém idempotência', async () => {
+    setupMockLocalStorage();
+    const originalFlush = FinanceData.flushPendingSync;
+    const originalSaveTemplates = FinanceData.saveTemplates;
+    FinanceData.flushPendingSync = async () => ({ success: true });
+    const { items } = await FinanceData.addMany([
+      { type: 'debt', desc: 'Dívida A', amount: 100, date: '2026-08-15' },
+      { type: 'debt', desc: 'Dívida B', amount: 200, date: '2026-08-15' }
+    ]);
+    let saves = 0;
+    FinanceData.saveTemplates = async function(templates) {
+      saves++;
+      return await originalSaveTemplates.call(this, templates);
+    };
+    try {
+      const payments = [
+        { id: items[0].id, ym: '2026-09' },
+        { id: items[1].id, ym: '2026-10' },
+        { id: 'missing-template', ym: '2026-10' }
+      ];
+      const first = await FinanceData.markPaidMany(payments);
+      assertEqual(first, { success: true, applied: 2 });
+      assertEqual(saves, 1);
+      const second = await FinanceData.markPaidMany(payments);
+      assertEqual(second, { success: true, applied: 2 });
+      assertEqual(saves, 2);
+      assertEqual(FinanceData.getTemplates().map(template => template.paidMonths), [
+        { '2026-09': true },
+        { '2026-10': true }
+      ]);
+    } finally {
+      FinanceData.saveTemplates = originalSaveTemplates;
       FinanceData.flushPendingSync = originalFlush;
     }
   });

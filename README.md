@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-3.9-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-130%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-148%20casos-10b981?style=for-the-badge)
 
 
 ---
@@ -87,11 +87,14 @@ Integridade SHA-512 dos tarballs oficiais do registry npm, verificada antes da e
 
 ### 📥 Importação de Extratos Bancários (v3.1)
 - **Upload de CSV**: Arraste e solte ou selecione um arquivo `.csv` para importação em lote.
+- **Extratos OFX**: Importe arquivos `.ofx` em formato SGML ou XML, incluindo descrições e acentos em Windows-1252.
+- **Notas fiscais XML**: Importe notas NF-e/NFC-e para criar um lançamento de despesa com emitente, número e valor total.
 - **Texto Bruto**: Cole diretamente o texto copiado do app ou site do banco.
 - **Detecção automática de colunas**: O parser identifica colunas de Data, Descrição e Valor sem configuração manual.
 - **Categorização automática**: +80 palavras-chave mapeiam automaticamente lançamentos para categorias (iFood → Alimentação, Spotify → Assinaturas, etc.).
 - **Pré-visualização editável**: Revise, corrija categoria e tipo (Gasto/Receita) linha por linha antes de salvar.
 - **Seleção granular**: Selecione ou desmarque lançamentos individualmente ou todos de uma vez.
+- **Detecção de parcelas**: Identifica parcelas em descrições e permite criar a dívida com as parcelas anteriores baixadas ou dar baixa automática em uma dívida já cadastrada.
 - **Suporte a múltiplos formatos**: `DD/MM/AAAA Descrição R$ Valor`, `DD/MM Descrição Valor`, e outros padrões de extratos brasileiros.
 
 ### 🪄 Wizard de Lançamento Rápido (v3.2)
@@ -154,7 +157,7 @@ financeiro-app/
 │       └── 20261027_hardening.sql # Migração para aplicação manual; não executada
 │
 ├── tests/
-│   ├── gastopro.test.js    # Suite de testes (130 casos, vanilla JS, sem framework)
+│   ├── gastopro.test.js    # Suite de testes (148 casos, vanilla JS, sem framework)
 │   └── test-runner.html    # Página de execução dos testes no navegador
 │
 └── README.md               # Esta documentação
@@ -307,7 +310,7 @@ A tabela `profiles` guarda o identificador Auth do usuário, nome e avatar; o ap
 
 ## 🧪 Testes Automatizados
 
-Suite com **130 casos de teste** em JavaScript puro (sem frameworks).
+Suite com **148 casos de teste** em JavaScript puro (sem frameworks).
 
 ### Como executar
 1. Abra `tests/test-runner.html` no Chrome ou Edge.
@@ -398,7 +401,8 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 - Contraste de textos de erro e avisos em vermelho ajustado com `--danger-text`; foco dos seletores da prévia de importação preservado sem remover o contorno.
 - Adicionado o link "Pular para o conteúdo" e o landmark `<main id="mainContent">`.
 - Pré-cache dos recursos essenciais usa `cache: 'reload'`.
-- Cobertura atual: 130 testes automatizados.
+- Importador aceita extratos OFX e notas fiscais XML (NF-e/NFC-e), além de CSV e texto bruto.
+- Cobertura atual: 148 testes automatizados.
 
 ### v3.8 — 27/10/2026
 

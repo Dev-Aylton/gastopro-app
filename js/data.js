@@ -597,7 +597,7 @@ const FinanceData = {
           endMonth: item.endMonth || null,
           day: date.split('-')[2] || '05',
           date,
-          paidMonths: {}
+          paidMonths: item.paidMonths || {}
         };
         newTemplates.push(template);
         addedItems.push(template);
@@ -764,6 +764,29 @@ const FinanceData = {
       item.paid = !item.paid;
       this.saveEntries(entries);
     }
+  },
+
+  async markPaid(id, ym) {
+    const templates = this.getTemplates();
+    const template = templates.find(item => item.id === id);
+    if (!template) return { success: false, error: 'Template não encontrado.' };
+    if (!template.paidMonths) template.paidMonths = {};
+    template.paidMonths[ym] = true;
+    return await this.saveTemplates(templates);
+  },
+
+  async markPaidMany(payments) {
+    const templates = this.getTemplates();
+    let applied = 0;
+    payments.forEach(payment => {
+      const template = templates.find(item => item.id === payment.id);
+      if (!template) return;
+      if (!template.paidMonths) template.paidMonths = {};
+      template.paidMonths[payment.ym] = true;
+      applied++;
+    });
+    const result = await this.saveTemplates(templates);
+    return { success: result.success, applied };
   },
 
   // ================================================================

@@ -3073,6 +3073,17 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   white-space: nowrap;
 }
 
+.import-installment-badge {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  color: var(--primary-text);
+  background: var(--bg-input);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
 .import-preview-table .col-category select {
   background: var(--bg-input);
   border: 1px solid var(--border);

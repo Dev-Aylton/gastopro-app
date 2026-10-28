@@ -99,7 +99,7 @@
         </button>
 
         <!-- Botão 5: Importar Extrato (No rodapé, acima de Atualizar Dados) -->
-        <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar extrato bancário (CSV ou Texto)">
+        <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
           <i class="fa-solid fa-file-import"></i>
           <span>Importar Extrato</span>
           <span class="nav-import-badge">Novo</span>
@@ -1017,7 +1017,7 @@
         </div>
         <div class="import-header-text">
           <h3 id="importModalTitle">Importar Extrato Bancário</h3>
-          <p>Importe seus lançamentos via arquivo CSV ou cole o texto do extrato para revisão antes de salvar.</p>
+          <p>Importe seus lançamentos via arquivo (CSV, OFX ou XML) ou cole o texto do extrato para revisão antes de salvar.</p>
         </div>
         <button class="modal-close-btn" id="closeImportModalBtn" title="Fechar" aria-label="Fechar importação">&times;</button>
       </div>
@@ -1025,7 +1025,7 @@
       <!-- Abas de formato -->
       <div class="import-tabs">
         <button class="import-tab-btn active" id="importTabCsvBtn" data-tab="csv">
-          <i class="fa-solid fa-file-csv"></i> Arquivo CSV
+          <i class="fa-solid fa-file-csv"></i> Arquivo
         </button>
         <button class="import-tab-btn" id="importTabTextBtn" data-tab="text">
           <i class="fa-solid fa-align-left"></i> Texto do Extrato
@@ -1036,19 +1036,19 @@
       <div class="import-csv-panel active" id="importCsvPanel">
         <div class="import-format-hint">
           <i class="fa-solid fa-circle-info"></i>
-          <span>Aceita arquivos <strong>.csv</strong> com colunas de Data, Descrição e Valor (qualquer separador). O cabeçalho é detectado automaticamente.</span>
+          <span>Aceita CSV com colunas de Data, Descrição e Valor, extratos OFX e XML de nota fiscal (NF-e/NFC-e).</span>
         </div>
 
         <!-- Área de Drop / Upload -->
         <div class="csv-drop-zone" id="csvDropZone">
-          <input type="file" id="csvFileInput" accept=".csv,.txt" aria-label="Selecionar arquivo CSV ou TXT" />
+          <input type="file" id="csvFileInput" accept=".csv,.txt,.ofx,.xml" aria-label="Selecionar arquivo CSV, TXT, OFX ou XML" />
           <i class="fa-solid fa-cloud-arrow-up drop-icon" id="csvDropIcon"></i>
-          <p class="drop-title" id="csvDropTitle">Arraste o arquivo CSV aqui</p>
-          <p class="drop-sub" id="csvDropSub">ou clique para selecionar o arquivo (.csv, .txt)</p>
+          <p class="drop-title" id="csvDropTitle">Arraste o arquivo aqui</p>
+          <p class="drop-sub" id="csvDropSub">ou clique para selecionar o arquivo (.csv, .ofx, .xml)</p>
         </div>
 
         <button class="btn-parse" id="parseCsvBtn">
-          <i class="fa-solid fa-magnifying-glass"></i> Analisar CSV
+          <i class="fa-solid fa-magnifying-glass"></i> Analisar arquivo
         </button>
       </div>
 

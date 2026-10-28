@@ -2697,8 +2697,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (csvDropZone) {
       csvDropZone.classList.remove('csv-file-selected');
       document.getElementById('csvDropIcon').className = 'fa-solid fa-cloud-arrow-up drop-icon';
-      document.getElementById('csvDropTitle').textContent = 'Arraste o arquivo CSV aqui';
-      document.getElementById('csvDropSub').textContent   = 'ou clique para selecionar o arquivo (.csv, .txt)';
+      document.getElementById('csvDropTitle').textContent = 'Arraste o arquivo aqui';
+      document.getElementById('csvDropSub').textContent   = 'ou clique para selecionar o arquivo (.csv, .ofx, .xml)';
     }
     // Limpa textarea
     if (importRawTextarea) importRawTextarea.value = '';
@@ -2762,6 +2762,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const catOptions = allCats.map(c =>
         `<option value="${escapeHtml(c)}" ${c === row.category ? 'selected' : ''}>${escapeHtml(c)}</option>`
       ).join('');
+      const installmentDisplay = row.linkedTemplateId
+        ? `<span class="import-installment-badge">${escapeHtml(`Baixa da parcela ${row.installment.current}/${row.installment.total} (dívida já cadastrada)`)}</span>`
+        : row.installment
+          ? `<span class="import-installment-badge">${escapeHtml(`Parcela ${row.installment.current}/${row.installment.total}`)}</span>${
+            row.installment.current < row.installment.total
+              ? `<label><input type="checkbox" class="import-installment-check" data-row="${i}" aria-label="${escapeHtml(`Lançar as ${row.installment.total - row.installment.current} restantes`)}" checked /> ${escapeHtml(`Lançar as ${row.installment.total - row.installment.current} restantes`)}</label>`
+              : ''
+          }`
+          : '';
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -2773,6 +2782,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="col-date">${escapeHtml(dateDisplay)}</td>
         <td class="col-desc" title="${escapeHtml(row.desc)}">
           ${escapeHtml(row.desc)} ${rowStatus}
+          ${installmentDisplay}
           ${row.invalidReason ? `<small class="import-row-reason">${escapeHtml(row.invalidReason)}</small>` : ''}
         </td>
         <td class="col-category">
@@ -2820,43 +2830,39 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function prepareImportRows(rows) {
-    _importParsedRows = GastoProImporter.markDuplicates(rows, FinanceData.getEntries());
+    const templates = FinanceData.getTemplates();
+    _importParsedRows = GastoProImporter.markDuplicates(rows, FinanceData.getEntries())
+      .map(row => {
+        if (row.duplicate || row.invalid || !row.installment) return row;
+        const template = GastoProImporter.matchDebtTemplate(row, templates);
+        return template ? { ...row, linkedTemplateId: template.id } : row;
+      });
     const hadWarnings = showImportWarnings();
     renderImportPreview(_importParsedRows);
     return hadWarnings;
   }
 
-  /** Lê o arquivo CSV selecionado e faz o parse. */
-  function handleCsvParse() {
+  /** Lê o arquivo selecionado e faz o parse. */
+  async function handleCsvParse() {
     if (!csvFileInput || !csvFileInput.files || !csvFileInput.files[0]) {
-      showToast('Selecione um arquivo CSV antes de analisar.');
+      showToast('Selecione um arquivo antes de analisar.');
       return;
     }
     const file = csvFileInput.files[0];
     if (file.size > 1_000_000) {
-      showToast('O arquivo CSV deve ter no máximo 1 MB.');
+      showToast('O arquivo deve ter no máximo 1 MB.');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const bytes = new Uint8Array(e.target.result);
-        let text;
-        try {
-          text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-        } catch {
-          text = new TextDecoder('windows-1252').decode(bytes);
-        }
-        const hadWarnings = prepareImportRows(GastoProImporter.parseCSV(text));
-        if (_importParsedRows.length > 0 && !hadWarnings) {
-          showToast(`${_importParsedRows.length} lançamentos encontrados no CSV!`);
-        }
-      } catch (err) {
-        console.error('[GastoPro Importer] Erro ao parsear CSV:', err);
-        showToast('Erro ao ler o CSV. Verifique o formato do arquivo.');
+    try {
+      const rows = await GastoProImporter.parseFile(file);
+      const hadWarnings = prepareImportRows(rows);
+      if (_importParsedRows.length > 0 && !hadWarnings) {
+        showToast(`${_importParsedRows.length} lançamentos encontrados no arquivo!`);
       }
-    };
-    reader.readAsArrayBuffer(file);
+    } catch (err) {
+      console.error('[GastoPro Importer] Erro ao ler o arquivo:', err);
+      showToast('Erro ao ler o arquivo. Verifique o formato.');
+    }
   }
 
   /** Lê o texto bruto da textarea e faz o parse. */
@@ -2894,6 +2900,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const typeSelects = importPreviewTbody.querySelectorAll('.import-type-select');
 
     const items = [];
+    const debtItems = [];
+    const launches = [];
+    const payments = [];
     checkboxes.forEach((cb, i) => {
       if (!cb.checked || _importParsedRows[i].invalid) return;
 
@@ -2901,25 +2910,56 @@ document.addEventListener('DOMContentLoaded', () => {
       const category = catSelects[i]  ? catSelects[i].value  : row.category;
       const type     = typeSelects[i] ? typeSelects[i].value : 'variable';
 
+      if (type !== 'income' && row.installment && row.linkedTemplateId) {
+        payments.push({ id: row.linkedTemplateId, ym: row.date.substring(0, 7) });
+        return;
+      }
+
+      if (type !== 'income' && row.installment) {
+        const installmentCheckbox = importPreviewTbody.querySelector(
+          `.import-installment-check[data-row="${i}"]`
+        );
+        if (installmentCheckbox && installmentCheckbox.checked) {
+          debtItems.push(GastoProImporter.buildInstallmentDebt(row, category));
+          return;
+        }
+      }
+
       const entry = GastoProImporter.buildEntry(
         { ...row, category },
         type
       );
 
-      items.push(entry);
+      launches.push(entry);
     });
 
-    if (items.length > 0) {
+    items.push(...debtItems, ...launches);
+    if (items.length > 0 || payments.length > 0) {
       try {
-        const result = await FinanceData.addMany(items);
-        if (!result.success) {
+        const result = items.length ? await FinanceData.addMany(items) : null;
+        if (result && !result.success) {
           showToast(result.syncResult
             ? 'Os lançamentos foram salvos neste aparelho, mas a sincronização ficou pendente.'
             : 'Não foi possível salvar os lançamentos importados neste aparelho.');
           return;
         }
-        const saved = result.items.length;
-        showToast(`${saved} lançamento${saved > 1 ? 's' : ''} importado${saved > 1 ? 's' : ''} com sucesso!`);
+        if (payments.length) {
+          const paid = await FinanceData.markPaidMany(payments);
+          if (!paid.success) {
+            showToast('Não foi possível concluir a importação. Tente novamente.');
+            renderAll();
+            closeImportModal();
+            return;
+          }
+        }
+        const debtCount = debtItems.length;
+        const paymentCount = payments.length;
+        const launchCount = launches.length;
+        showToast(
+          `${debtCount} dívida${debtCount === 1 ? '' : 's'} criada${debtCount === 1 ? '' : 's'}, ` +
+          `${paymentCount} baixa${paymentCount === 1 ? '' : 's'} registrada${paymentCount === 1 ? '' : 's'} e ` +
+          `${launchCount} lançamento${launchCount === 1 ? '' : 's'} importado${launchCount === 1 ? '' : 's'} com sucesso!`
+        );
         renderAll();
         closeImportModal();
       } catch (err) {
