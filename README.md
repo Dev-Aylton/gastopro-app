@@ -18,6 +18,7 @@
 4. Respeite as **Decisões de produto**: Pix entra como Gasto (pago); boleto, empréstimos, parcelamentos e contas parceladas entram como "a pagar" nos meses seguintes e só o usuário marca como pago; sem foto, print nem OCR.
 5. Não deduza informações nem o escopo da mudança: confirme com o Aylton antes de alterar.
 6. Mudanças no banco são feitas no painel do Supabase e registradas em `supabase/schema.sql`.
+7. Não proponha nem implemente soluções pagas. Use apenas planos e serviços gratuitos até que o app tenha usuários; a monetização vem depois (veja o Roadmap).
 
 ---
 
@@ -312,7 +313,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 - **RLS:** cada usuário autenticado só acessa registros associados ao próprio `auth.uid()`.
 - **Logout:** encerra a sessão e remove os dados `gastopro_*` locais deste aparelho; os dados na nuvem permanecem.
 - **Login:** sincroniza os dados da conta autenticada com os dados locais, conforme a fila pendente.
-- **Reset logado:** apaga lançamentos, templates e metas também na nuvem e mantém a identidade da conta (`userId` e e-mail do perfil).
+- **Reset logado:** apaga lançamentos, templates e metas deste aparelho e envia a exclusão para a nuvem; se o envio falhar, a exclusão fica pendente e é reenviada na próxima sincronização. Mantém a identidade da conta (`userId` e e-mail do perfil).
 - **Reset sem login:** apaga somente os dados deste aparelho.
 - **Troca de conta:** os dados locais da conta anterior são limpos quando não há sincronização pendente.
 - Nome e foto do perfil continuam locais; a sessão de autenticação fica no cliente Supabase no navegador.
@@ -454,33 +455,34 @@ O SHA-512 de pdfjs-dist foi conferido antes da extração; o pacote foi publicad
 - Boleto, empréstimos, parcelamentos e contas parceladas, depois de lançados, aparecem como **"a pagar"** em cada mês seguinte do período; **só o usuário marca como pago**, mês a mês.
 - O app não terá importação por foto, print nem OCR; a decisão é manter o app leve.
 - O uso de PDF é limitado a documentos com texto selecionável; a prévia deve ser conferida.
+- Desenvolvimento 100% em planos gratuitos até o app estar funcionando e com vários usuários; a monetização vem depois.
 
 ---
 
 ## 🗺️ Roadmap
 
-Legenda: `[ ]` pendente | `[~]` implementado, aguardando teste do Aylton | `[x]` concluído e validado pelo Aylton. Regra: o Copilot marca `[~]` ao terminar; só o Aylton muda para `[x]`.
+Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado e validado. Veja as regras no [Guia para IAs](#-guia-para-ias-leia-antes-de-editar).
 
 ### Itens
 
-- [x] **RM-001 — Acessibilidade na navegação e nos modais** / Descrição: melhorias de acessibilidade no bloco 5.1. / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-002 — Reconhecimento de parcelas na importação** / Descrição: reconhecer parcelas, criar dívida com parcelas anteriores baixadas ou dar baixa em dívida existente (bloco 6A). / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-003 — Importação de OFX e XML de nota fiscal** / Descrição: importar OFX e NF-e/NFC-e (bloco 6B). / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-004 — Importação de Pix e linhas digitáveis de boleto** / Descrição: importar Pix copia e cola e boletos (bloco 6D). / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-005 — Ajuda embutida no modal do importador** / Descrição: orientar sobre formatos, prévia, parcelas, duplicados e privacidade. / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-006 — Importação de PDF de extrato ou fatura** / Descrição: ler localmente PDFs com texto selecionável (bloco 6C). / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-007 — Metas e alertas de teto por categoria** / Descrição: seção no dashboard, cards, modal, edição e alertas em 80% e 100%. / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-008 — Relatório financeiro em PDF** / Descrição: relatório mensal, anual ou por intervalo com totais, categorias, dívidas, metas, diagnóstico e detalhamento opcional. / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-009 — Deduplicação na importação de extratos** / Descrição: desmarcar duplicatas existentes ou repetidas no arquivo, permitindo importação manual forçada. / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-001 — Acessibilidade na navegação e nos modais** / Descrição: melhorias de acessibilidade no bloco 5.1. / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-002 — Reconhecimento de parcelas na importação** / Descrição: reconhecer parcelas, criar dívida com parcelas anteriores baixadas ou dar baixa em dívida existente (bloco 6A). / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-003 — Importação de OFX e XML de nota fiscal** / Descrição: importar OFX e NF-e/NFC-e (bloco 6B). / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-004 — Importação de Pix e linhas digitáveis de boleto** / Descrição: importar Pix copia e cola e boletos (bloco 6D). / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-005 — Ajuda embutida no modal do importador** / Descrição: orientar sobre formatos, prévia, parcelas, duplicados e privacidade. / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-006 — Importação de PDF de extrato ou fatura** / Descrição: ler localmente PDFs com texto selecionável (bloco 6C). / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-007 — Metas e alertas de teto por categoria** / Descrição: seção no dashboard, cards, modal, edição e alertas em 80% e 100%. / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-008 — Relatório financeiro em PDF** / Descrição: relatório mensal, anual ou por intervalo com totais, categorias, dívidas, metas, diagnóstico e detalhamento opcional. / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-009 — Deduplicação na importação de extratos** / Descrição: desmarcar duplicatas existentes ou repetidas no arquivo, permitindo importação manual forçada. / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-010 — Metas sincronizadas com a nuvem** / Descrição: sincronizar metas por categoria com `public.goals`, incluindo upserts e exclusões pendentes. / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-011 — Hardening do banco aplicado** / Descrição: aplicar a migração `supabase/migrations/20261027_hardening.sql` ao banco. / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-012 — Contas a pagar em CSV** / Descrição: aceitar colunas `tipo`, `mes_inicio`, `mes_fim`, `dia_venc` e `ativo`. / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-013 — Categoria no CSV** / Descrição: aceitar a coluna opcional `categoria`. / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-014 — Tipo OFX por TRNTYPE e descrição padrão** / Descrição: usar TRNTYPE conhecido, fallback de descrição vazia e aviso para OFX sem transações. / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-015 — Reset sem apagar perfil** / Descrição: reset financeiro preserva identidade da conta e perfil. / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-011 — Hardening do banco aplicado** / Descrição: aplicar a migração `supabase/migrations/20261027_hardening.sql` ao banco. / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-012 — Contas a pagar em CSV** / Descrição: aceitar colunas `tipo`, `mes_inicio`, `mes_fim`, `dia_venc` e `ativo`. / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-013 — Categoria no CSV** / Descrição: aceitar a coluna opcional `categoria`. / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-014 — Tipo OFX por TRNTYPE e descrição padrão** / Descrição: usar TRNTYPE conhecido, fallback de descrição vazia e aviso para OFX sem transações. / Critério de pronto: a definir. / Arquivos: a definir.
+- [V] **RM-015 — Reset sem apagar perfil** / Descrição: reset financeiro preserva identidade da conta e perfil. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-016 — Simulador de Cenários Futuros (“E se...”)** / Descrição: simular pagamento extra de dívida e estimar quitação; projetar amortização com gráfico de linha; simular corte de categoria (por exemplo, reduzir Alimentação em 20%); comparar antes/depois em painel lateral. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-017 — Exportação de dados adicionais** / Descrição: exportar lançamentos em Excel/CSV filtrados por período e oferecer exportações adicionais em Excel/CSV. / Critério de pronto: a definir. / Arquivos: a definir.
-- [ ] **RM-018 — Notificações In-App de Alertas de Gastos** / Descrição: alertas visuais quando a meta de categoria estiver próxima do limite e base para futuras notificações push via Service Worker. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-018 — Notificações de alertas de gastos** / Descrição: Parte 1 (sem custo): central de notificações dentro do app, com histórico dos alertas de metas (80% e 100%). Parte 2 (somente se couber no plano gratuito): notificações push via Service Worker com o app fechado, enviadas por Edge Function do Supabase com agendamento; avaliar se o plano gratuito permite o agendamento. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-019 — Offline-First aprimorado com IndexedDB** / Descrição: migrar de localStorage para IndexedDB para maior capacidade e performance; manter fila para operações offline e envio ao reconectar; exibir status de conectividade na UI. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-020 — Ampliar cobertura de testes automatizados** / Descrição: testes para o fluxo completo de quatro passos do Wizard. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-021 — Plano Freemium (Free vs. Pro)** / Descrição: separar funcionalidades entre plano Gratuito e Pro; considerar PDF/Excel, histórico ilimitado e backup automático agendado no Pro. / Critério de pronto: a definir. / Arquivos: a definir.
