@@ -489,12 +489,6 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 ### Descartado
 
 - Importação por foto de cupom (6E) — motivo: decisão do autor: o app não terá foto/OCR.
-- [ ] **RM-021 — Plano Freemium (Free vs. Pro)** / Descrição: separar funcionalidades entre plano Gratuito e Pro; considerar PDF/Excel, histórico ilimitado e backup automático agendado no Pro. / Critério de pronto: a definir. / Arquivos: a definir. — motivo: decisão do autor: sem gastos por ora; serviços pagos e monetização foram descartados
-- [ ] **RM-022 — Integração com Gateway de Pagamento** / Descrição: avaliar Mercado Pago, Asaas ou Stripe para assinaturas Pro e webhook para liberar acesso automaticamente após confirmação. / Critério de pronto: a definir. / Arquivos: a definir. — motivo: decisão do autor: sem gastos por ora; serviços pagos e monetização foram descartados
-- [ ] **RM-023 — Backend Python (FastAPI + Supabase)** / Descrição: API RESTful com FastAPI e SQLAlchemy; hospedagem Render/Railway; parser CSV com pandas; cron jobs de backup; endpoints protegidos com JWT integrado ao Supabase Auth. / Critério de pronto: a definir. / Arquivos: a definir. — motivo: decisão do autor: sem gastos por ora; serviços pagos e monetização foram descartados
-- [ ] **RM-024 — Sistema de Afiliados** / Descrição: recomendação inteligente de cartões e contas para receita passiva do app. / Critério de pronto: a definir. / Arquivos: a definir. — motivo: decisão do autor: sem gastos por ora; serviços pagos e monetização foram descartados
-- Propaganda no app — motivo: descartada por enquanto; depende de muitos usuários e exige revisar a política de privacidade.
-- Apoio voluntário por Pix (antigo RM-028) — motivo: decisão do autor: excluído por enquanto.
 
 ### Novas melhorias
 
@@ -507,6 +501,10 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 ## 📋 Changelog
 
 ### Planejamento (sem versão)
+
+- O Roadmap foi atualizado com RM-025 a RM-027.
+
+### v4.0 — 28/10/2026 (versão atual)
 
 - Bloco 5.1: melhorias de acessibilidade na navegação e nos modais.
 - Bloco 6A: reconhecimento e tratamento de parcelas durante a importação.
@@ -601,4 +599,4 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 
 Todos os direitos reservados © Aylton Alberto.
 
-Projeto pessoal de estudante de ADS, com intenção de monetização futura.
+Projeto pessoal de estudante de ADS.
