@@ -63,22 +63,40 @@ create table if not exists public.goals (
 alter table public.entries drop constraint if exists entries_type_chk;
 alter table public.entries drop constraint if exists entries_amount_chk;
 alter table public.entries drop constraint if exists entries_date_chk;
+alter table public.entries drop constraint if exists entries_len_chk;
 alter table public.entries
   add constraint entries_type_chk   check (type in ('income','variable','fixed','debt')),
   add constraint entries_amount_chk check (amount >= 0),
-  add constraint entries_date_chk   check (date ~ '^\d{4}-\d{2}-\d{2}$');
+  add constraint entries_date_chk   check (date ~ '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$'),
+  add constraint entries_len_chk check (
+    char_length(description) between 1 and 300 and char_length(category) between 1 and 100
+    and (debt_info is null or pg_column_size(debt_info) <= 4096));
 
 alter table public.fixed_templates drop constraint if exists templates_type_chk;
 alter table public.fixed_templates drop constraint if exists templates_amount_chk;
 alter table public.fixed_templates drop constraint if exists templates_start_chk;
 alter table public.fixed_templates drop constraint if exists templates_end_chk;
 alter table public.fixed_templates drop constraint if exists templates_day_chk;
+alter table public.fixed_templates drop constraint if exists templates_len_chk;
 alter table public.fixed_templates
   add constraint templates_type_chk   check (type in ('fixed','debt','variable')),
   add constraint templates_amount_chk check (amount >= 0),
-  add constraint templates_start_chk  check (start_month ~ '^\d{4}-\d{2}$'),
-  add constraint templates_end_chk    check (end_month is null or end_month ~ '^\d{4}-\d{2}$'),
-  add constraint templates_day_chk    check (day is null or day ~ '^\d{2}$');
+  add constraint templates_start_chk  check (start_month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
+  add constraint templates_end_chk    check (end_month is null or end_month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
+  add constraint templates_day_chk    check (day is null or day ~ '^(0[1-9]|[12]\d|3[01])$'),
+  add constraint templates_len_chk check (
+    char_length(description) between 1 and 300 and char_length(category) between 1 and 100
+    and pg_column_size(paid_months) <= 8192);
+
+alter table public.profiles drop constraint if exists profiles_avatar_len_chk;
+alter table public.profiles
+  add constraint profiles_avatar_len_chk
+  check (avatar is null or char_length(avatar) <= 400000);
+
+alter table public.goals drop constraint if exists goals_category_len_chk;
+alter table public.goals
+  add constraint goals_category_len_chk
+  check (char_length(category) between 1 and 100);
 
 -- ============================================================
 -- ROW LEVEL SECURITY (cada usuário só acessa os próprios dados)
@@ -166,9 +184,3 @@ create trigger goals_set_updated_at before update on public.goals
 -- ============================================================
 -- * Sincronização das metas com a tabela goals no app (hoje só localStorage)
 -- * Supabase Storage para o avatar (hoje é Base64 em profiles.avatar)
-
--- ============================================================
--- APLICAR MANUALMENTE
--- ============================================================
--- A migracao de hardening nao foi executada. Revise os dados existentes
--- e aplique manualmente: supabase/migrations/20261027_hardening.sql
