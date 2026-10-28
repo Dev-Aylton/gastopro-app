@@ -1,5 +1,5 @@
 -- GastoPro — Esquema do banco (Supabase / PostgreSQL)
--- Reflete o banco de produção em 27/10/2026.
+-- Reflete o banco de produção em 28/10/2026.
 -- Pode ser executado mais de uma vez sem erro (idempotente).
 -- Qualquer mudança no banco deve ser registrada neste arquivo.
 
@@ -48,6 +48,15 @@ create table if not exists public.profiles (
   updated_at timestamptz default now()
 );
 
+create table if not exists public.goals (
+  user_id      uuid not null references auth.users(id) on delete cascade,
+  category     text not null,
+  limit_amount numeric(12,2) not null check (limit_amount >= 0),
+  created_at   timestamptz default now(),
+  updated_at   timestamptz not null default now(),
+  primary key (user_id, category)
+);
+
 -- ============================================================
 -- REGRAS DE VALIDAÇÃO (CHECK)
 -- ============================================================
@@ -77,6 +86,7 @@ alter table public.fixed_templates
 alter table public.entries         enable row level security;
 alter table public.fixed_templates enable row level security;
 alter table public.profiles        enable row level security;
+alter table public.goals           enable row level security;
 
 drop policy if exists entries_own on public.entries;
 create policy entries_own on public.entries
@@ -96,6 +106,12 @@ create policy profiles_own on public.profiles
   using ((select auth.uid()) = id)
   with check ((select auth.uid()) = id);
 
+drop policy if exists goals_own on public.goals;
+create policy goals_own on public.goals
+  for all to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
 -- ============================================================
 -- ÍNDICES
 -- ============================================================
@@ -105,11 +121,11 @@ create index if not exists fixed_templates_user_idx on public.fixed_templates (u
 -- ============================================================
 -- PERMISSÕES (privilégio mínimo)
 -- ============================================================
-revoke all on public.entries, public.fixed_templates, public.profiles from anon;
+revoke all on public.entries, public.fixed_templates, public.profiles, public.goals from anon;
 revoke truncate, references, trigger
-  on public.entries, public.fixed_templates, public.profiles from authenticated;
+  on public.entries, public.fixed_templates, public.profiles, public.goals from authenticated;
 grant select, insert, update, delete
-  on public.entries, public.fixed_templates, public.profiles to authenticated;
+  on public.entries, public.fixed_templates, public.profiles, public.goals to authenticated;
 
 -- ============================================================
 -- updated_at AUTOMÁTICO
@@ -137,11 +153,18 @@ create trigger templates_set_updated_at
   before update on public.fixed_templates
   for each row execute function public.set_updated_at();
 
+drop trigger if exists profiles_set_updated_at on public.profiles;
+create trigger profiles_set_updated_at before update on public.profiles
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists goals_set_updated_at on public.goals;
+create trigger goals_set_updated_at before update on public.goals
+  for each row execute function public.set_updated_at();
+
 -- ============================================================
--- PENDENTE (ainda NÃO existe no banco)
+-- PENDENTE
 -- ============================================================
--- * Tabela de metas por categoria (hoje as metas ficam só no localStorage)
--- * Trigger de updated_at em public.profiles
+-- * Sincronização das metas com a tabela goals no app (hoje só localStorage)
 -- * Supabase Storage para o avatar (hoje é Base64 em profiles.avatar)
 
 -- ============================================================
