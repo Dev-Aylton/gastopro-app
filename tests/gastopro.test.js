@@ -778,8 +778,10 @@ describe('FinanceData — clearAll()', () => {
     window.SupabaseAuth = {
       saveCloudEntries: async () => ({ success: true }),
       saveCloudTemplates: async () => ({ success: true }),
+      saveCloudGoals: async () => ({ success: true }),
       deleteCloudEntries: async ids => { deletedEntries.push(...ids); return { success: true }; },
-      deleteCloudTemplates: async ids => { deletedTemplates.push(...ids); return { success: true }; }
+      deleteCloudTemplates: async ids => { deletedTemplates.push(...ids); return { success: true }; },
+      deleteCloudGoals: async categories => { assertTrue(categories.includes('Casa')); return { success: true }; }
     };
     try {
       const result = await FinanceData.clearAll();
@@ -2284,6 +2286,124 @@ describe('FinanceData — conversões de data local e tipo', () => {
 });
 
 describe('FinanceData — exclusão durante sincronização', () => {
+  itAsync('saveGoal e deleteGoal enfileiram alterações de metas por categoria', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-goal-queue';
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId });
+    localStorage.setItem('gastopro_goals_v1', JSON.stringify([
+      { id: 'goal-delete', category: 'Transporte', limit: 50 }
+    ]));
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: async () => ({ success: true }),
+      saveCloudTemplates: async () => ({ success: true }),
+      deleteCloudEntries: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true }),
+      saveCloudGoals: async () => ({ success: false, failedIds: ['Mercado'] }),
+      deleteCloudGoals: async () => ({ success: false })
+    };
+    try {
+      FinanceData.saveGoal('Mercado', 300);
+      FinanceData.deleteGoal('Transporte');
+      await FinanceData.flushPendingSync(userId);
+      assertEqual(FinanceData.getPendingSync().goals, ['Mercado']);
+      assertEqual(FinanceData.getPendingSync().deletedGoals, ['Transporte']);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('flush envia somente metas pendentes e limpa a fila após sucesso', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-goal-flush';
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_goals_v1', JSON.stringify([
+      { id: 'goal-a', category: 'Mercado', limit: 300 },
+      { id: 'goal-b', category: 'Transporte', limit: 100 }
+    ]));
+    FinanceData.savePendingSync({
+      full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
+      goals: ['Mercado'], deletedGoals: []
+    });
+    const savedGoals = [];
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: async () => ({ success: true }),
+      saveCloudTemplates: async () => ({ success: true }),
+      deleteCloudEntries: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true }),
+      saveCloudGoals: async goals => { savedGoals.push(...goals); return { success: true }; },
+      deleteCloudGoals: async () => ({ success: true })
+    };
+    try {
+      const result = await FinanceData.flushPendingSync(userId);
+      assertTrue(result.success);
+      assertEqual(savedGoals.map(goal => goal.category), ['Mercado']);
+      assertEqual(FinanceData.getPendingSync().goals, []);
+      assertFalse(FinanceData.hasPendingSync());
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  it('mergeCloudData preserva metas locais pendentes, mescla nuvem e ignora metas null', () => {
+    setupMockLocalStorage();
+    const userId = 'user-goal-merge';
+    localStorage.setItem('gastopro_last_uid', userId);
+    const localGoals = [
+      { id: 'goal-pending', category: 'Mercado', limit: 300 },
+      { id: 'goal-existing', category: 'Transporte', limit: 100 }
+    ];
+    localStorage.setItem('gastopro_goals_v1', JSON.stringify(localGoals));
+    FinanceData.savePendingSync({
+      full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
+      goals: ['Mercado'], deletedGoals: []
+    });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [], [], false, null));
+    assertEqual(FinanceData.getGoals(), localGoals);
+    assertTrue(FinanceData.mergeCloudData(userId, [], [], false, [
+      { category: 'Mercado', limit: 999 },
+      { category: 'Transporte', limit: 150 },
+      { category: 'Moradia', limit: 800 }
+    ]));
+    const goals = FinanceData.getGoals();
+    assertEqual(goals.find(goal => goal.category === 'Mercado'), localGoals[0]);
+    assertEqual(goals.find(goal => goal.category === 'Transporte'), {
+      id: 'goal-existing', category: 'Transporte', limit: 150
+    });
+    assertEqual(goals.find(goal => goal.category === 'Moradia').limit, 800);
+    assertTrue(goals.find(goal => goal.category === 'Moradia').id.startsWith('goal-'));
+  });
+
+  itAsync('clearAll enfileira a exclusão de todas as metas locais', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-clear-goals';
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId });
+    localStorage.setItem('gastopro_goals_v1', JSON.stringify([
+      { id: 'goal-a', category: 'Mercado', limit: 300 },
+      { id: 'goal-b', category: 'Transporte', limit: 100 }
+    ]));
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: async () => ({ success: true }),
+      saveCloudTemplates: async () => ({ success: true }),
+      deleteCloudEntries: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true }),
+      saveCloudGoals: async () => ({ success: true }),
+      deleteCloudGoals: async () => ({ success: false })
+    };
+    try {
+      await FinanceData.clearAll();
+      assertEqual(FinanceData.getPendingSync().deletedGoals.sort(), ['Mercado', 'Transporte']);
+      assertEqual(FinanceData.getGoals(), []);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
   itAsync('deve manter e enviar exclusão enfileirada enquanto o upsert está pendente', async () => {
     setupMockLocalStorage();
     const userId = 'user-sync-race';

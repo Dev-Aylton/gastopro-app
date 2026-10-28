@@ -2204,9 +2204,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const localSync = await FinanceData.prepareLocalDataForSync(userId);
         if (!localSync.success) return false;
 
-        const [cloudEntries, cloudTemplates] = await Promise.all([
+        const [cloudEntries, cloudTemplates, cloudGoals] = await Promise.all([
           window.SupabaseAuth.fetchCloudEntries(userId),
-          window.SupabaseAuth.fetchCloudTemplates(userId)
+          window.SupabaseAuth.fetchCloudTemplates(userId),
+          Promise.resolve()
+            .then(() => window.SupabaseAuth.fetchCloudGoals(userId))
+            .catch(error => {
+              console.warn('[GastoPro] Não foi possível buscar metas na nuvem:', error);
+              return null;
+            })
         ]);
 
         if (!Array.isArray(cloudEntries) || !Array.isArray(cloudTemplates)) {
@@ -2215,7 +2221,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return false;
         }
 
-        if (!FinanceData.mergeCloudData(userId, cloudEntries, cloudTemplates, localSync.success)) {
+        if (!FinanceData.mergeCloudData(userId, cloudEntries, cloudTemplates, localSync.success, cloudGoals)) {
           console.warn('[GastoPro] Sincronização ignorada: o usuário local não corresponde à sessão.');
           showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
           return false;

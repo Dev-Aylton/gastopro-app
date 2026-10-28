@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-169%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-173%20casos-10b981?style=for-the-badge)
 
 
 ---
@@ -55,6 +55,7 @@ A versão atual (v4.0) evoluiu de um app puramente local para um **SaaS multi-us
 - Recuperação de senha via e-mail (**resetPasswordForEmail**).
 - Dados isolados por usuário via **Row Level Security (RLS)** no PostgreSQL.
 - Sincronização automática ao logar — dados carregados da nuvem.
+- As metas sincronizam com a tabela goals.
 - **Logout**: encerra a sessão e limpa os dados locais deste aparelho; os dados sincronizados na nuvem permanecem.
 
 ### 👤 Painel do Usuário (Offcanvas Drawer)
@@ -168,7 +169,7 @@ financeiro-app/
 │       └── 20261027_hardening.sql # Migração para aplicação manual; não executada
 │
 ├── tests/
-│   ├── gastopro.test.js    # Suite de testes (169 casos, vanilla JS, sem framework)
+│   ├── gastopro.test.js    # Suite de testes (173 casos, vanilla JS, sem framework)
 │   └── test-runner.html    # Página de execução dos testes no navegador
 │
 └── README.md               # Esta documentação
@@ -321,7 +322,7 @@ A tabela `profiles` guarda o identificador Auth do usuário, nome e avatar; o ap
 
 ## 🧪 Testes Automatizados
 
-Suite com **169 casos de teste** em JavaScript puro (sem frameworks).
+Suite com **173 casos de teste** em JavaScript puro (sem frameworks).
 
 ### Como executar
 1. Abra `tests/test-runner.html` no Chrome ou Edge.
@@ -412,7 +413,7 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 - Bloco 6D: importação de Pix copia e cola e linhas digitáveis de boleto.
 - Bloco 6C: leitura local de PDFs de extrato e fatura com texto selecionável.
 - Ajuda embutida no modal de importação, com orientações sobre formatos, prévia, parcelas e privacidade.
-- Cobertura atual: 169 testes automatizados.
+- Cobertura atual: 173 testes automatizados.
 
 ### v3.8 — 27/10/2026
 

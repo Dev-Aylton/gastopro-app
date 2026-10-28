@@ -182,5 +182,4 @@ create trigger goals_set_updated_at before update on public.goals
 -- ============================================================
 -- PENDENTE
 -- ============================================================
--- * Sincronização das metas com a tabela goals no app (hoje só localStorage)
 -- * Supabase Storage para o avatar (hoje é Base64 em profiles.avatar)

@@ -179,11 +179,11 @@ const FinanceData = {
     try {
       const stored = localStorage.getItem(STORAGE_PENDING_SYNC);
       return stored
-        ? { full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [], ...JSON.parse(stored) }
-        : { full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [] };
+        ? { full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [], goals: [], deletedGoals: [], ...JSON.parse(stored) }
+        : { full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [], goals: [], deletedGoals: [] };
     } catch (e) {
       console.error('[GastoPro] Erro ao ler alterações pendentes:', e);
-      return { full: true, entries: [], templates: [], deletedEntries: [], deletedTemplates: [] };
+      return { full: true, entries: [], templates: [], deletedEntries: [], deletedTemplates: [], goals: [], deletedGoals: [] };
     }
   },
 
@@ -198,7 +198,9 @@ const FinanceData = {
       pending.entries.length ||
       pending.templates.length ||
       pending.deletedEntries.length ||
-      pending.deletedTemplates.length
+      pending.deletedTemplates.length ||
+      pending.goals.length ||
+      pending.deletedGoals.length
     );
   },
 
@@ -240,6 +242,31 @@ const FinanceData = {
     this.savePendingSync(pending);
   },
 
+  queueGoalChanges(previousGoals, nextGoals) {
+    const pending = this.getPendingSync();
+    const previousByCategory = new Map(previousGoals.map(goal => [goal.category, goal]));
+    const nextByCategory = new Map(nextGoals.map(goal => [goal.category, goal]));
+
+    nextGoals.forEach(goal => {
+      const previous = previousByCategory.get(goal.category);
+      if (!previous || Number(previous.limit) !== Number(goal.limit)) {
+        if (!pending.goals.includes(goal.category)) pending.goals.push(goal.category);
+        const deletedIndex = pending.deletedGoals.indexOf(goal.category);
+        if (deletedIndex !== -1) pending.deletedGoals.splice(deletedIndex, 1);
+      }
+    });
+
+    previousGoals.forEach(goal => {
+      if (!nextByCategory.has(goal.category) && !pending.deletedGoals.includes(goal.category)) {
+        pending.deletedGoals.push(goal.category);
+        const pendingIndex = pending.goals.indexOf(goal.category);
+        if (pendingIndex !== -1) pending.goals.splice(pendingIndex, 1);
+      }
+    });
+
+    this.savePendingSync(pending);
+  },
+
   activateUser(userId) {
     if (!userId) return false;
     const previousUserId = localStorage.getItem(STORAGE_LAST_UID);
@@ -263,6 +290,7 @@ const FinanceData = {
 
     const entries = this.getEntries();
     const templates = this.getTemplates();
+    const goals = this.getGoals();
     const migratedEntries = entries.map(item => isUuid(item.id) ? item : { ...item, id: crypto.randomUUID() });
     const migratedTemplates = templates.map(item => isUuid(item.id) ? item : { ...item, id: crypto.randomUUID() });
 
@@ -302,18 +330,24 @@ const FinanceData = {
       const fullSync = pending.full;
       const entries = this.getEntries();
       const templates = this.getTemplates();
+      const goals = this.getGoals();
       const entriesToSave = fullSync
         ? entries
         : entries.filter(item => pending.entries.includes(item.id));
       const templatesToSave = fullSync
         ? templates
         : templates.filter(item => pending.templates.includes(item.id));
+      const goalsToSave = fullSync
+        ? goals
+        : goals.filter(goal => pending.goals.includes(goal.category));
 
       const results = await Promise.all([
         entriesToSave.length ? window.SupabaseAuth.saveCloudEntries(entriesToSave, targetUserId) : { success: true },
         templatesToSave.length ? window.SupabaseAuth.saveCloudTemplates(templatesToSave, targetUserId) : { success: true },
         pending.deletedEntries.length ? window.SupabaseAuth.deleteCloudEntries(pending.deletedEntries, targetUserId) : { success: true },
-        pending.deletedTemplates.length ? window.SupabaseAuth.deleteCloudTemplates(pending.deletedTemplates, targetUserId) : { success: true }
+        pending.deletedTemplates.length ? window.SupabaseAuth.deleteCloudTemplates(pending.deletedTemplates, targetUserId) : { success: true },
+        goalsToSave.length ? window.SupabaseAuth.saveCloudGoals(goalsToSave, targetUserId) : { success: true },
+        pending.deletedGoals.length ? window.SupabaseAuth.deleteCloudGoals(pending.deletedGoals, targetUserId) : { success: true }
       ]);
 
       const latestPending = this.getPendingSync();
@@ -325,10 +359,15 @@ const FinanceData = {
       };
       const failedEntryIds = getFailedIds(results[0], entriesToSave);
       const failedTemplateIds = getFailedIds(results[1], templatesToSave);
+      const failedGoalCategories = getFailedIds(
+        results[4],
+        goalsToSave.map(goal => ({ ...goal, id: goal.category }))
+      );
       const failedEntryDeletes = !results[2] || !results[2].success;
       const failedTemplateDeletes = !results[3] || !results[3].success;
+      const failedGoalDeletes = !results[5] || !results[5].success;
       const hasFailures = failedEntryIds.length > 0 || failedTemplateIds.length > 0 ||
-        failedEntryDeletes || failedTemplateDeletes;
+        failedGoalCategories.length > 0 || failedEntryDeletes || failedTemplateDeletes || failedGoalDeletes;
       const removeSyncedIds = (kind, sentItems, currentItems, failedIds) => {
         const sentById = new Map(sentItems.map(item => [item.id, JSON.stringify(item)]));
         latestPending[kind] = latestPending[kind].filter(id => {
@@ -342,6 +381,15 @@ const FinanceData = {
       };
       removeSyncedIds('entries', entriesToSave, this.getEntries(), failedEntryIds);
       removeSyncedIds('templates', templatesToSave, this.getTemplates(), failedTemplateIds);
+      const sentGoalsByCategory = new Map(goalsToSave.map(goal => [goal.category, JSON.stringify(goal)]));
+      latestPending.goals = latestPending.goals.filter(category => {
+        if (failedGoalCategories.includes(category)) return true;
+        const current = this.getGoals().find(goal => goal.category === category);
+        return current && sentGoalsByCategory.get(category) !== JSON.stringify(current);
+      });
+      failedGoalCategories.forEach(category => {
+        if (!latestPending.goals.includes(category)) latestPending.goals.push(category);
+      });
 
       if (!failedEntryDeletes) {
         latestPending.deletedEntries = latestPending.deletedEntries.filter(id => !pending.deletedEntries.includes(id));
@@ -349,11 +397,15 @@ const FinanceData = {
       if (!failedTemplateDeletes) {
         latestPending.deletedTemplates = latestPending.deletedTemplates.filter(id => !pending.deletedTemplates.includes(id));
       }
+      if (!failedGoalDeletes) {
+        latestPending.deletedGoals = latestPending.deletedGoals.filter(category => !pending.deletedGoals.includes(category));
+      }
 
       if (fullSync) {
         latestPending.full = !hasFailures && (
           JSON.stringify(entries) !== JSON.stringify(this.getEntries()) ||
-          JSON.stringify(templates) !== JSON.stringify(this.getTemplates())
+          JSON.stringify(templates) !== JSON.stringify(this.getTemplates()) ||
+          JSON.stringify(goals) !== JSON.stringify(this.getGoals())
         );
       }
       this.savePendingSync(latestPending);
@@ -373,12 +425,13 @@ const FinanceData = {
     return currentSync;
   },
 
-  mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded = false) {
+  mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded = false, cloudGoals = null) {
     if (
       !userId ||
       localStorage.getItem(STORAGE_LAST_UID) !== userId ||
       !Array.isArray(cloudEntries) ||
-      !Array.isArray(cloudTemplates)
+      !Array.isArray(cloudTemplates) ||
+      (cloudGoals !== null && !Array.isArray(cloudGoals))
     ) return false;
 
     const pending = this.getPendingSync();
@@ -399,6 +452,32 @@ const FinanceData = {
     const templates = mergeById(this.getTemplates(), cloudTemplates, pending.templates);
     localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
     localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
+    if (cloudGoals !== null) {
+      const localGoals = this.getGoals();
+      const pendingGoals = new Set(pending.goals);
+      const deletedGoals = new Set(pending.deletedGoals);
+      const mergedGoals = new Map();
+      cloudGoals.forEach(goal => {
+        if (deletedGoals.has(goal.category)) return;
+        const local = localGoals.find(item => item.category === goal.category);
+        if (local && pendingGoals.has(goal.category)) {
+          mergedGoals.set(goal.category, local);
+        } else {
+          mergedGoals.set(goal.category, {
+            id: local ? local.id : 'goal-' + crypto.randomUUID(),
+            category: goal.category,
+            limit: goal.limit
+          });
+        }
+      });
+      localGoals.forEach(goal => {
+        if (mergedGoals.has(goal.category) || deletedGoals.has(goal.category)) return;
+        if (pendingGoals.has(goal.category) || !canRemoveCloudDeleted) {
+          mergedGoals.set(goal.category, goal);
+        }
+      });
+      localStorage.setItem(STORAGE_GOALS, JSON.stringify([...mergedGoals.values()]));
+    }
     return true;
   },
 
@@ -891,7 +970,8 @@ const FinanceData = {
     if (!this.saveGoals(restored.goals)) {
       return { success: false, error: 'Lançamentos e gastos fixos restaurados, mas não foi possível salvar as metas localmente.' };
     }
-    if (!entriesResult.success || !templatesResult.success) {
+    const goalsSyncResult = await this.flushPendingSync(this.getProfile().userId);
+    if (!entriesResult.success || !templatesResult.success || !goalsSyncResult.success) {
       return { success: false, error: 'O backup foi restaurado localmente, mas há alterações pendentes de sincronização.' };
     }
     return { success: true };
@@ -961,6 +1041,8 @@ const FinanceData = {
    */
   saveGoals(goals) {
     try {
+      const previousGoals = this.getGoals();
+      this.queueGoalChanges(previousGoals, goals);
       localStorage.setItem(STORAGE_GOALS, JSON.stringify(goals));
       return true;
     } catch (e) {
@@ -991,6 +1073,9 @@ const FinanceData = {
       goals.push(goal);
     }
     this.saveGoals(goals);
+    const profile = this.getProfile();
+    this.flushPendingSync(profile && profile.userId)
+      .catch(error => console.error('[GastoPro] Erro ao sincronizar meta:', error));
     return goal;
   },
 
@@ -1002,5 +1087,8 @@ const FinanceData = {
   deleteGoal(category) {
     const goals = this.getGoals().filter(g => g.category !== category);
     this.saveGoals(goals);
+    const profile = this.getProfile();
+    this.flushPendingSync(profile && profile.userId)
+      .catch(error => console.error('[GastoPro] Erro ao sincronizar exclusão de meta:', error));
   }
 };

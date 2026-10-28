@@ -432,6 +432,104 @@ const SupabaseAuth = {
     } catch (e) {
       return this.reportCloudError('Falha ao excluir templates na nuvem', e);
     }
+  },
+
+  async fetchCloudGoals(userId) {
+    if (!sb) return null;
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return null;
+      const data = await this.fetchAllPages((from, to) => sb
+        .from('goals')
+        .select('category,limit_amount')
+        .eq('user_id', sessionUserId)
+        .order('category', { ascending: true })
+        .range(from, to));
+      if (!data) return null;
+      return data.map(row => ({
+        category: row.category,
+        limit: Number(row.limit_amount)
+      }));
+    } catch (e) {
+      console.warn('[Supabase] Falha ao buscar metas:', e);
+      return null;
+    }
+  },
+
+  async saveCloudGoals(goals, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao salvar metas', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao salvar metas', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+
+      const validGoals = [];
+      const failedIds = [];
+      goals.forEach(goal => {
+        const limit = goal && Number(goal.limit);
+        const valid = goal &&
+          typeof goal.category === 'string' &&
+          goal.category.trim().length > 0 &&
+          goal.category.length <= 100 &&
+          goal.limit != null &&
+          goal.limit !== '' &&
+          typeof goal.limit !== 'boolean' &&
+          Number.isFinite(limit) &&
+          limit >= 0;
+        if (!valid) {
+          failedIds.push(goal && goal.category);
+          console.warn('[Supabase] Meta inválida não enviada:', {
+            category: goal && goal.category
+          });
+          return;
+        }
+        validGoals.push({ ...goal, id: goal.category, limit });
+      });
+      if (failedIds.length && typeof window.showToast === 'function') {
+        window.showToast('Algumas metas inválidas não foram sincronizadas.');
+      }
+
+      const payload = validGoals.map(goal => ({
+        user_id: sessionUserId,
+        category: goal.category,
+        limit_amount: Math.round(goal.limit * 100) / 100
+      }));
+      if (payload.length) {
+        const result = await this.upsertWithFallback(
+          rows => sb.from('goals').upsert(rows, { onConflict: 'user_id,category' }),
+          validGoals,
+          payload
+        );
+        failedIds.push(...result.failedIds);
+      }
+      return failedIds.length
+        ? { success: false, failedIds, error: new Error('Uma ou mais metas não foram sincronizadas.') }
+        : { success: true };
+    } catch (e) {
+      return this.reportCloudError('Falha ao salvar metas na nuvem', e);
+    }
+  },
+
+  async deleteCloudGoals(categories, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao excluir metas', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao excluir metas', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      const validCategories = [...new Set(categories.filter(category =>
+        typeof category === 'string' && category.trim().length > 0 && category.length <= 100
+      ))];
+      if (!validCategories.length) return { success: true };
+      const { error } = await sb.from('goals').delete()
+        .eq('user_id', sessionUserId)
+        .in('category', validCategories);
+      if (error) return this.reportCloudError('Erro ao excluir metas', error);
+      return { success: true };
+    } catch (e) {
+      return this.reportCloudError('Falha ao excluir metas na nuvem', e);
+    }
   }
 };
 
