@@ -1122,7 +1122,7 @@ describe('FinanceData — exportJSON()', () => {
     try {
       const backup = FinanceData.exportJSON();
       assertTrue(typeof backup.version === 'string', 'version deve ser string');
-      assertEqual(backup.version, '3.9');
+      assertEqual(backup.version, '4.0');
       assertTrue(typeof backup.exportDate === 'string', 'exportDate deve ser string');
       assertTrue(Array.isArray(backup.entries), 'entries deve ser array');
       assertTrue(Array.isArray(backup.templates), 'templates deve ser array');
@@ -1580,6 +1580,28 @@ describe('GastoProImporter — parsing e limites', () => {
     assertEqual(row.desc.length, 300);
     assertEqual(row.category.length, 100);
   });
+
+  it('buildEntry cria contas fixas e dívidas sem baixa e aceita gasto pendente', () => {
+    const row = {
+      date: '2026-10-15',
+      startMonth: '2026-11',
+      endMonth: '2027-01',
+      dueDay: 5,
+      desc: 'Conta importada',
+      amount: 120,
+      category: 'Moradia'
+    };
+    const fixed = GastoProImporter.buildEntry(row, 'fixed');
+    const debt = GastoProImporter.buildEntry(row, 'debt');
+    const pending = GastoProImporter.buildEntry(row, 'variable', false);
+    assertEqual(fixed.date, '2026-11-05');
+    assertEqual(fixed.month, '2026-11');
+    assertEqual(fixed.startMonth, '2026-11');
+    assertEqual(fixed.endMonth, '2027-01');
+    assertFalse(Object.prototype.hasOwnProperty.call(fixed, 'paid'));
+    assertFalse(Object.prototype.hasOwnProperty.call(debt, 'paid'));
+    assertEqual(pending.paid, false);
+  });
 });
 
 describe('GastoProImporter — Pix e boletos', () => {
@@ -1648,6 +1670,7 @@ describe('GastoProImporter — Pix e boletos', () => {
     assertEqual(rows[0].amount, 123.45);
     assertEqual(rows[0].desc, 'Boleto banco 001');
     assertFalse(rows[0].invalid);
+    assertTrue(rows[0].pending);
   });
 
   it('usa a data local atual quando o fator do boleto é zero', () => {
@@ -1690,7 +1713,48 @@ describe('GastoProImporter — Pix e boletos', () => {
   });
 });
 
+describe('GastoProImporter — texto extraído de PDF', () => {
+  it('agrupa colunas por linha, tolera variação vertical e ordena linhas e colunas', () => {
+    const items = [
+      { str: 'Valor', transform: [1, 0, 0, 1, 300, 100] },
+      { str: 'Data', transform: [1, 0, 0, 1, 10, 100] },
+      { str: 'Mercado', transform: [1, 0, 0, 1, 100, 98] },
+      { str: 'Descrição', transform: [1, 0, 0, 1, 100, 80] },
+      { str: '12,50', transform: [1, 0, 0, 1, 300, 80] },
+      { str: '15/10', transform: [1, 0, 0, 1, 10, 80] }
+    ];
+    assertEqual(
+      GastoProImporter.groupTextItemsIntoLines(items),
+      ['Data Mercado Valor', '15/10 Descrição 12,50']
+    );
+  });
+
+  it('parseRawText interpreta três linhas fictícias no formato de fatura', () => {
+    const rows = GastoProImporter.parseRawText(
+      '15/10/2026 Mercado Central 123,45\n' +
+      '16/10/2026 Farmácia Exemplo 27,90\n' +
+      '17/10/2026 Padaria Modelo 8,50'
+    );
+    assertEqual(rows.length, 3);
+    assertEqual(rows.map(row => row.desc), ['Mercado Central', 'Farmácia Exemplo', 'Padaria Modelo']);
+    assertEqual(rows.map(row => row.amount), [123.45, 27.9, 8.5]);
+  });
+});
+
 describe('GastoProImporter — extratos bancários robustos', () => {
+  it('parseCSV usa categoria canônica informada e mantém a detecção quando não reconhecida ou ausente', () => {
+    const withCategory = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor;categoria\n' +
+      '15/10/2026;Compra no supermercado;45,90; alimentacao \n' +
+      '16/10/2026;Compra no supermercado;12,00;Categoria desconhecida'
+    );
+    const withoutCategory = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n17/10/2026;Compra no supermercado;8,50'
+    );
+    assertEqual(withCategory.map(row => row.category), ['Alimentação', 'Mercado']);
+    assertEqual(withoutCategory[0].category, 'Mercado');
+  });
+
   it('mantém parseMoney absoluto e expõe o valor assinado e o tipo padrão', () => {
     assertEqual(GastoProImporter.parseMoney('-45,90'), 45.9);
     assertEqual(GastoProImporter.parseMoneySigned('-45,90'), -45.9);
@@ -1715,6 +1779,47 @@ describe('GastoProImporter — extratos bancários robustos', () => {
     );
     assertEqual(rows.map(row => row.signedAmount), [-45.9, 100]);
     assertEqual(rows.map(row => row.type), ['variable', 'income']);
+  });
+
+  it('interpreta tipos e período de contas a pagar em colunas opcionais do CSV', () => {
+    const rows = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor;tipo;mes_inicio;mes_fim;dia_venc\n' +
+      '15/10/2026;Conta de luz;120,00;fixed;2026-11;2027-01;5\n' +
+      '16/10/2026;Empréstimo;250,00;debt;inválido;2026-09;31\n' +
+      '17/10/2026;Salário;3000,00;income;;;'
+    );
+    assertEqual(rows.map(row => row.type), ['fixed', 'debt', 'income']);
+    assertEqual(
+      [rows[0].startMonth, rows[0].endMonth, rows[0].dueDay],
+      ['2026-11', '2027-01', 5]
+    );
+    assertEqual(
+      [rows[1].startMonth, rows[1].endMonth, rows[1].dueDay],
+      ['2026-10', null, 31]
+    );
+    assertFalse(Boolean(rows[0].installment));
+  });
+
+  it('ignora linhas inativas no CSV e emite aviso com a contagem', () => {
+    const rows = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor;tipo;ativo\n' +
+      '15/10/2026;Conta ativa;120,00;fixed;sim\n' +
+      '16/10/2026;Conta inativa;250,00;debt;não'
+    );
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].desc, 'Conta ativa');
+    assertTrue(GastoProImporter.getLastWarnings().includes('1 linhas inativas foram ignoradas.'));
+  });
+
+  it('mantém o comportamento de CSV sem coluna tipo, inclusive detecção de parcelas', () => {
+    const rows = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n' +
+      '15/10/2026;Compra PARC 02/12;-45,90\n' +
+      '16/10/2026;Salário;100,00'
+    );
+    assertEqual(rows.map(row => row.type), ['variable', 'income']);
+    assertEqual(rows[0].installment, { current: 2, total: 12 });
+    assertEqual(rows[0].installmentBase, 'Compra');
   });
 
   it('localiza o cabeçalho nas primeiras 15 linhas e ignora preâmbulo bancário', () => {
@@ -1869,6 +1974,29 @@ describe('GastoProImporter — extratos bancários robustos', () => {
     assertEqual(marked.map(row => row.duplicate), [true, true, false]);
     assertEqual(marked.map(row => row.selected), [false, false, true]);
   });
+
+  it('detecta conta fixa ou dívida já cadastrada pelo nome, valor e mês inicial', () => {
+    const template = {
+      desc: 'Conta de Luz',
+      amount: 120,
+      startMonth: '2026-11'
+    };
+    assertTrue(GastoProImporter.isTemplateDuplicate({
+      desc: 'CONTA DE LUZ',
+      amount: 120.01,
+      startMonth: '2026-11'
+    }, [template]));
+    assertFalse(GastoProImporter.isTemplateDuplicate({
+      desc: 'CONTA DE LUZ',
+      amount: 120.02,
+      startMonth: '2026-11'
+    }, [template]));
+    assertFalse(GastoProImporter.isTemplateDuplicate({
+      desc: 'CONTA DE LUZ',
+      amount: 120,
+      startMonth: '2026-12'
+    }, [template]));
+  });
 });
 
 describe('GastoProImporter — importação de arquivos', () => {
@@ -1953,7 +2081,7 @@ describe('GastoProImporter — importação de arquivos', () => {
   });
 
   itAsync('parseFile rejeita extensão não suportada', async () => {
-    const rows = await GastoProImporter.parseFile(new File(['documento'], 'nota.pdf'));
+    const rows = await GastoProImporter.parseFile(new File(['documento'], 'nota.docx'));
     assertEqual(rows, []);
     assertTrue(GastoProImporter.getLastWarnings().includes('Formato de arquivo não suportado.'));
   });
@@ -2002,6 +2130,34 @@ describe('FinanceData — inserção em lote para importação', () => {
       assertEqual(FinanceData.getTemplates()[0].paidMonths, {
         '2026-08': true, '2026-09': true, '2026-10': true
       });
+    } finally {
+      FinanceData.flushPendingSync = originalFlush;
+    }
+  });
+
+  itAsync('addMany cria template pendente e mantém lançamento importado como não pago', async () => {
+    setupMockLocalStorage();
+    const originalFlush = FinanceData.flushPendingSync;
+    FinanceData.flushPendingSync = async () => ({ success: true });
+    try {
+      const fixed = GastoProImporter.buildEntry({
+        date: '2026-10-15',
+        startMonth: '2026-11',
+        endMonth: null,
+        dueDay: 5,
+        desc: 'Conta fixa importada',
+        amount: 120,
+        category: 'Moradia'
+      }, 'fixed');
+      const pending = GastoProImporter.buildEntry({
+        date: '2026-10-15',
+        desc: 'Gasto a pagar importado',
+        amount: 45,
+        category: 'Mercado'
+      }, 'variable', false);
+      await FinanceData.addMany([fixed, pending]);
+      assertEqual(FinanceData.getTemplates()[0].paidMonths, {});
+      assertEqual(FinanceData.getEntries()[0].paid, false);
     } finally {
       FinanceData.flushPendingSync = originalFlush;
     }

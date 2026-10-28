@@ -842,7 +842,7 @@ const FinanceData = {
    *
    * Estrutura do backup exportado:
    * {
-   *   version:    "3.9",
+   *   version:    "4.0",
    *   exportDate: "2026-11-05T10:00:00.000Z",
    *   entries:    [...],    // Todos os lançamentos pontuais
    *   templates:  [...],    // Todos os templates de gastos fixos
@@ -851,7 +851,7 @@ const FinanceData = {
    */
   exportJSON() {
     const backup = {
-      version:    '3.9',
+      version:    '4.0',
       exportDate: new Date().toISOString(),
       entries:    this.getEntries(),
       templates:  this.getTemplates(),

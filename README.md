@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (**Single Page Application — SPA**) de gestão financeira pessoal com Dashboard de Saúde Financeira, gerenciamento completo de receitas e despesas, rastreamento de dívidas, autenticação multi-usuário com Supabase, importação de extratos bancários, **Wizard de Lançamento Rápido** e PWA para uso offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-3.9-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-157%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-166%20casos-10b981?style=for-the-badge)
 
 
 ---
@@ -15,7 +15,7 @@
 
 O **GastoPro** foi idealizado e desenvolvido por **Aylton Alberto**, estudante do curso de **Análise e Desenvolvimento de Sistemas (ADS)**. O projeto nasceu da necessidade real de transformar uma planilha complexa de controle orçamentário pessoal em uma aplicação web interativa, elegante e segura.
 
-A versão atual (v3.9) evoluiu de um app puramente local para um **SaaS multi-usuário com banco de dados em nuvem**, mantendo a simplicidade de uso e adicionando autenticação segura via Supabase.
+A versão atual (v4.0) evoluiu de um app puramente local para um **SaaS multi-usuário com banco de dados em nuvem**, mantendo a simplicidade de uso e adicionando autenticação segura via Supabase.
 
 ---
 
@@ -76,24 +76,31 @@ Os bundles UMD do jsPDF e Chart.js mantêm seus cabeçalhos de licença MIT. O b
 - `js/vendor/jspdf.plugin.autotable.min.js` (jspdf-autotable 5.0.9): `83DD8E5AE29436BD3D3EF4F4A915125B3951264994C25DE0359D3FBD105ABE15`
 - `js/vendor/supabase.umd.js` (@supabase/supabase-js 2.117.3, publicado em 07/10/2026): `D6A5C4414A5D4CE646D9C1DE223AA7067D3FF664C15394FFEB7FCFFC763354A3`
 - `js/vendor/chart.umd.js` (Chart.js 4.4.1): `74401D738DD3E03EE5DFB3B6841210FE2C4EAD8A960C4011CA4BA0B78A9FD8F3`
+- `js/vendor/pdf.mjs` (pdfjs-dist 6.4.299, legacy): `BC51F4874A66E3853189CB5D50ABA4B3096AFA83ED433B885D293A3D94583CDC`
+- `js/vendor/pdf.worker.mjs` (pdfjs-dist 6.4.299, legacy): `BB422F60804477DE4A0B09091D8347A916A387755ED1CBAD24CCAEC1D09C78BF`
+- `js/vendor/LICENSE.pdfjs.txt` (Apache-2.0): `0D542E0C8804E39AA7F37EB00DA5A762149DC682D7829451287E11B938E94594`
 
 Integridade SHA-512 dos tarballs oficiais do registry npm, verificada antes da extração:
 - `@supabase/supabase-js@2.117.3`: `K+f8PimXDunPWQ63CKRXaF5pbVPJxmfw5ryAnh0s9S9PkwcuqBjiSpIaqpF7KLDljeYwXIL85ST8QxaO0+XuvA==`
 - `chart.js@4.4.1`: `C74QN1bxwV1v2PEujhmKjOZ7iUM4w6BWs23Md/6aOZZSlwMzeCIDGuZay++rBgChYru7/+QFeoQW0fQoP534Dg==`
+- `pdfjs-dist@6.4.299` (publicado em 03/10/2026; SHA-512 conferido antes da extração): `AVl138zALtfaAPvADulE0PZThbYzCBS79nL4pOSL/6Sm/4AH5A21BD9VHt97OlCuzJuCpmeZtAtkinisF4Vb1g==`
 
 ### 📱 PWA (Progressive Web App)
 - Instalável como app nativo no celular ou desktop.
 - Funciona offline com Service Worker (Network First + Cache Fallback).
 
 ### 📥 Importação de Extratos Bancários (v3.1)
-- **Upload de CSV**: Arraste e solte ou selecione um arquivo `.csv` para importação em lote.
+- **Upload de CSV/PDF**: Arraste e solte ou selecione um arquivo `.csv` para importação em lote ou um PDF de extrato/fatura com texto selecionável (até 10 MB e 30 páginas).
 - **Extratos OFX**: Importe arquivos `.ofx` em formato SGML ou XML, incluindo descrições e acentos em Windows-1252.
 - **Notas fiscais XML**: Importe notas NF-e/NFC-e para criar um lançamento de despesa com emitente, número e valor total.
+- **PDF de extrato ou fatura**: Leitura local do texto selecionável para a prévia; PDFs escaneados não são reconhecidos automaticamente.
 - **Texto Bruto**: Cole diretamente o texto copiado do app ou site do banco, um código Pix copia e cola ou uma linha digitável de boleto.
 - **Ajuda do importador**: O modal explica os formatos aceitos, a prévia, parcelas, duplicados e privacidade.
 - **Detecção automática de colunas**: O parser identifica colunas de Data, Descrição e Valor sem configuração manual.
+- O CSV aceita a coluna opcional categoria.
+- **Contas a pagar em CSV**: Além das colunas básicas, aceite `tipo` (`income`, `fixed`, `debt` ou `variable`), `mes_inicio`, `mes_fim`, `dia_venc` e `ativo` (`não`, `false` ou `0` desativa a linha).
 - **Categorização automática**: +80 palavras-chave mapeiam automaticamente lançamentos para categorias (iFood → Alimentação, Spotify → Assinaturas, etc.).
-- **Pré-visualização editável**: Revise, corrija categoria e tipo (Gasto/Receita) linha por linha antes de salvar.
+- **Pré-visualização editável**: Em todas as importações, revise categoria e selecione o tipo linha por linha: Gasto (pago), Gasto a pagar, Conta fixa, Dívida ou Receita.
 - **Seleção granular**: Selecione ou desmarque lançamentos individualmente ou todos de uma vez.
 - **Detecção de parcelas**: Identifica parcelas em descrições e permite criar a dívida com as parcelas anteriores baixadas ou dar baixa automática em uma dívida já cadastrada.
 - **Suporte a múltiplos formatos**: `DD/MM/AAAA Descrição R$ Valor`, `DD/MM Descrição Valor`, e outros padrões de extratos brasileiros.
@@ -150,7 +157,10 @@ financeiro-app/
 │       ├── supabase.umd.js
 │       ├── LICENSE.supabase.txt
 │       ├── jspdf.umd.min.js
-│       └── jspdf.plugin.autotable.min.js
+│       ├── jspdf.plugin.autotable.min.js
+│       ├── pdf.mjs              # pdf.js legacy (carregado sob demanda)
+│       ├── pdf.worker.mjs       # Worker local do pdf.js
+│       └── LICENSE.pdfjs.txt    # Licença Apache-2.0
 │
 ├── supabase/
 │   ├── schema.sql          # Esquema do banco: tabelas, RLS, índices, permissões e triggers
@@ -158,7 +168,7 @@ financeiro-app/
 │       └── 20261027_hardening.sql # Migração para aplicação manual; não executada
 │
 ├── tests/
-│   ├── gastopro.test.js    # Suite de testes (157 casos, vanilla JS, sem framework)
+│   ├── gastopro.test.js    # Suite de testes (166 casos, vanilla JS, sem framework)
 │   └── test-runner.html    # Página de execução dos testes no navegador
 │
 └── README.md               # Esta documentação
@@ -311,7 +321,7 @@ A tabela `profiles` guarda o identificador Auth do usuário, nome e avatar; o ap
 
 ## 🧪 Testes Automatizados
 
-Suite com **157 casos de teste** em JavaScript puro (sem frameworks).
+Suite com **166 casos de teste** em JavaScript puro (sem frameworks).
 
 ### Como executar
 1. Abra `tests/test-runner.html` no Chrome ou Edge.
@@ -394,16 +404,15 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 
 ## 📋 Changelog
 
-### v3.9 — 27/10/2026 (Versão atual)
+### v4.0 — 28/10/2026 (Versão atual)
 
-- Bump da versão do app, do backup JSON e do cache do Service Worker para 3.9.
-- Drawer do perfil com foco inicial no botão fechar, contenção de Tab/Shift+Tab, fechamento por Esc e `aria-modal`.
-- Calendário de meses e sidebar mobile fecham por Esc e devolvem o foco aos acionadores; sidebar mantém `aria-expanded` e rótulo atualizados.
-- Contraste de textos de erro e avisos em vermelho ajustado com `--danger-text`; foco dos seletores da prévia de importação preservado sem remover o contorno.
-- Adicionado o link "Pular para o conteúdo" e o landmark `<main id="mainContent">`.
-- Pré-cache dos recursos essenciais usa `cache: 'reload'`.
-- Importador aceita extratos OFX e notas fiscais XML (NF-e/NFC-e), além de CSV e texto bruto.
-- Cobertura atual: 157 testes automatizados.
+- Bloco 5.1: melhorias de acessibilidade na navegação e nos modais.
+- Bloco 6A: reconhecimento e tratamento de parcelas durante a importação.
+- Bloco 6B: importação de extratos OFX e notas fiscais XML (NF-e/NFC-e).
+- Bloco 6D: importação de Pix copia e cola e linhas digitáveis de boleto.
+- Bloco 6C: leitura local de PDFs de extrato e fatura com texto selecionável.
+- Ajuda embutida no modal de importação, com orientações sobre formatos, prévia, parcelas e privacidade.
+- Cobertura atual: 166 testes automatizados.
 
 ### v3.8 — 27/10/2026
 
@@ -547,6 +556,14 @@ Projeto livre para fins educacionais e estudo de arquitetura web front-end.
 > Marcar cada item como concluído (`[x]`) à medida que for implementado.
 
 ### 🔴 Alta Prioridade
+
+- [x] **Acessibilidade na navegação e nos modais** — bloco 5.1
+- [x] **Reconhecimento de parcelas na importação** — bloco 6A
+- [x] **Importação de OFX e XML de nota fiscal** — bloco 6B
+- [x] **Importação de Pix e linhas digitáveis de boleto** — bloco 6D
+- [x] **Ajuda embutida no modal do importador**
+- [x] **Importação de PDF de extrato ou fatura** — bloco 6C
+- [ ] **Importação por foto de cupom** — bloco 6E
 
 - [x] **🎯 Metas & Alertas de Teto de Gastos por Categoria** — concluído na v3.6
   - [x] `getGoals()`, `saveGoal()`, `deleteGoal()` implementados em `js/data.js`

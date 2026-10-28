@@ -234,15 +234,23 @@ const GastoProImporter = (() => {
     const idxDesc = headers.findIndex(name =>
       /^(desc|description|historico|descricao|memo|estabelecimento|lancamento|detalhe)(?:\b|$)/.test(name)
     );
+    const idxCategory = headers.findIndex(name => /^(categoria|category)$/.test(name));
     const idxDebit = headers.findIndex(name => /^(debito|debit)$/.test(name));
     const idxCredit = headers.findIndex(name => /^(credito|credit)$/.test(name));
     const idxAmount = headers.findIndex(name =>
       /^(valor|value|amount|vlr|montante)$/.test(name)
     );
+    const idxType = headers.findIndex(name => name === 'tipo');
+    const idxStartMonth = headers.findIndex(name => name === 'mes_inicio');
+    const idxEndMonth = headers.findIndex(name => name === 'mes_fim');
+    const idxDueDay = headers.findIndex(name => name === 'dia_venc');
+    const idxActive = headers.findIndex(name => name === 'ativo');
     if (idxDebit < 0 && idxCredit < 0 && idxAmount < 0) return [];
 
     const rows = [];
+    const defaultTypeRows = [];
     const warnings = [...lastWarnings];
+    let inactiveCount = 0;
     const lastLine = Math.min(lines.length, header.index + 1 + MAX_ROWS);
     for (let index = header.index + 1; index < lastLine; index++) {
       const line = lines[index].trim();
@@ -254,8 +262,14 @@ const GastoProImporter = (() => {
       if (lineIgnored(line)) continue;
       const columns = splitCSVLine(line, header.separator);
       const valueAt = columnIndex => (columns[columnIndex] || '').replace(/^"|"$/g, '').trim();
+      const activeValue = idxActive >= 0 ? normalize(valueAt(idxActive)) : '';
+      if (['nao', 'false', '0'].includes(activeValue)) {
+        inactiveCount++;
+        continue;
+      }
       const rawDate = valueAt(idxDate);
       const rawDesc = valueAt(idxDesc);
+      const explicitType = idxType >= 0 ? normalize(valueAt(idxType)) : '';
       const debit = idxDebit >= 0 ? parseMoney(valueAt(idxDebit)) : 0;
       const credit = idxCredit >= 0 ? parseMoney(valueAt(idxCredit)) : 0;
       const signedAmount = idxDebit >= 0 || idxCredit >= 0
@@ -263,20 +277,50 @@ const GastoProImporter = (() => {
         : parseMoneySigned(valueAt(idxAmount));
       if (!rawDesc && signedAmount === 0) continue;
       const date = parseDate(rawDate);
-      rows.push({
+      const rawCategory = idxCategory >= 0 ? valueAt(idxCategory) : '';
+      const normalizedCategory = normalize(rawCategory);
+      const canonicalCategory = [
+        ...GastoProCategories.EXPENSE,
+        ...GastoProCategories.INCOME
+      ].find(category => normalize(category) === normalizedCategory);
+      const row = {
         date,
         desc: truncateText(rawDesc || 'Lançamento importado', 300),
         amount: Math.abs(signedAmount),
         signedAmount,
-        category: truncateText(autoDetectCategory(rawDesc), 100),
+        category: truncateText(canonicalCategory || autoDetectCategory(rawDesc), 100),
         invalid: !date,
         invalidReason: date ? '' : 'Data inválida ou ausente.',
         raw: line
-      });
+      };
+      if (idxType >= 0 && ['income', 'fixed', 'debt', 'variable'].includes(explicitType)) {
+        row.type = explicitType;
+        if (explicitType === 'fixed' || explicitType === 'debt') {
+          const validMonth = value => {
+            const match = value.match(/^(\d{4})-(\d{2})$/);
+            return match && Number(match[2]) >= 1 && Number(match[2]) <= 12
+              ? `${match[1]}-${match[2]}`
+              : null;
+          };
+          const startMonth = validMonth(valueAt(idxStartMonth)) || (date ? date.substring(0, 7) : null);
+          const requestedEndMonth = validMonth(valueAt(idxEndMonth));
+          const dueDayValue = valueAt(idxDueDay);
+          const dueDay = /^\d{1,2}$/.test(dueDayValue) ? Number(dueDayValue) : null;
+          row.startMonth = startMonth;
+          row.endMonth = requestedEndMonth && startMonth && requestedEndMonth >= startMonth
+            ? requestedEndMonth
+            : null;
+          row.dueDay = dueDay >= 1 && dueDay <= 31 ? dueDay : null;
+        }
+      } else {
+        defaultTypeRows.push(row);
+      }
+      rows.push(row);
     }
     if (lines.length > lastLine) warnings.push('O extrato excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.');
-    applyDefaultTypes(rows);
-    applyInstallments(rows);
+    if (inactiveCount) warnings.push(`${inactiveCount} linhas inativas foram ignoradas.`);
+    applyDefaultTypes(defaultTypeRows);
+    applyInstallments(defaultTypeRows);
     setWarnings(warnings);
     return rows;
   }
@@ -368,15 +412,116 @@ const GastoProImporter = (() => {
     }
   }
 
-  async function parseFile(file) {
-    if (file.size > MAX_CSV_CHARS) {
-      setWarnings(['O arquivo excede 1 MB; reduza o arquivo e tente novamente.']);
-      return [];
+  function groupTextItemsIntoLines(items) {
+    const lines = [];
+    for (const item of items) {
+      if (!item || typeof item.str !== 'string' || !item.transform ||
+          !Number.isFinite(item.transform[4]) || !Number.isFinite(item.transform[5])) continue;
+      const x = item.transform[4];
+      const y = item.transform[5];
+      let line = lines.find(candidate => Math.abs(candidate.y - y) <= 3);
+      if (!line) {
+        line = { y, items: [] };
+        lines.push(line);
+      }
+      line.items.push({ x, str: item.str });
     }
+    return lines
+      .sort((left, right) => right.y - left.y)
+      .map(line => line.items
+        .sort((left, right) => left.x - right.x)
+        .map(item => item.str)
+        .join(' '));
+  }
+
+  let pdfJsModulePromise;
+  function loadPdfJs() {
+    if (!pdfJsModulePromise) {
+      pdfJsModulePromise = import(new URL('./js/vendor/pdf.mjs', document.baseURI).href)
+        .then(pdfjsLib => {
+          pdfjsLib.GlobalWorkerOptions.workerSrc =
+            new URL('./js/vendor/pdf.worker.mjs', document.baseURI).href;
+          return pdfjsLib;
+        })
+        .catch(error => {
+          pdfJsModulePromise = null;
+          throw error;
+        });
+    }
+    return pdfJsModulePromise;
+  }
+
+  async function extractPdfText(file) {
+    let loadingTask;
+    setWarnings();
+    try {
+      const pdfjsLib = await loadPdfJs();
+      loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+      const pdf = await loadingTask.promise;
+      if (pdf.numPages > 30) {
+        setWarnings(['O PDF excede o limite de 30 páginas.']);
+        return null;
+      }
+
+      let text = '';
+      let truncated = false;
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        const page = await pdf.getPage(pageNumber);
+        const content = await page.getTextContent();
+        const pageText = groupTextItemsIntoLines(content.items).join('\n');
+        const separator = pageNumber > 1 ? '\n' : '';
+        const remaining = MAX_RAW_CHARS - text.length - separator.length;
+        if (pageText.length > remaining) {
+          text += separator + pageText.slice(0, Math.max(0, remaining));
+          truncated = true;
+          break;
+        }
+        text += separator + pageText;
+      }
+      if (truncated) setWarnings(['O texto do PDF excede 200.000 caracteres e foi truncado.']);
+      if (text.trim().length < 20) {
+        setWarnings([...getLastWarnings(), 'PDF sem texto selecionável (escaneado). Use OFX/CSV ou cole o texto.']);
+        return null;
+      }
+      return text;
+    } catch (error) {
+      console.error('[GastoPro Importer] Erro ao ler PDF:', error);
+      setWarnings(error && error.name === 'PasswordException'
+        ? ['PDF protegido por senha não é suportado.']
+        : ['Não foi possível ler o PDF. Verifique se o arquivo é válido.']);
+      return null;
+    } finally {
+      if (loadingTask) {
+        try {
+          await loadingTask.destroy();
+        } catch (error) {
+          console.warn('[GastoPro Importer] Erro ao liberar o PDF:', error);
+        }
+      }
+    }
+  }
+
+  async function parseFile(file) {
     const extensionMatch = file.name.toLowerCase().match(/\.[^.]+$/);
     const extension = extensionMatch ? extensionMatch[0] : '';
-    if (!['.csv', '.txt', '.ofx', '.xml'].includes(extension)) {
+    if (!['.csv', '.txt', '.ofx', '.xml', '.pdf'].includes(extension)) {
       setWarnings(['Formato de arquivo não suportado.']);
+      return [];
+    }
+    if (extension === '.pdf') {
+      if (file.size > 10_000_000) {
+        setWarnings(['O PDF excede 10 MB.']);
+        return [];
+      }
+      const extractedText = await extractPdfText(file);
+      if (extractedText === null) return [];
+      const pdfWarnings = getLastWarnings();
+      const rows = parseRawText(extractedText);
+      setWarnings([...pdfWarnings, ...getLastWarnings()]);
+      return rows;
+    }
+    if (file.size > MAX_CSV_CHARS) {
+      setWarnings(['O arquivo excede 1 MB; reduza o arquivo e tente novamente.']);
       return [];
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -690,8 +835,17 @@ const GastoProImporter = (() => {
       type: 'variable',
       invalid: Boolean(invalidReason),
       invalidReason,
-      raw: truncateText(digits, MAX_LINE_CHARS)
+      raw: truncateText(digits, MAX_LINE_CHARS),
+      pending: true
     }];
+  }
+
+  function isTemplateDuplicate(row, templates) {
+    return templates.some(template =>
+      normalize(template.desc) === normalize(row.desc) &&
+      Math.abs(Math.round(Number(template.amount) * 100) - Math.round(Number(row.amount) * 100)) <= 1 &&
+      template.startMonth === row.startMonth
+    );
   }
 
   function markDuplicates(rows, existingItems = []) {
@@ -716,18 +870,31 @@ const GastoProImporter = (() => {
   // CONSTRUTOR DE ENTRY
   // ================================================================
 
-  function buildEntry(row, entryType) {
+  function buildEntry(row, entryType, paid = true) {
     const type = entryType || 'variable';
-    const month = row.date ? row.date.substring(0, 7) :
+    const fallbackMonth = row.date ? row.date.substring(0, 7) :
       `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    if (type === 'fixed' || type === 'debt') {
+      const startMonth = row.startMonth || fallbackMonth;
+      return {
+        type,
+        desc: truncateText(row.desc, 300),
+        amount: row.amount,
+        category: truncateText(row.category, 100),
+        date: row.dueDay ? `${startMonth}-${String(row.dueDay).padStart(2, '0')}` : row.date,
+        month: startMonth,
+        startMonth,
+        endMonth: row.endMonth || null
+      };
+    }
     return {
       type:     type,
       desc:     truncateText(row.desc, 300),
       amount:   row.amount,
       category: truncateText(row.category, 100),
       date:     row.date,
-      month:    month,
-      paid:     true
+      month:    fallbackMonth,
+      paid
     };
   }
 
@@ -735,8 +902,9 @@ const GastoProImporter = (() => {
   // API PÚBLICA
   // ================================================================
   return {
-    parseCSV, parseRawText, parsePixPayload, parseBoletoLine, autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
-    parseDate, markDuplicates, getLastWarnings, shiftMonth, detectInstallment, matchDebtTemplate,
+    parseCSV, parseRawText, parsePixPayload, parseBoletoLine, groupTextItemsIntoLines,
+    autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
+    parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, shiftMonth, detectInstallment, matchDebtTemplate,
     buildInstallmentDebt, parseFile
   };
 

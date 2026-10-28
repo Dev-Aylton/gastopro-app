@@ -1903,7 +1903,6 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       onConfirm: async () => {
         const result = await FinanceData.clearAll();
-        FinanceData.saveProfile({ ...profile, name: '', avatar: null });
         closeProfileDrawer();
         renderUserProfile();
         renderAll();
@@ -2752,6 +2751,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     rows.forEach((row, i) => {
       const isIncome = row.type === 'income';
+      const selectedType = ['income', 'fixed', 'debt'].includes(row.type)
+        ? row.type
+        : row.pending ? 'variable_pending' : 'variable';
       const dateDisplay = row.date
         ? row.date.split('-').reverse().join('/')
         : 'Data inválida';
@@ -2773,6 +2775,11 @@ document.addEventListener('DOMContentLoaded', () => {
               : ''
           }`
           : '';
+      const paymentPeriodDisplay = (row.type === 'fixed' || row.type === 'debt') && row.startMonth
+        ? `<small class="import-row-reason">${escapeHtml(row.endMonth
+          ? `A pagar de ${row.startMonth.slice(5, 7)}/${row.startMonth.slice(0, 4)} até ${row.endMonth.slice(5, 7)}/${row.endMonth.slice(0, 4)}`
+          : `A pagar a partir de ${row.startMonth.slice(5, 7)}/${row.startMonth.slice(0, 4)}`)}</small>`
+        : '';
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -2785,6 +2792,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="col-desc" title="${escapeHtml(row.desc)}">
           ${escapeHtml(row.desc)} ${rowStatus}
           ${installmentDisplay}
+          ${paymentPeriodDisplay}
           ${row.invalidReason ? `<small class="import-row-reason">${escapeHtml(row.invalidReason)}</small>` : ''}
         </td>
         <td class="col-category">
@@ -2794,8 +2802,11 @@ document.addEventListener('DOMContentLoaded', () => {
         </td>
         <td class="col-type">
           <select class="import-type-select" data-row="${i}" aria-label="Tipo de ${escapeHtml(row.desc)}">
-            <option value="variable" ${!isIncome ? 'selected' : ''}>Gasto</option>
-            <option value="income"   ${isIncome  ? 'selected' : ''}>Receita</option>
+            <option value="variable" ${selectedType === 'variable' ? 'selected' : ''}>Gasto (pago)</option>
+            <option value="variable_pending" ${selectedType === 'variable_pending' ? 'selected' : ''}>Gasto a pagar</option>
+            <option value="fixed" ${selectedType === 'fixed' ? 'selected' : ''}>Conta fixa</option>
+            <option value="debt" ${selectedType === 'debt' ? 'selected' : ''}>Dívida</option>
+            <option value="income" ${selectedType === 'income' ? 'selected' : ''}>Receita</option>
           </select>
         </td>
         <td class="col-amount ${isIncome ? 'income' : ''}">
@@ -2835,6 +2846,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const templates = FinanceData.getTemplates();
     _importParsedRows = GastoProImporter.markDuplicates(rows, FinanceData.getEntries())
       .map(row => {
+        if (row.type === 'fixed' || row.type === 'debt') {
+          const duplicate = GastoProImporter.isTemplateDuplicate(row, templates);
+          return { ...row, duplicate, selected: !row.invalid && !duplicate };
+        }
         if (row.duplicate || row.invalid || !row.installment) return row;
         const template = GastoProImporter.matchDebtTemplate(row, templates);
         return template ? { ...row, linkedTemplateId: template.id } : row;
@@ -2851,10 +2866,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const file = csvFileInput.files[0];
-    if (file.size > 1_000_000) {
-      showToast('O arquivo deve ter no máximo 1 MB.');
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
+    if (file.size > (isPdf ? 10_000_000 : 1_000_000)) {
+      showToast(isPdf ? 'O PDF excede 10 MB.' : 'O arquivo deve ter no máximo 1 MB.');
       return;
     }
+    const pdfReadingStatus = document.getElementById('pdfReadingStatus');
+    if (pdfReadingStatus) pdfReadingStatus.hidden = !isPdf;
     try {
       const rows = await GastoProImporter.parseFile(file);
       const hadWarnings = prepareImportRows(rows);
@@ -2864,6 +2882,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       console.error('[GastoPro Importer] Erro ao ler o arquivo:', err);
       showToast('Erro ao ler o arquivo. Verifique o formato.');
+    } finally {
+      if (pdfReadingStatus) pdfReadingStatus.hidden = true;
     }
   }
 
@@ -2912,12 +2932,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const category = catSelects[i]  ? catSelects[i].value  : row.category;
       const type     = typeSelects[i] ? typeSelects[i].value : 'variable';
 
-      if (type !== 'income' && row.installment && row.linkedTemplateId) {
+      if (type === 'fixed' || type === 'debt') {
+        debtItems.push(GastoProImporter.buildEntry({ ...row, category }, type));
+        return;
+      }
+
+      if (type === 'variable_pending') {
+        launches.push(GastoProImporter.buildEntry({ ...row, category }, 'variable', false));
+        return;
+      }
+
+      if ((type === 'variable' || type === 'income') && row.installment && row.linkedTemplateId) {
         payments.push({ id: row.linkedTemplateId, ym: row.date.substring(0, 7) });
         return;
       }
 
-      if (type !== 'income' && row.installment) {
+      if ((type === 'variable' || type === 'income') && row.installment) {
         const installmentCheckbox = importPreviewTbody.querySelector(
           `.import-installment-check[data-row="${i}"]`
         );
@@ -2958,7 +2988,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const paymentCount = payments.length;
         const launchCount = launches.length;
         showToast(
-          `${debtCount} dívida${debtCount === 1 ? '' : 's'} criada${debtCount === 1 ? '' : 's'}, ` +
+          `${debtCount} conta${debtCount === 1 ? '' : 's'} a pagar criada${debtCount === 1 ? '' : 's'}, ` +
           `${paymentCount} baixa${paymentCount === 1 ? '' : 's'} registrada${paymentCount === 1 ? '' : 's'} e ` +
           `${launchCount} lançamento${launchCount === 1 ? '' : 's'} importado${launchCount === 1 ? '' : 's'} com sucesso!`
         );

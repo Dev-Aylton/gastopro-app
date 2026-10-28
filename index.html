@@ -687,7 +687,7 @@
               <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
                 <i class="fa-solid fa-shield-halved"></i> Privacidade &amp; LGPD
               </a>
-              <span class="badge badge-version">v3.9</span>
+              <span class="badge badge-version">v4.0</span>
             </div>
           </div>
         </div>
@@ -1031,6 +1031,7 @@
         <ul>
           <li>Escolha um arquivo ou cole o texto, clique em analisar e confira a prévia. Nada é salvo até você confirmar a importação.</li>
           <li>CSV: planilha com as colunas Data, Descrição e Valor.</li>
+          <li>PDF: extratos e faturas com texto selecionável. PDFs escaneados não funcionam; a leitura é aproximada, confira na prévia.</li>
           <li>OFX: extrato baixado do internet banking. Cada transação vira uma linha; valor positivo é receita e negativo é gasto.</li>
           <li>XML de nota fiscal (NF-e/NFC-e): vira um único lançamento, com a data de emissão, o emitente e o valor total.</li>
           <li>Texto bruto: cole as linhas do extrato ou da fatura.</li>
@@ -1056,16 +1057,18 @@
       <div class="import-csv-panel active" id="importCsvPanel">
         <div class="import-format-hint">
           <i class="fa-solid fa-circle-info"></i>
-          <span>Aceita CSV com colunas de Data, Descrição e Valor, extratos OFX e XML de nota fiscal (NF-e/NFC-e).</span>
+          <span>Aceita CSV com colunas de Data, Descrição e Valor, extratos OFX, XML de nota fiscal (NF-e/NFC-e) e PDF de extratos ou faturas.</span>
         </div>
 
         <!-- Área de Drop / Upload -->
         <div class="csv-drop-zone" id="csvDropZone">
-          <input type="file" id="csvFileInput" accept=".csv,.txt,.ofx,.xml" aria-label="Selecionar arquivo CSV, TXT, OFX ou XML" />
+          <input type="file" id="csvFileInput" accept=".csv,.txt,.ofx,.xml,.pdf,application/pdf" aria-label="Selecionar arquivo CSV, TXT, OFX, XML ou PDF" />
           <i class="fa-solid fa-cloud-arrow-up drop-icon" id="csvDropIcon"></i>
           <p class="drop-title" id="csvDropTitle">Arraste o arquivo aqui</p>
-          <p class="drop-sub" id="csvDropSub">ou clique para selecionar o arquivo (.csv, .ofx, .xml)</p>
+          <p class="drop-sub" id="csvDropSub">ou clique para selecionar o arquivo (.csv, .ofx, .xml, .pdf)</p>
         </div>
+
+        <p id="pdfReadingStatus" aria-live="polite" hidden>Lendo PDF…</p>
 
         <button class="btn-parse" id="parseCsvBtn">
           <i class="fa-solid fa-magnifying-glass"></i> Analisar arquivo
@@ -1403,6 +1406,7 @@
         <h4>3. Como os dados são armazenados</h4>
         <p><strong>Modo Local (sem login):</strong> os dados financeiros ficam no <em>localStorage</em> deste navegador. Google Fonts e cdnjs (Font Awesome) são carregados de terceiros; esses provedores podem receber seu endereço IP e dados técnicos da conexão. Os dados financeiros não são enviados a esses provedores.</p>
         <p><strong>Modo Nuvem (com login):</strong> os dados são sincronizados com o Supabase (banco de dados seguro), protegidos por autenticação e criptografia em trânsito (HTTPS/TLS). O acesso é isolado por usuário via Row Level Security (RLS).</p>
+        <p>Arquivos PDF são lidos no próprio aparelho; não são enviados nem armazenados.</p>
 
         <h4>4. Seus direitos (LGPD — Lei 13.709/2018)</h4>
         <ul>
