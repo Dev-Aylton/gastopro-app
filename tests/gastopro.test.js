@@ -1582,6 +1582,114 @@ describe('GastoProImporter — parsing e limites', () => {
   });
 });
 
+describe('GastoProImporter — Pix e boletos', () => {
+  const crc16 = value => {
+    let crc = 0xFFFF;
+    for (let index = 0; index < value.length; index++) {
+      crc ^= value.charCodeAt(index) << 8;
+      for (let bit = 0; bit < 8; bit++) {
+        crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : crc << 1;
+        crc &= 0xFFFF;
+      }
+    }
+    return crc.toString(16).toUpperCase().padStart(4, '0');
+  };
+  const tlv = (id, value) => `${id}${String(value.length).padStart(2, '0')}${value}`;
+  const makePix = includeAmount => {
+    const payload = '000201' + tlv('26', '0014BR.GOV.BCB.PIX') +
+      (includeAmount ? tlv('54', '25.90') : '') +
+      tlv('59', 'LOJA TESTE') + tlv('60', 'SAO PAULO');
+    const crcInput = payload + '6304';
+    return crcInput + crc16(crcInput);
+  };
+  const encodeConvenio = codigo => {
+    const checkDigitPositions = new Set([11, 23, 35, 47]);
+    let encoded = '';
+    let codigoIndex = 0;
+    for (let index = 0; index < 48; index++) {
+      encoded += checkDigitPositions.has(index) ? '9' : codigo[codigoIndex++];
+    }
+    return encoded;
+  };
+  const today = new Date(2025, 1, 25);
+
+  it('interpreta Pix com CRC válido, valor, descrição e data local', () => {
+    const payload = makePix(true);
+    const rows = GastoProImporter.parsePixPayload(payload, today);
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].date, '2025-02-25');
+    assertEqual(rows[0].desc, 'LOJA TESTE');
+    assertEqual(rows[0].amount, 25.9);
+    assertEqual(rows[0].signedAmount, -25.9);
+    assertEqual(rows[0].type, 'variable');
+    assertFalse(rows[0].invalid);
+  });
+
+  it('rejeita Pix com CRC inválido', () => {
+    const payload = makePix(true);
+    const corrupted = payload.slice(0, -1) + (payload.endsWith('0') ? '1' : '0');
+    assertEqual(GastoProImporter.parsePixPayload(corrupted, today), []);
+    assertTrue(GastoProImporter.getLastWarnings().includes('Código Pix com CRC inválido.'));
+  });
+
+  it('marca Pix sem valor como inválido', () => {
+    const rows = GastoProImporter.parsePixPayload(makePix(false), today);
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].amount, 0);
+    assertTrue(rows[0].invalid);
+    assertEqual(rows[0].invalidReason, 'Pix sem valor definido');
+  });
+
+  it('interpreta boleto de 47 dígitos com fator conhecido e valor', () => {
+    const digits = '001' + '0'.repeat(30) + '1000' + '0000012345';
+    const rows = GastoProImporter.parseBoletoLine(digits, today);
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].date, '2025-02-22');
+    assertEqual(rows[0].amount, 123.45);
+    assertEqual(rows[0].desc, 'Boleto banco 001');
+    assertFalse(rows[0].invalid);
+  });
+
+  it('usa a data local atual quando o fator do boleto é zero', () => {
+    const digits = '001' + '0'.repeat(30) + '0000' + '0000012345';
+    const rows = GastoProImporter.parseBoletoLine(digits, today);
+    assertEqual(rows[0].date, '2025-02-25');
+  });
+
+  it('interpreta valor em convênio de 48 dígitos com identificador 6', () => {
+    const codigo = '8060' + '00000012345' + '0'.repeat(29);
+    const rows = GastoProImporter.parseBoletoLine(encodeConvenio(codigo), today);
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].amount, 123.45);
+    assertEqual(rows[0].desc, 'Guia de convênio/arrecadação');
+    assertFalse(rows[0].invalid);
+  });
+
+  it('marca convênio de 48 dígitos sem valor para identificador 7', () => {
+    const codigo = '8070' + '00000012345' + '0'.repeat(29);
+    const rows = GastoProImporter.parseBoletoLine(encodeConvenio(codigo), today);
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].amount, 0);
+    assertTrue(rows[0].invalid);
+    assertEqual(rows[0].invalidReason, 'Valor não informado no código');
+  });
+
+  it('rejeita comprimento inválido de linha digitável', () => {
+    assertEqual(GastoProImporter.parseBoletoLine('123456789'), []);
+    assertTrue(GastoProImporter.getLastWarnings().includes('Linha digitável inválida.'));
+  });
+
+  it('roteia Pix e boleto automaticamente em parseRawText', () => {
+    const pixRows = GastoProImporter.parseRawText(makePix(true));
+    const boleto = '001' + '0'.repeat(30) + '0000' + '0000012345';
+    const boletoRows = GastoProImporter.parseRawText(boleto);
+    assertEqual(pixRows[0].desc, 'LOJA TESTE');
+    assertEqual(pixRows[0].amount, 25.9);
+    assertEqual(boletoRows[0].desc, 'Boleto banco 001');
+    assertEqual(boletoRows[0].amount, 123.45);
+  });
+});
+
 describe('GastoProImporter — extratos bancários robustos', () => {
   it('mantém parseMoney absoluto e expõe o valor assinado e o tipo padrão', () => {
     assertEqual(GastoProImporter.parseMoney('-45,90'), 45.9);

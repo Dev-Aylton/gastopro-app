@@ -507,6 +507,13 @@ const GastoProImporter = (() => {
       return [];
     }
 
+    const trimmedText = text.trim();
+    if (trimmedText.startsWith('000201') && trimmedText.toUpperCase().includes('BR.GOV.BCB.PIX')) {
+      return parsePixPayload(trimmedText);
+    }
+    const boletoDigits = text.replace(/[\s.-]/g, '');
+    if (/^\d{47,48}$/.test(boletoDigits)) return parseBoletoLine(boletoDigits);
+
     const lines = text.split(/\r?\n/);
     const result = [];
     const warnings = [];
@@ -563,6 +570,130 @@ const GastoProImporter = (() => {
     return result;
   }
 
+  function parsePixPayload(payload, today = new Date()) {
+    setWarnings();
+    let offset = 0;
+    let crcOffset = -1;
+    const fields = {};
+    while (offset < payload.length) {
+      if (offset + 4 > payload.length) {
+        setWarnings(['Código Pix inválido.']);
+        return [];
+      }
+      const id = payload.slice(offset, offset + 2);
+      const lengthText = payload.slice(offset + 2, offset + 4);
+      if (!/^\d{2}$/.test(lengthText)) {
+        setWarnings(['Código Pix inválido.']);
+        return [];
+      }
+      const valueStart = offset + 4;
+      const valueEnd = valueStart + Number(lengthText);
+      if (valueEnd > payload.length) {
+        setWarnings(['Código Pix inválido.']);
+        return [];
+      }
+      fields[id] = payload.slice(valueStart, valueEnd);
+      if (id === '63') crcOffset = offset;
+      offset = valueEnd;
+    }
+
+    if (crcOffset < 0 || fields['63'].length !== 4) {
+      setWarnings(['Código Pix com CRC inválido.']);
+      return [];
+    }
+    let crc = 0xFFFF;
+    const crcInput = payload.slice(0, crcOffset + 4);
+    for (let index = 0; index < crcInput.length; index++) {
+      crc ^= crcInput.charCodeAt(index) << 8;
+      for (let bit = 0; bit < 8; bit++) {
+        crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : crc << 1;
+        crc &= 0xFFFF;
+      }
+    }
+    if (crc.toString(16).toUpperCase().padStart(4, '0') !== fields['63'].toUpperCase()) {
+      setWarnings(['Código Pix com CRC inválido.']);
+      return [];
+    }
+
+    const amount = fields['54'] ? parseMoney(fields['54']) : 0;
+    const desc = truncateText(fields['59'] || 'Pagamento Pix', 300);
+    const date = formatIsoDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    const invalid = !fields['54'] || amount === 0;
+    return [{
+      date,
+      desc,
+      amount,
+      signedAmount: -amount,
+      category: autoDetectCategory(desc),
+      type: 'variable',
+      invalid,
+      invalidReason: invalid ? 'Pix sem valor definido' : '',
+      raw: truncateText(payload, MAX_LINE_CHARS)
+    }];
+  }
+
+  function parseBoletoLine(digits, today = new Date()) {
+    setWarnings();
+    if (typeof digits !== 'string' || !/^\d+$/.test(digits) || ![47, 48].includes(digits.length)) {
+      setWarnings(['Linha digitável inválida.']);
+      return [];
+    }
+    const localDate = formatIsoDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    let date = localDate;
+    let desc;
+    let amount;
+    let invalidReason = '';
+
+    if (digits.length === 47) {
+      const factor = Number(digits.slice(33, 37));
+      amount = Number(digits.slice(37, 47)) / 100;
+      desc = `Boleto banco ${digits.slice(0, 3)}`;
+      if (factor !== 0) {
+        const baseDate = Date.UTC(1997, 9, 7);
+        const candidates = [new Date(baseDate + factor * 86400000)];
+        if (factor >= 1000) {
+          candidates.push(new Date(Date.UTC(2025, 1, 22) + (factor - 1000) * 86400000));
+        }
+        const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+        const nearest = candidates.reduce((selected, candidate) =>
+          Math.abs(candidate.getTime() - todayUtc) < Math.abs(selected.getTime() - todayUtc)
+            ? candidate : selected
+        );
+        date = formatIsoDate(nearest.getUTCFullYear(), nearest.getUTCMonth() + 1, nearest.getUTCDate());
+      }
+      if (amount === 0) invalidReason = 'Boleto sem valor';
+    } else {
+      if (!digits.startsWith('8')) {
+        setWarnings(['Linha digitável inválida.']);
+        return [];
+      }
+      const checkDigitPositions = new Set([11, 23, 35, 47]);
+      let codigo = '';
+      for (let index = 0; index < digits.length; index++) {
+        if (!checkDigitPositions.has(index)) codigo += digits[index];
+      }
+      desc = 'Guia de convênio/arrecadação';
+      if (codigo[2] === '6' || codigo[2] === '8') {
+        amount = Number(codigo.slice(4, 15)) / 100;
+      } else {
+        amount = 0;
+        invalidReason = 'Valor não informado no código';
+      }
+    }
+
+    return [{
+      date,
+      desc,
+      amount,
+      signedAmount: -amount,
+      category: autoDetectCategory(desc),
+      type: 'variable',
+      invalid: Boolean(invalidReason),
+      invalidReason,
+      raw: truncateText(digits, MAX_LINE_CHARS)
+    }];
+  }
+
   function markDuplicates(rows, existingItems = []) {
     const makeKey = item => {
       if (item.invalid || !item.date || !Number.isFinite(Number(item.amount))) return null;
@@ -604,7 +735,7 @@ const GastoProImporter = (() => {
   // API PÚBLICA
   // ================================================================
   return {
-    parseCSV, parseRawText, autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
+    parseCSV, parseRawText, parsePixPayload, parseBoletoLine, autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
     parseDate, markDuplicates, getLastWarnings, shiftMonth, detectInstallment, matchDebtTemplate,
     buildInstallmentDebt, parseFile
   };

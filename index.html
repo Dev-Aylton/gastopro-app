@@ -1022,6 +1022,26 @@
         <button class="modal-close-btn" id="closeImportModalBtn" title="Fechar" aria-label="Fechar importação">&times;</button>
       </div>
 
+      <details class="import-help">
+        <summary>
+          <i class="fa-solid fa-circle-question import-help-icon" aria-hidden="true"></i>
+          <span class="import-help-title">Como funciona a importação <small>Toque para ver</small></span>
+          <i class="fa-solid fa-chevron-down import-help-chevron" aria-hidden="true"></i>
+        </summary>
+        <ul>
+          <li>Escolha um arquivo ou cole o texto, clique em analisar e confira a prévia. Nada é salvo até você confirmar a importação.</li>
+          <li>CSV: planilha com as colunas Data, Descrição e Valor.</li>
+          <li>OFX: extrato baixado do internet banking. Cada transação vira uma linha; valor positivo é receita e negativo é gasto.</li>
+          <li>XML de nota fiscal (NF-e/NFC-e): vira um único lançamento, com a data de emissão, o emitente e o valor total.</li>
+          <li>Texto bruto: cole as linhas do extrato ou da fatura.</li>
+          <li>Pix copia e cola: cole o código (começa com 000201). O app lê o valor e o nome de quem recebe. O código não traz data, então usa a data de hoje.</li>
+          <li>Boleto: cole a linha digitável (47 ou 48 dígitos). No boleto bancário (47) o app lê valor e vencimento; na guia de convênio (48) lê só o valor e usa a data de hoje.</li>
+          <li>Parcelas: textos como PARC 03/48 são reconhecidos. Se a dívida já existe no Centro de Dívidas, a linha só marca aquele mês como pago. Se não existe, você pode lançar as parcelas restantes de uma vez.</li>
+          <li>Duplicados: lançamentos iguais aos que você já tem aparecem marcados na prévia.</li>
+          <li>Privacidade: o arquivo é lido no seu aparelho; só os lançamentos que você confirmar são salvos.</li>
+        </ul>
+      </details>
+
       <!-- Abas de formato -->
       <div class="import-tabs">
         <button class="import-tab-btn active" id="importTabCsvBtn" data-tab="csv">
@@ -1056,7 +1076,7 @@
       <div class="import-text-panel" id="importTextPanel">
         <div class="import-format-hint">
           <i class="fa-solid fa-circle-info"></i>
-          <span>Cole o texto copiado do extrato do seu banco. Formatos aceitos: <strong>DD/MM/AAAA Descrição R$ Valor</strong> ou similar.</span>
+          <span>Cole o texto copiado do extrato do seu banco. Formatos aceitos: <strong>DD/MM/AAAA Descrição R$ Valor</strong> ou similar, ou cole um código Pix copia e cola / linha digitável de boleto.</span>
         </div>
 
         <textarea
@@ -1093,6 +1113,8 @@
           <span style="margin-left: auto; font-size: 0.75rem;">Ajuste categoria e tipo antes de importar</span>
         </div>
 
+        <p class="import-help-note">Confira a categoria e o tipo de cada linha. Nada é gravado até você confirmar a importação.</p>
+
         <!-- Tabela de preview -->
         <div class="import-preview-table-wrapper">
           <table class="import-preview-table">
@@ -1111,6 +1133,7 @@
             </tbody>
           </table>
         </div>
+        <p class="import-help-note" id="importInstallmentHint" hidden>Parcelas: se a dívida já existe no Centro de Dívidas, a linha só marca aquele mês como pago. Se não existe, marque "Lançar as restantes" para criar a dívida com todas as parcelas.</p>
 
         <!-- Ações -->
         <div class="import-actions">

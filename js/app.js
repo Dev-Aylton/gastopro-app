@@ -2725,6 +2725,8 @@ document.addEventListener('DOMContentLoaded', () => {
    * @param {Array} rows - Resultado de parseCSV() ou parseRawText().
    */
   function renderImportPreview(rows) {
+    const installmentHint = document.getElementById('importInstallmentHint');
+    if (installmentHint) installmentHint.hidden = !rows || !rows.some(row => row.installment);
     if (!importPreviewTbody) return;
     importPreviewTbody.innerHTML = '';
 
