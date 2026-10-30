@@ -231,7 +231,7 @@ const GastoProImporter = (() => {
     return result;
   }
 
-  function parseCSV(text) {
+  function parseCSV(text, today = new Date()) {
     setWarnings();
     if (!text || !text.trim()) return [];
     if (text.length > MAX_CSV_CHARS) {
@@ -293,7 +293,7 @@ const GastoProImporter = (() => {
         ? credit - debit
         : parseMoneySigned(valueAt(idxAmount));
       if (!rawDesc && signedAmount === 0) continue;
-      const date = parseDate(rawDate);
+      const date = parseDate(rawDate, today);
       const rawCategory = idxCategory >= 0 ? valueAt(idxCategory) : '';
       const normalizedCategory = normalize(rawCategory);
       const canonicalCategory = [
@@ -338,6 +338,18 @@ const GastoProImporter = (() => {
     if (inactiveCount) warnings.push(`${inactiveCount} linhas inativas foram ignoradas.`);
     applyDefaultTypes(defaultTypeRows);
     applyInstallments(defaultTypeRows);
+    const todayString = formatIsoDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    rows.forEach(row => {
+      if (row.type !== 'variable' || !row.date || row.date <= todayString) return;
+      row.pending = true;
+      if (!row.installment) {
+        const installment = detectCsvInstallment(row.desc);
+        if (installment) {
+          row.installment = { current: installment.current, total: installment.total };
+          row.installmentBase = installment.baseDesc;
+        }
+      }
+    });
     setWarnings(warnings);
     return rows;
   }
@@ -387,6 +399,21 @@ const GastoProImporter = (() => {
       current,
       total,
       baseDesc: (desc.slice(0, match.index) + desc.slice(match.index + match[0].length)).trim()
+    };
+  }
+
+  function detectCsvInstallment(desc) {
+    const existing = detectInstallment(desc);
+    if (existing || !desc) return existing;
+    const match = String(desc).match(/\b(\d{1,3})\s+de\s+(\d{1,3})\b/i);
+    if (!match) return null;
+    const current = Number(match[1]);
+    const total = Number(match[2]);
+    if (current < 1 || current > total || total < 2 || total > 360) return null;
+    return {
+      current,
+      total,
+      baseDesc: (String(desc).slice(0, match.index) + String(desc).slice(match.index + match[0].length)).trim()
     };
   }
 
@@ -518,7 +545,7 @@ const GastoProImporter = (() => {
     }
   }
 
-  async function parseFile(file) {
+  async function parseFile(file, today = new Date()) {
     const extensionMatch = file.name.toLowerCase().match(/\.[^.]+$/);
     const extension = extensionMatch ? extensionMatch[0] : '';
     if (!['.csv', '.txt', '.ofx', '.xml', '.pdf'].includes(extension)) {
@@ -549,7 +576,7 @@ const GastoProImporter = (() => {
     } else {
       text = decodeBytes(bytes);
     }
-    if (extension === '.csv' || extension === '.txt') return parseCSV(text);
+    if (extension === '.csv' || extension === '.txt') return parseCSV(text, today);
     if (extension === '.ofx') return parseOFX(text);
     if (extension === '.xml') return parseNFeXML(text);
     return [];
@@ -937,7 +964,7 @@ const GastoProImporter = (() => {
   return {
     parseCSV, parseRawText, parseOFX, parsePixPayload, parseBoletoLine, groupTextItemsIntoLines,
     autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
-    parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, shiftMonth, detectInstallment, matchDebtTemplate,
+    parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, shiftMonth, detectInstallment, detectCsvInstallment, matchDebtTemplate,
     buildInstallmentDebt, parseFile
   };
 

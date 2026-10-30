@@ -202,6 +202,43 @@ const VIEW_TITLES = {
   admin:     'Admin'
 };
 
+const LAST_VIEW_STORAGE_KEY = 'gastopro_last_view_v1';
+const PERSISTED_VIEW_IDS = Object.freeze(Object.keys(VIEW_TITLES));
+
+window.GastoProViewHelpers = {
+  restore(storedView, userId, isAdmin) {
+    const ownerId = userId || null;
+    if (!storedView || typeof storedView !== 'object' ||
+      storedView.ownerId !== ownerId || !PERSISTED_VIEW_IDS.includes(storedView.view)) {
+      return 'dashboard';
+    }
+    if (storedView.view === 'admin' && isAdmin !== true) return 'dashboard';
+    return storedView.view;
+  }
+};
+
+function readStoredMainView() {
+  try {
+    const stored = localStorage.getItem(LAST_VIEW_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function persistMainView(viewId) {
+  if (!PERSISTED_VIEW_IDS.includes(viewId) ||
+    (viewId === 'admin' && adminViewState.access !== 'allowed')) return;
+  try {
+    localStorage.setItem(LAST_VIEW_STORAGE_KEY, JSON.stringify({
+      view: viewId,
+      ownerId: FinanceData.getActiveUserId() || null
+    }));
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível salvar a última tela:', error);
+  }
+}
+
 // ================================================================
 // 3. UTILITÁRIOS
 // ================================================================
@@ -669,6 +706,7 @@ window.switchToView = function(viewId) {
   // Ignora IDs de tela desconhecidos para evitar erros silenciosos
   if (!VIEW_TITLES[viewId]) return;
   state.currentView = viewId;
+  persistMainView(viewId);
 
   // Marca o botão ativo na sidebar e desmarca os demais
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(btn => {
@@ -691,7 +729,6 @@ window.switchToView = function(viewId) {
   }
 
   // Em mobile, fecha o menu lateral após selecionar uma tela
-  const sidebar = document.getElementById('sidebar');
   const sidebarOverlay = document.getElementById('sidebarOverlay');
   if (sidebar && sidebar.classList.contains('open')) {
     sidebar.classList.remove('open');
@@ -704,6 +741,7 @@ window.switchToView = function(viewId) {
   }
 
   // Re-renderiza toda a interface para refletir a tela ativa
+  if (isAdmin && state.currentView === 'admin') persistMainView('admin');
   renderAll();
   if (viewId === 'contact') loadMyFeedback();
   if (viewId === 'admin') {
@@ -3578,6 +3616,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return null;
     }
     const switchedUser = FinanceData.activateUser(user.id);
+    if (switchedUser) window.switchToView('dashboard');
     if (FinanceData.getActiveUserId() !== user.id) {
       showAuthAlert('Há alterações não sincronizadas da conta anterior. Entre novamente nessa conta para sincronizá-las.');
       try {
@@ -3654,7 +3693,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       feedbackViewState.userId = user.id;
       const switchedUser = FinanceData.activateUser(user.id);
-      if (switchedUser) resetAdminSession();
+      if (switchedUser) {
+        resetAdminSession();
+        window.switchToView('dashboard');
+      }
       if (switchedUser || event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         prepareAuthenticatedUser(user).then(async profile => {
           if (!profile) return false;
@@ -4410,7 +4452,8 @@ document.addEventListener('DOMContentLoaded', () => {
         : 'Data inválida';
       const rowStatus = [
         row.invalid ? '<span class="import-row-status invalid">Data inválida</span>' : '',
-        row.duplicate ? '<span class="import-row-status duplicate">Duplicado</span>' : ''
+        row.duplicate ? '<span class="import-row-status duplicate">Duplicado</span>' : '',
+        row.pending ? '<span class="import-row-status pending">Sugestão: a pagar</span>' : ''
       ].filter(Boolean).join(' ');
 
       // Gera opções do select de categoria
@@ -5452,13 +5495,16 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       renderUserProfile();
-      renderAll();
-      document.body.classList.remove('auth-checking');
-
       if (user) await refreshAdminBadge();
       else resetAdminSession();
-      if (user && state.currentView === 'contact') loadMyFeedback();
-      if (user && state.currentView === 'admin') openAdminView();
+
+      const restoredView = window.GastoProViewHelpers.restore(
+        readStoredMainView(),
+        user ? user.id : null,
+        adminViewState.access === 'allowed'
+      );
+      document.body.classList.remove('auth-checking');
+      window.switchToView(restoredView);
       if (user) await syncUserDataFromCloud(user.id);
     })();
     try {

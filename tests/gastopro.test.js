@@ -375,6 +375,7 @@ describe('FinanceData — Isolamento entre usuários', () => {
     localStorage.setItem('gastopro_avatar_cache', 'avatar');
     localStorage.setItem('gastopro_tutorial_seen', 'true');
     localStorage.setItem('gastopro_theme', 'light');
+    localStorage.setItem('gastopro_last_view_v1', JSON.stringify({ view: 'accounts', ownerId: null }));
     localStorage.setItem('sb-project-auth-token', 'session');
 
     FinanceData.clearUserData();
@@ -382,6 +383,7 @@ describe('FinanceData — Isolamento entre usuários', () => {
     const remainingKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
     assertEqual(remainingKeys, ['gastopro_tutorial_seen', 'gastopro_theme', 'sb-project-auth-token']);
     assertEqual(localStorage.getItem('gastopro_theme'), 'light');
+    assertNull(localStorage.getItem('gastopro_last_view_v1'));
   });
 
   it('falha ou resposta vazia da nuvem não deve zerar dados locais do mesmo usuário', () => {
@@ -704,6 +706,28 @@ describe('Recuperação de conta e confirmação de e-mail', () => {
       window.GastoProAuthHelpers.getPasswordRecoverySuccessMessage(),
       'Se esse e-mail tiver conta, você receberá as instruções. Confira também o spam.'
     );
+  });
+});
+
+describe('Restauração da tela principal', () => {
+  const restore = window.GastoProViewHelpers.restore;
+
+  it('restaura uma tela válida para o mesmo usuário', () => {
+    assertEqual(restore({ view: 'accounts', ownerId: 'user-a' }, 'user-a', false), 'accounts');
+  });
+
+  it('usa Dashboard para tela inválida', () => {
+    assertEqual(restore({ view: 'profile', ownerId: null }, null, false), 'dashboard');
+  });
+
+  it('restaura Admin somente após confirmar acesso', () => {
+    const savedAdmin = { view: 'admin', ownerId: 'admin-user' };
+    assertEqual(restore(savedAdmin, 'admin-user', false), 'dashboard');
+    assertEqual(restore(savedAdmin, 'admin-user', true), 'admin');
+  });
+
+  it('não restaura a tela de outro usuário no mesmo aparelho', () => {
+    assertEqual(restore({ view: 'expenses', ownerId: 'user-a' }, 'user-b', false), 'dashboard');
   });
 });
 
@@ -1326,6 +1350,7 @@ describe('FinanceData — clearAll()', () => {
     const accountId = crypto.randomUUID();
     localStorage.setItem('gastopro_last_uid', userId);
     localStorage.setItem('gastopro_theme', 'light');
+    localStorage.setItem('gastopro_last_view_v1', JSON.stringify({ view: 'accounts', ownerId: userId }));
     FinanceData.saveProfile({ name: 'Pessoa', avatar: 'data:image/png;base64,abc', email: 'pessoa@example.com', userId });
     localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([makeIncome({ id: entryId })]));
     localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([makeFixed({ id: templateId })]));
@@ -1364,6 +1389,9 @@ describe('FinanceData — clearAll()', () => {
       assertEqual(FinanceData.getProfile().name, 'Pessoa');
       assertEqual(FinanceData.getProfile().avatar, 'data:image/png;base64,abc');
       assertEqual(localStorage.getItem('gastopro_theme'), 'light');
+      assertEqual(JSON.parse(localStorage.getItem('gastopro_last_view_v1')), {
+        view: 'accounts', ownerId: userId
+      });
     } finally {
       window.SupabaseAuth = previousAuth;
     }
@@ -2622,6 +2650,55 @@ describe('GastoProImporter — autoDetectCategory', () => {
       '15/10/2026;Compra no supermercado;45,90; alimentacao '
     );
     assertEqual(rows[0].category, 'Alimentação');
+  });
+});
+
+describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
+  const today = new Date(2026, 9, 30);
+
+  it('importa despesa futura como a pagar, sem marcar paid', () => {
+    const row = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n2026-10-31;Loja Exemplo Parcelado out;-450,00', today
+    )[0];
+    assertTrue(row.pending);
+    assertEqual(row.type, 'variable');
+    assertFalse(GastoProImporter.buildEntry(row, 'variable', false).paid);
+  });
+
+  it('reconhece N de M somente para linha CSV futura e mantém a linha passada como antes', () => {
+    const future = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n2026-10-31;Loja Exemplo Empréstimo 07 de 12;-450,00', today
+    )[0];
+    assertTrue(future.pending);
+    assertEqual(future.installment, { current: 7, total: 12 });
+    assertEqual(future.installmentBase, 'Loja Exemplo Empréstimo');
+
+    const past = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n2026-10-29;Loja Exemplo Empréstimo 06 de 12;-450,00', today
+    )[0];
+    assertFalse(Boolean(past.pending));
+    assertNull(past.installment);
+    assertTrue(GastoProImporter.buildEntry(past, 'variable').paid);
+    assertNull(GastoProImporter.detectInstallment('Loja Exemplo Empréstimo 07 de 12'));
+  });
+
+  it('mantém como pago gasto passado e gasto datado hoje', () => {
+    const rows = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n2026-10-29;Pix enviado - Pessoa Exemplo;-20,00\n2026-10-30;Compra no débito - Mercado Exemplo;-35,00',
+      today
+    );
+    assertTrue(rows.every(row => !row.pending));
+    assertTrue(rows.every(row => GastoProImporter.buildEntry(row, 'variable').paid));
+  });
+
+  it('preserva RM-002 no Texto bruto para PARC 03/48', () => {
+    const row = GastoProImporter.parseRawText(
+      '15/10/2026 FACULDADE X PARC 03/48 -500,00'
+    )[0];
+    assertEqual(row.installment, { current: 3, total: 48 });
+    assertEqual(row.installmentBase, 'FACULDADE X');
+    const debt = GastoProImporter.buildInstallmentDebt(row, 'Educação');
+    assertEqual(Object.keys(debt.paidMonths), ['2026-08', '2026-09', '2026-10']);
   });
 });
 

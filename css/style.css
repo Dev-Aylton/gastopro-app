@@ -4486,6 +4486,11 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   background: var(--bg-input);
 }
 
+.import-row-status.pending {
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+
 .import-row-reason {
   color: var(--danger-text);
   display: block;
