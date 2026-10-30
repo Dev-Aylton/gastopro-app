@@ -2,6 +2,7 @@
 
 (() => {
   const STORAGE_KEY = 'gastopro_tutorial_seen';
+  const ACCOUNT_SETUP_STORAGE_KEY = 'gastopro_account_setup_seen';
   const topics = [
     {
       title: 'Bem-vindo ao GastoPro',
@@ -80,6 +81,15 @@
 
   function clearSeen(storage = window.localStorage) {
     storage.removeItem(STORAGE_KEY);
+  }
+
+  function shouldShowAccountSetup(accounts, storage = window.localStorage) {
+    return Array.isArray(accounts) && accounts.length === 0 &&
+      storage.getItem(ACCOUNT_SETUP_STORAGE_KEY) !== 'true';
+  }
+
+  function markAccountSetupSeen(storage = window.localStorage) {
+    storage.setItem(ACCOUNT_SETUP_STORAGE_KEY, 'true');
   }
 
   function navigate(index, action) {
@@ -163,12 +173,15 @@
 
   window.GastoProOnboarding = Object.freeze({
     STORAGE_KEY,
+    ACCOUNT_SETUP_STORAGE_KEY,
     getTopics: () => topics.map(topic => ({ ...topic })),
     getStatementGuide,
     mountStatementGuide,
     getStartIndex: () => 0,
     hasSeen,
     shouldShowOnFirstAccess: storage => !hasSeen(storage),
+    shouldShowAccountSetup,
+    markAccountSetupSeen,
     markSeen,
     clearSeen,
     navigate

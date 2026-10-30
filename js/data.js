@@ -67,10 +67,24 @@ const STORAGE_PROFILE = 'gastopro_profile_real_v2';
 /** Chave das metas de teto de gastos por categoria. */
 const STORAGE_GOALS = 'gastopro_goals_v1';
 const STORAGE_ACCOUNTS = 'gastopro_accounts_v1';
+const STORAGE_CREDIT_CARDS = 'gastopro_credit_cards_v1';
+const STORAGE_CREDIT_CARD_PURCHASES = 'gastopro_credit_card_purchases_v1';
+const STORAGE_FIXED_IMPORT_RULES = 'gastopro_fixed_import_rules_v1';
 const STORAGE_LAST_UID = 'gastopro_last_uid';
 const STORAGE_PENDING_SYNC = 'gastopro_pending_sync_v1';
 const STORAGE_TUTORIAL_SEEN = 'gastopro_tutorial_seen';
+const STORAGE_ACCOUNT_SETUP_SEEN = 'gastopro_account_setup_seen';
 const MAX_ACCOUNT_BALANCE = 9999999999.99;
+const MAX_CREDIT_CARD_LIMIT = 9999999999.99;
+const CREDIT_CARD_BRANDS = [
+  'Visa', 'Mastercard', 'Elo', 'American Express', 'Hipercard', 'Outra'
+];
+const CREDIT_CARD_ISSUERS = [
+  'Nubank', 'Itaú', 'Bradesco', 'Santander', 'Banco do Brasil', 'Caixa',
+  'Inter', 'C6', 'BTG', 'Mercado Pago', 'PicPay', 'Outro'
+];
+const DEFAULT_CREDIT_CARD_COLOR = '#6366f1';
+const CREDIT_CARD_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 
 function getLocalDateString(date = new Date()) {
   const year = date.getFullYear();
@@ -82,6 +96,71 @@ function getLocalDateString(date = new Date()) {
 function isUuid(id) {
   return typeof id === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
+function isValidCivilMonth(value) {
+  if (typeof value !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return false;
+  return Number(value.slice(0, 4)) > 0;
+}
+
+function isValidCivilDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthDays = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= monthDays[month - 1];
+}
+
+function getCreditCardInstallments(purchase) {
+  const purchaseDate = purchase && purchase.purchaseDate;
+  const count = Number(purchase && purchase.installmentCount);
+  const amount = Number(purchase && purchase.amount);
+  const closingDay = Number(purchase && purchase.closingDay);
+  const dueDay = Number(purchase && purchase.dueDay);
+  if (!isValidCivilDate(purchaseDate) || !Number.isInteger(count) || count < 1 || count > 24 ||
+    !Number.isFinite(amount) || amount <= 0 ||
+    !Number.isInteger(closingDay) || closingDay < 1 || closingDay > 31 ||
+    !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return [];
+
+  const [year, month, day] = purchaseDate.split('-').map(Number);
+  const statementMonth = new Date(Date.UTC(year, month - 1 + (day > closingDay ? 2 : 1), 1));
+  const baseCents = Math.floor((Math.round(amount * 100) / count));
+  const totalCents = Math.round(amount * 100);
+  return Array.from({ length: count }, (_, index) => {
+    const statementDate = new Date(Date.UTC(
+      statementMonth.getUTCFullYear(), statementMonth.getUTCMonth() + index, 1
+    ));
+    const ym = `${statementDate.getUTCFullYear()}-${String(statementDate.getUTCMonth() + 1).padStart(2, '0')}`;
+    const daysInMonth = new Date(Date.UTC(
+      statementDate.getUTCFullYear(), statementDate.getUTCMonth() + 1, 0
+    )).getUTCDate();
+    const installmentCents = index === count - 1
+      ? totalCents - baseCents * (count - 1)
+      : baseCents;
+    return {
+      number: index + 1,
+      month: ym,
+      date: `${ym}-${String(Math.min(dueDay, daysInMonth)).padStart(2, '0')}`,
+      amount: installmentCents / 100
+    };
+  });
+}
+
+function calculateCreditCardLimitUsage(card, purchases) {
+  const installments = purchases.flatMap(purchase =>
+    purchase.cardId === card.id ? getCreditCardInstallments(purchase)
+      .filter(installment => !(purchase.paidInstallments || []).includes(installment.number)) : []
+  );
+  const totalLimit = Number(card.totalLimit);
+  const used = Math.round(installments.reduce((sum, installment) => sum + installment.amount, 0) * 100) / 100;
+  const percent = totalLimit > 0 ? used / totalLimit * 100 : 0;
+  return {
+    used,
+    available: Math.max(0, Math.round((totalLimit - used) * 100) / 100),
+    percent,
+    alert: percent >= 100 ? 'full' : percent >= 80 ? 'warning' : 'normal'
+  };
 }
 
 function validateBackupText(text) {
@@ -104,7 +183,9 @@ function validateBackupText(text) {
       entries: 'Lançamento',
       templates: 'Gasto fixo',
       goals: 'Meta',
-      accounts: 'Conta'
+      accounts: 'Conta',
+      creditCards: 'Cartão',
+      creditCardPurchases: 'Compra no cartão'
     };
     const id = item && item.id != null ? String(item.id) : '(sem ID)';
     return `${labels[kind]} ${id}: ${message}`;
@@ -115,18 +196,8 @@ function validateBackupText(text) {
     typeof value === 'string' && textLength(value) >= 1 && textLength(value) <= max;
   const validAmount = value =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_ACCOUNT_BALANCE;
-  const validMonth = value => {
-    if (typeof value !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return false;
-    return Number(value.slice(0, 4)) > 0;
-  };
-  const validDate = value => {
-    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-    const [year, month, day] = value.split('-').map(Number);
-    if (year < 1 || month < 1 || month > 12 || day < 1) return false;
-    const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-    const monthDays = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    return day <= monthDays[month - 1];
-  };
+  const validMonth = isValidCivilMonth;
+  const validDate = isValidCivilDate;
   const validateBooleanFields = (kind, item, fields) => {
     for (const field of fields) {
       if (Object.prototype.hasOwnProperty.call(item, field) && typeof item[field] !== 'boolean') {
@@ -150,6 +221,29 @@ function validateBackupText(text) {
     : Array.isArray(parsed.accounts) ? parsed.accounts.map(item => isRecord(item) ? { ...item } : item) : parsed.accounts;
   if (!Array.isArray(accounts)) return { error: 'A coleção accounts precisa ser uma lista.' };
   if (accounts.length > 5000) return { error: 'A coleção accounts excede o limite de 5.000 itens.' };
+  const creditCards = parsed.creditCards === undefined
+    ? []
+    : Array.isArray(parsed.creditCards)
+      ? parsed.creditCards.map(item => isRecord(item) ? { ...item } : item)
+      : parsed.creditCards;
+  if (!Array.isArray(creditCards)) return { error: 'A coleção creditCards precisa ser uma lista.' };
+  if (creditCards.length > 5000) return { error: 'A coleção creditCards excede o limite de 5.000 itens.' };
+  const creditCardPurchases = parsed.creditCardPurchases === undefined
+    ? []
+    : Array.isArray(parsed.creditCardPurchases)
+      ? parsed.creditCardPurchases.map(item => isRecord(item) ? { ...item } : item)
+      : parsed.creditCardPurchases;
+  if (!Array.isArray(creditCardPurchases)) {
+    return { error: 'A coleção creditCardPurchases precisa ser uma lista.' };
+  }
+  if (creditCardPurchases.length > 5000) {
+    return { error: 'A coleção creditCardPurchases excede o limite de 5.000 itens.' };
+  }
+  const fixedImportRules = parsed.fixedImportRules === undefined ? [] : parsed.fixedImportRules;
+  if (!Array.isArray(fixedImportRules) || fixedImportRules.length > 5000 ||
+    fixedImportRules.some(rule => typeof rule !== 'string' || !rule.trim() || rule.length > 300)) {
+    return { error: 'A coleção fixedImportRules precisa conter regras textuais válidas.' };
+  }
   const seenIds = new Set();
   const checkId = (kind, item) => {
     if (item.id == null || item.id === '') return null;
@@ -179,14 +273,119 @@ function validateBackupText(text) {
         Math.abs(account.initialBalance) > MAX_ACCOUNT_BALANCE)) {
       return { error: recordError('accounts', account, 'o saldo inicial deve ser um número finito dentro do limite permitido.') };
     }
+    if (account.balanceDate != null && account.balanceDate !== '' && !isValidCivilDate(account.balanceDate)) {
+      return { error: recordError('accounts', account, 'a data do saldo inicial deve ser válida.') };
+    }
     const originalId = account.id;
     account.id = isUuid(originalId) ? originalId : crypto.randomUUID();
     account.initialBalance = account.initialBalance == null ? 0 : account.initialBalance;
+    account.balanceDate = account.balanceDate || null;
     account.name = account.name.trim();
     account.institution = typeof account.institution === 'string' && account.institution.trim()
       ? account.institution.trim()
       : null;
     if (originalId != null) accountIds.set(String(originalId), account.id);
+  }
+
+  const creditCardIds = new Map();
+  for (const card of creditCards) {
+    if (!isRecord(card)) return { error: recordError('creditCards', card, 'registro inválido.') };
+    const duplicateError = checkId('creditCards', card);
+    if (duplicateError) return { error: duplicateError };
+    if (!validText(card.name, 100) || !card.name.trim()) {
+      return { error: recordError('creditCards', card, 'o nome deve ter de 1 a 100 caracteres.') };
+    }
+    if (typeof card.totalLimit !== 'number' || !Number.isFinite(card.totalLimit) ||
+      card.totalLimit <= 0 || card.totalLimit > MAX_CREDIT_CARD_LIMIT) {
+      return { error: recordError('creditCards', card, 'o limite total deve ser positivo e válido.') };
+    }
+    if (card.brand != null && !CREDIT_CARD_BRANDS.includes(card.brand)) {
+      return { error: recordError('creditCards', card, 'a bandeira não é válida.') };
+    }
+    if (card.issuerBank != null && !CREDIT_CARD_ISSUERS.includes(card.issuerBank)) {
+      return { error: recordError('creditCards', card, 'o banco emissor não é válido.') };
+    }
+    if (card.lastFour != null && card.lastFour !== '' &&
+      (typeof card.lastFour !== 'string' || !/^\d{4}$/.test(card.lastFour))) {
+      return { error: recordError('creditCards', card, 'o final deve conter quatro dígitos.') };
+    }
+    if (card.customColor != null &&
+      (typeof card.customColor !== 'string' || !CREDIT_CARD_COLOR_PATTERN.test(card.customColor))) {
+      return { error: recordError('creditCards', card, 'a cor personalizada deve ser hexadecimal válida.') };
+    }
+    if (!Number.isInteger(card.closingDay) || card.closingDay < 1 || card.closingDay > 31 ||
+      !Number.isInteger(card.dueDay) || card.dueDay < 1 || card.dueDay > 31) {
+      return { error: recordError('creditCards', card, 'os dias de fechamento e vencimento devem estar entre 1 e 31.') };
+    }
+    const originalId = card.id;
+    card.id = isUuid(originalId) ? originalId : crypto.randomUUID();
+    card.name = card.name.trim();
+    card.totalLimit = Math.round(card.totalLimit * 100) / 100;
+    card.brand = card.brand || 'Outra';
+    card.issuerBank = card.issuerBank || 'Outro';
+    card.lastFour = card.lastFour || null;
+    card.customColor = card.issuerBank === 'Outro'
+      ? card.customColor || DEFAULT_CREDIT_CARD_COLOR
+      : null;
+    card.accountId = card.accountId == null || card.accountId === ''
+      ? null
+      : accountIds.get(String(card.accountId)) || null;
+    if (originalId != null) creditCardIds.set(String(originalId), card.id);
+  }
+  for (const purchase of creditCardPurchases) {
+    if (!isRecord(purchase)) {
+      return { error: recordError('creditCardPurchases', purchase, 'registro inválido.') };
+    }
+    const duplicateError = checkId('creditCardPurchases', purchase);
+    if (duplicateError) return { error: duplicateError };
+    if (!validText(purchase.desc, 300) || !validText(purchase.category, 100)) {
+      return { error: recordError('creditCardPurchases', purchase, 'descrição e categoria devem ser válidas.') };
+    }
+    if (typeof purchase.amount !== 'number' || !Number.isFinite(purchase.amount) ||
+      purchase.amount <= 0 || purchase.amount > MAX_ACCOUNT_BALANCE) {
+      return { error: recordError('creditCardPurchases', purchase, 'o valor da compra deve ser positivo e válido.') };
+    }
+    if (!validDate(purchase.purchaseDate)) {
+      return { error: recordError('creditCardPurchases', purchase, 'a data da compra deve ser válida.') };
+    }
+    if (!Number.isInteger(purchase.installmentCount) || purchase.installmentCount < 1 ||
+      purchase.installmentCount > 24) {
+      return { error: recordError('creditCardPurchases', purchase, 'as parcelas devem estar entre 1 e 24.') };
+    }
+    if (!Number.isInteger(purchase.closingDay) || purchase.closingDay < 1 || purchase.closingDay > 31 ||
+      !Number.isInteger(purchase.dueDay) || purchase.dueDay < 1 || purchase.dueDay > 31) {
+      return { error: recordError('creditCardPurchases', purchase, 'os dias de fechamento e vencimento devem estar entre 1 e 31.') };
+    }
+    if (!validText(purchase.cardName, 100)) {
+      return { error: recordError('creditCardPurchases', purchase, 'o nome de referência do cartão é inválido.') };
+    }
+    const paidInstallments = purchase.paidInstallments === undefined ? [] : purchase.paidInstallments;
+    if (!Array.isArray(paidInstallments) || paidInstallments.some(number =>
+      !Number.isInteger(number) || number < 1 || number > purchase.installmentCount
+    ) || new Set(paidInstallments).size !== paidInstallments.length) {
+      return { error: recordError('creditCardPurchases', purchase, 'as parcelas pagas precisam ser números únicos entre 1 e a quantidade total.') };
+    }
+    const paidDates = purchase.paidDates === undefined ? {} : purchase.paidDates;
+    if (!isRecord(paidDates) || Object.entries(paidDates).some(([number, date]) =>
+      !/^\d+$/.test(number) || Number(number) < 1 || Number(number) > purchase.installmentCount ||
+      !paidInstallments.includes(Number(number)) || !validDate(date)
+    )) {
+      return { error: recordError('creditCardPurchases', purchase, 'as datas de pagamento das parcelas são inválidas.') };
+    }
+    const originalId = purchase.id;
+    purchase.id = isUuid(originalId) ? originalId : crypto.randomUUID();
+    purchase.amount = Math.round(purchase.amount * 100) / 100;
+    purchase.cardId = purchase.cardId == null
+      ? null
+      : creditCardIds.get(String(purchase.cardId)) || null;
+    purchase.accountId = purchase.accountId == null
+      ? null
+      : accountIds.get(String(purchase.accountId)) || null;
+    purchase.cardName = purchase.cardName.trim();
+    purchase.desc = purchase.desc.trim();
+    purchase.category = purchase.category.trim();
+    purchase.paidInstallments = paidInstallments;
+    purchase.paidDates = paidDates;
   }
 
   for (const [index, item] of entries.entries()) {
@@ -293,10 +492,13 @@ function validateBackupText(text) {
   return {
     version: parsed.version,
     exportDate: typeof parsed.exportDate === 'string' ? parsed.exportDate : null,
+    fixedImportRules: [...new Set(fixedImportRules.map(rule => rule.trim()))],
     entries,
     templates,
     goals,
-    accounts
+    accounts,
+    creditCards,
+    creditCardPurchases
   };
 }
 
@@ -318,7 +520,10 @@ function mergeBackupData(current, incoming, mode) {
     entries: mergeById(current.entries, incoming.entries),
     templates: mergeById(current.templates, incoming.templates),
     goals: mergeById(current.goals, incoming.goals, true),
-    accounts: mergeById(current.accounts || [], incoming.accounts || [])
+    accounts: mergeById(current.accounts || [], incoming.accounts || []),
+    creditCards: mergeById(current.creditCards || [], incoming.creditCards || []),
+    creditCardPurchases: mergeById(current.creditCardPurchases || [], incoming.creditCardPurchases || []),
+    fixedImportRules: [...new Set([...(current.fixedImportRules || []), ...(incoming.fixedImportRules || [])])]
   };
 }
 
@@ -337,6 +542,9 @@ function validateAccount(account) {
     Math.abs(Number(balance)) > MAX_ACCOUNT_BALANCE) {
     return 'O saldo inicial deve ser um valor numérico válido.';
   }
+  if (account.balanceDate != null && account.balanceDate !== '' && !isValidCivilDate(account.balanceDate)) {
+    return 'A data do saldo inicial deve ser uma data válida.';
+  }
   return null;
 }
 
@@ -345,6 +553,10 @@ window.GastoProBackupHelpers = {
   merge: mergeBackupData
 };
 
+window.GastoProCreditCardHelpers = {
+  getInstallments: getCreditCardInstallments,
+  calculateLimitUsage: calculateCreditCardLimitUsage
+};
 
 const FinanceData = {
 
@@ -353,7 +565,8 @@ const FinanceData = {
     for (let index = 0; index < localStorage.length; index++) {
       const key = localStorage.key(index);
       if (key && key.startsWith('gastopro_') &&
-        key !== STORAGE_TUTORIAL_SEEN && key !== 'gastopro_theme') keysToRemove.push(key);
+        key !== STORAGE_TUTORIAL_SEEN && key !== STORAGE_ACCOUNT_SETUP_SEEN &&
+        key !== 'gastopro_theme') keysToRemove.push(key);
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
   },
@@ -364,17 +577,26 @@ const FinanceData = {
       return stored
         ? {
           full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
-          goals: [], deletedGoals: [], accounts: [], deletedAccounts: [], profile: false, ...JSON.parse(stored)
+          goals: [], deletedGoals: [], accounts: [], deletedAccounts: [],
+          creditCards: [], deletedCreditCards: [],
+          creditCardPurchases: [], deletedCreditCardPurchases: [], fixedImportRules: false,
+          profile: false, ...JSON.parse(stored)
         }
         : {
           full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
-          goals: [], deletedGoals: [], accounts: [], deletedAccounts: [], profile: false
+          goals: [], deletedGoals: [], accounts: [], deletedAccounts: [],
+          creditCards: [], deletedCreditCards: [],
+          creditCardPurchases: [], deletedCreditCardPurchases: [],
+          fixedImportRules: false, profile: false
         };
     } catch (e) {
       console.error('[GastoPro] Erro ao ler alterações pendentes:', e);
       return {
         full: true, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
-        goals: [], deletedGoals: [], accounts: [], deletedAccounts: [], profile: true
+        goals: [], deletedGoals: [], accounts: [], deletedAccounts: [],
+        creditCards: [], deletedCreditCards: [],
+        creditCardPurchases: [], deletedCreditCardPurchases: [],
+        fixedImportRules: true, profile: true
       };
     }
   },
@@ -395,6 +617,11 @@ const FinanceData = {
       pending.deletedGoals.length ||
       pending.accounts.length ||
       pending.deletedAccounts.length ||
+      pending.creditCards.length ||
+      pending.deletedCreditCards.length ||
+      pending.creditCardPurchases.length ||
+      pending.deletedCreditCardPurchases.length ||
+      pending.fixedImportRules ||
       pending.profile
     );
   },
@@ -413,7 +640,9 @@ const FinanceData = {
     const pending = this.getPendingSync();
     const pendingIds = pending[kind];
     const deletedIds = pending[kind === 'entries' ? 'deletedEntries' :
-      kind === 'templates' ? 'deletedTemplates' : 'deletedAccounts'];
+      kind === 'templates' ? 'deletedTemplates' :
+        kind === 'creditCardPurchases' ? 'deletedCreditCardPurchases' :
+        kind === 'creditCards' ? 'deletedCreditCards' : 'deletedAccounts'];
     const previousById = new Map(previousItems.map(item => [item.id, item]));
     const nextById = new Map(nextItems.map(item => [item.id, item]));
 
@@ -535,6 +764,9 @@ const FinanceData = {
       const templates = this.getTemplates();
       const goals = this.getGoals();
       const accounts = this.getAccounts();
+      const creditCards = this.getCreditCards();
+      const creditCardPurchases = this.getCreditCardPurchases();
+      const fixedImportRules = this.getFixedImportRules();
       const localProfile = this.getProfile();
       const entriesToSave = fullSync
         ? entries
@@ -549,8 +781,27 @@ const FinanceData = {
       const accountsToSave = fullSync
         ? accounts
         : accounts.filter(account => pending.accounts.includes(account.id));
+      const creditCardsToSave = fullSync
+        ? creditCards
+        : creditCards.filter(card => pending.creditCards.includes(card.id));
+      const creditCardPurchasesToSave = fullSync
+        ? creditCardPurchases
+        : creditCardPurchases.filter(purchase => pending.creditCardPurchases.includes(purchase.id));
       const accountResult = accountsToSave.length
         ? await window.SupabaseAuth.saveCloudAccounts(accountsToSave, targetUserId)
+        : { success: true };
+      const creditCardsResult = creditCardsToSave.length
+        ? typeof window.SupabaseAuth.saveCloudCreditCards === 'function'
+          ? await window.SupabaseAuth.saveCloudCreditCards(creditCardsToSave, targetUserId)
+          : { success: false, error: new Error('Sincronização de cartões não disponível.') }
+        : { success: true };
+      const creditCardPurchasesResult = creditCardPurchasesToSave.length
+        ? typeof window.SupabaseAuth.saveCloudCreditCardPurchases === 'function'
+          ? await window.SupabaseAuth.saveCloudCreditCardPurchases(creditCardPurchasesToSave, targetUserId)
+          : { success: false, error: new Error('Sincronização de compras no cartão não disponível.') }
+        : { success: true };
+      const fixedImportRulesResult = fullSync || pending.fixedImportRules
+        ? await window.SupabaseAuth.saveCloudFixedImportRules(fixedImportRules, targetUserId)
         : { success: true };
       const profileResult = pending.profile
         ? await window.SupabaseAuth.saveCloudProfile(localProfile, targetUserId)
@@ -562,7 +813,17 @@ const FinanceData = {
         pending.deletedTemplates.length ? window.SupabaseAuth.deleteCloudTemplates(pending.deletedTemplates, targetUserId) : { success: true },
         goalsToSave.length ? window.SupabaseAuth.saveCloudGoals(goalsToSave, targetUserId) : { success: true },
         pending.deletedGoals.length ? window.SupabaseAuth.deleteCloudGoals(pending.deletedGoals, targetUserId) : { success: true },
-        pending.deletedAccounts.length ? window.SupabaseAuth.deleteCloudAccounts(pending.deletedAccounts, targetUserId) : { success: true }
+        pending.deletedAccounts.length ? window.SupabaseAuth.deleteCloudAccounts(pending.deletedAccounts, targetUserId) : { success: true },
+        pending.deletedCreditCards.length && typeof window.SupabaseAuth.deleteCloudCreditCards === 'function'
+          ? window.SupabaseAuth.deleteCloudCreditCards(pending.deletedCreditCards, targetUserId)
+          : pending.deletedCreditCards.length
+            ? { success: false, error: new Error('Exclusão de cartões não disponível.') }
+            : { success: true },
+        pending.deletedCreditCardPurchases.length && typeof window.SupabaseAuth.deleteCloudCreditCardPurchases === 'function'
+          ? window.SupabaseAuth.deleteCloudCreditCardPurchases(pending.deletedCreditCardPurchases, targetUserId)
+          : pending.deletedCreditCardPurchases.length
+            ? { success: false, error: new Error('Exclusão de compras no cartão não disponível.') }
+            : { success: true }
       ]);
 
       const latestPending = this.getPendingSync();
@@ -579,14 +840,24 @@ const FinanceData = {
         goalsToSave.map(goal => ({ ...goal, id: goal.category }))
       );
       const failedAccountIds = getFailedIds(accountResult, accountsToSave);
+      const failedCreditCardIds = getFailedIds(creditCardsResult, creditCardsToSave);
+      const failedCreditCardPurchaseIds = getFailedIds(
+        creditCardPurchasesResult, creditCardPurchasesToSave
+      );
+      const failedFixedImportRules = !fixedImportRulesResult || !fixedImportRulesResult.success;
       const failedProfile = !profileResult || !profileResult.success;
       const failedEntryDeletes = !results[2] || !results[2].success;
       const failedTemplateDeletes = !results[3] || !results[3].success;
       const failedGoalDeletes = !results[5] || !results[5].success;
       const failedAccountDeletes = !results[6] || !results[6].success;
+      const failedCreditCardDeletes = !results[7] || !results[7].success;
+      const failedCreditCardPurchaseDeletes = !results[8] || !results[8].success;
       const hasFailures = failedEntryIds.length > 0 || failedTemplateIds.length > 0 ||
-        failedGoalCategories.length > 0 || failedAccountIds.length > 0 ||
+        failedGoalCategories.length > 0 || failedAccountIds.length > 0 || failedCreditCardIds.length > 0 ||
+        failedCreditCardPurchaseIds.length > 0 ||
+        failedFixedImportRules ||
         failedEntryDeletes || failedTemplateDeletes || failedGoalDeletes || failedAccountDeletes ||
+        failedCreditCardDeletes || failedCreditCardPurchaseDeletes ||
         failedProfile;
       const removeSyncedIds = (kind, sentItems, currentItems, failedIds) => {
         const sentById = new Map(sentItems.map(item => [item.id, JSON.stringify(item)]));
@@ -602,6 +873,11 @@ const FinanceData = {
       removeSyncedIds('entries', entriesToSave, this.getEntries(), failedEntryIds);
       removeSyncedIds('templates', templatesToSave, this.getTemplates(), failedTemplateIds);
       removeSyncedIds('accounts', accountsToSave, this.getAccounts(), failedAccountIds);
+      removeSyncedIds('creditCards', creditCardsToSave, this.getCreditCards(), failedCreditCardIds);
+      removeSyncedIds(
+        'creditCardPurchases', creditCardPurchasesToSave,
+        this.getCreditCardPurchases(), failedCreditCardPurchaseIds
+      );
       const sentGoalsByCategory = new Map(goalsToSave.map(goal => [goal.category, JSON.stringify(goal)]));
       latestPending.goals = latestPending.goals.filter(category => {
         if (failedGoalCategories.includes(category)) return true;
@@ -624,15 +900,31 @@ const FinanceData = {
       if (!failedAccountDeletes) {
         latestPending.deletedAccounts = latestPending.deletedAccounts.filter(id => !pending.deletedAccounts.includes(id));
       }
+      if (!failedCreditCardDeletes) {
+        latestPending.deletedCreditCards = latestPending.deletedCreditCards.filter(id => !pending.deletedCreditCards.includes(id));
+      }
+      if (!failedCreditCardPurchaseDeletes) {
+        latestPending.deletedCreditCardPurchases = latestPending.deletedCreditCardPurchases.filter(
+          id => !pending.deletedCreditCardPurchases.includes(id)
+        );
+      }
       if (pending.profile && !failedProfile) latestPending.profile = false;
       if (failedProfile) latestPending.profile = true;
+      if (pending.fixedImportRules && !failedFixedImportRules &&
+        JSON.stringify(fixedImportRules) === JSON.stringify(this.getFixedImportRules())) {
+        latestPending.fixedImportRules = false;
+      }
+      if (failedFixedImportRules) latestPending.fixedImportRules = true;
 
       if (fullSync) {
         latestPending.full = !hasFailures && (
           JSON.stringify(entries) !== JSON.stringify(this.getEntries()) ||
           JSON.stringify(templates) !== JSON.stringify(this.getTemplates()) ||
           JSON.stringify(goals) !== JSON.stringify(this.getGoals()) ||
-          JSON.stringify(accounts) !== JSON.stringify(this.getAccounts())
+          JSON.stringify(accounts) !== JSON.stringify(this.getAccounts()) ||
+          JSON.stringify(creditCards) !== JSON.stringify(this.getCreditCards()) ||
+          JSON.stringify(creditCardPurchases) !== JSON.stringify(this.getCreditCardPurchases()) ||
+          JSON.stringify(fixedImportRules) !== JSON.stringify(this.getFixedImportRules())
         );
       }
       this.savePendingSync(latestPending);
@@ -642,6 +934,8 @@ const FinanceData = {
         }
         return (accountResult && !accountResult.success ? accountResult : null) ||
           (profileResult && !profileResult.success ? profileResult : null) ||
+          (creditCardsResult && !creditCardsResult.success ? creditCardsResult : null) ||
+          (creditCardPurchasesResult && !creditCardPurchasesResult.success ? creditCardPurchasesResult : null) ||
           results.find(result => !result || !result.success) ||
           { success: false, error: new Error('Alguns itens não puderam ser sincronizados.') };
       }
@@ -654,14 +948,18 @@ const FinanceData = {
     return currentSync;
   },
 
-  mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded = false, cloudGoals = null, cloudAccounts = null) {
+  mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded = false, cloudGoals = null, cloudAccounts = null, cloudFixedImportRules = null, cloudCreditCards = null, cloudCreditCardPurchases = null) {
     if (
       !userId ||
       localStorage.getItem(STORAGE_LAST_UID) !== userId ||
       !Array.isArray(cloudEntries) ||
       !Array.isArray(cloudTemplates) ||
       (cloudGoals !== null && !Array.isArray(cloudGoals)) ||
-      (cloudAccounts !== null && !Array.isArray(cloudAccounts))
+      (cloudAccounts !== null && !Array.isArray(cloudAccounts)) ||
+      (cloudCreditCards !== null && !Array.isArray(cloudCreditCards)) ||
+      (cloudCreditCardPurchases !== null && !Array.isArray(cloudCreditCardPurchases)) ||
+      (cloudFixedImportRules !== null && (!Array.isArray(cloudFixedImportRules) ||
+        cloudFixedImportRules.some(rule => typeof rule !== 'string')))
     ) return false;
 
     const pending = this.getPendingSync();
@@ -710,6 +1008,28 @@ const FinanceData = {
       });
       localStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify([...mergedAccounts.values()]));
     }
+    if (cloudCreditCards !== null) {
+      const localCards = this.getCreditCards();
+      const pendingCards = new Set(pending.creditCards);
+      const deletedCards = new Set(pending.deletedCreditCards);
+      const mergedCards = new Map();
+      cloudCreditCards.forEach(card => {
+        if (deletedCards.has(card.id)) return;
+        const local = localCards.find(item => item.id === card.id);
+        mergedCards.set(card.id, local && pendingCards.has(card.id) ? local : card);
+      });
+      localCards.forEach(card => {
+        if (mergedCards.has(card.id) || deletedCards.has(card.id)) return;
+        if (pendingCards.has(card.id) || !canRemoveCloudDeleted) mergedCards.set(card.id, card);
+      });
+      localStorage.setItem(STORAGE_CREDIT_CARDS, JSON.stringify([...mergedCards.values()]));
+    }
+    if (cloudCreditCardPurchases !== null) {
+      localStorage.setItem(STORAGE_CREDIT_CARD_PURCHASES, JSON.stringify(mergeById(
+        this.getCreditCardPurchases(), cloudCreditCardPurchases,
+        pending.creditCardPurchases, pending.deletedCreditCardPurchases
+      )));
+    }
     if (cloudGoals !== null) {
       const localGoals = this.getGoals();
       const pendingGoals = new Set(pending.goals);
@@ -735,6 +1055,10 @@ const FinanceData = {
         }
       });
       localStorage.setItem(STORAGE_GOALS, JSON.stringify([...mergedGoals.values()]));
+    }
+    if (cloudFixedImportRules !== null) {
+      if (pending.fixedImportRules) return true;
+      localStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify([...new Set(cloudFixedImportRules)]));
     }
     return true;
   },
@@ -851,6 +1175,265 @@ const FinanceData = {
     }
   },
 
+  getCreditCards() {
+    try {
+      const stored = localStorage.getItem(STORAGE_CREDIT_CARDS);
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('[GastoPro] Erro ao ler cartões:', error);
+      return [];
+    }
+  },
+
+  getCreditCardPurchases() {
+    try {
+      const stored = localStorage.getItem(STORAGE_CREDIT_CARD_PURCHASES);
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('[GastoPro] Erro ao ler compras no cartão:', error);
+      return [];
+    }
+  },
+
+  async saveCreditCardPurchases(purchases, options = {}) {
+    try {
+      if (!Array.isArray(purchases)) {
+        return { success: false, error: 'As compras no cartão precisam ser uma lista.' };
+      }
+      const cards = new Set(this.getCreditCards().map(card => card.id));
+      const accounts = new Set(this.getAccounts().map(account => account.id));
+      const ids = new Set();
+      const normalized = [];
+      for (const purchase of purchases) {
+        if (!purchase || !isUuid(purchase.id) || ids.has(purchase.id)) {
+          return { success: false, error: 'Cada compra no cartão deve ter um UUID válido e exclusivo.' };
+        }
+        ids.add(purchase.id);
+        if (typeof purchase.desc !== 'string' || !purchase.desc.trim() || purchase.desc.trim().length > 300 ||
+          typeof purchase.category !== 'string' || !purchase.category.trim() || purchase.category.trim().length > 100) {
+          return { success: false, error: 'Informe uma descrição e uma categoria válidas para a compra.' };
+        }
+        if (typeof purchase.amount === 'boolean' || !Number.isFinite(Number(purchase.amount)) ||
+          Number(purchase.amount) <= 0 || Number(purchase.amount) > MAX_ACCOUNT_BALANCE) {
+          return { success: false, error: 'O valor da compra no cartão deve ser positivo e válido.' };
+        }
+        if (!isValidCivilDate(purchase.purchaseDate)) {
+          return { success: false, error: 'A data da compra no cartão deve ser válida.' };
+        }
+        if (!Number.isInteger(purchase.installmentCount) || purchase.installmentCount < 1 ||
+          purchase.installmentCount > 24) {
+          return { success: false, error: 'A quantidade de parcelas deve estar entre 1 e 24.' };
+        }
+        if (!Number.isInteger(purchase.closingDay) || purchase.closingDay < 1 || purchase.closingDay > 31 ||
+          !Number.isInteger(purchase.dueDay) || purchase.dueDay < 1 || purchase.dueDay > 31) {
+          return { success: false, error: 'Os dias de fechamento e vencimento devem estar entre 1 e 31.' };
+        }
+        if (typeof purchase.cardName !== 'string' || !purchase.cardName.trim() || purchase.cardName.length > 100) {
+          return { success: false, error: 'O nome de referência do cartão é inválido.' };
+        }
+        if (purchase.cardId != null && !cards.has(purchase.cardId)) {
+          return { success: false, error: 'O cartão da compra não existe.' };
+        }
+        if (purchase.accountId != null && !accounts.has(purchase.accountId)) {
+          return { success: false, error: 'A conta vinculada à compra não existe.' };
+        }
+        const paidInstallments = purchase.paidInstallments || [];
+        if (!Array.isArray(paidInstallments) || paidInstallments.some(number =>
+          !Number.isInteger(number) || number < 1 || number > purchase.installmentCount
+        ) || new Set(paidInstallments).size !== paidInstallments.length) {
+          return { success: false, error: 'As parcelas pagas não são válidas.' };
+        }
+        const paidDates = purchase.paidDates || {};
+        if (!paidDates || typeof paidDates !== 'object' || Array.isArray(paidDates) ||
+          Object.entries(paidDates).some(([number, date]) =>
+            !/^\d+$/.test(number) || Number(number) < 1 ||
+            Number(number) > purchase.installmentCount ||
+            !paidInstallments.includes(Number(number)) || !isValidCivilDate(date)
+          )) {
+          return { success: false, error: 'As datas de pagamento das parcelas não são válidas.' };
+        }
+        normalized.push({
+          ...purchase,
+          desc: purchase.desc.trim(),
+          category: purchase.category.trim(),
+          amount: Math.round(Number(purchase.amount) * 100) / 100,
+          cardName: purchase.cardName.trim(),
+          cardId: purchase.cardId || null,
+          accountId: purchase.accountId || null,
+          paidInstallments: paidInstallments.slice(),
+          paidDates: { ...paidDates }
+        });
+      }
+      const previous = this.getCreditCardPurchases();
+      localStorage.setItem(STORAGE_CREDIT_CARD_PURCHASES, JSON.stringify(normalized));
+      this.queueLocalChanges('creditCardPurchases', previous, normalized);
+      return options.flush === false
+        ? { success: true, queued: true }
+        : await this.flushPendingSync(this.getProfile().userId);
+    } catch (error) {
+      console.error('[GastoPro] Erro ao salvar compras no cartão:', error);
+      return { success: false, error };
+    }
+  },
+
+  async addCreditCardPurchase(fields) {
+    const card = this.getCreditCards().find(item => item.id === fields.cardId);
+    if (!card) return { success: false, error: 'Selecione um cartão válido.' };
+    const purchase = {
+      ...fields,
+      id: crypto.randomUUID(),
+      cardId: card.id,
+      cardName: card.name,
+      accountId: card.accountId || null,
+      closingDay: card.closingDay,
+      dueDay: card.dueDay,
+      amount: Number(fields.amount),
+      installmentCount: Number(fields.installmentCount),
+      paidInstallments: [],
+      paidDates: {}
+    };
+    const result = await this.saveCreditCardPurchases([
+      ...this.getCreditCardPurchases(), purchase
+    ]);
+    const savedPurchase = this.getCreditCardPurchases().find(item => item.id === purchase.id);
+    return savedPurchase
+      ? { success: result.success, purchase: savedPurchase, error: result.error }
+      : { success: false, error: result.error };
+  },
+
+  async toggleCreditCardPurchasePaid(id, installmentNumber) {
+    const purchases = this.getCreditCardPurchases();
+    const purchase = purchases.find(item => item.id === id);
+    if (!purchase || !Number.isInteger(installmentNumber) ||
+      installmentNumber < 1 || installmentNumber > purchase.installmentCount) {
+      return { success: false, error: 'Parcela da compra no cartão não encontrada.' };
+    }
+    const paid = new Set(purchase.paidInstallments || []);
+    if (paid.has(installmentNumber)) {
+      paid.delete(installmentNumber);
+      if (purchase.paidDates) delete purchase.paidDates[installmentNumber];
+    } else {
+      paid.add(installmentNumber);
+      if (!purchase.paidDates) purchase.paidDates = {};
+      purchase.paidDates[installmentNumber] = getLocalDateString();
+    }
+    purchase.paidInstallments = [...paid].sort((left, right) => left - right);
+    return this.saveCreditCardPurchases(purchases);
+  },
+
+  async saveCreditCards(cards, options = {}) {
+    try {
+      if (!Array.isArray(cards)) return { success: false, error: 'Os cartões precisam ser uma lista.' };
+      const accounts = new Set(this.getAccounts().map(account => account.id));
+      const ids = new Set();
+      const normalizedCards = [];
+      for (const card of cards) {
+        if (!card || typeof card.name !== 'string' || !card.name.trim() || card.name.trim().length > 100) {
+          return { success: false, error: 'O nome do cartão deve ter de 1 a 100 caracteres.' };
+        }
+        if (typeof card.totalLimit === 'boolean' || !Number.isFinite(Number(card.totalLimit)) ||
+          Number(card.totalLimit) <= 0 || Number(card.totalLimit) > MAX_CREDIT_CARD_LIMIT) {
+          return { success: false, error: 'Informe um limite total válido para o cartão.' };
+        }
+        if (!Number.isInteger(Number(card.closingDay)) || Number(card.closingDay) < 1 ||
+          Number(card.closingDay) > 31 || !Number.isInteger(Number(card.dueDay)) ||
+          Number(card.dueDay) < 1 || Number(card.dueDay) > 31) {
+          return { success: false, error: 'Os dias de fechamento e vencimento devem estar entre 1 e 31.' };
+        }
+        if (card.brand != null && !CREDIT_CARD_BRANDS.includes(card.brand)) {
+          return { success: false, error: 'Selecione uma bandeira válida.' };
+        }
+        if (card.issuerBank != null && !CREDIT_CARD_ISSUERS.includes(card.issuerBank)) {
+          return { success: false, error: 'Selecione um banco emissor válido.' };
+        }
+        if (card.lastFour != null && card.lastFour !== '' &&
+          (typeof card.lastFour !== 'string' || !/^\d{4}$/.test(card.lastFour))) {
+          return { success: false, error: 'O final do cartão deve conter quatro dígitos.' };
+        }
+        if (card.customColor != null &&
+          (typeof card.customColor !== 'string' || !CREDIT_CARD_COLOR_PATTERN.test(card.customColor))) {
+          return { success: false, error: 'Informe uma cor personalizada válida.' };
+        }
+        if (card.accountId != null && !accounts.has(card.accountId)) {
+          return { success: false, error: 'A conta vinculada ao cartão não existe.' };
+        }
+        if (!isUuid(card.id) || ids.has(card.id)) {
+          return { success: false, error: 'Cada cartão deve ter um UUID válido e exclusivo.' };
+        }
+        ids.add(card.id);
+        normalizedCards.push({
+          ...card,
+          name: card.name.trim(),
+          totalLimit: Math.round(Number(card.totalLimit) * 100) / 100,
+          closingDay: Number(card.closingDay),
+          dueDay: Number(card.dueDay),
+          accountId: card.accountId || null,
+          brand: card.brand || 'Outra',
+          issuerBank: card.issuerBank || 'Outro',
+          lastFour: card.lastFour || null,
+          customColor: (card.issuerBank || 'Outro') === 'Outro'
+            ? card.customColor || DEFAULT_CREDIT_CARD_COLOR
+            : null
+        });
+      }
+      const previousCards = this.getCreditCards();
+      localStorage.setItem(STORAGE_CREDIT_CARDS, JSON.stringify(normalizedCards));
+      this.queueLocalChanges('creditCards', previousCards, normalizedCards);
+      return options.flush === false
+        ? { success: true, queued: true }
+        : await this.flushPendingSync(this.getProfile().userId);
+    } catch (error) {
+      console.error('[GastoPro] Erro ao salvar cartões localmente:', error);
+      return { success: false, error };
+    }
+  },
+
+  async addCreditCard(fields) {
+    const card = {
+      ...fields,
+      id: crypto.randomUUID(),
+      name: typeof fields.name === 'string' ? fields.name.trim() : fields.name,
+      totalLimit: Number(fields.totalLimit),
+      closingDay: Number(fields.closingDay),
+      dueDay: Number(fields.dueDay),
+      accountId: fields.accountId || null,
+      brand: fields.brand || 'Outra',
+      issuerBank: fields.issuerBank || 'Outro',
+      lastFour: fields.lastFour || null,
+      customColor: (fields.issuerBank || 'Outro') === 'Outro'
+        ? fields.customColor || DEFAULT_CREDIT_CARD_COLOR
+        : null
+    };
+    const result = await this.saveCreditCards([...this.getCreditCards(), card]);
+    return result.success ? { success: true, card } : { success: false, error: result.error };
+  },
+
+  async updateCreditCard(id, fields) {
+    const cards = this.getCreditCards();
+    const index = cards.findIndex(card => card.id === id);
+    if (index < 0) return { success: false, error: 'Cartão não encontrado.' };
+    const candidate = { ...cards[index], ...fields, id };
+    cards[index] = candidate;
+    const result = await this.saveCreditCards(cards);
+    return result.success
+      ? { success: true, card: this.getCreditCards().find(card => card.id === id) }
+      : { success: false, error: result.error };
+  },
+
+  async deleteCreditCard(id) {
+    const cards = this.getCreditCards();
+    const card = cards.find(item => item.id === id);
+    if (!card) return { success: false, error: 'Cartão não encontrado.' };
+    const purchases = this.getCreditCardPurchases().map(purchase =>
+      purchase.cardId === id ? { ...purchase, cardId: null } : purchase
+    );
+    const purchasesResult = await this.saveCreditCardPurchases(purchases, { flush: false });
+    if (!purchasesResult.success) return purchasesResult;
+    const result = await this.saveCreditCards(cards.filter(item => item.id !== id), { flush: false });
+    if (!result.success) return result;
+    return this.flushPendingSync(this.getProfile().userId);
+  },
+
   async saveAccounts(accounts, options = {}) {
     try {
       if (!Array.isArray(accounts)) return { success: false, error: 'As contas precisam ser uma lista.' };
@@ -869,7 +1452,8 @@ const FinanceData = {
         institution: typeof account.institution === 'string' && account.institution.trim()
           ? account.institution.trim()
           : null,
-        initialBalance: Math.round(Number(account.initialBalance == null ? 0 : account.initialBalance) * 100) / 100
+        initialBalance: Math.round(Number(account.initialBalance == null ? 0 : account.initialBalance) * 100) / 100,
+        balanceDate: account.balanceDate || null
       }));
       const previousAccounts = this.getAccounts();
       localStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify(normalizedAccounts));
@@ -889,7 +1473,8 @@ const FinanceData = {
       name: account && account.name,
       institution: account && account.institution,
       type: account && account.type,
-      initialBalance: account && account.initialBalance != null ? account.initialBalance : 0
+      initialBalance: account && account.initialBalance != null ? account.initialBalance : 0,
+      balanceDate: account && account.balanceDate ? account.balanceDate : null
     };
     const error = validateAccount(candidate);
     if (error) return { success: false, error };
@@ -900,7 +1485,8 @@ const FinanceData = {
       institution: typeof candidate.institution === 'string' && candidate.institution.trim()
         ? candidate.institution.trim()
         : null,
-      initialBalance: Math.round(Number(candidate.initialBalance) * 100) / 100
+      initialBalance: Math.round(Number(candidate.initialBalance) * 100) / 100,
+      balanceDate: candidate.balanceDate || null
     };
     const result = await this.saveAccounts([...this.getAccounts(), created]);
     return result.success ? { success: true, account: created } : { success: false, error: result.error };
@@ -934,10 +1520,21 @@ const FinanceData = {
     const templates = this.getTemplates().map(template =>
       template.accountId === id ? { ...template, accountId: null } : template
     );
+    const creditCards = this.getCreditCards().map(card =>
+      card.accountId === id ? { ...card, accountId: null } : card
+    );
+    const creditCardPurchases = this.getCreditCardPurchases().map(purchase =>
+      purchase.accountId === id ? { ...purchase, accountId: null } : purchase
+    );
     const entryResult = await this.saveEntries(entries, { flush: false });
     const templateResult = await this.saveTemplates(templates, { flush: false });
-    if (!entryResult.success || !templateResult.success) {
-      return { success: false, error: entryResult.error || templateResult.error };
+    const cardsResult = await this.saveCreditCards(creditCards, { flush: false });
+    const purchasesResult = await this.saveCreditCardPurchases(creditCardPurchases, { flush: false });
+    if (!entryResult.success || !templateResult.success || !cardsResult.success || !purchasesResult.success) {
+      return {
+        success: false,
+        error: entryResult.error || templateResult.error || cardsResult.error || purchasesResult.error
+      };
     }
     const accountResult = await this.saveAccounts(accounts.filter(account => account.id !== id), { flush: false });
     if (!accountResult.success) return accountResult;
@@ -945,18 +1542,142 @@ const FinanceData = {
     return syncResult.success ? { success: true } : { success: false, error: syncResult.error };
   },
 
+  getFixedImportRules() {
+    try {
+      const stored = localStorage.getItem(STORAGE_FIXED_IMPORT_RULES);
+      if (!stored) return [];
+      const rules = JSON.parse(stored);
+      return Array.isArray(rules)
+        ? [...new Set(rules.filter(rule => typeof rule === 'string' && rule.trim()).map(rule => rule.trim()))]
+        : [];
+    } catch (error) {
+      console.error('[GastoPro] Erro ao ler regras de importação:', error);
+      return [];
+    }
+  },
+
+  async saveFixedImportRules(rules, options = {}) {
+    if (!Array.isArray(rules) || rules.some(rule =>
+      typeof rule !== 'string' || !rule.trim() || rule.length > 300
+    )) {
+      return { success: false, error: 'As regras de importação precisam ser textos válidos.' };
+    }
+    try {
+      const normalizedRules = [...new Set(rules.map(rule => rule.trim()))];
+      localStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify(normalizedRules));
+      const pending = this.getPendingSync();
+      pending.fixedImportRules = true;
+      this.savePendingSync(pending);
+      if (options.flush === false) return { success: true, queued: true };
+      return await this.flushPendingSync(this.getProfile().userId);
+    } catch (error) {
+      console.error('[GastoPro] Erro ao salvar regras de importação:', error);
+      return { success: false, error };
+    }
+  },
+
+  async convertEntryToTemplate(id, fields, futureEntryIds = []) {
+    const entries = this.getEntries();
+    const source = entries.find(entry => entry.id === id);
+    if (!source || source.type !== 'variable') {
+      return { success: false, error: 'O lançamento variável não foi encontrado.' };
+    }
+    const sourceMonth = String(source.date || '').slice(0, 7);
+    if (!isValidCivilMonth(sourceMonth)) {
+      return { success: false, error: 'A data do lançamento não permite criar um gasto fixo.' };
+    }
+    const candidateIds = new Set(futureEntryIds);
+    const futureEntries = entries.filter(entry =>
+      candidateIds.has(entry.id) && entry.type === 'variable' &&
+      String(entry.date || '').slice(0, 7) > sourceMonth
+    );
+    const paidMonths = {};
+    if (source.paid) paidMonths[sourceMonth] = true;
+    futureEntries.forEach(entry => {
+      if (entry.paid) paidMonths[String(entry.date).slice(0, 7)] = true;
+    });
+
+    const templates = this.getTemplates();
+    const template = {
+      id: crypto.randomUUID(),
+      desc: fields.desc,
+      amount: Number(fields.amount),
+      category: fields.category,
+      type: 'fixed',
+      isDebt: Boolean(fields.endMonth) || fields.category === 'Empréstimo' ||
+        fields.category === 'Parcelamento',
+      active: fields.active !== false,
+      startMonth: sourceMonth,
+      endMonth: fields.endMonth || null,
+      day: String(source.date).slice(8, 10) || '05',
+      date: source.date,
+      accountId: fields.accountId || null,
+      paidMonths
+    };
+    const templateResult = await this.saveTemplates([...templates, template], { flush: false });
+    if (!templateResult.success) return { success: false, error: templateResult.error };
+
+    const removedIds = new Set([id, ...futureEntries.map(entry => entry.id)]);
+    const entryResult = await this.saveEntries(
+      entries.filter(entry => !removedIds.has(entry.id)),
+      { flush: false }
+    );
+    if (!entryResult.success) {
+      const rollback = await this.saveTemplates(templates, { flush: false });
+      if (!rollback.success) {
+        return {
+          success: false,
+          error: new Error('Não foi possível concluir nem reverter a conversão para gasto fixo.')
+        };
+      }
+      return { success: false, error: entryResult.error };
+    }
+
+    const syncResult = await this.flushPendingSync(this.getProfile().userId);
+    return { success: syncResult.success, template, convertedCount: futureEntries.length, syncResult };
+  },
+
   getAccountBalance(accountId) {
     const account = this.getAccounts().find(item => item.id === accountId);
     if (!account) return null;
+    const balanceDate = account.balanceDate || null;
+    const today = getLocalDateString();
     let activity = 0;
     this.getEntries().forEach(entry => {
       if (entry.accountId !== accountId || !entry.paid) return;
+      if (!isValidCivilDate(entry.date) || entry.date > today) return;
+      if (balanceDate && (!isValidCivilDate(entry.date) || entry.date < balanceDate)) return;
       activity += entry.type === 'income' ? Number(entry.amount) : -Number(entry.amount);
     });
     this.getTemplates().forEach(template => {
       if (template.accountId !== accountId || !template.paidMonths) return;
-      const paidCount = Object.values(template.paidMonths).filter(paid => paid === true).length;
+      const paidCount = Object.entries(template.paidMonths).filter(([ym, paid]) => {
+        if (paid !== true || !isValidCivilMonth(ym)) return false;
+        const [year, month] = ym.split('-').map(Number);
+        const daysInMonth = [
+          31,
+          year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28,
+          31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+        ][month - 1];
+        const storedDay = Number(template.day || String(template.date || '').slice(8, 10));
+        const dueDay = Number.isInteger(storedDay) && storedDay >= 1 && storedDay <= 31
+          ? storedDay
+          : 5;
+        const paidDate = `${ym}-${String(Math.min(dueDay, daysInMonth)).padStart(2, '0')}`;
+        return paidDate <= today && (!balanceDate || paidDate >= balanceDate);
+      }).length;
       activity -= Number(template.amount) * paidCount;
+    });
+    this.getCreditCardPurchases().forEach(purchase => {
+      if (purchase.accountId !== accountId) return;
+      const paid = new Set(purchase.paidInstallments || []);
+      getCreditCardInstallments(purchase).forEach(installment => {
+        const paidDate = purchase.paidDates && purchase.paidDates[installment.number] || installment.date;
+        if (paid.has(installment.number) && paidDate <= today &&
+          (!balanceDate || paidDate >= balanceDate)) {
+          activity -= installment.amount;
+        }
+      });
     });
     return Math.round((Number(account.initialBalance) + activity) * 100) / 100;
   },
@@ -1048,7 +1769,28 @@ const FinanceData = {
       }
     });
 
-    return [...entries, ...fixedForMonth];
+    const cardInstallments = this.getCreditCardPurchases().flatMap(purchase =>
+      getCreditCardInstallments(purchase)
+        .filter(installment => installment.month === yearMonth)
+        .map(installment => ({
+          id: purchase.id,
+          isCardInstallment: true,
+          purchaseId: purchase.id,
+          installmentNumber: installment.number,
+          installmentCount: purchase.installmentCount,
+          cardName: purchase.cardName,
+          type: 'variable',
+          desc: purchase.desc,
+          amount: installment.amount,
+          category: purchase.category,
+          month: installment.month,
+          date: installment.date,
+          accountId: purchase.accountId,
+          paid: (purchase.paidInstallments || []).includes(installment.number)
+        }))
+    );
+
+    return [...entries, ...fixedForMonth, ...cardInstallments];
   },
 
   /**
@@ -1101,6 +1843,7 @@ const FinanceData = {
           endMonth: item.endMonth || null,
           day: date.split('-')[2] || '05',
           date,
+          accountId: item.accountId || null,
           paidMonths: item.paidMonths || {}
         };
         newTemplates.push(template);
@@ -1336,7 +2079,10 @@ const FinanceData = {
     await this.saveEntries([], { flush: false });
     await this.saveTemplates([], { flush: false });
     await this.saveAccounts([], { flush: false });
+    await this.saveCreditCardPurchases([], { flush: false });
+    await this.saveCreditCards([], { flush: false });
     this.saveGoals([]);
+    await this.saveFixedImportRules([], { flush: false });
     return this.flushPendingSync(profile.userId);
   },
 
@@ -1365,7 +2111,10 @@ const FinanceData = {
       entries:    this.getEntries(),
       templates:  this.getTemplates(),
       goals:      this.getGoals(),
-      accounts:   this.getAccounts()
+      accounts:   this.getAccounts(),
+      creditCards: this.getCreditCards(),
+      creditCardPurchases: this.getCreditCardPurchases(),
+      fixedImportRules: this.getFixedImportRules()
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const objectUrl = URL.createObjectURL(blob);
@@ -1389,13 +2138,20 @@ const FinanceData = {
         entries: this.getEntries(),
         templates: this.getTemplates(),
         goals: this.getGoals(),
-        accounts: this.getAccounts()
+        accounts: this.getAccounts(),
+        creditCards: this.getCreditCards(),
+        creditCardPurchases: this.getCreditCardPurchases(),
+        fixedImportRules: this.getFixedImportRules()
       }, imported, mode);
     } catch (error) {
       return { success: false, error: error.message };
     }
 
     const accountsResult = await this.saveAccounts(restored.accounts);
+    const creditCardsResult = await this.saveCreditCards(restored.creditCards, { flush: false });
+    const creditCardPurchasesResult = await this.saveCreditCardPurchases(
+      restored.creditCardPurchases, { flush: false }
+    );
     const [entriesResult, templatesResult] = await Promise.all([
       this.saveEntries(restored.entries),
       this.saveTemplates(restored.templates)
@@ -1403,8 +2159,11 @@ const FinanceData = {
     if (!this.saveGoals(restored.goals)) {
       return { success: false, error: 'Lançamentos e gastos fixos restaurados, mas não foi possível salvar as metas localmente.' };
     }
+    const rulesResult = await this.saveFixedImportRules(restored.fixedImportRules, { flush: false });
+    if (!rulesResult.success) return rulesResult;
     const goalsSyncResult = await this.flushPendingSync(this.getProfile().userId);
-    if (!accountsResult.success || !entriesResult.success || !templatesResult.success || !goalsSyncResult.success) {
+    if (!accountsResult.success || !creditCardsResult.success || !creditCardPurchasesResult.success ||
+      !entriesResult.success || !templatesResult.success || !goalsSyncResult.success) {
       return { success: false, error: 'O backup foi restaurado localmente, mas há alterações pendentes de sincronização.' };
     }
     return { success: true };

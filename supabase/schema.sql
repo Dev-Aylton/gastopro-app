@@ -20,6 +20,47 @@ create table if not exists public.accounts (
   constraint accounts_user_id_id_key unique (user_id, id)
 );
 
+create table if not exists public.credit_cards (
+  id          uuid primary key default uuid_generate_v4(),
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  name        text not null check (char_length(btrim(name)) between 1 and 100),
+  total_limit numeric(12,2) not null check (total_limit > 0),
+  closing_day integer not null check (closing_day between 1 and 31),
+  due_day     integer not null check (due_day between 1 and 31),
+  brand       text not null default 'Outra'
+    check (brand in ('Visa', 'Mastercard', 'Elo', 'American Express', 'Hipercard', 'Outra')),
+  issuer_bank text not null default 'Outro'
+    check (issuer_bank in ('Nubank', 'Itaú', 'Bradesco', 'Santander', 'Banco do Brasil', 'Caixa', 'Inter', 'C6', 'BTG', 'Mercado Pago', 'PicPay', 'Outro')),
+  last_four   text check (last_four is null or last_four ~ '^[0-9]{4}$'),
+  custom_color text check (custom_color is null or custom_color ~ '^#[0-9A-Fa-f]{6}$'),
+  account_id  uuid,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint credit_cards_user_id_id_key unique (user_id, id)
+);
+
+create table if not exists public.credit_card_purchases (
+  id                 uuid primary key default uuid_generate_v4(),
+  user_id            uuid not null references auth.users(id) on delete cascade,
+  card_id            uuid,
+  card_name          text not null check (char_length(btrim(card_name)) between 1 and 100),
+  account_id         uuid,
+  description        text not null check (char_length(btrim(description)) between 1 and 300),
+  amount             numeric(12,2) not null check (amount > 0),
+  category           text not null check (char_length(btrim(category)) between 1 and 100),
+  purchase_date      text not null,
+  installment_count  integer not null check (installment_count between 1 and 24),
+  closing_day        integer not null check (closing_day between 1 and 31),
+  due_day            integer not null check (due_day between 1 and 31),
+  paid_installments  jsonb not null default '[]'::jsonb check (jsonb_typeof(paid_installments) = 'array'),
+  paid_dates         jsonb not null default '{}'::jsonb check (jsonb_typeof(paid_dates) = 'object'),
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now(),
+  constraint credit_card_purchases_user_id_id_key unique (user_id, id),
+  constraint credit_card_purchases_card_fk foreign key (user_id, card_id)
+    references public.credit_cards(user_id, id) on delete set null (card_id)
+);
+
 create table if not exists public.entries (
   id          uuid primary key default uuid_generate_v4(),
   user_id     uuid not null references auth.users(id) on delete cascade,
@@ -69,6 +110,12 @@ create table if not exists public.goals (
   created_at   timestamptz default now(),
   updated_at   timestamptz not null default now(),
   primary key (user_id, category)
+);
+
+create table if not exists public.fixed_import_rules (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  rules      jsonb not null default '[]'::jsonb check (jsonb_typeof(rules) = 'array'),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.app_admins (
@@ -160,6 +207,9 @@ alter table public.fixed_templates enable row level security;
 alter table public.profiles        enable row level security;
 alter table public.goals           enable row level security;
 alter table public.accounts        enable row level security;
+alter table public.credit_cards   enable row level security;
+alter table public.credit_card_purchases enable row level security;
+alter table public.fixed_import_rules enable row level security;
 alter table public.app_admins      enable row level security;
 alter table public.feedback_messages enable row level security;
 
@@ -189,6 +239,24 @@ create policy goals_own on public.goals
 
 drop policy if exists accounts_own on public.accounts;
 create policy accounts_own on public.accounts
+  for all to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists credit_cards_own on public.credit_cards;
+create policy credit_cards_own on public.credit_cards
+  for all to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists credit_card_purchases_own on public.credit_card_purchases;
+create policy credit_card_purchases_own on public.credit_card_purchases
+  for all to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists fixed_import_rules_own on public.fixed_import_rules;
+create policy fixed_import_rules_own on public.fixed_import_rules
   for all to authenticated
   using ((select auth.uid()) = user_id)
   with check ((select auth.uid()) = user_id);
@@ -247,18 +315,21 @@ create policy feedback_messages_update_admin on public.feedback_messages
 create index if not exists entries_user_date_idx on public.entries (user_id, date);
 create index if not exists fixed_templates_user_idx on public.fixed_templates (user_id);
 create index if not exists accounts_user_idx on public.accounts (user_id);
+create index if not exists credit_cards_user_idx on public.credit_cards (user_id);
+create index if not exists credit_card_purchases_user_date_idx
+  on public.credit_card_purchases (user_id, purchase_date);
 create index if not exists feedback_messages_user_created_idx on public.feedback_messages (user_id, created_at);
 create index if not exists feedback_messages_status_created_idx on public.feedback_messages (status, created_at);
 
 -- ============================================================
 -- PERMISSÕES (privilégio mínimo)
 -- ============================================================
-revoke all on public.entries, public.fixed_templates, public.profiles, public.goals, public.accounts from anon;
+revoke all on public.entries, public.fixed_templates, public.profiles, public.goals, public.accounts, public.credit_cards, public.credit_card_purchases, public.fixed_import_rules from anon;
 revoke all on public.app_admins, public.feedback_messages from anon;
 revoke truncate, references, trigger
-  on public.entries, public.fixed_templates, public.profiles, public.goals, public.accounts from authenticated;
+  on public.entries, public.fixed_templates, public.profiles, public.goals, public.accounts, public.credit_cards, public.credit_card_purchases, public.fixed_import_rules from authenticated;
 grant select, insert, update, delete
-  on public.entries, public.fixed_templates, public.profiles, public.goals, public.accounts to authenticated;
+  on public.entries, public.fixed_templates, public.profiles, public.goals, public.accounts, public.credit_cards, public.credit_card_purchases, public.fixed_import_rules to authenticated;
 revoke all on public.app_admins from authenticated;
 grant select on public.app_admins to authenticated;
 revoke all on public.feedback_messages from authenticated;
@@ -341,6 +412,18 @@ create trigger goals_set_updated_at before update on public.goals
 
 drop trigger if exists accounts_set_updated_at on public.accounts;
 create trigger accounts_set_updated_at before update on public.accounts
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists credit_cards_set_updated_at on public.credit_cards;
+create trigger credit_cards_set_updated_at before update on public.credit_cards
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists credit_card_purchases_set_updated_at on public.credit_card_purchases;
+create trigger credit_card_purchases_set_updated_at before update on public.credit_card_purchases
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists fixed_import_rules_set_updated_at on public.fixed_import_rules;
+create trigger fixed_import_rules_set_updated_at before update on public.fixed_import_rules
   for each row execute function public.set_updated_at();
 
 -- ============================================================

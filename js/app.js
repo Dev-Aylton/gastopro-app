@@ -28,6 +28,10 @@
 
 'use strict';
 
+let returnToImportAfterAccountModal = false;
+let importAccountCreatedId = null;
+let accountOnboardingDataReady = false;
+
 window.GastoProSessionHelpers = {
   shouldClearLocalData(status, hasLocalUserId, hasPendingSync = false) {
     return status === 'signed_out' && Boolean(hasLocalUserId) && !hasPendingSync;
@@ -277,11 +281,67 @@ function getImportPaidValue(row, type) {
   return type !== 'variable_pending' && !isFutureImportDate(row.date);
 }
 
+function getImportAccountId(accountId, accounts) {
+  return typeof accountId === 'string' && Array.isArray(accounts) &&
+    accounts.some(account => account && account.id === accountId)
+    ? accountId
+    : null;
+}
+
+function normalizeFixedDescription(description) {
+  const months = new Set([
+    'jan', 'janeiro', 'fev', 'fevereiro', 'mar', 'marco', 'abr', 'abril',
+    'mai', 'maio', 'jun', 'junho', 'jul', 'julho', 'ago', 'agosto',
+    'set', 'setembro', 'out', 'outubro', 'nov', 'novembro', 'dez', 'dezembro'
+  ]);
+  return String(description || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[a-z0-9]*\d[a-z0-9]*/g, ' ')
+    .replace(/[^a-z]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(token => token && !months.has(token))
+    .join(' ');
+}
+
+function findFutureFixedDescriptionMatches(source, entries) {
+  const normalized = normalizeFixedDescription(source && source.desc);
+  const sourceMonth = String(source && source.date || '').slice(0, 7);
+  if (!normalized || !/^\d{4}-(0[1-9]|1[0-2])$/.test(sourceMonth) || !Array.isArray(entries)) {
+    return [];
+  }
+  return entries.filter(entry => entry && entry.id !== source.id && entry.type === 'variable' &&
+    /^\d{4}-(0[1-9]|1[0-2])$/.test(String(entry.date || '').slice(0, 7)) &&
+    String(entry.date).slice(0, 7) > sourceMonth &&
+    normalizeFixedDescription(entry.desc) === normalized);
+}
+
+function applyFixedImportRules(rows, rules) {
+  if (!Array.isArray(rows) || !Array.isArray(rules)) return Array.isArray(rows) ? rows : [];
+  const ruleSet = new Set(rules.map(normalizeFixedDescription).filter(Boolean));
+  return rows.map(row => {
+    if (row.invalid || row.duplicate || row.installment || row.recurringCovered ||
+      row.type !== 'variable') return row;
+    const description = normalizeFixedDescription(row.desc);
+    if (!description || !ruleSet.has(description)) return row;
+    const month = String(row.date || '').slice(0, 7);
+    return /^\d{4}-(0[1-9]|1[0-2])$/.test(month)
+      ? { ...row, type: 'fixed', recurringPrimary: true, startMonth: month, endMonth: null, fixedByRule: true }
+      : row;
+  });
+}
+
 window.GastoProImportHelpers = Object.freeze({
   cleanRecurringImportDescription,
   markRecurringImportRows,
   getImportPreviewType,
-  getImportPaidValue
+  getImportPaidValue,
+  getImportAccountId,
+  normalizeFixedDescription,
+  findFutureFixedDescriptionMatches,
+  applyFixedImportRules
 });
 
 function setupResponsiveThemeToggle() {
@@ -433,8 +493,51 @@ function getYearMonthString(year, month) {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
-function getAccountBalanceForFilter(balances, filter) {
-  return filter === 'PF' || filter === 'PJ' ? Number(balances[filter]) : Number(balances.total);
+function getAccountBalanceForFilter(balances, filter, accounts = null, getBalance = null) {
+  if (filter === 'PF' || filter === 'PJ') return Number(balances[filter]) || 0;
+  if (filter.startsWith('account:')) {
+    const accountId = filter.slice('account:'.length);
+    if (Array.isArray(accounts) && accounts.some(account => account.id === accountId) &&
+      typeof getBalance === 'function') {
+      return Number(getBalance(accountId)) || 0;
+    }
+  }
+  return accounts === null || accounts.length ? Number(balances.total) || 0 : 0;
+}
+
+function buildAccountBalanceFilterOptions(accounts) {
+  return [
+    { value: 'all', label: 'Todas as contas' },
+    { value: 'PF', label: 'Todas as contas PF' },
+    { value: 'PJ', label: 'Todas as contas PJ' },
+    ...accounts.map(account => ({ value: `account:${account.id}`, label: account.name }))
+  ];
+}
+
+function getAccountBalanceFilterLabel(accounts, filter) {
+  if (!accounts.length) return 'Cadastre uma conta para ver seu saldo.';
+  if (filter === 'PF') return 'Saldo consolidado das contas PF';
+  if (filter === 'PJ') return 'Saldo consolidado das contas PJ';
+  if (filter.startsWith('account:')) {
+    const account = accounts.find(item => item.id === filter.slice('account:'.length));
+    if (account) return `Saldo da conta ${account.name}`;
+  }
+  return 'Saldo consolidado de todas as contas';
+}
+
+function getAccountBalanceOptionsMarkup(accounts) {
+  return buildAccountBalanceFilterOptions(accounts).map(option =>
+    `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
+  ).join('');
+}
+
+function accountsNeedBalanceDateNotice(accounts, filter) {
+  const selected = filter === 'PF' || filter === 'PJ'
+    ? accounts.filter(account => account.type === filter)
+    : filter.startsWith('account:')
+      ? accounts.filter(account => account.id === filter.slice('account:'.length))
+      : accounts;
+  return selected.some(account => !account.balanceDate);
 }
 
 function buildAccountSelectOptions(accounts) {
@@ -909,6 +1012,7 @@ window.switchToView = function(viewId) {
  */
 function renderAll() {
   updateAccountSelects();
+  updateCreditCardPurchaseFields();
   const ym         = getYearMonthString(state.currentYear, state.currentMonth);
   const monthLabel = `${MONTH_NAMES[state.currentMonth - 1]} ${state.currentYear}`;
 
@@ -942,10 +1046,11 @@ function renderAll() {
   sidebarIncomeCount.hidden = incomes.length === 0;
   document.getElementById('sidebarExpenseCount').textContent = activeFixed.length + variables.length;
 
-  // Atualiza o saldo no canto superior direito da topbar
-  const topbarBal = document.getElementById('topbarBalance');
-  topbarBal.textContent  = formatCurrency(balance);
-  topbarBal.style.color  = balance >= 0 ? 'var(--success)' : 'var(--danger)';
+  const topbarMonthlyResult = document.getElementById('topbarMonthlyResult');
+  if (topbarMonthlyResult) {
+    topbarMonthlyResult.textContent = formatCurrency(balance);
+    topbarMonthlyResult.style.color = balance >= 0 ? 'var(--success)' : 'var(--danger)';
+  }
 
   // Delega para cada tela sua renderização específica
   renderDashboardView(incomes, activeFixed, variables, totalIncome, totalFixed, totalVariable, balance, ym);
@@ -956,6 +1061,82 @@ function renderAll() {
   renderContactView();
   renderAdminView();
   updateAdminNavigation();
+}
+
+function getCreditCardIssuerClass(issuerBank) {
+  const classes = {
+    Nubank: 'nubank',
+    'Itaú': 'itau',
+    Bradesco: 'bradesco',
+    Santander: 'santander',
+    'Banco do Brasil': 'banco-do-brasil',
+    Caixa: 'caixa',
+    Inter: 'inter',
+    C6: 'c6',
+    BTG: 'btg',
+    'Mercado Pago': 'mercado-pago',
+    PicPay: 'picpay',
+    Outro: 'custom'
+  };
+  return classes[issuerBank] || 'custom';
+}
+
+function renderCreditCardVisual(card, showLimit = false) {
+  const isCustom = (card.issuerBank || 'Outro') === 'Outro';
+  const color = isCustom && /^#[0-9a-f]{6}$/i.test(card.customColor || '')
+    ? ` style="background-color:${card.customColor}"`
+    : '';
+  return `
+    <div class="credit-card-visual credit-card-visual--${getCreditCardIssuerClass(card.issuerBank)}"${color}>
+      <div class="credit-card-visual-heading">
+        <span>${escapeHtml(card.issuerBank || 'Outro')}</span>
+        <span class="credit-card-visual-brand">${escapeHtml(card.brand || 'Outra')}</span>
+      </div>
+      <div class="credit-card-visual-name">${escapeHtml(card.name)}</div>
+      <div class="credit-card-visual-footer">
+        <span>${card.lastFour ? `•••• ${escapeHtml(card.lastFour)}` : 'Crédito'}</span>
+        ${showLimit ? `<span>Limite ${formatCurrency(card.totalLimit)}</span>` : ''}
+      </div>
+    </div>`;
+}
+
+function updateCreditCardPurchaseFields() {
+  const paymentMethod = document.getElementById('expensePaymentMethod');
+  const expenseType = document.getElementById('expenseType');
+  const creditFields = document.getElementById('expenseCreditFields');
+  const accountGroup = document.getElementById('expenseAccountGroup');
+  const cardSelect = document.getElementById('expenseCreditCard');
+  const installmentsSelect = document.getElementById('expenseInstallments');
+  if (!paymentMethod || !expenseType || !creditFields || !accountGroup ||
+    !cardSelect || !installmentsSelect) return;
+
+  const cards = FinanceData.getCreditCards();
+  const selectedCardId = cardSelect.value;
+  cardSelect.innerHTML = cards.length
+    ? cards.map(card =>
+      `<option value="${escapeHtml(card.id)}">${escapeHtml(card.name)}</option>`
+    ).join('')
+    : '<option value="">Nenhum cartão cadastrado</option>';
+  if (cards.some(card => card.id === selectedCardId)) cardSelect.value = selectedCardId;
+  const preview = document.getElementById('expenseCreditCardPreview');
+  const selectedCard = cards.find(card => card.id === cardSelect.value);
+  if (preview) preview.innerHTML = selectedCard ? renderCreditCardVisual(selectedCard) : '';
+  if (!installmentsSelect.options.length) {
+    installmentsSelect.innerHTML = Array.from({ length: 24 }, (_, index) =>
+      `<option value="${index + 1}">${index + 1}x</option>`
+    ).join('');
+  }
+
+  const useCredit = paymentMethod.value === 'credit' && expenseType.value === 'variable';
+  creditFields.hidden = !useCredit;
+  accountGroup.hidden = useCredit;
+  cardSelect.required = useCredit;
+  const hint = document.getElementById('expenseCreditCardHint');
+  if (hint) {
+    hint.textContent = cards.length
+      ? 'A parcela será lançada no mês da fatura; o saldo da conta só muda ao pagar.'
+      : 'Cadastre um cartão no painel do Dashboard para usar esta opção.';
+  }
 }
 
 function updateAccountSelects() {
@@ -1001,6 +1182,7 @@ function renderAccountsView() {
             ${account.institution ? `<span>${escapeHtml(account.institution)}</span>` : ''}
             <span class="tag-badge account-type-badge">${escapeHtml(account.type)}</span>
           </div>
+          ${account.balanceDate ? '' : '<small class="account-balance-date-note">Informe a data do saldo inicial para filtrar os movimentos considerados.</small>'}
         </div>
       </div>
       <div class="account-item-right">
@@ -1027,18 +1209,94 @@ function renderAccountBalancesPanel() {
   const display = document.getElementById('dashboardAccountBalance');
   const label = document.getElementById('accountBalanceFilterLabel');
   const empty = document.getElementById('dashboardAccountsEmpty');
-  if (display) display.textContent = formatCurrency(getAccountBalanceForFilter(balances, state.accountBalanceFilter));
-  if (label) {
-    label.textContent = state.accountBalanceFilter === 'all'
-      ? 'Saldo consolidado de todas as contas'
-      : `Saldo das contas ${state.accountBalanceFilter}`;
+  const selector = document.getElementById('accountBalanceView');
+  if (!accounts.some(account => `account:${account.id}` === state.accountBalanceFilter) &&
+    !['all', 'PF', 'PJ'].includes(state.accountBalanceFilter)) {
+    state.accountBalanceFilter = 'all';
   }
+  if (selector) {
+    selector.innerHTML = getAccountBalanceOptionsMarkup(accounts);
+    selector.value = state.accountBalanceFilter;
+  }
+  const amount = getAccountBalanceForFilter(
+    balances, state.accountBalanceFilter, accounts, accountId => FinanceData.getAccountBalance(accountId)
+  );
+  const filterLabel = getAccountBalanceFilterLabel(accounts, state.accountBalanceFilter);
+  if (display) display.textContent = formatCurrency(amount);
+  if (label) label.textContent = filterLabel;
   if (empty) empty.hidden = accounts.length > 0;
-  document.querySelectorAll('[data-action="filter-account-balance"]').forEach(button => {
-    button.classList.toggle('active', button.dataset.filter === state.accountBalanceFilter);
-    button.setAttribute('aria-pressed', button.dataset.filter === state.accountBalanceFilter ? 'true' : 'false');
-  });
+  const topbarBalance = document.getElementById('topbarBalance');
+  const topbarEmpty = document.getElementById('topbarBalanceEmpty');
+  const topbarDateNote = document.getElementById('topbarBalanceDateNote');
+  if (topbarBalance) {
+    topbarBalance.textContent = formatCurrency(amount);
+    topbarBalance.style.color = amount >= 0 ? 'var(--success)' : 'var(--danger)';
+    topbarBalance.hidden = accounts.length === 0;
+  }
+  if (topbarEmpty) topbarEmpty.hidden = accounts.length > 0;
+  if (topbarDateNote) topbarDateNote.hidden =
+    !accountsNeedBalanceDateNotice(accounts, state.accountBalanceFilter);
+  renderCreditCardsPanel();
 }
+
+function renderCreditCardsPanel() {
+  const container = document.getElementById('creditCardsList');
+  if (!container) return;
+  const empty = document.getElementById('creditCardsEmpty');
+  const accounts = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
+  const cards = FinanceData.getCreditCards();
+  if (empty) empty.hidden = cards.length > 0;
+  const purchases = FinanceData.getCreditCardPurchases();
+  container.innerHTML = cards.map(card => {
+    const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(card, purchases);
+    const presentation = getCreditCardUsagePresentation(usage.alert);
+    return `
+    <article class="manage-item-card credit-card-item ${presentation.className}">
+      <div class="card-item-left">
+        <div class="card-item-info">
+          ${renderCreditCardVisual(card, true)}
+          <div class="card-item-meta">
+            <span>Fecha dia ${card.closingDay} · vence dia ${card.dueDay}</span>
+            ${accounts.has(card.accountId) ? `<span>${escapeHtml(accounts.get(card.accountId))}</span>` : ''}
+          </div>
+          <div class="credit-card-usage">
+            <div class="credit-card-usage-labels">
+              <span>Usado: <strong>${formatCurrency(usage.used)}</strong></span>
+              <span>Disponível: <strong>${formatCurrency(usage.available)}</strong></span>
+            </div>
+            <progress class="credit-card-usage-progress" value="${Math.min(100, usage.percent)}" max="100"
+              aria-label="Uso do limite de ${escapeHtml(card.name)}"
+              aria-valuetext="${Math.round(usage.percent)}% usado"></progress>
+            ${presentation.message ? `<p class="credit-card-usage-alert">${presentation.message}</p>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="card-item-actions">
+        <button type="button" class="btn-action-edit" data-action="edit-credit-card" data-id="${escapeHtml(card.id)}" aria-label="Editar cartão ${escapeHtml(card.name)}" title="Editar">
+          <i class="fa-solid fa-pen"></i>
+        </button>
+        <button type="button" class="btn-action-delete" data-action="delete-credit-card" data-id="${escapeHtml(card.id)}" aria-label="Excluir cartão ${escapeHtml(card.name)}" title="Excluir">
+          <i class="fa-solid fa-trash-can"></i>
+        </button>
+      </div>
+    </article>
+  `;}).join('');
+}
+
+function getCreditCardUsagePresentation(alert) {
+  if (alert === 'full') {
+    return { className: 'credit-card-usage--full', message: 'Limite atingido ou excedido.' };
+  }
+  if (alert === 'warning') {
+    return { className: 'credit-card-usage--warning', message: 'Atenção: uso igual ou acima de 80%.' };
+  }
+  return { className: '', message: '' };
+}
+
+window.GastoProCreditCardDashboardHelpers = {
+  getUsagePresentation: getCreditCardUsagePresentation,
+  renderVisual: renderCreditCardVisual
+};
 
 // ================================================================
 // 6. DASHBOARD & SAÚDE FINANCEIRA
@@ -1292,6 +1550,7 @@ function initOnboarding() {
   function closeTutorial() {
     modal.classList.remove('active');
     modal.setAttribute('aria-hidden', 'true');
+    window.dispatchEvent(new Event('gastopro:tutorial-closed'));
   }
 
   function openTutorial() {
@@ -1322,6 +1581,110 @@ function initOnboarding() {
   });
 
   if (tutorial.shouldShowOnFirstAccess()) openTutorial();
+}
+
+function initAccountOnboarding() {
+  const tutorial = window.GastoProOnboarding;
+  const modal = document.getElementById('accountOnboardingModal');
+  const form = document.getElementById('accountOnboardingForm');
+  const nameInput = document.getElementById('accountOnboardingName');
+  const typeInput = document.getElementById('accountOnboardingType');
+  const balanceInput = document.getElementById('accountOnboardingBalance');
+  const dateInput = document.getElementById('accountOnboardingBalanceDate');
+  const error = document.getElementById('accountOnboardingError');
+  const accountsList = document.getElementById('accountOnboardingAccounts');
+  const skipButton = document.getElementById('skipAccountOnboardingBtn');
+  const finishButton = document.getElementById('finishAccountOnboardingBtn');
+  const saveButton = document.getElementById('addOnboardingAccountBtn');
+  if (!tutorial || !modal || !form || !nameInput || !typeInput || !balanceInput ||
+    !dateInput || !error || !accountsList || !skipButton || !finishButton || !saveButton) return;
+
+  function closeAccountSetup(markSeen = false) {
+    if (markSeen) tutorial.markAccountSetupSeen();
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function maybeOpenAccountSetup() {
+    if (!accountOnboardingDataReady ||
+      !tutorial.shouldShowAccountSetup(FinanceData.getAccounts())) return;
+    const tutorialModal = document.getElementById('onboardingModal');
+    if (tutorialModal && tutorialModal.classList.contains('active')) return;
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+    nameInput.focus();
+  }
+
+  function renderCreatedAccounts() {
+    const accounts = FinanceData.getAccounts();
+    accountsList.textContent = accounts.length
+      ? `Contas cadastradas: ${accounts.map(account => `${account.name} (${account.type})`).join(', ')}`
+      : '';
+    finishButton.disabled = accounts.length === 0;
+  }
+
+  skipButton.addEventListener('click', () => closeAccountSetup(true));
+  finishButton.addEventListener('click', () => {
+    if (!FinanceData.getAccounts().length) return;
+    closeAccountSetup(true);
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const name = nameInput.value.trim();
+    const balanceDate = dateInput.value;
+    const balance = Number(balanceInput.value);
+    if (!name || name.length > 100 || !balanceInput.value ||
+      !Number.isFinite(balance) || Math.abs(balance) > 9999999999.99 ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(balanceDate) ||
+      Number.isNaN(new Date(`${balanceDate}T00:00:00Z`).getTime()) ||
+      new Date(`${balanceDate}T00:00:00Z`).toISOString().slice(0, 10) !== balanceDate) {
+      error.textContent = 'Informe nome, saldo e uma data válida para a conta.';
+      error.hidden = false;
+      return;
+    }
+
+    saveButton.disabled = true;
+    error.hidden = true;
+    const previousIds = new Set(FinanceData.getAccounts().map(account => account.id));
+    try {
+      const result = await FinanceData.addAccount({
+        name,
+        type: typeInput.value,
+        initialBalance: balance,
+        balanceDate
+      });
+      const addedAccount = result.account || FinanceData.getAccounts().find(account =>
+        !previousIds.has(account.id)
+      );
+      if (!addedAccount) {
+        error.textContent = result.error && result.error.message ||
+          result.error || 'Não foi possível cadastrar a conta.';
+        error.hidden = false;
+        return;
+      }
+
+      renderAll();
+      renderCreatedAccounts();
+      form.reset();
+      typeInput.value = 'PF';
+      if (!result.success) {
+        showToast('Conta salva neste aparelho; a sincronização ficou pendente.');
+      } else {
+        showToast('Conta cadastrada. Você pode adicionar outra ou concluir.');
+      }
+      nameInput.focus();
+    } catch (saveError) {
+      console.error('[GastoPro] Falha ao cadastrar conta no primeiro uso:', saveError);
+      error.textContent = `Não foi possível cadastrar a conta: ${saveError.message || saveError}`;
+      error.hidden = false;
+    } finally {
+      saveButton.disabled = false;
+    }
+  });
+
+  window.addEventListener('gastopro:tutorial-closed', maybeOpenAccountSetup);
+  window.addEventListener('gastopro:account-data-ready', maybeOpenAccountSetup);
+  maybeOpenAccountSetup();
 }
 
 // ================================================================
@@ -1665,7 +2028,9 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
   const accountNames = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
   container.innerHTML = itemsToDisplay.map(item => {
     const isFixed = item.type === 'fixed';
-    const typeLabel = isFixed ? 'Conta Fixa Recorrente' : 'Gasto Variável';
+    const typeLabel = item.isCardInstallment
+      ? 'Compra no cartão'
+      : isFixed ? 'Conta Fixa Recorrente' : 'Gasto Variável';
     const iconClass = isFixed ? 'bg-yellow-soft' : 'bg-red-soft';
     const iconI = isFixed ? 'fa-solid fa-lock' : 'fa-solid fa-cart-shopping';
     const isInactive = isFixed && item.active === false;
@@ -1682,7 +2047,10 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
             <div class="card-item-meta">
               <span class="tag-badge">${escapeHtml(item.category || typeLabel)}</span>
               ${accountName ? `<span class="tag-badge">${escapeHtml(accountName)}</span>` : ''}
-              <span class="tag-badge" style="opacity: 0.8;">${typeLabel}</span>
+              <span class="tag-badge">${typeLabel}</span>
+              ${item.isCardInstallment
+                ? `<span class="tag-badge">${escapeHtml(item.cardName)} · ${item.installmentNumber}/${item.installmentCount}x</span>`
+                : ''}
               ${isFixed ? `
                 <button class="badge-status-btn ${item.active ? 'status-active' : 'status-inactive'}" 
                         data-action="toggle-active" data-id="${escapeHtml(item.id)}"
@@ -1698,7 +2066,9 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
         <div class="card-item-right">
           <!-- Checkbox de Pago (específico para o mês atual) -->
           <label class="checkbox-paid-label" title="${item.paid ? 'Marcar como pendente neste mês' : 'Dar baixa como pago neste mês'}">
-            <input type="checkbox" ${item.paid ? 'checked' : ''} data-action="toggle-paid" data-id="${escapeHtml(item.id)}" />
+            <input type="checkbox" ${item.paid ? 'checked' : ''} data-action="toggle-paid" data-id="${escapeHtml(item.id)}" ${item.isCardInstallment
+              ? `data-kind="credit-card" data-installment="${item.installmentNumber}" data-month="${escapeHtml(item.month)}"`
+              : ''} />
             <span>${item.paid ? 'Pago' : 'Pagar'}</span>
           </label>
 
@@ -1706,14 +2076,16 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
             - ${formatCurrency(item.amount)}
           </div>
 
-          <div class="card-item-actions">
-            <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Informação" aria-label="Editar gasto ${escapeHtml(item.desc)}">
-              <i class="fa-solid fa-pen"></i>
-            </button>
-            <button class="btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}" title="Excluir Gasto" aria-label="Excluir gasto ${escapeHtml(item.desc)}">
-              <i class="fa-solid fa-trash-can"></i>
-            </button>
-          </div>
+          ${item.isCardInstallment ? '' : `
+            <div class="card-item-actions">
+              <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Informação" aria-label="Editar gasto ${escapeHtml(item.desc)}">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              <button class="btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}" title="Excluir Gasto" aria-label="Excluir gasto ${escapeHtml(item.desc)}">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+            </div>
+          `}
         </div>
       </div>
     `;
@@ -1756,12 +2128,13 @@ window.openEditModal = function(id) {
 
   const editTypeSelect = document.getElementById('editType');
   if (editTypeSelect) {
-    editTypeSelect.value = item.type || (item.isDebt ? 'debt' : (item.isTemplate ? 'fixed' : 'variable'));
+    const currentType = item.type || (item.isDebt ? 'debt' : (item.isTemplate ? 'fixed' : 'variable'));
+    editTypeSelect.value = currentType;
     const isTemplate = FinanceData.getTemplates().some(template => template.id === id);
     Array.from(editTypeSelect.options).forEach(option => {
       option.disabled = isTemplate
         ? option.value === 'income' || option.value === 'variable'
-        : option.value === 'fixed' || option.value === 'debt';
+        : (option.value === 'fixed' && currentType !== 'variable') || option.value === 'debt';
     });
   }
 
@@ -1802,6 +2175,7 @@ function openAccountModal(id) {
   document.getElementById('accountInstitution').value = account ? account.institution || '' : '';
   document.getElementById('accountType').value = account ? account.type : 'PF';
   document.getElementById('accountInitialBalance').value = account ? account.initialBalance : '0';
+  document.getElementById('accountBalanceDate').value = account ? account.balanceDate || '' : '';
   const error = document.getElementById('accountFormError');
   error.textContent = '';
   error.hidden = true;
@@ -1811,6 +2185,73 @@ function openAccountModal(id) {
 
 function closeAccountModal() {
   document.getElementById('accountModal').classList.remove('active');
+  if (!returnToImportAfterAccountModal) return;
+  document.getElementById('importModal').classList.add('active');
+  window.dispatchEvent(new CustomEvent('gastopro:account-modal-closed-for-import', {
+    detail: { accountId: importAccountCreatedId }
+  }));
+  returnToImportAfterAccountModal = false;
+  importAccountCreatedId = null;
+}
+
+function openCreditCardModal(id) {
+  const card = id ? FinanceData.getCreditCards().find(item => item.id === id) : null;
+  const modal = document.getElementById('creditCardModal');
+  document.getElementById('creditCardModalTitle').textContent = card ? 'Editar cartão' : 'Novo cartão';
+  document.getElementById('creditCardId').value = card ? card.id : '';
+  document.getElementById('creditCardName').value = card ? card.name : '';
+  document.getElementById('creditCardIssuerBank').value = card ? card.issuerBank || 'Outro' : 'Nubank';
+  document.getElementById('creditCardBrand').value = card ? card.brand || 'Outra' : 'Visa';
+  document.getElementById('creditCardLastFour').value = card ? card.lastFour || '' : '';
+  document.getElementById('creditCardCustomColor').value = card && /^#[0-9a-f]{6}$/i.test(card.customColor || '')
+    ? card.customColor
+    : '#6366f1';
+  document.getElementById('creditCardCustomColorGroup').hidden =
+    document.getElementById('creditCardIssuerBank').value !== 'Outro';
+  document.getElementById('creditCardLimit').value = card ? card.totalLimit : '';
+  document.getElementById('creditCardClosingDay').value = card ? card.closingDay : '';
+  document.getElementById('creditCardDueDay').value = card ? card.dueDay : '';
+  const accountSelect = document.getElementById('creditCardAccount');
+  accountSelect.innerHTML = '<option value="">Sem conta vinculada</option>' +
+    FinanceData.getAccounts().map(account =>
+      `<option value="${escapeHtml(account.id)}">${escapeHtml(account.name)} (${escapeHtml(account.type)})</option>`
+    ).join('');
+  accountSelect.value = card ? card.accountId || '' : '';
+  const error = document.getElementById('creditCardFormError');
+  error.textContent = '';
+  error.hidden = true;
+  modal.classList.add('active');
+  setTimeout(() => document.getElementById('creditCardName').focus(), 100);
+}
+
+function closeCreditCardModal() {
+  document.getElementById('creditCardModal').classList.remove('active');
+}
+
+function deleteCreditCard(id) {
+  const card = FinanceData.getCreditCards().find(item => item.id === id);
+  if (!card) return;
+  showConfirm({
+    title: 'Excluir cartão?',
+    message: `Excluir "${card.name}" da lista? As compras já cadastradas e as parcelas pendentes serão mantidas no histórico.`,
+    iconClass: 'fa-solid fa-trash-can',
+    okLabel: 'Sim, excluir cartão',
+    onConfirm: async () => {
+      try {
+        const result = await FinanceData.deleteCreditCard(id);
+        renderAll();
+        if (!result.success) {
+          showToast(`O cartão foi removido localmente, mas a sincronização falhou: ${result.error && result.error.message || result.error || 'erro desconhecido'}`);
+          return;
+        }
+        showToast('Cartão excluído.');
+      } catch (error) {
+        console.error('[GastoPro] Falha ao excluir cartão:', error);
+        renderAll();
+        showToast(`Não foi possível excluir o cartão: ${error.message || error}`);
+      }
+    }
+  });
 }
 
 function openAdjustAccountModal(id) {
@@ -1875,7 +2316,7 @@ function deleteAccount(id) {
  */
 function showConfirm({
   title, message, iconClass, okLabel, okBtnClass, onConfirm,
-  onBackup, secondaryLabel, onSecondary, keepOpenOnConfirm = false
+  onBackup, secondaryLabel, onSecondary, keepOpenOnConfirm = false, rememberLabel
 }) {
   const modal = document.getElementById('confirmModal');
   const iconEl = document.getElementById('confirmIcon');
@@ -1885,11 +2326,19 @@ function showConfirm({
   const okBtn = document.getElementById('confirmOkBtn');
   const cancelBtn = document.getElementById('confirmCancelBtn');
   const backupBtn = document.getElementById('confirmBackupBtn');
+  const rememberOption = document.getElementById('confirmRememberOption');
+  const rememberCheckbox = document.getElementById('confirmRememberCheckbox');
+  const rememberText = document.getElementById('confirmRememberLabel');
 
   iconEl.className = iconClass || 'fa-solid fa-triangle-exclamation';
   iconWrapper.className = 'confirm-icon-wrapper confirm-icon-danger';
   titleEl.textContent = title || 'Tem certeza?';
   msgEl.textContent = message || 'Esta ação não pode ser desfeita.';
+  if (rememberOption && rememberCheckbox && rememberText) {
+    rememberOption.hidden = !rememberLabel;
+    rememberCheckbox.checked = false;
+    rememberText.textContent = rememberLabel || '';
+  }
 
   // Clona os botões para remover listeners antigos e evitar acúmulo
   const newOk = okBtn.cloneNode(true);
@@ -1908,7 +2357,7 @@ function showConfirm({
 
   newOk.addEventListener('click', async () => {
     if (!keepOpenOnConfirm) modal.classList.remove('active');
-    await onConfirm(newOk);
+    await onConfirm(newOk, Boolean(rememberCheckbox && rememberCheckbox.checked));
   });
   newCancel.addEventListener('click', () => {
     modal.classList.remove('active');
@@ -1917,7 +2366,7 @@ function showConfirm({
     newBackup.addEventListener('click', async () => {
       if (onSecondary) {
         if (!keepOpenOnConfirm) modal.classList.remove('active');
-        await onSecondary(newBackup);
+        await onSecondary(newBackup, Boolean(rememberCheckbox && rememberCheckbox.checked));
       } else {
         onBackup();
       }
@@ -1961,9 +2410,16 @@ window.deleteEntry = function(id) {
  *
  * @param {string} id - ID do item.
  */
-window.togglePaidEntry = function(id) {
-  const ym = getYearMonthString(state.currentYear, state.currentMonth);
-  FinanceData.togglePaid(id, ym);
+window.togglePaidEntry = async function(id, kind = null, installmentNumber = null, ym = null) {
+  const currentYm = ym || getYearMonthString(state.currentYear, state.currentMonth);
+  if (kind === 'credit-card') {
+    const result = await FinanceData.toggleCreditCardPurchasePaid(id, Number(installmentNumber));
+    if (!result.success) {
+      showToast(`Não foi possível registrar o pagamento da parcela: ${result.error && result.error.message || result.error || 'erro desconhecido'}`);
+    }
+  } else {
+    FinanceData.togglePaid(id, currentYm);
+  }
   renderAll();
 };
 
@@ -2464,11 +2920,23 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'edit-account':
         openAccountModal(id);
         break;
+      case 'remove-fixed-import-rule':
+        removeFixedImportRule(actionElement.dataset.rule);
+        break;
       case 'adjust-account':
         openAdjustAccountModal(id);
         break;
       case 'delete-account':
         deleteAccount(id);
+        break;
+      case 'new-credit-card':
+        openCreditCardModal();
+        break;
+      case 'edit-credit-card':
+        openCreditCardModal(id);
+        break;
+      case 'delete-credit-card':
+        deleteCreditCard(id);
         break;
       case 'filter-account-balance':
         state.accountBalanceFilter = actionElement.dataset.filter;
@@ -2476,6 +2944,14 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
     }
   });
+
+  const accountBalanceView = document.getElementById('accountBalanceView');
+  if (accountBalanceView) {
+    accountBalanceView.addEventListener('change', () => {
+      state.accountBalanceFilter = accountBalanceView.value;
+      renderAccountBalancesPanel();
+    });
+  }
 
   document.addEventListener('input', (e) => {
     if (!(e.target instanceof Element)) return;
@@ -2614,7 +3090,14 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('change', (e) => {
     if (!(e.target instanceof Element)) return;
     const paidInput = e.target.closest('[data-action="toggle-paid"]');
-    if (paidInput) togglePaidEntry(paidInput.dataset.id);
+    if (paidInput) {
+      togglePaidEntry(
+        paidInput.dataset.id,
+        paidInput.dataset.kind,
+        paidInput.dataset.installment,
+        paidInput.dataset.month
+      );
+    }
   });
 
   // ── 1. Navegação da Sidebar ────────────────────────────────────
@@ -2881,10 +3364,37 @@ document.addEventListener('DOMContentLoaded', () => {
     const isDebt = (expenseTypeSelect && expenseTypeSelect.value === 'debt') || 
                    (expenseCatSelect && (expenseCatSelect.value === 'Empréstimo' || expenseCatSelect.value === 'Parcelamento'));
     expenseEndMonthWrapper.style.display = isDebt ? 'block' : 'none';
+    const paymentMethod = document.getElementById('expensePaymentMethod');
+    if (paymentMethod && expenseTypeSelect && expenseTypeSelect.value !== 'variable') {
+      paymentMethod.value = 'account';
+    }
+    updateCreditCardPurchaseFields();
   }
 
   if (expenseTypeSelect) expenseTypeSelect.addEventListener('change', checkDebtVisibility);
   if (expenseCatSelect) expenseCatSelect.addEventListener('change', checkDebtVisibility);
+  const expensePaymentMethod = document.getElementById('expensePaymentMethod');
+  if (expensePaymentMethod) {
+    expensePaymentMethod.addEventListener('change', () => {
+      if (expensePaymentMethod.value === 'credit' && expenseTypeSelect) {
+        expenseTypeSelect.value = 'variable';
+        checkDebtVisibility();
+      } else {
+        updateCreditCardPurchaseFields();
+      }
+    });
+  }
+  const creditCardSelect = document.getElementById('expenseCreditCard');
+  if (creditCardSelect) {
+    creditCardSelect.addEventListener('change', updateCreditCardPurchaseFields);
+  }
+  const creditCardIssuerSelect = document.getElementById('creditCardIssuerBank');
+  if (creditCardIssuerSelect) {
+    creditCardIssuerSelect.addEventListener('change', () => {
+      document.getElementById('creditCardCustomColorGroup').hidden =
+        creditCardIssuerSelect.value !== 'Outro';
+    });
+  }
 
   document.getElementById('expenseForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2894,6 +3404,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const category = document.getElementById('expenseCategory').value;
     const dateVal = document.getElementById('expenseDate').value || getTodayString();
     const endMonthVal = document.getElementById('expenseEndMonth') ? document.getElementById('expenseEndMonth').value : null;
+    const paymentMethod = document.getElementById('expensePaymentMethod').value;
 
     if (!desc) {
       alert('Por favor, informe a descrição do gasto.');
@@ -2909,6 +3420,50 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
     await withSaving(saveButton, async () => {
       try {
+        if (paymentMethod === 'credit') {
+          const cardId = document.getElementById('expenseCreditCard').value;
+          if (type !== 'variable') {
+            alert('Compras no crédito devem ser cadastradas como gasto variável.');
+            return;
+          }
+          if (!FinanceData.getCreditCards().length) {
+            alert('Cadastre um cartão de crédito antes de lançar uma compra.');
+            return;
+          }
+          const result = await FinanceData.addCreditCardPurchase({
+            cardId,
+            desc,
+            amount,
+            category,
+            purchaseDate: dateVal,
+            installmentCount: Number(document.getElementById('expenseInstallments').value)
+          });
+          if (!result.purchase) {
+            alert(result.error && result.error.message || result.error || 'Não foi possível salvar a compra no cartão.');
+            return;
+          }
+          document.getElementById('expenseDesc').value = '';
+          document.getElementById('expenseAmount').value = '';
+          document.getElementById('expenseDate').value = getTodayString();
+          document.getElementById('expensePaymentMethod').value = 'account';
+          document.getElementById('expenseAccount').value = '';
+          if (document.getElementById('expenseEndMonth')) {
+            document.getElementById('expenseEndMonth').value = '';
+          }
+          updateCreditCardPurchaseFields();
+          checkDebtVisibility();
+          document.getElementById('expenseDesc').focus();
+          state.expenseFilter = 'all';
+          document.querySelectorAll('.filter-tabs-row .filter-btn').forEach(button => {
+            button.classList.toggle('active', button.getAttribute('data-filter') === 'all');
+          });
+          renderAll();
+          showToast(result.success
+            ? `Compra de ${formatCurrency(amount)} no cartão cadastrada.`
+            : 'Compra salva neste aparelho; a sincronização ficou pendente.');
+          return;
+        }
+
         FinanceData.add({
           month: itemMonth,
           type: type,
@@ -2925,6 +3480,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('expenseAmount').value = '';
         document.getElementById('expenseDate').value = getTodayString();
         document.getElementById('expenseAccount').value = '';
+        document.getElementById('expensePaymentMethod').value = 'account';
         if (document.getElementById('expenseEndMonth')) document.getElementById('expenseEndMonth').value = '';
         checkDebtVisibility();
         document.getElementById('expenseDesc').focus();
@@ -2983,6 +3539,62 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
+    const source = FinanceData.getEntries().find(entry => entry.id === id);
+    if (source && source.type === 'variable' && type === 'fixed') {
+      const sourceForMatching = { ...source, desc, date };
+      const matches = findFutureFixedDescriptionMatches(sourceForMatching, FinanceData.getEntries());
+      const fields = {
+        desc,
+        amount,
+        category,
+        active,
+        endMonth,
+        accountId: document.getElementById('editAccount').value || null
+      };
+      const convert = async (futureIds, remember) => withSaving(saveButton, async () => {
+        try {
+          const result = await FinanceData.convertEntryToTemplate(id, fields, futureIds);
+          if (!result.template) throw result.error || new Error('Não foi possível converter para gasto fixo.');
+          let syncSucceeded = result.success;
+          if (remember) {
+            const normalized = normalizeFixedDescription(desc);
+            const savedRules = [...new Set([...FinanceData.getFixedImportRules(), normalized])];
+            const rulesResult = await FinanceData.saveFixedImportRules(savedRules);
+            if (!FinanceData.getFixedImportRules().includes(normalized)) {
+              throw rulesResult.error || new Error('Não foi possível salvar a regra de importação.');
+            }
+            syncSucceeded = syncSucceeded && rulesResult.success;
+            renderFixedImportRules();
+          }
+          renderAll();
+          closeEditModal();
+          showToast(syncSucceeded
+            ? `Gasto fixo criado${result.convertedCount ? `; ${result.convertedCount} lançamento(s) futuro(s) consolidado(s)` : ''}.`
+            : 'Gasto fixo salvo neste aparelho; a sincronização ficou pendente.');
+        } catch (error) {
+          console.error('[GastoPro] Erro ao converter lançamento em gasto fixo:', error);
+          showToast(error.message || 'Não foi possível converter para gasto fixo.');
+        }
+      });
+
+      if (matches.length) {
+        showConfirm({
+          title: 'Consolidar gastos parecidos?',
+          message: `Aplicar Fixo a ${matches.length} lançamento${matches.length === 1 ? '' : 's'} parecido${matches.length === 1 ? '' : 's'} nos meses seguintes?`,
+          iconClass: 'fa-solid fa-repeat',
+          okLabel: 'Aplicar',
+          okBtnClass: 'btn-primary',
+          secondaryLabel: 'Só este',
+          rememberLabel: 'Lembrar para as próximas importações',
+          onConfirm: (_button, remember) => convert(matches.map(entry => entry.id), remember),
+          onSecondary: (_button, remember) => convert([], remember)
+        });
+      } else {
+        convert([], false);
+      }
+      return;
+    }
+
     await withSaving(saveButton, async () => {
       try {
         const updated = FinanceData.update(id, {
@@ -3021,6 +3633,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const type = document.getElementById('accountType').value;
     const balanceRaw = document.getElementById('accountInitialBalance').value;
     const balance = Number(balanceRaw);
+    const balanceDate = document.getElementById('accountBalanceDate').value;
+    const parsedBalanceDate = balanceDate ? new Date(`${balanceDate}T00:00:00Z`) : null;
     let validationError = '';
 
     if (!name || name.length > 100) validationError = 'O nome deve ter de 1 a 100 caracteres.';
@@ -3028,6 +3642,11 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (!['PF', 'PJ'].includes(type)) validationError = 'O tipo deve ser PF ou PJ.';
     else if (balanceRaw === '' || !Number.isFinite(balance) || Math.abs(balance) > 9999999999.99) {
       validationError = 'O saldo inicial deve ser um valor numérico válido.';
+    } else if (balanceDate && (!/^\d{4}-\d{2}-\d{2}$/.test(balanceDate) ||
+      !parsedBalanceDate || Number.isNaN(parsedBalanceDate.getTime()) ||
+      parsedBalanceDate.toISOString().slice(0, 10) !== balanceDate ||
+      parsedBalanceDate.getUTCFullYear() < 1)) {
+      validationError = 'A data do saldo inicial deve ser válida.';
     }
 
     if (validationError) {
@@ -3040,7 +3659,13 @@ document.addEventListener('DOMContentLoaded', () => {
     saveButton.disabled = true;
     errorEl.hidden = true;
     try {
-      const fields = { name, institution: institution || null, type, initialBalance: balance };
+      const fields = {
+        name,
+        institution: institution || null,
+        type,
+        initialBalance: balance,
+        balanceDate: balanceDate || null
+      };
       const previousAccountIds = new Set(FinanceData.getAccounts().map(account => account.id));
       const result = id
         ? await FinanceData.updateAccount(id, fields)
@@ -3060,12 +3685,83 @@ document.addEventListener('DOMContentLoaded', () => {
         errorEl.hidden = false;
         return;
       }
+      if (returnToImportAfterAccountModal && !id) importAccountCreatedId = result.account.id;
       closeAccountModal();
       renderAll();
       showToast(id ? 'Conta atualizada com sucesso.' : 'Conta cadastrada com sucesso.');
     } catch (error) {
       console.error('[GastoPro] Falha ao salvar conta:', error);
       errorEl.textContent = `Não foi possível salvar a conta: ${error.message || error}`;
+      errorEl.hidden = false;
+    } finally {
+      saveButton.disabled = false;
+    }
+  });
+
+  document.getElementById('creditCardForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const errorEl = document.getElementById('creditCardFormError');
+    const id = document.getElementById('creditCardId').value;
+    const name = document.getElementById('creditCardName').value.trim();
+    const totalLimitRaw = document.getElementById('creditCardLimit').value;
+    const totalLimit = Number(totalLimitRaw);
+    const closingDay = Number(document.getElementById('creditCardClosingDay').value);
+    const dueDay = Number(document.getElementById('creditCardDueDay').value);
+    const accountId = document.getElementById('creditCardAccount').value || null;
+    const issuerBank = document.getElementById('creditCardIssuerBank').value;
+    const brand = document.getElementById('creditCardBrand').value;
+    const lastFour = document.getElementById('creditCardLastFour').value.trim();
+    const customColor = document.getElementById('creditCardCustomColor').value;
+    let validationError = '';
+    if (!name || name.length > 100) validationError = 'O nome deve ter de 1 a 100 caracteres.';
+    else if (!totalLimitRaw || !Number.isFinite(totalLimit) || totalLimit <= 0 ||
+      totalLimit > 9999999999.99) validationError = 'Informe um limite total válido.';
+    else if (!Number.isInteger(closingDay) || closingDay < 1 || closingDay > 31 ||
+      !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
+      validationError = 'Os dias de fechamento e vencimento devem estar entre 1 e 31.';
+    }
+    else if (lastFour && !/^\d{4}$/.test(lastFour)) {
+      validationError = 'O final do cartão deve conter quatro dígitos.';
+    }
+    if (validationError) {
+      errorEl.textContent = validationError;
+      errorEl.hidden = false;
+      return;
+    }
+
+    const saveButton = document.getElementById('saveCreditCardBtn');
+    saveButton.disabled = true;
+    errorEl.hidden = true;
+    const previousIds = new Set(FinanceData.getCreditCards().map(card => card.id));
+    try {
+      const fields = {
+        name, totalLimit, closingDay, dueDay, accountId, issuerBank, brand,
+        lastFour: lastFour || null,
+        customColor: issuerBank === 'Outro' ? customColor : null
+      };
+      const result = id
+        ? await FinanceData.updateCreditCard(id, fields)
+        : await FinanceData.addCreditCard(fields);
+      const savedCard = id
+        ? FinanceData.getCreditCards().find(card => card.id === id)
+        : FinanceData.getCreditCards().find(card => !previousIds.has(card.id));
+      if (savedCard && !id) {
+        document.getElementById('creditCardId').value = savedCard.id;
+        document.getElementById('creditCardModalTitle').textContent = 'Editar cartão';
+      }
+      renderAll();
+      if (!result.success) {
+        errorEl.textContent = result.error && result.error.message ||
+          result.error || 'Não foi possível salvar o cartão.';
+        errorEl.hidden = false;
+        return;
+      }
+      closeCreditCardModal();
+      renderAll();
+      showToast(id ? 'Cartão atualizado.' : 'Cartão cadastrado.');
+    } catch (error) {
+      console.error('[GastoPro] Falha ao salvar cartão:', error);
+      errorEl.textContent = `Não foi possível salvar o cartão: ${error.message || error}`;
       errorEl.hidden = false;
     } finally {
       saveButton.disabled = false;
@@ -3133,10 +3829,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('closeAccountModalBtn').addEventListener('click', closeAccountModal);
   document.getElementById('cancelAccountModalBtn').addEventListener('click', closeAccountModal);
+  document.getElementById('closeCreditCardModalBtn').addEventListener('click', closeCreditCardModal);
+  document.getElementById('cancelCreditCardModalBtn').addEventListener('click', closeCreditCardModal);
   document.getElementById('closeAdjustAccountModalBtn').addEventListener('click', closeAdjustAccountModal);
   document.getElementById('cancelAdjustAccountBtn').addEventListener('click', closeAdjustAccountModal);
   document.getElementById('accountModal').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeAccountModal();
+  });
+  document.getElementById('creditCardModal').addEventListener('click', event => {
+    if (event.target === event.currentTarget) closeCreditCardModal();
   });
   document.getElementById('adjustAccountModal').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeAdjustAccountModal();
@@ -3713,7 +4414,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const localSync = await FinanceData.prepareLocalDataForSync(userId);
         if (!localSync.success) return false;
 
-        const [cloudEntries, cloudTemplates, cloudGoals, cloudAccounts, cloudProfileResult] = await Promise.all([
+        const [cloudEntries, cloudTemplates, cloudGoals, cloudAccounts, cloudFixedImportRules, cloudCreditCards, cloudCreditCardPurchases, cloudProfileResult] = await Promise.all([
           window.SupabaseAuth.fetchCloudEntries(userId),
           window.SupabaseAuth.fetchCloudTemplates(userId),
           Promise.resolve()
@@ -3726,6 +4427,30 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(() => window.SupabaseAuth.fetchCloudAccounts(userId))
             .catch(error => {
               console.warn('[GastoPro] Não foi possível buscar contas na nuvem:', error);
+              return null;
+            }),
+          Promise.resolve()
+            .then(() => window.SupabaseAuth.fetchCloudFixedImportRules
+              ? window.SupabaseAuth.fetchCloudFixedImportRules(userId)
+              : null)
+            .catch(error => {
+              console.warn('[GastoPro] Não foi possível buscar regras de importação na nuvem:', error);
+              return null;
+            }),
+          Promise.resolve()
+            .then(() => window.SupabaseAuth.fetchCloudCreditCards
+              ? window.SupabaseAuth.fetchCloudCreditCards(userId)
+              : null)
+            .catch(error => {
+              console.warn('[GastoPro] Não foi possível buscar cartões na nuvem:', error);
+              return null;
+            }),
+          Promise.resolve()
+            .then(() => window.SupabaseAuth.fetchCloudCreditCardPurchases
+              ? window.SupabaseAuth.fetchCloudCreditCardPurchases(userId)
+              : null)
+            .catch(error => {
+              console.warn('[GastoPro] Não foi possível buscar compras no cartão na nuvem:', error);
               return null;
             }),
           window.SupabaseAuth.fetchCloudProfile
@@ -3750,7 +4475,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (!FinanceData.mergeCloudData(
-          userId, cloudEntries, cloudTemplates, localSync.success, cloudGoals, cloudAccounts
+          userId, cloudEntries, cloudTemplates, localSync.success, cloudGoals, cloudAccounts,
+          cloudFixedImportRules, cloudCreditCards, cloudCreditCardPurchases
         )) {
           console.warn('[GastoPro] Sincronização ignorada: o usuário local não corresponde à sessão.');
           showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
@@ -4634,6 +5360,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const parseCsvBtn         = document.getElementById('parseCsvBtn');
   const parseTextBtn        = document.getElementById('parseTextBtn');
   const importRawTextarea   = document.getElementById('importRawTextarea');
+  const importTargetAccount = document.getElementById('importTargetAccount');
+  const createImportAccountBtn = document.getElementById('createImportAccountBtn');
+  const importTargetAccountError = document.getElementById('importTargetAccountError');
   const importPreviewSection= document.getElementById('importPreviewSection');
   const importPreviewTbody  = document.getElementById('importPreviewTableBody');
   const previewCountBadge   = document.getElementById('previewCountBadge');
@@ -4647,6 +5376,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!importModal) return;
     importModal.classList.add('active');
     resetImportModal();
+    updateImportAccountSelector();
+    renderFixedImportRules();
     closeMobileSidebar();
   }
 
@@ -4675,10 +5406,61 @@ document.addEventListener('DOMContentLoaded', () => {
     if (importPreviewTbody)   importPreviewTbody.innerHTML = '';
     if (previewCountBadge)    previewCountBadge.textContent = '0 itens';
     if (importSelectAll)      importSelectAll.checked = true;
+    _importSourceRows = [];
+    _importParsedRows = [];
     if (importDuplicateSelectionNote) {
       importDuplicateSelectionNote.textContent = '';
       importDuplicateSelectionNote.hidden = true;
     }
+  }
+
+  function updateImportAccountSelector(selectedId = '') {
+    if (!importTargetAccount) return;
+    const accounts = FinanceData.getAccounts();
+    importTargetAccount.innerHTML = [
+      '<option value="">Selecione uma conta</option>',
+      ...accounts.map(account =>
+        `<option value="${escapeHtml(account.id)}">${escapeHtml(account.name)}</option>`
+      )
+    ].join('');
+    importTargetAccount.value = accounts.some(account => account.id === selectedId) ? selectedId : '';
+    if (createImportAccountBtn) createImportAccountBtn.hidden = accounts.length > 0;
+    if (importTargetAccountError) {
+      importTargetAccountError.hidden = true;
+      importTargetAccountError.textContent = '';
+    }
+    if (_importSourceRows.length) prepareImportRows(_importSourceRows);
+  }
+
+  function renderFixedImportRules() {
+    const list = document.getElementById('fixedImportRulesList');
+    const empty = document.getElementById('fixedImportRulesEmpty');
+    if (!list || !empty) return;
+    const rules = FinanceData.getFixedImportRules();
+    list.innerHTML = rules.map(rule => `
+      <li>
+        <span>${escapeHtml(rule)}</span>
+        <button type="button" class="btn-secondary" data-action="remove-fixed-import-rule"
+          data-rule="${escapeHtml(rule)}" aria-label="Apagar regra ${escapeHtml(rule)}">Apagar</button>
+      </li>
+    `).join('');
+    empty.hidden = rules.length > 0;
+  }
+
+  async function removeFixedImportRule(rule) {
+    if (!rule) return;
+    const result = await FinanceData.saveFixedImportRules(
+      FinanceData.getFixedImportRules().filter(savedRule => savedRule !== rule)
+    );
+    if (!FinanceData.getFixedImportRules().includes(rule)) {
+      renderFixedImportRules();
+      showToast(result.success
+        ? 'Regra de importação apagada.'
+        : 'Regra apagada neste aparelho; a sincronização ficou pendente.');
+      return;
+    }
+    console.error('[GastoPro] Não foi possível apagar a regra de importação:', result.error);
+    showToast('Não foi possível apagar a regra de importação.');
   }
 
   /** Alterna entre as abas CSV e Texto do modal. */
@@ -4728,14 +5510,15 @@ document.addEventListener('DOMContentLoaded', () => {
     ])].sort();
 
     rows.forEach((row, i) => {
-      const isIncome = row.type === 'income';
-      const selectedType = getImportPreviewType(row);
+      const selectedType = row.previewType || getImportPreviewType(row);
+      const isIncome = selectedType === 'income';
       const dateDisplay = row.date
         ? row.date.split('-').reverse().join('/')
         : 'Data inválida';
       const rowStatus = [
         row.invalid ? '<span class="import-row-status invalid">Data inválida</span>' : '',
-        row.duplicate ? '<span class="import-row-status duplicate">Possível duplicado</span>' : '',
+        row.duplicate ? '<span class="import-row-status duplicate">Parece já lançado</span>' : '',
+        row.fixedByRule ? '<span class="import-row-status pending">Regra salva: Fixo</span>' : '',
         row.pending && !row.recurringPrimary ? '<span class="import-row-status pending">Sugestão: a pagar</span>' : ''
       ].filter(Boolean).join(' ');
       const recurringCoveredNote = row.recurringCovered
@@ -4794,9 +5577,18 @@ document.addEventListener('DOMContentLoaded', () => {
         </td>
       `;
 
+      const rowCheckbox = tr.querySelector('.import-row-check');
+      rowCheckbox.addEventListener('change', event => {
+        row.selected = event.target.checked;
+        row.selectionTouched = true;
+      });
+      tr.querySelector('.import-cat-select').addEventListener('change', event => {
+        row.category = event.target.value;
+      });
       // Listener dinâmico: ao mudar tipo, atualiza cor do valor
       tr.querySelector('.import-type-select').addEventListener('change', (e) => {
         const isInc = e.target.value === 'income';
+        row.previewType = e.target.value;
         tr.querySelector('.col-amount').classList.toggle('income', isInc);
       });
 
@@ -4815,6 +5607,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Armazena as linhas parseadas para uso posterior na confirmação
   let _importParsedRows = [];
+  let _importSourceRows = [];
 
   function showImportWarnings() {
     const warnings = GastoProImporter.getLastWarnings();
@@ -4823,11 +5616,33 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function prepareImportRows(rows) {
+    const previousRows = _importParsedRows;
+    previousRows.forEach((row, index) => {
+      const checkbox = importPreviewTbody &&
+        importPreviewTbody.querySelector(`.import-row-check[data-row="${index}"]`);
+      const categorySelect = importPreviewTbody &&
+        importPreviewTbody.querySelector(`.import-cat-select[data-row="${index}"]`);
+      const typeSelect = importPreviewTbody &&
+        importPreviewTbody.querySelector(`.import-type-select[data-row="${index}"]`);
+      if (checkbox && checkbox.checked !== row.selected) {
+        row.selected = checkbox.checked;
+        row.selectionTouched = true;
+      }
+      if (categorySelect) row.category = categorySelect.value;
+      if (typeSelect && typeSelect.value !== (row.previewType || getImportPreviewType(row))) {
+        row.previewType = typeSelect.value;
+      }
+    });
+    _importSourceRows = rows.map(row => ({ ...row }));
     const templates = FinanceData.getTemplates();
-    _importParsedRows = GastoProImporter.markDuplicates(rows, FinanceData.getEntries())
+    const accountId = importTargetAccount ? importTargetAccount.value : '';
+    _importParsedRows = GastoProImporter.markDuplicates(
+      _importSourceRows, FinanceData.getEntries(), accountId
+    )
       .map(row => {
         if (row.type === 'fixed' || row.type === 'debt') {
-          const duplicate = GastoProImporter.isTemplateDuplicate(row, templates);
+          const duplicate = row.duplicate ||
+            GastoProImporter.isTemplateDuplicate(row, templates, accountId);
           return { ...row, duplicate, selected: !row.invalid && !duplicate };
         }
         if (row.duplicate || row.invalid || !row.installment) return row;
@@ -4835,6 +5650,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return template ? { ...row, linkedTemplateId: template.id } : row;
       });
     _importParsedRows = markRecurringImportRows(_importParsedRows);
+    _importParsedRows = applyFixedImportRules(_importParsedRows, FinanceData.getFixedImportRules());
+    _importParsedRows = _importParsedRows.map((row, index) => {
+      const previous = previousRows[index];
+      if (!previous) return row;
+      const updated = {
+        ...row,
+        category: previous.category,
+        previewType: previous.previewType,
+        selectionTouched: previous.selectionTouched
+      };
+      if (previous.selectionTouched) {
+        updated.selected = previous.selected;
+      } else if (row.duplicate) {
+        updated.selected = false;
+      } else if (previous.duplicate) {
+        updated.selected = !row.invalid && !row.recurringCovered;
+      } else {
+        updated.selected = previous.selected;
+      }
+      return updated;
+    });
     const hadWarnings = showImportWarnings();
     renderImportPreview(_importParsedRows);
     return hadWarnings;
@@ -4847,6 +5683,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const file = csvFileInput.files[0];
+    if (!GastoProImporter.isSupportedFile(file)) {
+      csvFileInput.value = '';
+      showToast(GastoProImporter.UNSUPPORTED_FILE_WARNING);
+      return;
+    }
     const isPdf = file.name.toLowerCase().endsWith('.pdf');
     if (file.size > (isPdf ? 10_000_000 : 1_000_000)) {
       showToast(isPdf ? 'O PDF excede 10 MB.' : 'O arquivo deve ter no máximo 1 MB.');
@@ -4897,6 +5738,19 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   async function handleConfirmImport() {
     if (!importPreviewTbody || _importParsedRows.length === 0) return;
+    const accountId = window.GastoProImportHelpers.getImportAccountId(
+      importTargetAccount ? importTargetAccount.value : '',
+      FinanceData.getAccounts()
+    );
+    if (!accountId) {
+      const message = 'Selecione uma conta de destino antes de importar.';
+      if (importTargetAccountError) {
+        importTargetAccountError.textContent = message;
+        importTargetAccountError.hidden = false;
+      }
+      showToast(message);
+      return;
+    }
 
     const checkboxes = importPreviewTbody.querySelectorAll('.import-row-check');
     const catSelects  = importPreviewTbody.querySelectorAll('.import-cat-select');
@@ -4909,7 +5763,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkboxes.forEach((cb, i) => {
       if (!cb.checked || _importParsedRows[i].invalid) return;
 
-      const row      = _importParsedRows[i];
+      const row      = { ..._importParsedRows[i], accountId };
       const category = catSelects[i]  ? catSelects[i].value  : row.category;
       const type     = typeSelects[i] ? typeSelects[i].value : 'variable';
 
@@ -4989,6 +5843,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Abrir modal
   if (sidebarImportBtn) sidebarImportBtn.addEventListener('click', openImportModal);
+  if (createImportAccountBtn) {
+    createImportAccountBtn.addEventListener('click', () => {
+      returnToImportAfterAccountModal = true;
+      importAccountCreatedId = null;
+      closeImportModal();
+      openAccountModal();
+    });
+  }
+  if (importTargetAccount) {
+    importTargetAccount.addEventListener('change', () => {
+      if (importTargetAccountError) {
+        importTargetAccountError.hidden = true;
+        importTargetAccountError.textContent = '';
+      }
+      if (_importSourceRows.length) prepareImportRows(_importSourceRows);
+    });
+  }
+  window.addEventListener('gastopro:account-modal-closed-for-import', event => {
+    updateImportAccountSelector(event.detail.accountId);
+  });
 
   // Fechar modal
   if (closeImportModalBtn) closeImportModalBtn.addEventListener('click', closeImportModal);
@@ -5009,6 +5883,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (csvFileInput) {
     csvFileInput.addEventListener('change', () => {
       const file = csvFileInput.files && csvFileInput.files[0];
+      if (file && !GastoProImporter.isSupportedFile(file)) {
+        csvFileInput.value = '';
+        if (csvDropZone) {
+          csvDropZone.classList.remove('csv-file-selected');
+          document.getElementById('csvDropIcon').className = 'fa-solid fa-cloud-arrow-up drop-icon';
+          document.getElementById('csvDropTitle').textContent = 'Arraste o arquivo aqui';
+          document.getElementById('csvDropSub').textContent = 'ou clique para selecionar o arquivo (.csv, .ofx, .xml, .pdf)';
+        }
+        showToast(GastoProImporter.UNSUPPORTED_FILE_WARNING);
+        return;
+      }
       if (file && csvDropZone) {
         csvDropZone.classList.add('csv-file-selected');
         document.getElementById('csvDropIcon').className = 'fa-solid fa-file-circle-check drop-icon';
@@ -5057,7 +5942,8 @@ document.addEventListener('DOMContentLoaded', () => {
       checkboxes.forEach(cb => {
         if (cb.disabled) return;
         const row = _importParsedRows[Number(cb.dataset.row)];
-        cb.checked = importSelectAll.checked && !row.duplicate;
+        row.selected = importSelectAll.checked && !row.duplicate;
+        cb.checked = row.selected;
       });
       if (importDuplicateSelectionNote) {
         importDuplicateSelectionNote.hidden = duplicateCount === 0;
@@ -5835,6 +6721,8 @@ document.addEventListener('DOMContentLoaded', () => {
       document.body.classList.remove('auth-checking');
       window.switchToView(restoredView);
       if (user) await syncUserDataFromCloud(user.id);
+      accountOnboardingDataReady = true;
+      window.dispatchEvent(new Event('gastopro:account-data-ready'));
     })();
     try {
       return await sessionInitializationPromise;
@@ -5846,6 +6734,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeAuthenticatedView().catch(e => {
     console.error('[GastoPro] Falha ao inicializar a sessão:', e);
     document.body.classList.remove('auth-checking');
+    accountOnboardingDataReady = true;
+    window.dispatchEvent(new Event('gastopro:account-data-ready'));
   });
 
   // ── 12. Registro do Service Worker (PWA) ─────────────────────
@@ -5861,6 +6751,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── 13. Metas por Categoria — Event Listeners ─────────────────
   initGoalModalListeners();
   initOnboarding();
+  initAccountOnboarding();
 });
 
 // ================================================================

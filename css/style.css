@@ -1257,15 +1257,51 @@ body {
 
 .topbar-summary {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
+  align-items: flex-start;
   background: rgba(var(--theme-rgb-background-ffffff), 0.03);
   padding: 0.4rem 0.85rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
 }
+.topbar-balance-content {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.topbar-balance-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
 .topbar-label { font-size: 0.82rem; color: var(--text-muted); }
 .topbar-value { font-size: 1rem; font-weight: 800; color: var(--theme-text-ffffff); }
+.topbar-month-result {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.topbar-month-result strong {
+  color: var(--text-main);
+  font-size: inherit;
+  font-weight: 600;
+}
+.topbar-empty-message {
+  max-width: 12rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  white-space: normal;
+}
+.topbar-balance-date-note {
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+.topbar-balance-date-note[hidden] {
+  display: none;
+}
 
 html {
   scroll-behavior: smooth;
@@ -2105,7 +2141,8 @@ button:active { transform: scale(0.98); }
 }
 
 .account-balance-filters {
-  align-self: flex-start;
+  width: min(100%, 24rem);
+  margin: 0;
 }
 
 .account-balance-empty {
@@ -2140,6 +2177,13 @@ button:active { transform: scale(0.98); }
 
 .account-card-meta {
   flex-wrap: wrap;
+}
+
+.account-balance-date-note {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
 
 .account-type-badge {
@@ -3127,6 +3171,21 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   margin-bottom: 0;
 }
 
+.confirm-remember-option {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: var(--text-main);
+  font-size: 0.88rem;
+  text-align: left;
+}
+
+.confirm-remember-option[hidden] {
+  display: none;
+}
+
 .confirm-actions {
   justify-content: center;
   gap: 0.85rem;
@@ -3381,6 +3440,125 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 /* ================================================================
    13. ESTILOS DE AUTENTICAÇÃO E CONTA MULTI-USUÁRIO (SAAS UI)
    ================================================================ */
+
+.credit-card-item {
+  align-items: flex-start;
+}
+
+.credit-card-item .card-item-left,
+.credit-card-item .card-item-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.credit-card-visual {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: min(100%, 22rem);
+  min-height: 7rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  color: var(--theme-text-ffffff);
+  background: var(--primary);
+  box-shadow: 0 0.4rem 1rem rgba(var(--theme-rgb-shadow-10b981), 0.16);
+  text-shadow: 0 1px 2px rgba(var(--theme-rgb-shadow-000000), 0.35);
+}
+
+.credit-card-visual--nubank { background: var(--purple); }
+.credit-card-visual--itau,
+.credit-card-visual--inter { background: var(--warning); }
+.credit-card-visual--bradesco,
+.credit-card-visual--santander { background: var(--danger); }
+.credit-card-visual--banco-do-brasil,
+.credit-card-visual--caixa,
+.credit-card-visual--mercado-pago { background: var(--primary); }
+.credit-card-visual--c6,
+.credit-card-visual--btg { background: var(--text-main); }
+.credit-card-visual--picpay { background: var(--success); }
+
+.credit-card-visual-heading,
+.credit-card-visual-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.credit-card-visual-brand {
+  text-align: right;
+}
+
+.credit-card-visual-name {
+  overflow: hidden;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.credit-card-visual-footer {
+  font-size: 0.72rem;
+}
+
+.credit-card-select-preview {
+  margin-top: 0.65rem;
+}
+
+.credit-card-select-preview .credit-card-visual {
+  width: min(100%, 18rem);
+  min-height: 6rem;
+}
+
+.credit-card-item .card-item-meta {
+  margin-top: 0.55rem;
+}
+
+.credit-card-usage {
+  margin-top: 0.65rem;
+  width: 100%;
+}
+
+.credit-card-usage-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.credit-card-usage-labels strong {
+  color: var(--text-main);
+}
+
+.credit-card-usage-progress {
+  display: block;
+  width: 100%;
+  height: 0.65rem;
+  margin-top: 0.4rem;
+  accent-color: var(--primary);
+}
+
+.credit-card-usage--warning .credit-card-usage-progress {
+  accent-color: var(--warning);
+}
+
+.credit-card-usage--full .credit-card-usage-progress {
+  accent-color: var(--danger);
+}
+
+.credit-card-usage-alert {
+  margin-top: 0.3rem;
+  color: var(--warning);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.credit-card-usage--full .credit-card-usage-alert {
+  color: var(--danger);
+}
 
 /* Card de Conta no Drawer Lateral */
 .drawer-account-section {
@@ -4259,6 +4437,46 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
+}
+
+.import-fixed-rules {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+}
+
+.import-fixed-rules > summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.import-fixed-rules ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.import-fixed-rules li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.import-fixed-rules li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.import-fixed-rules p {
+  margin: 0.75rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
 }
 
 .import-help > summary {

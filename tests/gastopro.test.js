@@ -219,6 +219,14 @@ describe('Tutorial de primeiro acesso', () => {
     assertFalse(window.GastoProOnboarding.shouldShowOnFirstAccess());
   });
 
+  it('oferece o cadastro inicial sem contas e respeita a opção de pular', () => {
+    localStorage.removeItem(window.GastoProOnboarding.ACCOUNT_SETUP_STORAGE_KEY);
+    assertTrue(window.GastoProOnboarding.shouldShowAccountSetup([]));
+    assertFalse(window.GastoProOnboarding.shouldShowAccountSetup([{ id: 'existente' }]));
+    window.GastoProOnboarding.markAccountSetupSeen();
+    assertFalse(window.GastoProOnboarding.shouldShowAccountSetup([]));
+  });
+
   it('permite reabrir manualmente começando pelo primeiro tópico', () => {
     window.GastoProOnboarding.markSeen();
     assertEqual(window.GastoProOnboarding.getStartIndex(), 0);
@@ -474,21 +482,25 @@ describe('FinanceData — Contas Bancárias', () => {
       name: '  Conta pessoal  ',
       institution: '  Banco Exemplo  ',
       type: 'PF',
-      initialBalance: 125.5
+      initialBalance: 125.5,
+      balanceDate: '2026-10-01'
     });
     assertTrue(created.success);
     assertTrue(isUuid(created.account.id));
     assertEqual(created.account.name, 'Conta pessoal');
     assertEqual(created.account.institution, 'Banco Exemplo');
+    assertEqual(created.account.balanceDate, '2026-10-01');
 
     const updated = await FinanceData.updateAccount(created.account.id, {
       name: 'Conta empresa',
       type: 'PJ',
-      initialBalance: 800
+      initialBalance: 800,
+      balanceDate: '2026-11-01'
     });
     assertTrue(updated.success);
     assertEqual(FinanceData.getAccounts()[0].type, 'PJ');
     assertEqual(FinanceData.getAccounts()[0].initialBalance, 800);
+    assertEqual(FinanceData.getAccounts()[0].balanceDate, '2026-11-01');
     const linkedEntry = FinanceData.add(makeIncome({ accountId: created.account.id }));
     const linkedTemplate = FinanceData.add(makeFixed({ accountId: created.account.id }));
     assertEqual(linkedEntry.accountId, created.account.id);
@@ -501,26 +513,324 @@ describe('FinanceData — Contas Bancárias', () => {
     assertFalse((await FinanceData.addAccount({
       name: 'Saldo inválido', type: 'PF', initialBalance: 'invalido'
     })).success);
+    assertFalse((await FinanceData.addAccount({
+      name: 'Data inválida', type: 'PF', initialBalance: 10, balanceDate: '2026-02-30'
+    })).success);
     assertFalse((await FinanceData.updateAccount(created.account.id, { type: 'Mista' })).success);
     assertEqual(FinanceData.getAccounts().length, 1);
     assertNull(window.validateCloudPayload(created.account, 'accounts'));
   });
 
+  itAsync('cria, edita, valida e restaura cartões com vínculo opcional de conta', async () => {
+    setupMockLocalStorage();
+    const account = await FinanceData.addAccount({ name: 'Conta vinculada', type: 'PF' });
+    const created = await FinanceData.addCreditCard({
+      name: '  Cartão principal  ',
+      totalLimit: 5000,
+      closingDay: 20,
+      dueDay: 5,
+      accountId: account.account.id,
+      brand: 'Visa',
+      issuerBank: 'Outro',
+      lastFour: '1234',
+      customColor: '#123abc'
+    });
+    assertTrue(created.success);
+    assertTrue(isUuid(created.card.id));
+    assertEqual(created.card.name, 'Cartão principal');
+    assertEqual(FinanceData.getCreditCards()[0].accountId, account.account.id);
+    assertEqual(created.card.brand, 'Visa');
+    assertEqual(created.card.issuerBank, 'Outro');
+    assertEqual(created.card.lastFour, '1234');
+    assertEqual(created.card.customColor, '#123abc');
+    assertNull(window.validateCloudPayload(created.card, 'creditCards'));
+
+    const updated = await FinanceData.updateCreditCard(created.card.id, {
+      name: 'Cartão PJ', totalLimit: 7500, closingDay: 22, dueDay: 8, accountId: null,
+      brand: 'Elo', issuerBank: 'PicPay', lastFour: null, customColor: null
+    });
+    assertTrue(updated.success);
+    assertEqual(FinanceData.getCreditCards()[0].totalLimit, 7500);
+    assertNull(FinanceData.getCreditCards()[0].accountId);
+    assertEqual(FinanceData.getCreditCards()[0].brand, 'Elo');
+    assertEqual(FinanceData.getCreditCards()[0].issuerBank, 'PicPay');
+    assertNull(FinanceData.getCreditCards()[0].customColor);
+    assertFalse((await FinanceData.addCreditCard({
+      name: '', totalLimit: 100, closingDay: 20, dueDay: 5
+    })).success);
+    assertFalse((await FinanceData.addCreditCard({
+      name: 'Cartão inválido', totalLimit: 100, closingDay: 32, dueDay: 5
+    })).success);
+    assertFalse((await FinanceData.addCreditCard({
+      name: 'Bandeira inválida', totalLimit: 100, closingDay: 20, dueDay: 5,
+      brand: 'Discover'
+    })).success);
+    assertFalse((await FinanceData.addCreditCard({
+      name: 'Final inválido', totalLimit: 100, closingDay: 20, dueDay: 5,
+      lastFour: '12x4'
+    })).success);
+
+    const expectedCards = FinanceData.getCreditCards();
+    const backupText = JSON.stringify({
+      version: '4.0', entries: [], templates: [], goals: [],
+      accounts: [account.account], creditCards: expectedCards
+    });
+    assertEqual(GastoProBackupHelpers.validate(backupText).creditCards, expectedCards);
+    assertTrue((await FinanceData.importJSON(backupText, 'replace')).success);
+    assertEqual(FinanceData.getCreditCards(), expectedCards);
+    assertEqual(GastoProBackupHelpers.validate(JSON.stringify({
+      version: '4.0', entries: [], templates: [], goals: []
+    })).creditCards, []);
+    const legacyCard = GastoProBackupHelpers.validate(JSON.stringify({
+      version: '4.0', entries: [], templates: [], goals: [], accounts: [],
+      creditCards: [{
+        id: crypto.randomUUID(), name: 'Cartão antigo', totalLimit: 300,
+        closingDay: 15, dueDay: 25, accountId: null
+      }]
+    })).creditCards[0];
+    assertEqual(legacyCard.brand, 'Outra');
+    assertEqual(legacyCard.issuerBank, 'Outro');
+    assertEqual(legacyCard.lastFour, null);
+    assertEqual(legacyCard.customColor, '#6366f1');
+    const visual = window.GastoProCreditCardDashboardHelpers.renderVisual({
+      ...created.card, name: '<Cartão>', totalLimit: 5000
+    }, true);
+    assertTrue(visual.includes('&lt;Cartão&gt;'));
+    assertTrue(visual.includes('Visa'));
+    assertTrue(visual.includes('•••• 1234'));
+    assertTrue(visual.includes('Limite'));
+  });
+
+  itAsync('sincroniza cartões e limpa a fila após confirmação do Supabase', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-credit-cards';
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId }, { queueSync: false });
+    const card = {
+      id: crypto.randomUUID(), name: 'Cartão sincronizado', totalLimit: 1200,
+      closingDay: 15, dueDay: 25, accountId: null,
+      brand: 'Mastercard', issuerBank: 'Nubank', lastFour: '7788', customColor: null
+    };
+    await FinanceData.saveCreditCards([card], { flush: false });
+    const purchase = {
+      id: crypto.randomUUID(), cardId: card.id, cardName: card.name, accountId: null,
+      desc: 'Compra sincronizada', amount: 120, category: 'Compras',
+      purchaseDate: '2026-03-10', installmentCount: 2, closingDay: 15, dueDay: 25,
+      paidInstallments: [], paidDates: {}
+    };
+    await FinanceData.saveCreditCardPurchases([purchase], { flush: false });
+    const previousAuth = window.SupabaseAuth;
+    let syncedCards = [];
+    let syncedPurchases = [];
+    window.SupabaseAuth = {
+      saveCloudCreditCards: async cards => {
+        syncedCards = cards;
+        return { success: true };
+      },
+      saveCloudCreditCardPurchases: async purchases => {
+        syncedPurchases = purchases;
+        return { success: true };
+      }
+    };
+    try {
+      const result = await FinanceData.flushPendingSync(userId);
+      assertTrue(result.success);
+      assertEqual(syncedCards, [card]);
+      assertEqual(syncedPurchases, [purchase]);
+      assertEqual(FinanceData.getPendingSync().creditCards, []);
+      assertEqual(FinanceData.getPendingSync().creditCardPurchases, []);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('distribui parcelas antes e depois do fechamento, em 1x e até 24x', async () => {
+    const makePurchase = overrides => ({
+      purchaseDate: '2026-03-20', amount: 2400, installmentCount: 1,
+      closingDay: 20, dueDay: 10, ...overrides
+    });
+    const beforeClose = window.GastoProCreditCardHelpers.getInstallments(makePurchase({
+      purchaseDate: '2026-03-20'
+    }));
+    const afterClose = window.GastoProCreditCardHelpers.getInstallments(makePurchase({
+      purchaseDate: '2026-03-21'
+    }));
+    assertEqual(beforeClose[0].month, '2026-04');
+    assertEqual(beforeClose[0].date, '2026-04-10');
+    assertEqual(afterClose[0].month, '2026-05');
+
+    const single = window.GastoProCreditCardHelpers.getInstallments(makePurchase({
+      amount: 250, installmentCount: 1
+    }));
+    assertEqual(single.length, 1);
+    assertEqual(single[0].amount, 250);
+    const maximum = window.GastoProCreditCardHelpers.getInstallments(makePurchase({
+      amount: 2400, installmentCount: 24
+    }));
+    assertEqual(maximum.length, 24);
+    assertEqual(maximum[0].month, '2026-04');
+    assertEqual(maximum[23].month, '2028-03');
+    assertEqual(Math.round(maximum.reduce((sum, item) => sum + item.amount, 0) * 100), 240000);
+  });
+
+  itAsync('mantém a compra fora do saldo da conta até pagar a parcela e inclui fatura no mês correto', async () => {
+    setupMockLocalStorage();
+    const today = new Date();
+    const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const account = await FinanceData.addAccount({
+      name: 'Conta da fatura', type: 'PF', initialBalance: 1000, balanceDate: todayString
+    });
+    const card = await FinanceData.addCreditCard({
+      name: 'Cartão da conta', totalLimit: 2000, closingDay: 31, dueDay: 10,
+      accountId: account.account.id
+    });
+    const purchase = await FinanceData.addCreditCardPurchase({
+      cardId: card.card.id, desc: 'Compra parcelada', amount: 300,
+      category: 'Compras', purchaseDate: todayString, installmentCount: 3
+    });
+    assertTrue(purchase.success);
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 1000);
+    const schedule = window.GastoProCreditCardHelpers.getInstallments(purchase.purchase);
+    assertEqual(schedule[0].month, GastoProImporter.shiftMonth(todayString.slice(0, 7), 1));
+    const monthItems = FinanceData.getByMonth(schedule[0].month);
+    const installment = monthItems.find(item => item.isCardInstallment);
+    assertEqual(installment.amount, 100);
+    assertEqual(installment.installmentNumber, 1);
+
+    const paid = await FinanceData.toggleCreditCardPurchasePaid(purchase.purchase.id, 1);
+    assertTrue(paid.success);
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 900);
+    assertEqual(FinanceData.getByMonth(schedule[0].month).find(item =>
+      item.isCardInstallment
+    ).paid, true);
+  });
+
+  it('calcula limite usado e alertas a 80% e 100%', () => {
+    const card = { id: 'card-a', totalLimit: 1000 };
+    const purchases = [
+      { cardId: 'card-a', amount: 800, installmentCount: 1, purchaseDate: '2026-03-01',
+        closingDay: 20, dueDay: 10, paidInstallments: [] }
+    ];
+    const warning = window.GastoProCreditCardHelpers.calculateLimitUsage(card, purchases);
+    assertEqual(warning.used, 800);
+    assertEqual(warning.available, 200);
+    assertEqual(warning.alert, 'warning');
+    assertEqual(
+      window.GastoProCreditCardDashboardHelpers.getUsagePresentation(warning.alert).message,
+      'Atenção: uso igual ou acima de 80%.'
+    );
+    purchases[0].amount = 1000;
+    const full = window.GastoProCreditCardHelpers.calculateLimitUsage(card, purchases);
+    assertEqual(full.alert, 'full');
+    assertEqual(
+      window.GastoProCreditCardDashboardHelpers.getUsagePresentation(full.alert).message,
+      'Limite atingido ou excedido.'
+    );
+  });
+
+  itAsync('mantém compras e baixas de parcelas no backup e aceita backup antigo sem cartões', async () => {
+    setupMockLocalStorage();
+    const now = new Date();
+    const todayString = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const account = await FinanceData.addAccount({
+      name: 'Conta de backup', type: 'PJ', initialBalance: 500, balanceDate: '2026-01-01'
+    });
+    const card = await FinanceData.addCreditCard({
+      name: 'Cartão de backup', totalLimit: 3000, closingDay: 15, dueDay: 25,
+      accountId: account.account.id
+    });
+    const added = await FinanceData.addCreditCardPurchase({
+      cardId: card.card.id, desc: 'Compra no backup', amount: 240,
+      category: 'Compras', purchaseDate: '2026-01-16', installmentCount: 2
+    });
+    await FinanceData.toggleCreditCardPurchasePaid(added.purchase.id, 1);
+    const backupText = JSON.stringify({
+      version: '4.0', entries: [], templates: [], goals: [],
+      accounts: FinanceData.getAccounts(), creditCards: FinanceData.getCreditCards(),
+      creditCardPurchases: FinanceData.getCreditCardPurchases()
+    });
+    const validated = GastoProBackupHelpers.validate(backupText);
+    assertFalse(validated.error);
+    assertEqual(validated.creditCardPurchases[0].paidInstallments, [1]);
+    assertEqual(validated.creditCardPurchases[0].paidDates[1], todayString);
+    assertTrue((await FinanceData.importJSON(backupText, 'replace')).success);
+    assertEqual(FinanceData.getCreditCardPurchases(), validated.creditCardPurchases);
+    const oldBackup = GastoProBackupHelpers.validate(JSON.stringify({
+      version: '4.0', entries: [], templates: [], goals: []
+    }));
+    assertFalse(oldBackup.error);
+    assertEqual(oldBackup.creditCards, []);
+    assertEqual(oldBackup.creditCardPurchases, []);
+  });
+
   itAsync('calcula saldo considerando somente receitas e gastos pagos', async () => {
     setupMockLocalStorage();
     const account = await FinanceData.addAccount({ name: 'Conta', type: 'PF', initialBalance: 100 });
+    const today = new Date();
+    const formatDate = date =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const todayString = formatDate(today);
+    const currentMonth = todayString.slice(0, 7);
+    const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const nextMonth = GastoProImporter.shiftMonth(currentMonth, 1);
     FinanceData.saveEntries([
-      makeIncome({ id: crypto.randomUUID(), accountId: account.account.id, amount: 100, paid: true }),
-      makeIncome({ id: crypto.randomUUID(), accountId: account.account.id, amount: 500, paid: false }),
-      makeVariable({ id: crypto.randomUUID(), accountId: account.account.id, amount: 25, paid: true }),
-      makeVariable({ id: crypto.randomUUID(), accountId: account.account.id, amount: 40, paid: false })
+      makeIncome({ id: crypto.randomUUID(), accountId: account.account.id, amount: 100, date: todayString, paid: true }),
+      makeIncome({ id: crypto.randomUUID(), accountId: account.account.id, amount: 500, date: todayString, paid: false }),
+      makeVariable({ id: crypto.randomUUID(), accountId: account.account.id, amount: 25, date: todayString, paid: true }),
+      makeVariable({ id: crypto.randomUUID(), accountId: account.account.id, amount: 40, date: todayString, paid: false }),
+      makeIncome({ id: crypto.randomUUID(), accountId: account.account.id, amount: 700, date: formatDate(tomorrow), paid: true })
     ]);
     FinanceData.saveTemplates([{
-      ...makeFixed({ id: crypto.randomUUID(), accountId: account.account.id, amount: 30 }),
-      paidMonths: { '2026-10': true, '2026-11': false }
+      ...makeFixed({
+        id: crypto.randomUUID(), accountId: account.account.id, amount: 30,
+        date: `${currentMonth}-${String(today.getDate()).padStart(2, '0')}`,
+        day: String(today.getDate())
+      }),
+      paidMonths: { [currentMonth]: true, [nextMonth]: true }
     }]);
 
     assertEqual(FinanceData.getAccountBalance(account.account.id), 145);
+  });
+
+  itAsync('filtra movimentos pagos pela data-base e usa o dia de vencimento nos meses pagos', async () => {
+    setupMockLocalStorage();
+    const today = new Date();
+    const formatDate = date =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const todayString = formatDate(today);
+    const baseDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 10);
+    const beforeBaseDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() - 1);
+    const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const currentMonth = todayString.slice(0, 7);
+    const nextMonth = GastoProImporter.shiftMonth(currentMonth, 1);
+    const account = await FinanceData.addAccount({
+      name: 'Conta com data-base',
+      type: 'PF',
+      initialBalance: 1000,
+      balanceDate: formatDate(baseDate)
+    });
+    FinanceData.saveEntries([
+      makeIncome({ id: crypto.randomUUID(), accountId: account.account.id, amount: 200, date: formatDate(beforeBaseDate), paid: true }),
+      makeIncome({ id: crypto.randomUUID(), accountId: account.account.id, amount: 100, date: formatDate(baseDate), paid: true }),
+      makeVariable({ id: crypto.randomUUID(), accountId: account.account.id, amount: 20, date: formatDate(beforeBaseDate), paid: true }),
+      makeVariable({ id: crypto.randomUUID(), accountId: account.account.id, amount: 50, date: todayString, paid: true }),
+      makeVariable({ id: crypto.randomUUID(), accountId: account.account.id, amount: 900, date: formatDate(tomorrow), paid: true }),
+      makeVariable({ id: crypto.randomUUID(), accountId: account.account.id, amount: 900, date: todayString, paid: false })
+    ]);
+    FinanceData.saveTemplates([{
+      ...makeFixed({
+        id: crypto.randomUUID(), accountId: account.account.id, amount: 30,
+        date: `${currentMonth}-${String(today.getDate()).padStart(2, '0')}`,
+        day: String(today.getDate())
+      }),
+      paidMonths: {
+        [GastoProImporter.shiftMonth(currentMonth, -1)]: true,
+        [currentMonth]: true,
+        [nextMonth]: true
+      }
+    }]);
+
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 1020);
   });
 
   itAsync('consolida saldos PF e PJ sem incluir movimentações sem conta', async () => {
@@ -536,9 +846,11 @@ describe('FinanceData — Contas Bancárias', () => {
   itAsync('ajuste rápido recalcula o saldo inicial para atingir o saldo informado', async () => {
     setupMockLocalStorage();
     const created = await FinanceData.addAccount({ name: 'Conta', type: 'PF', initialBalance: 100 });
+    const today = new Date();
+    const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     FinanceData.saveEntries([
-      makeIncome({ id: crypto.randomUUID(), accountId: created.account.id, amount: 20, paid: true }),
-      makeVariable({ id: crypto.randomUUID(), accountId: created.account.id, amount: 10, paid: true })
+      makeIncome({ id: crypto.randomUUID(), accountId: created.account.id, amount: 20, date: todayString, paid: true }),
+      makeVariable({ id: crypto.randomUUID(), accountId: created.account.id, amount: 10, date: todayString, paid: true })
     ]);
 
     const adjusted = await FinanceData.adjustAccountBalance(created.account.id, 500);
@@ -657,7 +969,8 @@ describe('FinanceData — Contas Bancárias', () => {
     localStorage.setItem('gastopro_theme', 'light');
     const accountId = crypto.randomUUID();
     const account = {
-      id: accountId, name: 'Conta backup', institution: null, type: 'PF', initialBalance: 250
+      id: accountId, name: 'Conta backup', institution: null, type: 'PF', initialBalance: 250,
+      balanceDate: '2026-10-01'
     };
     const entry = makeIncome({
       id: crypto.randomUUID(), accountId, date: '2026-11-05', month: '2026-11'
@@ -678,6 +991,95 @@ describe('FinanceData — Contas Bancárias', () => {
     assertEqual(FinanceData.getAccounts(), [account]);
     assertEqual(FinanceData.getEntries()[0].accountId, accountId);
     assertEqual(localStorage.getItem('gastopro_theme'), 'light');
+  });
+
+  itAsync('sincroniza e limpa a fila de regras fixas de importação', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-fixed-import-rules';
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId }, { queueSync: false });
+    const previousAuth = window.SupabaseAuth;
+    let syncedRules = null;
+    window.SupabaseAuth = {
+      saveCloudFixedImportRules: async rules => {
+        syncedRules = rules;
+        return { success: true };
+      }
+    };
+    try {
+      await FinanceData.saveFixedImportRules(['shopee sparcelado'], { flush: false });
+      const result = await FinanceData.flushPendingSync(userId);
+      assertTrue(result.success);
+      assertEqual(syncedRules, ['shopee sparcelado']);
+      assertFalse(FinanceData.getPendingSync().fixedImportRules);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('aceita e restaura conta antiga sem balanceDate com data nula', async () => {
+    setupMockLocalStorage();
+    const account = {
+      id: crypto.randomUUID(), name: 'Conta antiga', institution: null, type: 'PF', initialBalance: 50
+    };
+    const backupText = JSON.stringify({
+      version: '4.0', entries: [], templates: [], goals: [], accounts: [account]
+    });
+    const validated = GastoProBackupHelpers.validate(backupText);
+    assertFalse(validated.error);
+    assertEqual(validated.accounts[0].balanceDate, null);
+    assertNull(window.validateCloudPayload({ ...account, balanceDate: null }, 'accounts'));
+    assertTrue(window.validateCloudPayload({ ...account, balanceDate: '2026-02-30' }, 'accounts'));
+    const restored = await FinanceData.importJSON(backupText, 'replace');
+    assertTrue(restored.success);
+    assertEqual(FinanceData.getAccounts()[0].balanceDate, null);
+  });
+
+  itAsync('salva e restaura regras fixas no backup e aceita backup antigo sem regras', async () => {
+    setupMockLocalStorage();
+    const rule = 'shopee sparcelado';
+    const backupText = JSON.stringify({
+      version: '4.0', entries: [], templates: [], goals: [], accounts: [],
+      fixedImportRules: [rule]
+    });
+    const validated = GastoProBackupHelpers.validate(backupText);
+    assertEqual(validated.fixedImportRules, [rule]);
+    assertTrue((await FinanceData.importJSON(backupText, 'replace')).success);
+    assertEqual(FinanceData.getFixedImportRules(), [rule]);
+
+    const legacy = JSON.stringify({
+      version: '4.0', entries: [], templates: [], goals: [], accounts: []
+    });
+    assertEqual(GastoProBackupHelpers.validate(legacy).fixedImportRules, []);
+    assertTrue((await FinanceData.importJSON(legacy, 'replace')).success);
+    assertEqual(FinanceData.getFixedImportRules(), []);
+  });
+
+  itAsync('converte em recorrência somente os lançamentos futuros confirmados', async () => {
+    setupMockLocalStorage();
+    const source = makeVariable({ id: 'fixed-source', date: '2026-01-10', paid: true });
+    const future = makeVariable({ id: 'fixed-future', date: '2026-02-10', paid: true });
+    const fields = {
+      desc: source.desc, amount: source.amount, category: source.category,
+      accountId: 'conta-original', active: true, endMonth: null
+    };
+    await FinanceData.saveEntries([source, future], { flush: false });
+
+    const result = await FinanceData.convertEntryToTemplate(source.id, fields, []);
+    assertTrue(result.success);
+    assertEqual(FinanceData.getEntries().map(entry => entry.id), [future.id]);
+    assertEqual(FinanceData.getTemplates()[0].accountId, 'conta-original');
+    assertEqual(FinanceData.getTemplates()[0].paidMonths, { '2026-01': true });
+
+    setupMockLocalStorage();
+    await FinanceData.saveEntries([source, future], { flush: false });
+    const applied = await FinanceData.convertEntryToTemplate(source.id, fields, [future.id]);
+    assertTrue(applied.success);
+    assertEqual(FinanceData.getEntries(), []);
+    assertEqual(applied.convertedCount, 1);
+    assertEqual(FinanceData.getTemplates()[0].paidMonths, {
+      '2026-01': true, '2026-02': true
+    });
   });
 });
 
@@ -816,11 +1218,38 @@ describe('Tema — preferência local', () => {
 });
 
 describe('Interface — filtros e opções de contas', () => {
-  it('seleciona o saldo consolidado ou por tipo sem alterar os valores', () => {
+  it('seleciona o saldo de todas, por tipo ou de uma conta sem duplicar controles', () => {
     const balances = { total: 1450, PF: 900, PJ: 550 };
+    const accounts = [
+      { id: 'conta-pf', name: 'Conta pessoal', type: 'PF', balanceDate: '2026-01-01' },
+      { id: 'conta-pj', name: 'Conta empresa', type: 'PJ', balanceDate: null }
+    ];
     assertEqual(getAccountBalanceForFilter(balances, 'all'), 1450);
     assertEqual(getAccountBalanceForFilter(balances, 'PF'), 900);
     assertEqual(getAccountBalanceForFilter(balances, 'PJ'), 550);
+    assertEqual(getAccountBalanceForFilter(
+      balances, 'account:conta-pj', accounts, id => id === 'conta-pj' ? -25 : 0
+    ), -25);
+    assertEqual(buildAccountBalanceFilterOptions(accounts), [
+      { value: 'all', label: 'Todas as contas' },
+      { value: 'PF', label: 'Todas as contas PF' },
+      { value: 'PJ', label: 'Todas as contas PJ' },
+      { value: 'account:conta-pf', label: 'Conta pessoal' },
+      { value: 'account:conta-pj', label: 'Conta empresa' }
+    ]);
+  });
+
+  it('mostra convite sem contas e aviso de data apenas para a visão aplicável', () => {
+    assertEqual(getAccountBalanceForFilter({ total: 0, PF: 0, PJ: 0 }, 'all', []), 0);
+    assertEqual(getAccountBalanceFilterLabel([], 'all'), 'Cadastre uma conta para ver seu saldo.');
+    const accounts = [
+      { id: 'pf', type: 'PF', balanceDate: '2026-01-01' },
+      { id: 'pj', type: 'PJ', balanceDate: null }
+    ];
+    assertFalse(accountsNeedBalanceDateNotice(accounts, 'PF'));
+    assertTrue(accountsNeedBalanceDateNotice(accounts, 'PJ'));
+    assertTrue(accountsNeedBalanceDateNotice(accounts, 'all'));
+    assertTrue(accountsNeedBalanceDateNotice(accounts, 'account:pj'));
   });
 
   it('monta as opções de conta com Sem conta como primeira opção', () => {
@@ -1424,6 +1853,7 @@ describe('FinanceData — clearAll()', () => {
       saveCloudTemplates: async () => ({ success: true }),
       saveCloudAccounts: async () => ({ success: true }),
       saveCloudGoals: async () => ({ success: true }),
+      saveCloudFixedImportRules: async () => ({ success: true }),
       deleteCloudEntries: async ids => { deletedEntries.push(...ids); return { success: true }; },
       deleteCloudTemplates: async ids => { deletedTemplates.push(...ids); return { success: true }; },
       deleteCloudAccounts: async ids => { deletedAccounts.push(...ids); return { success: true }; },
@@ -1469,6 +1899,7 @@ describe('FinanceData — clearAll()', () => {
       saveCloudTemplates: async () => ({ success: true }),
       saveCloudAccounts: async accounts => { savedAccounts.push(...accounts); return { success: true }; },
       saveCloudGoals: async () => ({ success: true }),
+      saveCloudFixedImportRules: async () => ({ success: true }),
       deleteCloudEntries: async () => ({ success: true }),
       deleteCloudTemplates: async () => ({ success: true }),
       deleteCloudAccounts: async () => ({ success: false }),
@@ -2710,7 +3141,8 @@ describe('GastoProImporter — parsing e limites', () => {
       dueDay: 5,
       desc: 'Conta importada',
       amount: 120,
-      category: 'Moradia'
+      category: 'Moradia',
+      accountId: 'conta-destino'
     };
     const fixed = GastoProImporter.buildEntry(row, 'fixed');
     const debt = GastoProImporter.buildEntry(row, 'debt');
@@ -2719,9 +3151,62 @@ describe('GastoProImporter — parsing e limites', () => {
     assertEqual(fixed.month, '2026-11');
     assertEqual(fixed.startMonth, '2026-11');
     assertEqual(fixed.endMonth, '2027-01');
+    assertEqual(fixed.accountId, 'conta-destino');
+    assertEqual(debt.accountId, 'conta-destino');
+    assertEqual(pending.accountId, 'conta-destino');
     assertFalse(Object.prototype.hasOwnProperty.call(fixed, 'paid'));
     assertFalse(Object.prototype.hasOwnProperty.call(debt, 'paid'));
     assertEqual(pending.paid, false);
+  });
+
+  it('valida conta de destino obrigatória e rejeita seleção ausente ou inválida', () => {
+    const accounts = [{ id: 'conta-destino' }];
+    assertEqual(window.GastoProImportHelpers.getImportAccountId('conta-destino', accounts), 'conta-destino');
+    assertNull(window.GastoProImportHelpers.getImportAccountId('', accounts));
+    assertNull(window.GastoProImportHelpers.getImportAccountId('outra-conta', accounts));
+    assertNull(window.GastoProImportHelpers.getImportAccountId('conta-destino', []));
+  });
+
+  it('normaliza descrições ignorando mês, números, caixa e acentos', () => {
+    const normalize = window.GastoProImportHelpers.normalizeFixedDescription;
+    assertEqual(normalize('UNINTER (12322044)'), 'uninter');
+    assertEqual(
+      normalize('Shopee SParcelado out/nov'),
+      normalize('SHOPEE SParcelado nov/dez')
+    );
+    assertEqual(normalize('Academía São João 2026'), 'academia sao joao');
+  });
+
+  it('encontra apenas lançamentos parecidos em meses seguintes', () => {
+    const source = makeVariable({ id: 'source', desc: 'UNINTER (12322044)', date: '2026-03-10' });
+    const entries = [
+      source,
+      makeVariable({ id: 'previous', desc: 'Uninter 455', date: '2026-02-10' }),
+      makeVariable({ id: 'future', desc: 'Uninter (9988)', date: '2026-04-10' }),
+      makeVariable({ id: 'income', type: 'income', desc: 'Uninter', date: '2026-05-10' }),
+      makeVariable({ id: 'other', desc: 'Outro', date: '2026-06-10' })
+    ];
+    const matches = window.GastoProImportHelpers.findFutureFixedDescriptionMatches(source, entries);
+    assertEqual(matches.map(entry => entry.id), ['future']);
+  });
+
+  it('aplica regras às novas importações sem alterar inválidos, duplicados ou parcelas', () => {
+    const applyRules = window.GastoProImportHelpers.applyFixedImportRules;
+    const rows = [
+      { ...makeVariable({ desc: 'Shopee SParcelado nov/2026', date: '2026-11-12' }) },
+      { ...makeVariable({ id: 'duplicate', desc: 'Shopee SParcelado', duplicate: true }) },
+      { ...makeVariable({ id: 'invalid', desc: 'Shopee SParcelado', invalid: true }) },
+      { ...makeVariable({ id: 'installment', desc: 'Shopee SParcelado', installment: { current: 1 } }) },
+      { ...makeVariable({ id: 'unmatched', desc: 'Outro gasto' }) }
+    ];
+    const result = applyRules(rows, ['shopee sparcelado']);
+    assertEqual(result[0].type, 'fixed');
+    assertEqual(result[0].startMonth, '2026-11');
+    assertTrue(result[0].fixedByRule);
+    assertEqual(result[1], rows[1]);
+    assertEqual(result[2], rows[2]);
+    assertEqual(result[3], rows[3]);
+    assertEqual(result[4], rows[4]);
   });
 });
 
@@ -3331,29 +3816,46 @@ describe('GastoProImporter — extratos bancários robustos', () => {
       )));
   });
 
-  it('marca duplicados existentes e repetidos no próprio arquivo', () => {
+  it('marca duplicados da mesma conta por valor e data em uma janela de dois dias', () => {
     const rows = [
-      { date: '2026-10-15', amount: 10, desc: 'Mercado EXTRA' },
-      { date: '2026-10-15', amount: 10, desc: 'mercado extra' },
-      { date: '2026-10-16', amount: 10, desc: 'mercado extra' }
+      { date: '2026-10-15', amount: 10, type: 'variable', accountId: 'conta-a', desc: 'Outro nome' },
+      { date: '2026-10-17', amount: 10, type: 'variable', accountId: 'conta-a', desc: 'Mesmo valor' },
+      { date: '2026-10-18', amount: 10, type: 'variable', accountId: 'conta-a', desc: 'Fora da janela' },
+      { date: '2026-10-15', amount: 11, type: 'variable', accountId: 'conta-a', desc: 'Outro valor' },
+      { date: '2026-10-15', amount: 10, type: 'variable', accountId: 'conta-b', desc: 'Outra conta' },
+      { date: '2026-10-15', amount: 10, type: 'income', accountId: 'conta-a', desc: 'Receita' }
     ];
     const marked = GastoProImporter.markDuplicates(rows, [
-      { date: '2026-10-15', amount: 10, desc: 'MERCADO EXTRA' }
+      { date: '2026-10-15', amount: 10, type: 'variable', accountId: 'conta-a', desc: 'Lançamento manual' }
     ]);
-    assertEqual(marked.map(row => row.duplicate), [true, true, false]);
-    assertEqual(marked.map(row => row.selected), [false, false, true]);
+    assertEqual(marked.map(row => row.duplicate), [true, true, false, false, false, false]);
+    assertEqual(marked.map(row => row.selected), [false, false, true, true, true, true]);
     marked[0].selected = true;
     assertTrue(marked[0].selected, 'Um possível duplicado pode ser marcado manualmente');
   });
 
   it('não marca linhas idênticas entre si quando não há lançamentos salvos', () => {
     const rows = [
-      { date: '2026-10-15', amount: 10, desc: 'Mercado EXTRA' },
-      { date: '2026-10-15', amount: 10, desc: 'mercado extra' }
+      { date: '2026-10-15', amount: 10, type: 'variable', accountId: 'conta-a', desc: 'Mercado EXTRA' },
+      { date: '2026-10-15', amount: 10, type: 'variable', accountId: 'conta-a', desc: 'mercado extra' }
     ];
     const marked = GastoProImporter.markDuplicates(rows);
     assertEqual(marked.map(row => row.duplicate), [false, false]);
     assertEqual(marked.map(row => row.selected), [true, true]);
+  });
+
+  it('bloqueia duplicação ao reimportar e aceita lançamento salvo manualmente', () => {
+    const importedRow = {
+      date: '2026-10-15', amount: 10, type: 'variable', accountId: 'conta-a', desc: 'Primeira importação'
+    };
+    const manualEntry = {
+      date: '2026-10-17', amount: 10, type: 'variable', accountId: 'conta-a', desc: 'Digitado manualmente'
+    };
+    assertEqual(GastoProImporter.markDuplicates([importedRow], [importedRow])[0].duplicate, true);
+    assertEqual(GastoProImporter.markDuplicates([importedRow], [manualEntry])[0].duplicate, true);
+    assertEqual(GastoProImporter.markDuplicates([importedRow], [
+      { ...manualEntry, accountId: 'conta-b' }
+    ])[0].duplicate, false);
   });
 
   it('detecta conta fixa ou dívida já cadastrada pelo nome, valor e mês inicial', () => {
@@ -3458,6 +3960,14 @@ describe('GastoProImporter — importação de arquivos', () => {
     assertEqual(rows[0].installmentBase, 'FACULDADE X');
   });
 
+  itAsync('parseFile aceita extensão OFX', async () => {
+    const ofx = '<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261015' +
+      '<TRNAMT>-12.50<MEMO>Compra fictícia</STMTTRN></BANKTRANLIST></OFX>';
+    const rows = await GastoProImporter.parseFile(new File([ofx], 'extrato.ofx'));
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].amount, 12.5);
+  });
+
   itAsync('parseFile importa XML de NFC-e usando emitente e valor da nota', async () => {
     const xml = '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe>' +
       '<infNFe><ide><dhEmi>2026-10-15T10:00:00-03:00</dhEmi><nNF>123</nNF></ide>' +
@@ -3488,7 +3998,17 @@ describe('GastoProImporter — importação de arquivos', () => {
   itAsync('parseFile rejeita extensão não suportada', async () => {
     const rows = await GastoProImporter.parseFile(new File(['documento'], 'nota.docx'));
     assertEqual(rows, []);
-    assertTrue(GastoProImporter.getLastWarnings().includes('Formato de arquivo não suportado.'));
+    assertTrue(GastoProImporter.getLastWarnings().includes(
+      'Formato não suportado. Use CSV, OFX, PDF, XML ou TXT.'
+    ));
+  });
+
+  itAsync('parseFile rejeita .jpg com mensagem clara sem analisar o conteúdo', async () => {
+    const rows = await GastoProImporter.parseFile(new File(['conteúdo não analisável'], 'foto.jpg'));
+    assertEqual(rows, []);
+    assertEqual(GastoProImporter.getLastWarnings(), [
+      'Formato não suportado. Use CSV, OFX, PDF, XML ou TXT.'
+    ]);
   });
 });
 
@@ -3505,12 +4025,14 @@ describe('FinanceData — inserção em lote para importação', () => {
     };
     try {
       const added = await FinanceData.addMany([
-        { type: 'variable', desc: 'Gasto lote', amount: 10, date: '2026-10-15', month: '2026-10' },
-        { type: 'fixed', desc: 'Fixo lote', amount: 20, date: '2026-10-15', month: '2026-10' }
+        { type: 'variable', desc: 'Gasto lote', amount: 10, date: '2026-10-15', month: '2026-10', accountId: 'account-id' },
+        { type: 'fixed', desc: 'Fixo lote', amount: 20, date: '2026-10-15', month: '2026-10', accountId: 'account-id' }
       ]);
       assertEqual(added.items.length, 2);
       assertEqual(FinanceData.getEntries().length, 1);
       assertEqual(FinanceData.getTemplates().length, 1);
+      assertEqual(FinanceData.getEntries()[0].accountId, 'account-id');
+      assertEqual(FinanceData.getTemplates()[0].accountId, 'account-id');
       assertEqual(flushes, 1);
       assertTrue(added.items.every(item => isUuid(item.id)));
     } finally {
@@ -3934,6 +4456,7 @@ describe('FinanceData — exclusão durante sincronização', () => {
       deleteCloudEntries: async () => ({ success: true }),
       deleteCloudTemplates: async () => ({ success: true }),
       saveCloudGoals: async () => ({ success: true }),
+      saveCloudFixedImportRules: async () => ({ success: true }),
       deleteCloudGoals: async () => ({ success: false })
     };
     try {

@@ -51,6 +51,85 @@ function validateCloudPayload(item, kind) {
       !Number.isFinite(Number(balance)) || Math.abs(Number(balance)) > 9999999999.99) {
       return 'O saldo inicial da conta deve ser válido.';
     }
+    if (item.balanceDate != null && item.balanceDate !== '' && !isValidCloudDate(item.balanceDate)) {
+      return 'A data do saldo inicial da conta deve ser válida.';
+    }
+    return null;
+  }
+  if (kind === 'creditCards') {
+    if (typeof item.name !== 'string' || !item.name.trim() || item.name.trim().length > 100) {
+      return 'O nome do cartão deve ter de 1 a 100 caracteres.';
+    }
+    if (typeof item.totalLimit === 'boolean' || !Number.isFinite(Number(item.totalLimit)) ||
+      Number(item.totalLimit) <= 0 || Number(item.totalLimit) > 9999999999.99) {
+      return 'O limite total do cartão deve ser válido.';
+    }
+    if (!Number.isInteger(item.closingDay) || item.closingDay < 1 || item.closingDay > 31 ||
+      !Number.isInteger(item.dueDay) || item.dueDay < 1 || item.dueDay > 31) {
+      return 'Os dias de fechamento e vencimento devem estar entre 1 e 31.';
+    }
+    if (item.accountId != null && !isValidCloudUuid(item.accountId)) {
+      return 'A conta vinculada ao cartão deve ter um UUID válido.';
+    }
+    if (item.brand != null && ![
+      'Visa', 'Mastercard', 'Elo', 'American Express', 'Hipercard', 'Outra'
+    ].includes(item.brand)) {
+      return 'A bandeira do cartão é inválida.';
+    }
+    if (item.issuerBank != null && ![
+      'Nubank', 'Itaú', 'Bradesco', 'Santander', 'Banco do Brasil', 'Caixa',
+      'Inter', 'C6', 'BTG', 'Mercado Pago', 'PicPay', 'Outro'
+    ].includes(item.issuerBank)) {
+      return 'O banco emissor do cartão é inválido.';
+    }
+    if (item.lastFour != null && item.lastFour !== '' &&
+      (typeof item.lastFour !== 'string' || !/^\d{4}$/.test(item.lastFour))) {
+      return 'O final do cartão deve conter quatro dígitos.';
+    }
+    if (item.customColor != null &&
+      (typeof item.customColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(item.customColor))) {
+      return 'A cor personalizada do cartão é inválida.';
+    }
+    return null;
+  }
+  if (kind === 'creditCardPurchases') {
+    if (typeof item.desc !== 'string' || !item.desc.trim() || item.desc.length > 300 ||
+      typeof item.category !== 'string' || !item.category.trim() || item.category.length > 100) {
+      return 'A descrição e a categoria da compra devem ser válidas.';
+    }
+    if (typeof item.amount === 'boolean' || !Number.isFinite(Number(item.amount)) ||
+      Number(item.amount) <= 0 || Number(item.amount) > 9999999999.99) {
+      return 'O valor da compra deve ser positivo e válido.';
+    }
+    if (!isValidCloudDate(item.purchaseDate)) return 'A data da compra deve ser válida.';
+    if (!Number.isInteger(item.installmentCount) || item.installmentCount < 1 ||
+      item.installmentCount > 24) return 'A quantidade de parcelas deve estar entre 1 e 24.';
+    if (!Number.isInteger(item.closingDay) || item.closingDay < 1 || item.closingDay > 31 ||
+      !Number.isInteger(item.dueDay) || item.dueDay < 1 || item.dueDay > 31) {
+      return 'Os dias de fechamento e vencimento devem estar entre 1 e 31.';
+    }
+    if (typeof item.cardName !== 'string' || !item.cardName.trim() || item.cardName.length > 100) {
+      return 'O nome de referência do cartão é inválido.';
+    }
+    if (item.cardId != null && !isValidCloudUuid(item.cardId)) {
+      return 'O cartão da compra deve ter um UUID válido.';
+    }
+    if (item.accountId != null && !isValidCloudUuid(item.accountId)) {
+      return 'A conta vinculada à compra deve ter um UUID válido.';
+    }
+    if (!Array.isArray(item.paidInstallments) || item.paidInstallments.some(number =>
+      !Number.isInteger(number) || number < 1 || number > item.installmentCount
+    ) || new Set(item.paidInstallments).size !== item.paidInstallments.length) {
+      return 'As parcelas pagas não são válidas.';
+    }
+    if (!item.paidDates || typeof item.paidDates !== 'object' || Array.isArray(item.paidDates) ||
+      Object.entries(item.paidDates).some(([number, date]) =>
+        !/^\d+$/.test(number) || Number(number) < 1 ||
+        Number(number) > item.installmentCount ||
+        !item.paidInstallments.includes(Number(number)) || !isValidCloudDate(date)
+      )) {
+      return 'As datas de pagamento das parcelas não são válidas.';
+    }
     return null;
   }
   if (item.amount == null || item.amount === '' || typeof item.amount === 'boolean') return 'O valor deve ser finito e maior ou igual a zero.';
@@ -765,6 +844,7 @@ const SupabaseAuth = {
         institution: row.institution || null,
         type: row.type,
         initialBalance: Number(row.initial_balance),
+        balanceDate: row.balance_date || null,
         createdAt: row.created_at,
         updatedAt: row.updated_at
       }));
@@ -806,6 +886,7 @@ const SupabaseAuth = {
         institution: account.institution || null,
         type: account.type,
         initial_balance: Math.round(Number(account.initialBalance) * 100) / 100,
+        balance_date: account.balanceDate || null,
         ...(account.createdAt ? { created_at: account.createdAt } : {})
       }));
       if (payload.length) {
@@ -845,6 +926,222 @@ const SupabaseAuth = {
       return { success: true };
     } catch (e) {
       return this.reportCloudError('Falha ao excluir contas na nuvem', e);
+    }
+  },
+
+  async fetchCloudCreditCards(userId) {
+    if (!sb) return null;
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return null;
+      const data = await this.fetchAllPages((from, to) => sb
+        .from('credit_cards')
+        .select('*')
+        .eq('user_id', sessionUserId)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to));
+      if (!data) return null;
+      return data.map(row => ({
+        id: row.id,
+        name: row.name,
+        totalLimit: Number(row.total_limit),
+        closingDay: row.closing_day,
+        dueDay: row.due_day,
+        brand: row.brand || 'Outra',
+        issuerBank: row.issuer_bank || 'Outro',
+        lastFour: row.last_four || null,
+        customColor: row.custom_color || null,
+        accountId: row.account_id || null,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }));
+    } catch (error) {
+      console.warn('[Supabase] Falha ao buscar cartões:', error);
+      return null;
+    }
+  },
+
+  async saveCloudCreditCards(cards, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao salvar cartões', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao salvar cartões', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      const validCards = [];
+      const failedIds = [];
+      cards.forEach(card => {
+        const validationError = validateCloudPayload(card, 'creditCards') ||
+          (!isValidCloudUuid(card.id) ? 'O cartão ainda não possui um UUID válido.' : null);
+        if (validationError) {
+          failedIds.push(card.id);
+          console.warn('[Supabase] Cartão inválido não enviado:', { id: card.id, error: validationError });
+        } else {
+          validCards.push(card);
+        }
+      });
+      const payload = validCards.map(card => ({
+        id: card.id,
+        user_id: sessionUserId,
+        name: card.name.trim(),
+        total_limit: Math.round(Number(card.totalLimit) * 100) / 100,
+        closing_day: card.closingDay,
+        due_day: card.dueDay,
+        brand: card.brand || 'Outra',
+        issuer_bank: card.issuerBank || 'Outro',
+        last_four: card.lastFour || null,
+        custom_color: card.issuerBank === 'Outro' ? card.customColor || '#6366f1' : null,
+        account_id: card.accountId || null,
+        ...(card.createdAt ? { created_at: card.createdAt } : {})
+      }));
+      if (payload.length) {
+        const result = await this.upsertWithFallback(
+          rows => sb.from('credit_cards').upsert(rows),
+          validCards,
+          payload
+        );
+        failedIds.push(...result.failedIds);
+      }
+      return failedIds.length
+        ? { success: false, failedIds, error: new Error('Um ou mais cartões não foram sincronizados.') }
+        : { success: true };
+    } catch (error) {
+      return this.reportCloudError('Falha ao salvar cartões na nuvem', error);
+    }
+  },
+
+  async deleteCloudCreditCards(cardIds, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao excluir cartões', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao excluir cartões', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      const validIds = cardIds.filter(isValidCloudUuid);
+      if (validIds.length !== cardIds.length) {
+        return this.reportCloudError('ID inválido ao excluir cartões', new Error('A exclusão contém um ID que não é UUID válido.'));
+      }
+      for (const batch of this.splitIntoBatches(validIds, 100)) {
+        const { error } = await sb.from('credit_cards').delete()
+          .in('id', batch)
+          .eq('user_id', sessionUserId);
+        if (error) return this.reportCloudError('Erro ao excluir cartões', error);
+      }
+      return { success: true };
+    } catch (error) {
+      return this.reportCloudError('Falha ao excluir cartões na nuvem', error);
+    }
+  },
+
+  async fetchCloudCreditCardPurchases(userId) {
+    if (!sb) return null;
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return null;
+      const data = await this.fetchAllPages((from, to) => sb
+        .from('credit_card_purchases')
+        .select('*')
+        .eq('user_id', sessionUserId)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to));
+      if (!data) return null;
+      return data.map(row => ({
+        id: row.id,
+        cardId: row.card_id || null,
+        cardName: row.card_name,
+        accountId: row.account_id || null,
+        desc: row.description,
+        amount: Number(row.amount),
+        category: row.category,
+        purchaseDate: row.purchase_date,
+        installmentCount: row.installment_count,
+        closingDay: row.closing_day,
+        dueDay: row.due_day,
+        paidInstallments: Array.isArray(row.paid_installments) ? row.paid_installments : [],
+        paidDates: row.paid_dates && typeof row.paid_dates === 'object' ? row.paid_dates : {},
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }));
+    } catch (error) {
+      console.warn('[Supabase] Falha ao buscar compras no cartão:', error);
+      return null;
+    }
+  },
+
+  async saveCloudCreditCardPurchases(purchases, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao salvar compras no cartão', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao salvar compras no cartão', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      const validPurchases = [];
+      const failedIds = [];
+      purchases.forEach(purchase => {
+        const validationError = validateCloudPayload(purchase, 'creditCardPurchases') ||
+          (!isValidCloudUuid(purchase.id) ? 'A compra ainda não possui um UUID válido.' : null);
+        if (validationError) {
+          failedIds.push(purchase.id);
+          console.warn('[Supabase] Compra inválida não enviada:', { id: purchase.id, error: validationError });
+        } else {
+          validPurchases.push(purchase);
+        }
+      });
+      const payload = validPurchases.map(purchase => ({
+        id: purchase.id,
+        user_id: sessionUserId,
+        card_id: purchase.cardId || null,
+        card_name: purchase.cardName,
+        account_id: purchase.accountId || null,
+        description: purchase.desc,
+        amount: Math.round(Number(purchase.amount) * 100) / 100,
+        category: purchase.category,
+        purchase_date: purchase.purchaseDate,
+        installment_count: purchase.installmentCount,
+        closing_day: purchase.closingDay,
+        due_day: purchase.dueDay,
+        paid_installments: purchase.paidInstallments,
+        paid_dates: purchase.paidDates || {},
+        ...(purchase.createdAt ? { created_at: purchase.createdAt } : {})
+      }));
+      if (payload.length) {
+        const result = await this.upsertWithFallback(
+          rows => sb.from('credit_card_purchases').upsert(rows),
+          validPurchases,
+          payload
+        );
+        failedIds.push(...result.failedIds);
+      }
+      return failedIds.length
+        ? { success: false, failedIds, error: new Error('Uma ou mais compras no cartão não foram sincronizadas.') }
+        : { success: true };
+    } catch (error) {
+      return this.reportCloudError('Falha ao salvar compras no cartão', error);
+    }
+  },
+
+  async deleteCloudCreditCardPurchases(purchaseIds, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao excluir compras no cartão', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao excluir compras no cartão', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      const validIds = purchaseIds.filter(isValidCloudUuid);
+      if (validIds.length !== purchaseIds.length) {
+        return this.reportCloudError('ID inválido ao excluir compras no cartão', new Error('A exclusão contém um ID que não é UUID válido.'));
+      }
+      for (const batch of this.splitIntoBatches(validIds, 100)) {
+        const { error } = await sb.from('credit_card_purchases').delete()
+          .in('id', batch)
+          .eq('user_id', sessionUserId);
+        if (error) return this.reportCloudError('Erro ao excluir compras no cartão', error);
+      }
+      return { success: true };
+    } catch (error) {
+      return this.reportCloudError('Falha ao excluir compras no cartão', error);
     }
   },
 
@@ -991,6 +1288,54 @@ const SupabaseAuth = {
       return { success: true };
     } catch (e) {
       return this.reportCloudError('Falha ao excluir metas na nuvem', e);
+    }
+  },
+
+  async fetchCloudFixedImportRules(userId) {
+    if (!sb) return null;
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return null;
+      const { data, error } = await sb
+        .from('fixed_import_rules')
+        .select('rules')
+        .eq('user_id', sessionUserId)
+        .maybeSingle();
+      if (error) {
+        console.warn('[Supabase] Falha ao buscar regras de importação:', error);
+        return null;
+      }
+      if (!data) return [];
+      return Array.isArray(data.rules) &&
+        data.rules.every(rule => typeof rule === 'string' && rule.trim().length <= 300)
+        ? [...new Set(data.rules.map(rule => rule.trim()).filter(Boolean))]
+        : null;
+    } catch (error) {
+      console.warn('[Supabase] Falha ao buscar regras de importação:', error);
+      return null;
+    }
+  },
+
+  async saveCloudFixedImportRules(rules, userId) {
+    if (!sb) return this.reportCloudError('Cliente não inicializado ao salvar regras de importação', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao salvar regras de importação', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      if (!Array.isArray(rules) || rules.some(rule =>
+        typeof rule !== 'string' || !rule.trim() || rule.length > 300
+      )) {
+        return this.reportCloudError('Regras de importação inválidas', new Error('Uma ou mais regras não são válidas.'));
+      }
+      const { error } = await sb.from('fixed_import_rules').upsert({
+        user_id: sessionUserId,
+        rules: [...new Set(rules.map(rule => rule.trim()))]
+      }, { onConflict: 'user_id' });
+      if (error) return this.reportCloudError('Erro ao salvar regras de importação', error);
+      return { success: true };
+    } catch (error) {
+      return this.reportCloudError('Falha ao salvar regras de importação na nuvem', error);
     }
   }
 };

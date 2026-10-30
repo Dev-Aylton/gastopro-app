@@ -174,8 +174,20 @@
         <!-- Topbar Right: Saldo + Botão Atualizar + Foto/Avatar do Usuário -->
         <div class="topbar-right">
           <div class="topbar-summary">
-            <span class="topbar-label">Saldo do Mês:</span>
-            <span class="topbar-value" id="topbarBalance">R$ 0,00</span>
+            <div class="topbar-balance-content">
+              <div class="topbar-balance-line">
+                <span class="topbar-label">Saldo atual:</span>
+                <span class="topbar-value" id="topbarBalance">R$ 0,00</span>
+                <span class="topbar-empty-message" id="topbarBalanceEmpty" hidden>Cadastre uma conta para ver seu saldo.</span>
+              </div>
+              <div class="topbar-month-result">
+                <span>Resultado do mês:</span>
+                <strong id="topbarMonthlyResult">R$ 0,00</strong>
+              </div>
+              <small class="account-balance-date-note topbar-balance-date-note" id="topbarBalanceDateNote" hidden>
+                Informe a data do saldo inicial para maior precisão.
+              </small>
+            </div>
           </div>
 
           <button class="topbar-refresh-btn" id="refreshAppBtn" title="Atualizar dados" aria-label="Atualizar dados">
@@ -515,10 +527,13 @@
                 <span>Gerenciar contas <i class="fa-solid fa-arrow-right"></i></span>
               </button>
             </div>
-            <div class="filter-buttons account-balance-filters" role="group" aria-label="Filtrar saldo por tipo de conta">
-              <button type="button" class="filter-btn active" data-action="filter-account-balance" data-filter="all">Todos</button>
-              <button type="button" class="filter-btn" data-action="filter-account-balance" data-filter="PF">PF</button>
-              <button type="button" class="filter-btn" data-action="filter-account-balance" data-filter="PJ">PJ</button>
+            <div class="form-group account-balance-filters">
+              <label for="accountBalanceView">Visão do saldo</label>
+              <select id="accountBalanceView" class="form-select" aria-label="Selecionar visão do saldo das contas">
+                <option value="all">Todas as contas</option>
+                <option value="PF">Todas as contas PF</option>
+                <option value="PJ">Todas as contas PJ</option>
+              </select>
             </div>
             <div class="account-balance-empty" id="dashboardAccountsEmpty" hidden>
               <p>Nenhuma conta cadastrada.</p>
@@ -526,6 +541,24 @@
             </div>
           </div>
 
+          <div class="panel-box credit-cards-panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-purple-soft"><i class="fa-solid fa-credit-card"></i></div>
+                <div>
+                  <h2>Cartões de crédito</h2>
+                  <p>Cadastre seus cartões e limites</p>
+                </div>
+              </div>
+              <button type="button" class="btn-add-goal" data-action="new-credit-card">
+                <i class="fa-solid fa-plus"></i> Novo cartão
+              </button>
+            </div>
+            <div id="creditCardsList" class="goals-list"></div>
+            <div id="creditCardsEmpty" class="goals-empty" hidden>
+              <p>Nenhum cartão cadastrado ainda.</p>
+            </div>
+          </div>
 
 
 
@@ -699,6 +732,24 @@
               </div>
 
               <div>
+                <label for="expensePaymentMethod">Forma de pagamento</label>
+                <select id="expensePaymentMethod">
+                  <option value="account">Conta / dinheiro</option>
+                  <option value="credit">Crédito</option>
+                </select>
+              </div>
+
+              <div id="expenseCreditFields" hidden>
+                <label for="expenseCreditCard">Cartão e parcelas</label>
+                <div class="form-row-2">
+                  <select id="expenseCreditCard" aria-label="Cartão de crédito"></select>
+                  <select id="expenseInstallments" aria-label="Quantidade de parcelas"></select>
+                </div>
+                <div id="expenseCreditCardPreview" class="credit-card-select-preview" aria-live="polite"></div>
+                <small class="form-hint" id="expenseCreditCardHint"></small>
+              </div>
+
+              <div id="expenseAccountGroup">
                 <label for="expenseAccount">Conta</label>
                 <select id="expenseAccount" class="account-select">
                   <option value="">Sem conta</option>
@@ -955,10 +1006,97 @@
             <input type="number" id="accountInitialBalance" step="0.01" min="-9999999999.99" max="9999999999.99" required />
           </div>
         </div>
+        <div class="form-group">
+          <label for="accountBalanceDate">Data do saldo inicial</label>
+          <input type="date" id="accountBalanceDate" />
+        </div>
         <p class="form-error account-form-error" id="accountFormError" role="alert" hidden></p>
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="cancelAccountModalBtn">Cancelar</button>
           <button type="submit" class="btn-primary" id="saveAccountBtn">Salvar conta</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="creditCardModal">
+    <div class="modal-content account-modal-content" role="dialog" aria-modal="true" aria-labelledby="creditCardModalTitle" tabindex="-1">
+      <div class="modal-header">
+        <h3 id="creditCardModalTitle">Novo cartão</h3>
+        <button type="button" class="modal-close-btn" id="closeCreditCardModalBtn" aria-label="Fechar cartão">&times;</button>
+      </div>
+      <form id="creditCardForm" novalidate>
+        <input type="hidden" id="creditCardId" />
+        <div class="form-group">
+          <label for="creditCardName">Nome</label>
+          <input type="text" id="creditCardName" maxlength="100" required autocomplete="off" />
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="creditCardIssuerBank">Banco emissor</label>
+            <select id="creditCardIssuerBank" required>
+              <option value="Nubank">Nubank</option>
+              <option value="Itaú">Itaú</option>
+              <option value="Bradesco">Bradesco</option>
+              <option value="Santander">Santander</option>
+              <option value="Banco do Brasil">Banco do Brasil</option>
+              <option value="Caixa">Caixa</option>
+              <option value="Inter">Inter</option>
+              <option value="C6">C6</option>
+              <option value="BTG">BTG</option>
+              <option value="Mercado Pago">Mercado Pago</option>
+              <option value="PicPay">PicPay</option>
+              <option value="Outro">Outro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="creditCardBrand">Bandeira</label>
+            <select id="creditCardBrand" required>
+              <option value="Visa">Visa</option>
+              <option value="Mastercard">Mastercard</option>
+              <option value="Elo">Elo</option>
+              <option value="American Express">American Express</option>
+              <option value="Hipercard">Hipercard</option>
+              <option value="Outra">Outra</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="creditCardLastFour">Final do cartão (opcional)</label>
+            <input type="text" id="creditCardLastFour" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" />
+          </div>
+          <div class="form-group" id="creditCardCustomColorGroup" hidden>
+            <label for="creditCardCustomColor">Cor do cartão</label>
+            <input type="color" id="creditCardCustomColor" value="#6366f1" />
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="creditCardLimit">Limite total (R$)</label>
+            <input type="number" id="creditCardLimit" step="0.01" min="0.01" max="9999999999.99" required />
+          </div>
+          <div class="form-group">
+            <label for="creditCardAccount">Conta vinculada (opcional)</label>
+            <select id="creditCardAccount" class="account-select">
+              <option value="">Sem conta vinculada</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="creditCardClosingDay">Dia de fechamento</label>
+            <input type="number" id="creditCardClosingDay" min="1" max="31" step="1" required />
+          </div>
+          <div class="form-group">
+            <label for="creditCardDueDay">Dia de vencimento</label>
+            <input type="number" id="creditCardDueDay" min="1" max="31" step="1" required />
+          </div>
+        </div>
+        <p class="form-error account-form-error" id="creditCardFormError" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="cancelCreditCardModalBtn">Cancelar</button>
+          <button type="submit" class="btn-primary" id="saveCreditCardBtn">Salvar cartão</button>
         </div>
       </form>
     </div>
@@ -997,6 +1135,10 @@
       </div>
       <h3 id="confirmTitle">Tem certeza?</h3>
       <p id="confirmMessage">Esta ação não pode ser desfeita.</p>
+      <label id="confirmRememberOption" class="confirm-remember-option" hidden>
+        <input type="checkbox" id="confirmRememberCheckbox">
+        <span id="confirmRememberLabel"></span>
+      </label>
       <div class="modal-actions confirm-actions">
         <button type="button" class="btn-secondary" id="confirmBackupBtn" hidden>Baixar backup JSON</button>
       </div>
@@ -1357,6 +1499,21 @@
         </ul>
       </details>
       <div id="statementGuideButtonContainer"></div>
+      <div class="form-group">
+        <label for="importTargetAccount">Conta de destino <span aria-hidden="true">*</span></label>
+        <select id="importTargetAccount" required aria-required="true">
+          <option value="">Selecione uma conta</option>
+        </select>
+        <button type="button" class="btn-secondary" id="createImportAccountBtn" hidden>
+          Criar conta para importar
+        </button>
+        <p class="form-error" id="importTargetAccountError" role="alert" hidden></p>
+      </div>
+      <details class="import-fixed-rules">
+        <summary>Regras lembradas para importações</summary>
+        <ul id="fixedImportRulesList"></ul>
+        <p id="fixedImportRulesEmpty">Nenhuma regra salva.</p>
+      </details>
 
       <!-- Abas de formato -->
       <div class="import-tabs">
@@ -1377,7 +1534,7 @@
 
         <!-- Área de Drop / Upload -->
         <div class="csv-drop-zone" id="csvDropZone">
-          <input type="file" id="csvFileInput" accept=".csv,.txt,.ofx,.xml,.pdf,application/pdf" aria-label="Selecionar arquivo CSV, TXT, OFX, XML ou PDF" />
+          <input type="file" id="csvFileInput" aria-label="Selecionar arquivo CSV, TXT, OFX, XML ou PDF" />
           <i class="fa-solid fa-cloud-arrow-up drop-icon" id="csvDropIcon"></i>
           <p class="drop-title" id="csvDropTitle">Arraste o arquivo aqui</p>
           <p class="drop-sub" id="csvDropSub">ou clique para selecionar o arquivo (.csv, .ofx, .xml, .pdf)</p>
@@ -1783,6 +1940,47 @@
           <i class="fa-solid fa-floppy-disk"></i> Salvar Meta
         </button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="accountOnboardingModal" aria-hidden="true">
+    <div class="modal-content account-modal-content" role="dialog" aria-modal="true"
+      aria-labelledby="accountOnboardingTitle" aria-describedby="accountOnboardingText" tabindex="-1">
+      <div class="modal-header">
+        <h2 id="accountOnboardingTitle">Cadastre sua primeira conta</h2>
+      </div>
+      <p id="accountOnboardingText">Informe o saldo e a data de referência. Você pode adicionar mais contas ou pular esta etapa.</p>
+      <form id="accountOnboardingForm" novalidate>
+        <div class="form-group">
+          <label for="accountOnboardingName">Nome da conta</label>
+          <input type="text" id="accountOnboardingName" minlength="1" maxlength="100" required autocomplete="off" />
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="accountOnboardingType">Tipo</label>
+            <select id="accountOnboardingType" required>
+              <option value="PF">PF — Pessoa Física</option>
+              <option value="PJ">PJ — Pessoa Jurídica</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="accountOnboardingBalance">Saldo inicial (R$)</label>
+            <input type="number" id="accountOnboardingBalance" step="0.01"
+              min="-9999999999.99" max="9999999999.99" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="accountOnboardingBalanceDate">Data do saldo inicial</label>
+          <input type="date" id="accountOnboardingBalanceDate" required />
+        </div>
+        <p class="form-error" id="accountOnboardingError" role="alert" hidden></p>
+        <p class="account-balance-date-note" id="accountOnboardingAccounts"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="skipAccountOnboardingBtn">Pular</button>
+          <button type="button" class="btn-secondary" id="finishAccountOnboardingBtn" disabled>Concluir</button>
+          <button type="submit" class="btn-primary" id="addOnboardingAccountBtn">Adicionar conta</button>
+        </div>
+      </form>
     </div>
   </div>
 

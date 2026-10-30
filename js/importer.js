@@ -30,6 +30,8 @@ const GastoProImporter = (() => {
   const MAX_RAW_CHARS = 200_000;
   const MAX_LINE_CHARS = 500;
   const MAX_ROWS = 2000;
+  const SUPPORTED_FILE_EXTENSIONS = new Set(['.csv', '.txt', '.ofx', '.xml', '.pdf']);
+  const UNSUPPORTED_FILE_WARNING = 'Formato não suportado. Use CSV, OFX, PDF, XML ou TXT.';
   let lastWarnings = [];
 
   const CATEGORY_RULES = [
@@ -481,6 +483,7 @@ const GastoProImporter = (() => {
       desc: row.installmentBase,
       amount: row.amount,
       category,
+      accountId: row.accountId || null,
       startMonth,
       endMonth: shiftMonth(startMonth, row.installment.total - 1),
       date: `${startMonth}-${row.date.substring(8, 10)}`,
@@ -585,11 +588,19 @@ const GastoProImporter = (() => {
     }
   }
 
-  async function parseFile(file, today = new Date()) {
+  function getFileExtension(file) {
     const extensionMatch = file.name.toLowerCase().match(/\.[^.]+$/);
-    const extension = extensionMatch ? extensionMatch[0] : '';
-    if (!['.csv', '.txt', '.ofx', '.xml', '.pdf'].includes(extension)) {
-      setWarnings(['Formato de arquivo não suportado.']);
+    return extensionMatch ? extensionMatch[0] : '';
+  }
+
+  function isSupportedFile(file) {
+    return SUPPORTED_FILE_EXTENSIONS.has(getFileExtension(file));
+  }
+
+  async function parseFile(file, today = new Date()) {
+    const extension = getFileExtension(file);
+    if (!SUPPORTED_FILE_EXTENSIONS.has(extension)) {
+      setWarnings([UNSUPPORTED_FILE_WARNING]);
       return [];
     }
     if (extension === '.pdf') {
@@ -941,24 +952,54 @@ const GastoProImporter = (() => {
     }];
   }
 
-  function isTemplateDuplicate(row, templates) {
+  function isTemplateDuplicate(row, templates, accountId = row.accountId) {
     return templates.some(template =>
       normalize(template.desc) === normalize(row.desc) &&
       Math.abs(Math.round(Number(template.amount) * 100) - Math.round(Number(row.amount) * 100)) <= 1 &&
-      template.startMonth === row.startMonth
+      template.startMonth === row.startMonth &&
+      template.accountId === accountId
     );
   }
 
-  function markDuplicates(rows, existingItems = []) {
-    const makeKey = item => {
-      if (item.invalid || !item.date || !Number.isFinite(Number(item.amount))) return null;
-      return `${item.date}|${Number(item.amount)}|${normalize(item.desc)}`;
+  function getDateOrdinal(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    const ordinal = Date.UTC(year, month - 1, day) / 86400000;
+    const date = new Date(ordinal * 86400000);
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day
+      ? ordinal
+      : null;
+  }
+
+  function markDuplicates(rows, existingItems = [], destinationAccountId = null) {
+    const getComparable = item => {
+      if (item.invalid || !item.date || !Number.isFinite(Number(item.amount)) ||
+        typeof item.accountId !== 'string' || !item.accountId) return null;
+      const dateOrdinal = getDateOrdinal(item.date);
+      if (dateOrdinal === null) return null;
+      return {
+        accountId: item.accountId,
+        amount: Math.round(Number(item.amount) * 100),
+        direction: item.type === 'income' ? 'income' : 'expense',
+        dateOrdinal
+      };
     };
-    const seen = new Set(existingItems.map(makeKey).filter(Boolean));
     return rows.map(row => {
-      const key = makeKey(row);
-      const duplicate = Boolean(key && seen.has(key));
-      return { ...row, duplicate, selected: !row.invalid && !duplicate };
+      const candidate = {
+        ...row,
+        accountId: destinationAccountId || row.accountId || null
+      };
+      const comparable = getComparable(candidate);
+      const duplicate = Boolean(comparable && !row.installment && existingItems.some(item => {
+        const existing = getComparable(item);
+        return existing &&
+          existing.accountId === comparable.accountId &&
+          existing.amount === comparable.amount &&
+          existing.direction === comparable.direction &&
+          Math.abs(existing.dateOrdinal - comparable.dateOrdinal) <= 2;
+      }));
+      return { ...candidate, duplicate, selected: !candidate.invalid && !duplicate };
     });
   }
 
@@ -984,7 +1025,8 @@ const GastoProImporter = (() => {
         date: row.dueDay ? `${startMonth}-${String(row.dueDay).padStart(2, '0')}` : row.date,
         month: startMonth,
         startMonth,
-        endMonth: row.endMonth || null
+        endMonth: row.endMonth || null,
+        accountId: row.accountId || null
       };
     }
     return {
@@ -994,6 +1036,7 @@ const GastoProImporter = (() => {
       category: truncateText(row.category, 100),
       date:     row.date,
       month:    fallbackMonth,
+      accountId: row.accountId || null,
       paid
     };
   }
@@ -1005,7 +1048,7 @@ const GastoProImporter = (() => {
     parseCSV, parseRawText, parseOFX, parsePixPayload, parseBoletoLine, groupTextItemsIntoLines,
     autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
     parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, shiftMonth, detectInstallment, detectCsvInstallment, matchDebtTemplate,
-    buildInstallmentDebt, parseFile
+    buildInstallmentDebt, parseFile, isSupportedFile, UNSUPPORTED_FILE_WARNING
   };
 
 })();
