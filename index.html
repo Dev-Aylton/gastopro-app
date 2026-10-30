@@ -72,55 +72,54 @@
       </div>
 
       <nav class="sidebar-nav">
-        <!-- Botão 1: Home / Dashboard -->
-        <button class="nav-item active" data-view="dashboard" id="navDashboard">
-          <i class="fa-solid fa-chart-pie"></i>
-          <span>Dashboard & Saúde</span>
-        </button>
+        <div class="sidebar-nav-groups">
+          <section class="sidebar-group" aria-labelledby="sidebarDailyTitle">
+            <h3 class="sidebar-group-title" id="sidebarDailyTitle">Dia a dia</h3>
+            <button class="nav-item active" data-view="dashboard" id="navDashboard">
+              <i class="fa-solid fa-chart-pie"></i>
+              <span>Dashboard & Saúde</span>
+            </button>
+            <button class="nav-item nav-item-wizard" id="sidebarWizardBtn" title="Lançamento rápido guiado em 4 passos">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>Lançamento Rápido</span>
+            </button>
+            <button class="nav-item" data-view="incomes" id="navIncomes">
+              <i class="fa-solid fa-hand-holding-dollar"></i>
+              <span>Ganhos do Mês</span>
+              <span class="nav-badge text-success" id="sidebarIncomeCount" hidden></span>
+            </button>
+            <button class="nav-item" data-view="expenses" id="navExpenses">
+              <i class="fa-solid fa-receipt"></i>
+              <span>Gastos do Mês</span>
+              <span class="nav-badge text-danger" id="sidebarExpenseCount"></span>
+            </button>
+          </section>
 
-        <!-- Botão 2: Wizard de Lançamento Rápido (Logo abaixo do Dashboard) -->
-        <button class="nav-item nav-item-wizard" id="sidebarWizardBtn" title="Lançamento rápido guiado em 4 passos">
-          <i class="fa-solid fa-wand-magic-sparkles"></i>
-          <span>Lançamento Rápido</span>
-          <span class="nav-wizard-badge">Novo</span>
-        </button>
+          <section class="sidebar-group" aria-labelledby="sidebarMoreTitle">
+            <h3 class="sidebar-group-title" id="sidebarMoreTitle">Mais</h3>
+            <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
+              <i class="fa-solid fa-file-import"></i>
+              <span>Importar Extrato</span>
+              <span class="nav-import-badge">Novo</span>
+            </button>
+            <button class="nav-item" data-view="accounts" id="navAccounts">
+              <i class="fa-solid fa-building-columns"></i>
+              <span>Contas</span>
+            </button>
+            <button class="nav-item" data-view="contact" id="navContact">
+              <i class="fa-regular fa-comment-dots"></i>
+              <span>Fale comigo</span>
+            </button>
+          </section>
+        </div>
 
-        <!-- Botão 3: Ganhos do Mês -->
-        <button class="nav-item" data-view="incomes" id="navIncomes">
-          <i class="fa-solid fa-hand-holding-dollar"></i>
-          <span>Ganhos do Mês</span>
-          <span class="nav-badge text-success" id="sidebarIncomeCount"></span>
-        </button>
-
-        <!-- Botão 4: Gastos do Mês -->
-        <button class="nav-item" data-view="expenses" id="navExpenses">
-          <i class="fa-solid fa-receipt"></i>
-          <span>Gastos do Mês</span>
-          <span class="nav-badge text-danger" id="sidebarExpenseCount"></span>
-        </button>
-
-        <button class="nav-item" data-view="accounts" id="navAccounts">
-          <i class="fa-solid fa-building-columns"></i>
-          <span>Contas</span>
-        </button>
-
-        <button class="nav-item" data-view="contact" id="navContact">
-          <i class="fa-regular fa-comment-dots"></i>
-          <span>Fale comigo</span>
-        </button>
-
-        <button class="nav-item" data-view="admin" id="navAdmin" hidden>
-          <i class="fa-solid fa-shield-halved"></i>
-          <span>Admin</span>
-          <span class="nav-badge admin-nav-badge" id="adminNewCount" aria-label="0 mensagens novas" hidden>0</span>
-        </button>
-
-        <!-- Botão 5: Importar Extrato -->
-        <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
-          <i class="fa-solid fa-file-import"></i>
-          <span>Importar Extrato</span>
-          <span class="nav-import-badge">Novo</span>
-        </button>
+        <div class="sidebar-footer">
+          <button class="nav-item" data-view="admin" id="navAdmin" hidden>
+            <i class="fa-solid fa-shield-halved"></i>
+            <span>Admin</span>
+            <span class="nav-badge admin-nav-badge" id="adminNewCount" aria-label="0 mensagens novas" hidden>0</span>
+          </button>
+        </div>
       </nav>
     </aside>
 

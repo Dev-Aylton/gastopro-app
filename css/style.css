@@ -310,6 +310,8 @@ body {
 /* SIDEBAR */
 .sidebar {
   width: 270px;
+  box-sizing: border-box;
+  overflow-x: hidden;
   background-color: var(--bg-sidebar);
   border-right: 1px solid var(--border);
   display: flex;
@@ -324,6 +326,10 @@ body {
 }
 
 .sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   padding: 1.5rem 1.4rem;
   border-bottom: 1px solid var(--border);
 }
@@ -332,6 +338,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.85rem;
+  min-width: 0;
 }
 
 .brand-logo-img {
@@ -373,14 +380,50 @@ body {
   padding: 1.5rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 1rem;
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar-nav-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  min-width: 0;
+}
+
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.sidebar-group-title {
+  padding: 0 0.55rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: auto;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
 }
 
 .nav-item {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.9rem;
   padding: 0.85rem 1rem;
   border-radius: var(--radius-md);
@@ -391,6 +434,8 @@ body {
   font-weight: 600;
   cursor: pointer;
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   text-align: left;
   transition: all 0.25s ease;
   position: relative;
@@ -403,6 +448,7 @@ body {
 .nav-item i {
   font-size: 1.15rem;
   width: 22px;
+  flex: 0 0 22px;
   text-align: center;
   transition: transform 0.2s;
 }
@@ -431,6 +477,10 @@ body {
   padding: 0.15rem 0.5rem;
   border-radius: 10px;
   background: rgba(var(--theme-rgb-background-ffffff), 0.05);
+}
+
+.nav-badge[hidden] {
+  display: none;
 }
 
 /* ================================================================
@@ -2634,6 +2684,8 @@ button:active { transform: scale(0.98); }
     display: flex;
     align-items: center;
     justify-content: center;
+    flex: 0 0 auto;
+    margin-left: auto;
   }
   .main-content {
     margin-left: 0;
@@ -2700,7 +2752,7 @@ button:active { transform: scale(0.98); }
     color: var(--text-main);
     border-color: var(--border);
   }
-  [data-theme] .sidebar-nav .nav-item.theme-toggle-btn:not(.active) {
+  [data-theme] .sidebar-footer .nav-item.theme-toggle-btn:not(.active) {
     color: var(--text-main);
   }
   .sidebar .theme-toggle-btn i {
@@ -3828,7 +3880,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 
 /* Botão importar na sidebar — Destaque Esmeralda / Fintech no rodapé da sidebar */
 .nav-item-import {
-  margin-top: auto;
   background: linear-gradient(135deg, rgba(var(--theme-rgb-background-10b981), 0.16) 0%, rgba(var(--theme-rgb-background-059669), 0.24) 100%);
   border: 1px solid rgba(var(--theme-rgb-border-10b981), 0.45);
   color: var(--theme-text-34d399);

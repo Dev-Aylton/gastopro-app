@@ -287,13 +287,13 @@ window.GastoProImportHelpers = Object.freeze({
 function setupResponsiveThemeToggle() {
   const button = document.getElementById('themeToggleBtn');
   const placeholder = document.getElementById('themeToggleDesktopPlaceholder');
-  const sidebarNav = document.querySelector('.sidebar-nav');
-  if (!button || !placeholder || !sidebarNav) return;
+  const sidebarFooter = document.querySelector('.sidebar-footer');
+  if (!button || !placeholder || !sidebarFooter) return;
 
   const mobileQuery = window.matchMedia('(max-width: 900px)');
   const updatePosition = () => {
     if (mobileQuery.matches) {
-      sidebarNav.appendChild(button);
+      sidebarFooter.appendChild(button);
       button.classList.add('nav-item');
     } else {
       placeholder.parentNode.insertBefore(button, placeholder.nextSibling);
@@ -848,7 +848,7 @@ window.switchToView = function(viewId) {
   persistMainView(viewId);
 
   // Marca o botão ativo na sidebar e desmarca os demais
-  document.querySelectorAll('.sidebar-nav .nav-item').forEach(btn => {
+  document.querySelectorAll('.sidebar .nav-item[data-view]').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-view') === viewId);
   });
 
@@ -937,7 +937,9 @@ function renderAll() {
   const balance       = totalIncome - totalExpenses; // Saldo = Ganhos - (Fixos + Variáveis)
 
   // Atualiza os contadores na sidebar
-  document.getElementById('sidebarIncomeCount').textContent  = incomes.length;
+  const sidebarIncomeCount = document.getElementById('sidebarIncomeCount');
+  sidebarIncomeCount.textContent = incomes.length;
+  sidebarIncomeCount.hidden = incomes.length === 0;
   document.getElementById('sidebarExpenseCount').textContent = activeFixed.length + variables.length;
 
   // Atualiza o saldo no canto superior direito da topbar
