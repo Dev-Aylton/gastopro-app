@@ -336,6 +336,14 @@ const SupabaseAuth = {
     return this.deleteCloudEntries([entryId], userId);
   },
 
+  splitIntoBatches(ids, batchSize) {
+    const batches = [];
+    for (let index = 0; index < ids.length; index += batchSize) {
+      batches.push(ids.slice(index, index + batchSize));
+    }
+    return batches;
+  },
+
   async deleteCloudEntries(entryIds, userId) {
     if (!sb) return this.reportCloudError('Cliente não inicializado ao excluir entries', new Error('Cliente Supabase não inicializado.'));
     try {
@@ -348,10 +356,12 @@ const SupabaseAuth = {
         return this.reportCloudError('ID inválido ao excluir entries', new Error('A exclusão contém um ID que não é UUID v4.'));
       }
       if (!validIds.length) return { success: true };
-      const { error } = await sb.from('entries').delete()
-        .in('id', validIds)
-        .eq('user_id', sessionUserId);
-      if (error) return this.reportCloudError('Erro ao excluir entries', error);
+      for (const batch of this.splitIntoBatches(validIds, 100)) {
+        const { error } = await sb.from('entries').delete()
+          .in('id', batch)
+          .eq('user_id', sessionUserId);
+        if (error) return this.reportCloudError('Erro ao excluir entries', error);
+      }
       return { success: true };
     } catch (e) {
       return this.reportCloudError('Falha ao excluir entries na nuvem', e);
@@ -477,10 +487,12 @@ const SupabaseAuth = {
         return this.reportCloudError('ID inválido ao excluir templates', new Error('A exclusão contém um ID que não é UUID v4.'));
       }
       if (!validIds.length) return { success: true };
-      const { error } = await sb.from('fixed_templates').delete()
-        .in('id', validIds)
-        .eq('user_id', sessionUserId);
-      if (error) return this.reportCloudError('Erro ao excluir templates', error);
+      for (const batch of this.splitIntoBatches(validIds, 100)) {
+        const { error } = await sb.from('fixed_templates').delete()
+          .in('id', batch)
+          .eq('user_id', sessionUserId);
+        if (error) return this.reportCloudError('Erro ao excluir templates', error);
+      }
       return { success: true };
     } catch (e) {
       return this.reportCloudError('Falha ao excluir templates na nuvem', e);
@@ -577,10 +589,12 @@ const SupabaseAuth = {
         return this.reportCloudError('ID inválido ao excluir accounts', new Error('A exclusão contém um ID que não é UUID válido.'));
       }
       if (!validIds.length) return { success: true };
-      const { error } = await sb.from('accounts').delete()
-        .in('id', validIds)
-        .eq('user_id', sessionUserId);
-      if (error) return this.reportCloudError('Erro ao excluir accounts', error);
+      for (const batch of this.splitIntoBatches(validIds, 100)) {
+        const { error } = await sb.from('accounts').delete()
+          .in('id', batch)
+          .eq('user_id', sessionUserId);
+        if (error) return this.reportCloudError('Erro ao excluir accounts', error);
+      }
       return { success: true };
     } catch (e) {
       return this.reportCloudError('Falha ao excluir contas na nuvem', e);
