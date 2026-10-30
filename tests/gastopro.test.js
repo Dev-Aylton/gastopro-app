@@ -2813,6 +2813,14 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowString = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const firstRecurringMonth = GastoProImporter.shiftMonth(currentMonth, 1);
+  const secondRecurringMonth = GastoProImporter.shiftMonth(currentMonth, 2);
+  const firstRecurringDate = `${firstRecurringMonth}-05`;
+  const secondRecurringDate = `${secondRecurringMonth}-05`;
+  const prepareRecurringRows = csv => window.GastoProImportHelpers.markRecurringImportRows(
+    GastoProImporter.markDuplicates(GastoProImporter.parseCSV(csv), [])
+  );
 
   it('importa despesa futura como a pagar, sem marcar paid', () => {
     const row = GastoProImporter.parseCSV(
@@ -2853,6 +2861,61 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     )[0];
     assertFalse(Boolean(future.installment));
     assertEqual(window.GastoProImportHelpers.getImportPreviewType(future), 'variable_pending');
+  });
+
+  it('agrupa descrição recorrente limpa com valor igual e limita o template ao último mês', () => {
+    const rows = prepareRecurringRows(
+      `Data;Descrição;Valor\n${firstRecurringDate};Curso Exemplo (111) - c/ desconto;-150,00\n${secondRecurringDate};Curso Exemplo;-150,00`
+    );
+    const first = rows[0];
+    const covered = rows[1];
+    assertEqual(window.GastoProImportHelpers.cleanRecurringImportDescription(
+      'Curso Exemplo (111) - c/ desconto'
+    ), 'curso exemplo');
+    assertEqual(first.type, 'fixed');
+    assertEqual(window.GastoProImportHelpers.getImportPreviewType(first), 'fixed');
+    assertTrue(first.selected);
+    assertEqual(first.startMonth, firstRecurringMonth);
+    assertEqual(first.endMonth, secondRecurringMonth);
+    assertTrue(covered.recurringCovered);
+    assertFalse(covered.selected);
+  });
+
+  it('não agrupa descrições parecidas com conteúdo diferente', () => {
+    const rows = prepareRecurringRows(
+      `Data;Descrição;Valor\n${firstRecurringDate};Loja Exemplo Empréstimo;-99,00\n${secondRecurringDate};Loja Exemplo Parcelado;-99,00`
+    );
+    assertTrue(rows.every(row => !row.recurringPrimary && !row.recurringCovered));
+    assertTrue(rows.every(row =>
+      window.GastoProImportHelpers.getImportPreviewType(row) === 'variable_pending'
+    ));
+  });
+
+  it('mantém como Gasto a pagar a descrição que aparece em apenas um mês', () => {
+    const row = prepareRecurringRows(
+      `Data;Descrição;Valor\n${firstRecurringDate};Curso Único Exemplo;-80,00`
+    )[0];
+    assertFalse(Boolean(row.recurringPrimary));
+    assertEqual(window.GastoProImportHelpers.getImportPreviewType(row), 'variable_pending');
+  });
+
+  it('não agrupa descrição recorrente quando o valor muda entre meses', () => {
+    const rows = prepareRecurringRows(
+      `Data;Descrição;Valor\n${firstRecurringDate};Curso Variável Exemplo;-150,00\n${secondRecurringDate};Curso Variável Exemplo;-150,00\n${GastoProImporter.shiftMonth(currentMonth, 3)}-05;Curso Variável Exemplo;-160,00`
+    );
+    assertTrue(rows.every(row => !row.recurringPrimary && !row.recurringCovered && row.selected));
+    assertTrue(rows.every(row =>
+      window.GastoProImportHelpers.getImportPreviewType(row) === 'variable_pending'
+    ));
+  });
+
+  it('mantém parcela N de M como Dívida, fora do agrupamento recorrente', () => {
+    const row = prepareRecurringRows(
+      `Data;Descrição;Valor\n${firstRecurringDate};Curso Exemplo 07 de 12;-150,00`
+    )[0];
+    assertTrue(Boolean(row.installment));
+    assertFalse(Boolean(row.recurringPrimary));
+    assertEqual(window.GastoProImportHelpers.getImportPreviewType(row), 'debt');
   });
 
   it('não marca como pago o mês futuro de dívida com parcelas restantes selecionadas', () => {

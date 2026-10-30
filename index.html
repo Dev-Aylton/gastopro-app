@@ -115,17 +115,11 @@
           <span class="nav-badge admin-nav-badge" id="adminNewCount" aria-label="0 mensagens novas" hidden>0</span>
         </button>
 
-        <!-- Botão 5: Importar Extrato (No rodapé, acima de Atualizar Dados) -->
+        <!-- Botão 5: Importar Extrato -->
         <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
           <i class="fa-solid fa-file-import"></i>
           <span>Importar Extrato</span>
           <span class="nav-import-badge">Novo</span>
-        </button>
-
-        <!-- Botão 6: Atualizar Dados (Rodapé da Sidebar) -->
-        <button class="nav-item nav-item-action" id="sidebarRefreshBtn" title="Atualizar dados (Refresh)">
-          <i class="fa-solid fa-arrows-rotate" id="sidebarRefreshIcon"></i>
-          <span>Atualizar Dados</span>
         </button>
       </nav>
     </aside>
@@ -185,12 +179,14 @@
             <span class="topbar-value" id="topbarBalance">R$ 0,00</span>
           </div>
 
-          <button class="topbar-refresh-btn" id="refreshAppBtn" title="Atualizar dados (Refresh)" aria-label="Atualizar dados">
+          <button class="topbar-refresh-btn" id="refreshAppBtn" title="Atualizar dados" aria-label="Atualizar dados">
             <i class="fa-solid fa-arrows-rotate" id="refreshIcon"></i>
           </button>
 
+          <span id="themeToggleDesktopPlaceholder" hidden aria-hidden="true"></span>
           <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Mudar para tema claro" aria-pressed="false" title="Mudar para tema claro">
             <i class="fa-solid fa-moon" id="themeToggleIcon" aria-hidden="true"></i>
+            <span class="theme-toggle-label" id="themeToggleLabel">Mudar para tema claro</span>
           </button>
 
           <button class="user-avatar-btn" id="userMenuBtn" title="Menu do Usuário" aria-label="Abrir menu do usuário" aria-haspopup="dialog" aria-expanded="false">
@@ -278,13 +274,13 @@
           <div class="drawer-section">
             <span class="drawer-section-title">Gerenciamento de Dados</span>
 
-            <button id="drawerRefreshBtn" class="drawer-action-btn" title="Atualizar Dados e Sincronizar">
+            <button id="drawerRefreshBtn" class="drawer-action-btn" title="Buscar nova versão do app" aria-label="Buscar nova versão do app">
               <div class="action-icon bg-primary-soft">
-                <i class="fa-solid fa-arrows-rotate text-primary" id="drawerRefreshIcon"></i>
+                <i class="fa-solid fa-cloud-arrow-down text-primary" id="drawerRefreshIcon"></i>
               </div>
               <div class="action-text">
-                <strong>Atualizar Dados</strong>
-                <span>Sincronizar com a nuvem e recarregar</span>
+                <strong>Buscar nova versão do app</strong>
+                <span>Verificar atualizações e reiniciar se houver uma versão nova</span>
               </div>
             </button>
 

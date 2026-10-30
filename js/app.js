@@ -212,8 +212,61 @@ function isFutureImportDate(date) {
   return date > todayString;
 }
 
+function cleanRecurringImportDescription(description) {
+  return String(description || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\b\d{1,3}\s+de\s+\d{1,3}\b/gi, ' ')
+    .replace(/\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b/g, ' ')
+    .replace(/\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/g, ' ')
+    .replace(/\bc\s*\/\s*desconto\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s\-–—|,:;]+|[\s\-–—|,:;]+$/g, '')
+    .trim();
+}
+
+function markRecurringImportRows(rows) {
+  const grouped = new Map();
+  rows.forEach((row, index) => {
+    if (row.invalid || row.type !== 'variable' || row.installment || !row.date) return;
+    const description = cleanRecurringImportDescription(row.desc);
+    const amount = Number(row.amount);
+    if (!description || !Number.isFinite(amount)) return;
+    if (!grouped.has(description)) grouped.set(description, []);
+    grouped.get(description).push({ row, index, month: row.date.substring(0, 7), amount: Math.round(amount * 100) });
+  });
+
+  const recurring = new Map();
+  grouped.forEach(group => {
+    if (new Set(group.map(item => item.amount)).size !== 1) return;
+    const months = [...new Set(group.map(item => item.month))].sort();
+    if (months.length < 2) return;
+    const ordered = [...group].sort((a, b) => a.row.date.localeCompare(b.row.date) || a.index - b.index);
+    recurring.set(ordered[0].index, { startMonth: months[0], endMonth: months[months.length - 1] });
+    ordered.slice(1).forEach(item => recurring.set(item.index, { covered: true }));
+  });
+
+  return rows.map((row, index) => {
+    const recurrence = recurring.get(index);
+    if (!recurrence) return row;
+    if (recurrence.covered) {
+      return { ...row, recurringCovered: true, selected: false };
+    }
+    return {
+      ...row,
+      type: 'fixed',
+      recurringPrimary: true,
+      startMonth: recurrence.startMonth,
+      endMonth: recurrence.endMonth
+    };
+  });
+}
+
 function getImportPreviewType(row) {
   if (row.installment) return 'debt';
+  if (row.recurringPrimary) return 'fixed';
   if (row.pending || (row.type !== 'income' && isFutureImportDate(row.date))) {
     return 'variable_pending';
   }
@@ -224,7 +277,33 @@ function getImportPaidValue(row, type) {
   return type !== 'variable_pending' && !isFutureImportDate(row.date);
 }
 
-window.GastoProImportHelpers = Object.freeze({ getImportPreviewType, getImportPaidValue });
+window.GastoProImportHelpers = Object.freeze({
+  cleanRecurringImportDescription,
+  markRecurringImportRows,
+  getImportPreviewType,
+  getImportPaidValue
+});
+
+function setupResponsiveThemeToggle() {
+  const button = document.getElementById('themeToggleBtn');
+  const placeholder = document.getElementById('themeToggleDesktopPlaceholder');
+  const sidebarNav = document.querySelector('.sidebar-nav');
+  if (!button || !placeholder || !sidebarNav) return;
+
+  const mobileQuery = window.matchMedia('(max-width: 900px)');
+  const updatePosition = () => {
+    if (mobileQuery.matches) {
+      sidebarNav.appendChild(button);
+      button.classList.add('nav-item');
+    } else {
+      placeholder.parentNode.insertBefore(button, placeholder.nextSibling);
+      button.classList.remove('nav-item');
+    }
+  };
+  updatePosition();
+  mobileQuery.addEventListener('change', updatePosition);
+  window.addEventListener('resize', updatePosition);
+}
 
 window.GastoProViewHelpers = {
   restore(storedView, userId, isAdmin) {
@@ -2023,6 +2102,7 @@ window.GastoProKeyboardPanels = {
  *  12. Registro do Service Worker (PWA).
  */
 document.addEventListener('DOMContentLoaded', () => {
+  setupResponsiveThemeToggle();
   document.addEventListener('gastopro:themechange', () => {
     if (document.getElementById('categoryChart')) renderAll();
   });
@@ -4374,23 +4454,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 12. Botão de Atualizar / Refresh (Desktop & PWA Mobile) ──
   const refreshAppBtn      = document.getElementById('refreshAppBtn');
-  const sidebarRefreshBtn  = document.getElementById('sidebarRefreshBtn');
   const drawerRefreshBtn   = document.getElementById('drawerRefreshBtn');
   const refreshIcon        = document.getElementById('refreshIcon');
-  const sidebarRefreshIcon = document.getElementById('sidebarRefreshIcon');
   const drawerRefreshIcon  = document.getElementById('drawerRefreshIcon');
 
   let isRefreshing = false;
+  let isCheckingAppVersion = false;
 
   async function handleAppRefresh() {
     if (isRefreshing) return;
     isRefreshing = true;
 
     // Ativa animação de rotação contínua nos ícones
-    const icons = [refreshIcon, sidebarRefreshIcon, drawerRefreshIcon].filter(Boolean);
+    const icons = [refreshIcon].filter(Boolean);
     icons.forEach(icon => icon.classList.add('spinning'));
 
-    const btns = [refreshAppBtn, sidebarRefreshBtn, drawerRefreshBtn].filter(Boolean);
+    const btns = [refreshAppBtn].filter(Boolean);
     btns.forEach(btn => btn.classList.add('refreshing'));
 
     const startTime = Date.now();
@@ -4437,9 +4516,96 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  if (refreshAppBtn)     refreshAppBtn.addEventListener('click', handleAppRefresh);
-  if (sidebarRefreshBtn) sidebarRefreshBtn.addEventListener('click', handleAppRefresh);
-  if (drawerRefreshBtn)  drawerRefreshBtn.addEventListener('click', handleAppRefresh);
+  async function handleAppVersionCheck() {
+    if (isCheckingAppVersion) return;
+    isCheckingAppVersion = true;
+
+    const icon = drawerRefreshIcon;
+    if (icon) icon.classList.add('spinning');
+    if (drawerRefreshBtn) {
+      drawerRefreshBtn.classList.add('refreshing');
+      drawerRefreshBtn.disabled = true;
+    }
+
+    let serviceWorker;
+    let registration;
+    let onUpdateFound;
+    let onControllerChange;
+    let controllerChangeTimeout;
+
+    try {
+      if (!('serviceWorker' in navigator)) {
+        showToast('Não foi possível buscar uma versão nova neste navegador.');
+        return;
+      }
+
+      serviceWorker = navigator.serviceWorker;
+      registration = await serviceWorker.getRegistration();
+      if (!registration || typeof registration.update !== 'function') {
+        showToast('Não foi possível verificar atualizações do app.');
+        return;
+      }
+
+      let updateFound = false;
+      let controllerChanged = false;
+      let resolveControllerChange;
+      const controllerChange = new Promise(resolve => {
+        resolveControllerChange = resolve;
+      });
+
+      onUpdateFound = () => {
+        updateFound = true;
+      };
+      onControllerChange = () => {
+        controllerChanged = true;
+        resolveControllerChange();
+      };
+      registration.addEventListener('updatefound', onUpdateFound);
+      serviceWorker.addEventListener('controllerchange', onControllerChange);
+
+      await registration.update();
+      updateFound = updateFound || Boolean(registration.installing || registration.waiting);
+      if (!updateFound) {
+        showToast('O app já está atualizado.');
+        return;
+      }
+
+      if (!controllerChanged) {
+        controllerChanged = await Promise.race([
+          controllerChange.then(() => true),
+          new Promise(resolve => {
+            controllerChangeTimeout = setTimeout(() => resolve(false), 30000);
+          })
+        ]);
+      }
+
+      if (controllerChanged) {
+        window.location.reload();
+      } else {
+        showToast('Nova versão encontrada. Tente novamente em instantes.');
+      }
+    } catch (error) {
+      console.warn('[GastoPro] Erro ao buscar nova versão do app:', error);
+      showToast('Não foi possível verificar atualizações do app.');
+    } finally {
+      if (controllerChangeTimeout) clearTimeout(controllerChangeTimeout);
+      if (registration && onUpdateFound) {
+        registration.removeEventListener('updatefound', onUpdateFound);
+      }
+      if (serviceWorker && onControllerChange) {
+        serviceWorker.removeEventListener('controllerchange', onControllerChange);
+      }
+      if (icon) icon.classList.remove('spinning');
+      if (drawerRefreshBtn) {
+        drawerRefreshBtn.classList.remove('refreshing');
+        drawerRefreshBtn.disabled = false;
+      }
+      isCheckingAppVersion = false;
+    }
+  }
+
+  if (refreshAppBtn) refreshAppBtn.addEventListener('click', handleAppRefresh);
+  if (drawerRefreshBtn) drawerRefreshBtn.addEventListener('click', handleAppVersionCheck);
 
   // ── 13. MÓDULO DE IMPORTAÇÃO DE EXTRATOS ─────────────────────────
   // Controlador do modal de importação CSV / Texto Bruto.
@@ -4568,8 +4734,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const rowStatus = [
         row.invalid ? '<span class="import-row-status invalid">Data inválida</span>' : '',
         row.duplicate ? '<span class="import-row-status duplicate">Possível duplicado</span>' : '',
-        row.pending ? '<span class="import-row-status pending">Sugestão: a pagar</span>' : ''
+        row.pending && !row.recurringPrimary ? '<span class="import-row-status pending">Sugestão: a pagar</span>' : ''
       ].filter(Boolean).join(' ');
+      const recurringCoveredNote = row.recurringCovered
+        ? '<span class="import-row-status recurring-covered">já coberto pela recorrência</span>'
+        : '';
 
       // Gera opções do select de categoria
       const catOptions = allCats.map(c =>
@@ -4599,7 +4768,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </td>
         <td class="col-date">${escapeHtml(dateDisplay)}</td>
         <td class="col-desc" title="${escapeHtml(row.desc)}">
-          ${escapeHtml(row.desc)} ${rowStatus}
+          ${recurringCoveredNote} ${escapeHtml(row.desc)} ${rowStatus}
           ${installmentDisplay}
           ${paymentPeriodDisplay}
           ${row.invalidReason ? `<small class="import-row-reason">${escapeHtml(row.invalidReason)}</small>` : ''}
@@ -4663,6 +4832,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const template = GastoProImporter.matchDebtTemplate(row, templates);
         return template ? { ...row, linkedTemplateId: template.id } : row;
       });
+    _importParsedRows = markRecurringImportRows(_importParsedRows);
     const hadWarnings = showImportWarnings();
     renderImportPreview(_importParsedRows);
     return hadWarnings;

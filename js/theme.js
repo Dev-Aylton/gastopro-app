@@ -34,12 +34,15 @@
   function updateThemeButton(theme) {
     const button = document.getElementById('themeToggleBtn');
     const icon = document.getElementById('themeToggleIcon');
+    const label = document.getElementById('themeToggleLabel');
     if (!button || !icon) return;
     const isDark = theme === 'dark';
-    button.setAttribute('aria-label', isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro');
+    const actionLabel = isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro';
+    button.setAttribute('aria-label', actionLabel);
     button.setAttribute('aria-pressed', isDark ? 'false' : 'true');
-    button.title = isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro';
+    button.title = actionLabel;
     icon.className = isDark ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+    if (label) label.textContent = actionLabel;
   }
 
   function applyTheme(theme) {

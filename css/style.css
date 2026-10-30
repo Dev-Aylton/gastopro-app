@@ -433,24 +433,6 @@ body {
   background: rgba(var(--theme-rgb-background-ffffff), 0.05);
 }
 
-/* Botão de Atualizar Dados no rodapé da sidebar */
-.sidebar-nav #sidebarRefreshBtn {
-  margin-top: 0.35rem;
-  border-top: 1px solid var(--border);
-  padding-top: 0.85rem;
-  color: var(--text-muted);
-}
-
-.sidebar-nav #sidebarRefreshBtn:hover {
-  background: var(--bg-card);
-  color: var(--primary);
-  border-color: rgba(var(--theme-rgb-border-6366f1), 0.25);
-}
-
-.sidebar-nav #sidebarRefreshBtn:hover i {
-  color: var(--primary);
-}
-
 /* ================================================================
    2. MAIN CONTENT & TOPBAR
    ================================================================ */
@@ -536,8 +518,11 @@ body {
   border-color: var(--primary-text);
 }
 
+.theme-toggle-label {
+  display: none;
+}
+
 .topbar-refresh-btn.refreshing,
-.nav-item-action.refreshing,
 .drawer-action-btn.refreshing {
   opacity: 0.7;
   pointer-events: none;
@@ -2676,7 +2661,54 @@ button:active { transform: scale(0.98); }
     padding: 1.2rem 1rem calc(3rem + env(safe-area-inset-bottom)) 1rem;
   }
   .topbar-summary {
-    display: none;
+    gap: 0.35rem;
+    padding: 0.3rem 0.5rem;
+    white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .topbar-label {
+    font-size: 0.68rem;
+  }
+  .topbar-value {
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+  .topbar-right {
+    gap: 0.45rem;
+    flex-shrink: 0;
+  }
+  .sidebar .theme-toggle-btn {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 44px;
+    padding: 0.85rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.9rem;
+    border: 1px solid var(--theme-border-transparent);
+    border-radius: var(--radius-md);
+    background: var(--theme-background-transparent);
+    color: var(--text-main);
+    font-size: 0.92rem;
+    text-align: left;
+  }
+  .sidebar .theme-toggle-btn:hover {
+    background: var(--bg-card);
+    color: var(--text-main);
+    border-color: var(--border);
+  }
+  [data-theme] .sidebar-nav .nav-item.theme-toggle-btn:not(.active) {
+    color: var(--text-main);
+  }
+  .sidebar .theme-toggle-btn i {
+    width: 22px;
+    text-align: center;
+  }
+  .sidebar .theme-toggle-label {
+    display: inline;
   }
 }
 
@@ -2709,6 +2741,19 @@ button:active { transform: scale(0.98); }
     width: 32px;
     height: 32px;
     font-size: 0.85rem;
+  }
+
+  .topbar-summary {
+    gap: 0.25rem;
+    padding: 0.25rem 0.35rem;
+  }
+
+  .topbar-label {
+    font-size: 0.6rem;
+  }
+
+  .topbar-value {
+    font-size: 0.72rem;
   }
 
   .views-wrapper {
@@ -3103,7 +3148,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   }
 
   .topbar-refresh-btn,
-  .theme-toggle-btn,
   .user-avatar-btn,
   .menu-toggle-btn {
     width: 44px;
@@ -4574,6 +4618,11 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   background: var(--warning-bg);
 }
 
+.import-row-status.recurring-covered {
+  color: var(--text-muted);
+  background: var(--bg-input);
+}
+
 .import-row-reason {
   color: var(--danger-text);
   display: block;
@@ -6041,8 +6090,6 @@ video {
 .btn-icon:hover,
 .btn-action-edit,
 .nav-item.active i,
-.sidebar-nav #sidebarRefreshBtn:hover,
-.sidebar-nav #sidebarRefreshBtn:hover i,
 .badge-tag,
 .badge-version,
 .topbar-refresh-btn:hover,
@@ -6256,6 +6303,19 @@ input[type="month"] {
     gap: 0.35rem;
     padding-left: 0.5rem;
     padding-right: 0.5rem;
+  }
+
+  .topbar-summary {
+    gap: 0.15rem;
+    padding: 0.2rem 0.25rem;
+  }
+
+  .topbar-label {
+    font-size: 0.5rem;
+  }
+
+  .topbar-value {
+    font-size: 0.62rem;
   }
 
   .views-wrapper {
