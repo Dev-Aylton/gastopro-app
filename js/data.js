@@ -1282,8 +1282,10 @@ const FinanceData = {
 
   async markPaidMany(payments) {
     const templates = this.getTemplates();
+    const currentMonth = getLocalDateString().substring(0, 7);
     let applied = 0;
     payments.forEach(payment => {
+      if (payment.ym > currentMonth) return;
       const template = templates.find(item => item.id === payment.id);
       if (!template) return;
       if (!template.paidMonths) template.paidMonths = {};

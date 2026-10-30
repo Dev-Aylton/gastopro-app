@@ -205,6 +205,26 @@ const VIEW_TITLES = {
 const LAST_VIEW_STORAGE_KEY = 'gastopro_last_view_v1';
 const PERSISTED_VIEW_IDS = Object.freeze(Object.keys(VIEW_TITLES));
 
+function isFutureImportDate(date) {
+  if (!date) return false;
+  const today = new Date();
+  const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return date > todayString;
+}
+
+function getImportPreviewType(row) {
+  if (row.pending || (row.type !== 'income' && isFutureImportDate(row.date))) {
+    return 'variable_pending';
+  }
+  return ['income', 'fixed', 'debt'].includes(row.type) ? row.type : 'variable';
+}
+
+function getImportPaidValue(row, type) {
+  return type !== 'variable_pending' && !isFutureImportDate(row.date);
+}
+
+window.GastoProImportHelpers = Object.freeze({ getImportPreviewType, getImportPaidValue });
+
 window.GastoProViewHelpers = {
   restore(storedView, userId, isAdmin) {
     const ownerId = userId || null;
@@ -4540,9 +4560,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     rows.forEach((row, i) => {
       const isIncome = row.type === 'income';
-      const selectedType = ['income', 'fixed', 'debt'].includes(row.type)
-        ? row.type
-        : row.pending ? 'variable_pending' : 'variable';
+      const selectedType = getImportPreviewType(row);
       const dateDisplay = row.date
         ? row.date.split('-').reverse().join('/')
         : 'Data inválida';
@@ -4749,7 +4767,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const entry = GastoProImporter.buildEntry(
         { ...row, category },
-        type
+        type,
+        getImportPaidValue(row, type)
       );
 
       launches.push(entry);

@@ -182,6 +182,12 @@ const GastoProImporter = (() => {
     return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   }
 
+  function isFutureDate(date, today = new Date()) {
+    if (!date) return false;
+    const todayString = formatIsoDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    return date > todayString;
+  }
+
   function parseDate(dateValue, today = new Date()) {
     if (!dateValue) return null;
     const text = String(dateValue).trim();
@@ -465,7 +471,10 @@ const GastoProImporter = (() => {
     const startMonth = shiftMonth(month, -(row.installment.current - 1));
     const paidMonths = {};
     for (let offset = 0; offset < row.installment.current; offset++) {
-      paidMonths[shiftMonth(startMonth, offset)] = true;
+      const paidMonth = shiftMonth(startMonth, offset);
+      if (!isFutureDate(row.date) || paidMonth !== month) {
+        paidMonths[paidMonth] = true;
+      }
     }
     return {
       type: 'debt',

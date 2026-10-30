@@ -2810,6 +2810,9 @@ describe('GastoProImporter — autoDetectCategory', () => {
 
 describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
   const today = new Date(2026, 9, 30);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowString = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
 
   it('importa despesa futura como a pagar, sem marcar paid', () => {
     const row = GastoProImporter.parseCSV(
@@ -2835,6 +2838,21 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     assertNull(past.installment);
     assertTrue(GastoProImporter.buildEntry(past, 'variable').paid);
     assertNull(GastoProImporter.detectInstallment('Loja Exemplo Empréstimo 07 de 12'));
+  });
+
+  it('inicia parcela futura como Gasto a pagar na prévia', () => {
+    const future = GastoProImporter.parseCSV(
+      `Data;Descrição;Valor\n${tomorrowString};Loja Exemplo Empréstimo 07 de 12;-450,00`
+    )[0];
+    assertEqual(window.GastoProImportHelpers.getImportPreviewType(future), 'variable_pending');
+  });
+
+  it('grava data futura como não paga mesmo quando o tipo escolhido é pago', () => {
+    const row = GastoProImporter.parseCSV(
+      `Data;Descrição;Valor\n${tomorrowString};Compra futura;-45,00`
+    )[0];
+    const paid = window.GastoProImportHelpers.getImportPaidValue(row, 'variable');
+    assertFalse(GastoProImporter.buildEntry(row, 'variable', paid).paid);
   });
 
   it('mantém como pago gasto passado e gasto datado hoje', () => {
@@ -3174,6 +3192,21 @@ describe('GastoProImporter — extratos bancários robustos', () => {
     assertEqual(debt.date, '2026-08-15');
     assertEqual(Object.keys(debt.paidMonths).length, 3);
     assertEqual(48 - Object.keys(debt.paidMonths).length, 45);
+  });
+
+  it('não marca como pago o mês da parcela importada com data futura', () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+    const date = `${future.getFullYear()}-${String(future.getMonth() + 1).padStart(2, '0')}-${String(future.getDate()).padStart(2, '0')}`;
+    const month = date.substring(0, 7);
+    const debt = GastoProImporter.buildInstallmentDebt({
+      date,
+      amount: 500,
+      installmentBase: 'FACULDADE X',
+      installment: { current: 3, total: 48 }
+    }, 'Educação');
+    assertFalse(Object.prototype.hasOwnProperty.call(debt.paidMonths, month));
+    assertTrue(Object.keys(debt.paidMonths).length > 0);
   });
 
   it('impõe limites de tamanho e linhas e limita cada linha a 500 caracteres', () => {
@@ -3523,6 +3556,25 @@ describe('FinanceData — inserção em lote para importação', () => {
       ]);
     } finally {
       FinanceData.saveTemplates = originalSaveTemplates;
+      FinanceData.flushPendingSync = originalFlush;
+    }
+  });
+
+  itAsync('markPaidMany ignora baixa de mês futuro', async () => {
+    setupMockLocalStorage();
+    const originalFlush = FinanceData.flushPendingSync;
+    FinanceData.flushPendingSync = async () => ({ success: true });
+    const { items } = await FinanceData.addMany([
+      { type: 'debt', desc: 'Dívida futura', amount: 200, date: '2026-08-15' }
+    ]);
+    try {
+      const future = new Date();
+      future.setMonth(future.getMonth() + 1, 1);
+      const ym = `${future.getFullYear()}-${String(future.getMonth() + 1).padStart(2, '0')}`;
+      const result = await FinanceData.markPaidMany([{ id: items[0].id, ym }]);
+      assertEqual(result, { success: true, applied: 0 });
+      assertEqual(FinanceData.getTemplates()[0].paidMonths, {});
+    } finally {
       FinanceData.flushPendingSync = originalFlush;
     }
   });
