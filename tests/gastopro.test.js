@@ -2840,11 +2840,31 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     assertNull(GastoProImporter.detectInstallment('Loja Exemplo Empréstimo 07 de 12'));
   });
 
-  it('inicia parcela futura como Gasto a pagar na prévia', () => {
+  it('inicia parcela futura detectada como Dívida na prévia', () => {
     const future = GastoProImporter.parseCSV(
       `Data;Descrição;Valor\n${tomorrowString};Loja Exemplo Empréstimo 07 de 12;-450,00`
     )[0];
+    assertEqual(window.GastoProImportHelpers.getImportPreviewType(future), 'debt');
+  });
+
+  it('mantém gasto futuro sem parcela como Gasto a pagar na prévia', () => {
+    const future = GastoProImporter.parseCSV(
+      `Data;Descrição;Valor\n${tomorrowString};Compra futura;-45,00`
+    )[0];
+    assertFalse(Boolean(future.installment));
     assertEqual(window.GastoProImportHelpers.getImportPreviewType(future), 'variable_pending');
+  });
+
+  it('não marca como pago o mês futuro de dívida com parcelas restantes selecionadas', () => {
+    const future = GastoProImporter.parseCSV(
+      `Data;Descrição;Valor\n${tomorrowString};Loja Exemplo Empréstimo 07 de 12;-450,00`
+    )[0];
+    const selectedType = window.GastoProImportHelpers.getImportPreviewType(future);
+    const launchRemaining = true;
+    assertEqual(selectedType, 'debt');
+    assertTrue(launchRemaining);
+    const debt = GastoProImporter.buildInstallmentDebt(future, future.category);
+    assertFalse(Object.prototype.hasOwnProperty.call(debt.paidMonths, tomorrowString.substring(0, 7)));
   });
 
   it('grava data futura como não paga mesmo quando o tipo escolhido é pago', () => {

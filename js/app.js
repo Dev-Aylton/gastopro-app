@@ -213,6 +213,7 @@ function isFutureImportDate(date) {
 }
 
 function getImportPreviewType(row) {
+  if (row.installment) return 'debt';
   if (row.pending || (row.type !== 'income' && isFutureImportDate(row.date))) {
     return 'variable_pending';
   }
