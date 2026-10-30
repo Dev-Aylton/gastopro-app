@@ -648,7 +648,7 @@ describe('FinanceData — Contas Bancárias', () => {
     assertTrue(visual.includes('Limite'));
   });
 
-  itAsync('sincroniza cartões e limpa a fila após confirmação do Supabase', async () => {
+  itAsync('sincroniza uma compra parcelada como linha única e reenvia o mesmo ID após falha', async () => {
     setupMockLocalStorage();
     const userId = 'user-credit-cards';
     localStorage.setItem('gastopro_last_uid', userId);
@@ -668,27 +668,104 @@ describe('FinanceData — Contas Bancárias', () => {
     await FinanceData.saveCreditCardPurchases([purchase], { flush: false });
     const previousAuth = window.SupabaseAuth;
     let syncedCards = [];
-    let syncedPurchases = [];
+    const syncedPurchaseIds = [];
+    let purchaseAttempts = 0;
     window.SupabaseAuth = {
       saveCloudCreditCards: async cards => {
         syncedCards = cards;
         return { success: true };
       },
       saveCloudCreditCardPurchases: async purchases => {
-        syncedPurchases = purchases;
-        return { success: true };
+        syncedPurchaseIds.push(purchases.map(item => item.id));
+        purchaseAttempts++;
+        return purchaseAttempts === 1
+          ? { success: false, failedIds: purchases.map(item => item.id), error: new Error('offline') }
+          : { success: true };
       }
     };
     try {
+      const failed = await FinanceData.flushPendingSync(userId);
+      assertFalse(failed.success);
+      assertEqual(FinanceData.getPendingSync().creditCardPurchases, [purchase.id]);
       const result = await FinanceData.flushPendingSync(userId);
       assertTrue(result.success);
       assertEqual(syncedCards, [card]);
-      assertEqual(syncedPurchases, [purchase]);
+      assertEqual(syncedPurchaseIds, [[purchase.id], [purchase.id]]);
+      assertEqual(FinanceData.getCreditCardPurchases().length, 1);
+      assertEqual(FinanceData.getCreditCardPurchases()[0].installmentCount, 2);
       assertEqual(FinanceData.getPendingSync().creditCards, []);
       assertEqual(FinanceData.getPendingSync().creditCardPurchases, []);
     } finally {
       window.SupabaseAuth = previousAuth;
     }
+  });
+
+  itAsync('importa lote todo-ou-nada, mantém a fila após falha e reutiliza IDs no retry', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-transactional-import';
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId }, { queueSync: false });
+    const existingTemplate = { ...makeFixed({ id: crypto.randomUUID() }), paidMonths: {} };
+    await FinanceData.saveTemplates([existingTemplate], { flush: false });
+    const entryId = crypto.randomUUID();
+    const templateId = crypto.randomUUID();
+    const importedItems = [
+      makeIncome({ id: entryId, desc: 'Linha CSV' }),
+      makeFixed({ id: templateId, desc: 'Template CSV' })
+    ];
+    const calls = [];
+    const committedIds = new Set();
+    let attempt = 0;
+    let genericWrites = 0;
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      importFinancialBatch: async (entries, templates, payments) => {
+        calls.push({ entries: entries.map(item => item.id), templates: templates.map(item => item.id), payments });
+        attempt++;
+        if (attempt === 1) return { success: false, error: 'falha antes do commit' };
+        entries.forEach(item => committedIds.add(item.id));
+        templates.forEach(item => committedIds.add(item.id));
+        if (attempt === 2) return { success: false, error: 'resposta perdida após commit' };
+        return { success: true };
+      },
+      saveCloudEntries: async () => { genericWrites++; return { success: true }; },
+      saveCloudTemplates: async () => { genericWrites++; return { success: true }; }
+    };
+    try {
+      const first = await FinanceData.importBatch(importedItems, [
+        { id: existingTemplate.id, ym: '2026-10' }
+      ]);
+      assertFalse(first.success);
+      assertEqual(committedIds.size, 0);
+      assertEqual(FinanceData.getPendingSync().transactionalOperations.length, 1);
+      assertEqual(genericWrites, 0);
+
+      assertFalse((await FinanceData.flushPendingSync(userId)).success);
+      assertEqual(committedIds.size, 3);
+      assertEqual(FinanceData.getPendingSync().transactionalOperations.length, 1);
+      assertTrue((await FinanceData.flushPendingSync(userId)).success);
+      assertEqual(committedIds.size, 3);
+      assertEqual(calls[0].entries, calls[1].entries);
+      assertEqual(calls[1].entries, calls[2].entries);
+      assertEqual(calls[0].templates, calls[2].templates);
+      assertEqual(calls[0].payments, calls[2].payments);
+      assertEqual(FinanceData.getPendingSync().transactionalOperations, []);
+      assertEqual(genericWrites, 0);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('avisa e não divide importação acima de 500 linhas', async () => {
+    setupMockLocalStorage();
+    const oversized = Array.from({ length: 501 }, (_, index) =>
+      makeIncome({ id: crypto.randomUUID(), desc: `Linha ${index}` })
+    );
+    const result = await FinanceData.importBatch(oversized, []);
+    assertFalse(result.success);
+    assertTrue(result.error.includes('500 linhas'));
+    assertEqual(FinanceData.getEntries(), []);
+    assertEqual(FinanceData.getPendingSync().transactionalOperations, []);
   });
 
   itAsync('distribui parcelas antes e depois do fechamento, em 1x e até 24x', async () => {
@@ -914,8 +991,21 @@ describe('FinanceData — Contas Bancárias', () => {
       ...makeFixed({ id: crypto.randomUUID(), accountId: created.account.id }),
       paidMonths: {}
     };
+    const card = {
+      id: crypto.randomUUID(), name: 'Cartão da conta', totalLimit: 1000,
+      closingDay: 10, dueDay: 20, accountId: created.account.id,
+      brand: 'Visa', issuerBank: 'Nubank', lastFour: null, customColor: null
+    };
+    const purchase = {
+      id: crypto.randomUUID(), cardId: card.id, cardName: card.name,
+      accountId: created.account.id, desc: 'Compra', amount: 90, category: 'Compras',
+      purchaseDate: '2026-10-10', installmentCount: 3, closingDay: 10, dueDay: 20,
+      paidInstallments: [], paidDates: {}
+    };
     FinanceData.saveEntries([entry]);
     FinanceData.saveTemplates([template]);
+    await FinanceData.saveCreditCards([card], { flush: false });
+    await FinanceData.saveCreditCardPurchases([purchase], { flush: false });
 
     const result = await FinanceData.deleteAccount(created.account.id);
     assertTrue(result.success);
@@ -923,6 +1013,64 @@ describe('FinanceData — Contas Bancárias', () => {
     assertEqual(FinanceData.getEntries(), [{ ...entry, accountId: null }]);
     assertEqual(FinanceData.getTemplates()[0].accountId, null);
     assertEqual(FinanceData.getTemplates()[0].id, template.id);
+    assertEqual(FinanceData.getCreditCards()[0].accountId, null);
+    assertEqual(FinanceData.getCreditCards()[0].id, card.id);
+    assertEqual(FinanceData.getCreditCardPurchases()[0].accountId, null);
+    assertEqual(FinanceData.getCreditCardPurchases()[0].id, purchase.id);
+  });
+
+  itAsync('apaga conta transacionalmente e mantém desvínculos na fila até o retry', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-account-transaction';
+    const account = {
+      id: crypto.randomUUID(), name: 'Conta a remover', institution: null,
+      type: 'PF', initialBalance: 0, balanceDate: null
+    };
+    const entry = makeIncome({ id: crypto.randomUUID(), accountId: account.id });
+    const template = { ...makeFixed({ id: crypto.randomUUID(), accountId: account.id }), paidMonths: {} };
+    const card = {
+      id: crypto.randomUUID(), name: 'Cartão vinculado', totalLimit: 1200,
+      closingDay: 10, dueDay: 20, accountId: account.id, brand: 'Visa',
+      issuerBank: 'Nubank', lastFour: null, customColor: null
+    };
+    const purchase = {
+      id: crypto.randomUUID(), cardId: card.id, cardName: card.name,
+      accountId: account.id, desc: 'Compra vinculada', amount: 90, category: 'Compras',
+      purchaseDate: '2026-10-10', installmentCount: 3, closingDay: 10, dueDay: 20,
+      paidInstallments: [], paidDates: {}
+    };
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId }, { queueSync: false });
+    localStorage.setItem('gastopro_accounts_v1', JSON.stringify([account]));
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([entry]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([template]));
+    localStorage.setItem('gastopro_credit_cards_v1', JSON.stringify([card]));
+    localStorage.setItem('gastopro_credit_card_purchases_v1', JSON.stringify([purchase]));
+    const previousAuth = window.SupabaseAuth;
+    const calls = [];
+    window.SupabaseAuth = {
+      deleteAccountTransactional: async (accountId, clientEditedAt) => {
+        calls.push({ accountId, clientEditedAt });
+        return calls.length === 1 ? { success: false, error: 'offline' } : { success: true };
+      }
+    };
+    try {
+      assertFalse((await FinanceData.deleteAccount(account.id)).success);
+      assertEqual(FinanceData.getAccounts(), []);
+      assertEqual(FinanceData.getEntries()[0].accountId, null);
+      assertEqual(FinanceData.getTemplates()[0].accountId, null);
+      assertEqual(FinanceData.getCreditCards()[0].accountId, null);
+      assertEqual(FinanceData.getCreditCardPurchases()[0].accountId, null);
+      assertEqual(FinanceData.getPendingSync().transactionalOperations.length, 1);
+
+      assertTrue((await FinanceData.flushPendingSync(userId)).success);
+      assertEqual(calls.length, 2);
+      assertEqual(calls[0], calls[1]);
+      assertEqual(FinanceData.getPendingSync().transactionalOperations, []);
+      assertEqual(FinanceData.getPendingSync().deletedAccounts, []);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
   });
 
   itAsync('reset mantém contas cadastradas e remove lançamentos/templates vinculados', async () => {
@@ -964,6 +1112,10 @@ describe('FinanceData — Contas Bancárias', () => {
         callOrder.push('accounts');
         return { success: !fail, failedIds: fail ? accounts.map(item => item.id) : [] };
       },
+      deleteAccountTransactional: async () => ({
+        success: !fail,
+        conflicts: fail ? [{ kind: 'accounts', id: account.id }] : []
+      }),
       deleteCloudAccounts: async () => ({ success: !fail })
     };
     try {

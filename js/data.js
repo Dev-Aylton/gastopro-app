@@ -73,6 +73,7 @@ const STORAGE_FIXED_IMPORT_RULES = 'gastopro_fixed_import_rules_v1';
 const STORAGE_LAST_UID = 'gastopro_last_uid';
 const STORAGE_PENDING_SYNC = 'gastopro_pending_sync_v1';
 const STORAGE_SYNC_METADATA = 'gastopro_sync_metadata_v1';
+const MAX_TRANSACTIONAL_IMPORT_ROWS = 500;
 const STORAGE_TUTORIAL_SEEN = 'gastopro_tutorial_seen';
 const STORAGE_ACCOUNT_SETUP_SEEN = 'gastopro_account_setup_seen';
 const MAX_ACCOUNT_BALANCE = 9999999999.99;
@@ -623,14 +624,15 @@ const FinanceData = {
           goals: [], deletedGoals: [], accounts: [], deletedAccounts: [],
           creditCards: [], deletedCreditCards: [],
           creditCardPurchases: [], deletedCreditCardPurchases: [], fixedImportRules: false,
-          profile: false, ...JSON.parse(stored)
+          profile: false, transactionalOperations: [],
+          ...JSON.parse(stored)
         }
         : {
           full: false, entries: [], templates: [], deletedEntries: [], deletedTemplates: [],
           goals: [], deletedGoals: [], accounts: [], deletedAccounts: [],
           creditCards: [], deletedCreditCards: [],
           creditCardPurchases: [], deletedCreditCardPurchases: [],
-          fixedImportRules: false, profile: false
+          fixedImportRules: false, profile: false, transactionalOperations: []
         };
     } catch (e) {
       console.error('[GastoPro] Erro ao ler alterações pendentes:', e);
@@ -639,7 +641,7 @@ const FinanceData = {
         goals: [], deletedGoals: [], accounts: [], deletedAccounts: [],
         creditCards: [], deletedCreditCards: [],
         creditCardPurchases: [], deletedCreditCardPurchases: [],
-        fixedImportRules: true, profile: true
+        fixedImportRules: true, profile: true, transactionalOperations: []
       };
     }
   },
@@ -665,7 +667,8 @@ const FinanceData = {
       pending.creditCardPurchases.length ||
       pending.deletedCreditCardPurchases.length ||
       pending.fixedImportRules ||
-      pending.profile
+      pending.profile ||
+      pending.transactionalOperations.length
     );
   },
 
@@ -952,6 +955,9 @@ const FinanceData = {
       const reconciliation = await this.reconcileCloudBeforeSync(targetUserId);
       if (!reconciliation.success) return reconciliation;
 
+      const transactionalSync = await this.flushTransactionalOperations(targetUserId);
+      if (!transactionalSync.success) return transactionalSync;
+
       const pending = this.getPendingSync();
       const fullSync = pending.full;
       const entries = this.getEntries();
@@ -963,10 +969,10 @@ const FinanceData = {
       const fixedImportRules = this.getFixedImportRules();
       const localProfile = this.getProfile();
       const entriesToSave = fullSync
-        ? entries
+        ? entries.filter(item => !transactionalSync.synced.entries.includes(item.id))
         : entries.filter(item => pending.entries.includes(item.id));
       const templatesToSave = fullSync
-        ? templates
+        ? templates.filter(item => !transactionalSync.synced.templates.includes(item.id))
         : templates.filter(item => pending.templates.includes(item.id));
       const goalsToSave = fullSync
         ? goals
@@ -976,10 +982,11 @@ const FinanceData = {
         ? accounts
         : accounts.filter(account => pending.accounts.includes(account.id));
       const creditCardsToSave = fullSync
-        ? creditCards
+        ? creditCards.filter(card => !transactionalSync.synced.creditCards.includes(card.id))
         : creditCards.filter(card => pending.creditCards.includes(card.id));
       const creditCardPurchasesToSave = fullSync
-        ? creditCardPurchases
+        ? creditCardPurchases.filter(purchase =>
+          !transactionalSync.synced.creditCardPurchases.includes(purchase.id))
         : creditCardPurchases.filter(purchase => pending.creditCardPurchases.includes(purchase.id));
       const accountResult = accountsToSave.length
         ? await window.SupabaseAuth.saveCloudAccounts(accountsToSave, targetUserId)
@@ -1148,6 +1155,101 @@ const FinanceData = {
       }
       return { success: true };
     };
+
+    async flushTransactionalOperations(userId) {
+      const auth = window.SupabaseAuth;
+      const synced = { entries: [], templates: [], accounts: [], creditCards: [], creditCardPurchases: [] };
+      let pending = this.getPendingSync();
+      const operations = [...pending.transactionalOperations];
+      const getters = {
+        entries: () => this.getEntries(),
+        templates: () => this.getTemplates(),
+        creditCards: () => this.getCreditCards(),
+        creditCardPurchases: () => this.getCreditCardPurchases()
+      };
+      const clearSyncedIds = (kind, snapshots) => {
+        const byId = new Map(snapshots.map(item => [item.id, item]));
+        const currentItems = getters[kind]();
+        pending[kind] = pending[kind].filter(id => {
+          if (!byId.has(id)) return true;
+          const current = currentItems.find(item => item.id === id);
+          if (!current || JSON.stringify(current) !== JSON.stringify(byId.get(id))) return true;
+          synced[kind].push(id);
+          return false;
+        });
+      };
+
+      for (const operation of operations) {
+        if (operation.type === 'deleteAccount') {
+          if (typeof auth.deleteAccountTransactional !== 'function') {
+            return { success: false, error: new Error('Exclusão transacional de conta não disponível.'), synced };
+          }
+          const result = await auth.deleteAccountTransactional(
+            operation.accountId, operation.clientEditedAt, userId
+          );
+          if (!result || !result.success) {
+            if (result && result.conflicts && result.conflicts.length && typeof showToast === 'function') {
+              showToast('Um item foi atualizado em outro aparelho');
+            }
+            return {
+              success: false,
+              error: result && result.error || new Error('A exclusão transacional da conta falhou.'),
+              conflicts: result && result.conflicts || [],
+              synced
+            };
+          }
+
+          pending = this.getPendingSync();
+          pending.transactionalOperations = pending.transactionalOperations.filter(item =>
+            item.operationId !== operation.operationId
+          );
+          Object.keys(operation.linked || {}).forEach(kind => clearSyncedIds(kind, operation.linked[kind]));
+          pending.accounts = pending.accounts.filter(id => id !== operation.accountId);
+          pending.deletedAccounts = pending.deletedAccounts.filter(id => id !== operation.accountId);
+          this.savePendingSync(pending);
+          continue;
+        }
+
+        if (operation.type === 'import') {
+          if (typeof auth.importFinancialBatch !== 'function') {
+            return { success: false, error: new Error('Importação transacional não disponível.'), synced };
+          }
+          const currentEntries = this.getEntries();
+          const currentTemplates = this.getTemplates();
+          const entries = operation.entries.map(item => currentEntries.find(current => current.id === item.id));
+          const templates = operation.templates.map(item => currentTemplates.find(current => current.id === item.id));
+          if (entries.some(item => !item) || templates.some(item => !item)) {
+            return {
+              success: false,
+              error: new Error('O lote de importação mudou localmente; a transação foi mantida na fila.'),
+              conflicts: [],
+              synced
+            };
+          }
+          const result = await auth.importFinancialBatch(entries, templates, operation.payments, userId);
+          if (!result || !result.success) {
+            if (result && result.conflicts && result.conflicts.length && typeof showToast === 'function') {
+              showToast('Um item foi atualizado em outro aparelho');
+            }
+            return {
+              success: false,
+              error: result && result.error || new Error('A importação transacional falhou.'),
+              conflicts: result && result.conflicts || [],
+              synced
+            };
+          }
+
+          pending = this.getPendingSync();
+          pending.transactionalOperations = pending.transactionalOperations.filter(item =>
+            item.operationId !== operation.operationId
+          );
+          clearSyncedIds('entries', entries);
+          clearSyncedIds('templates', templates);
+          this.savePendingSync(pending);
+        }
+      }
+      return { success: true, synced };
+    },
 
     const previousSync = this._pendingSyncPromise || Promise.resolve();
     const currentSync = previousSync.then(flush, flush);
@@ -1896,6 +1998,10 @@ const FinanceData = {
     if (!accounts.some(account => account.id === id)) {
       return { success: false, error: 'Conta não encontrada.' };
     }
+    const linkedEntries = this.getEntries().filter(entry => entry.accountId === id);
+    const linkedTemplates = this.getTemplates().filter(template => template.accountId === id);
+    const linkedCreditCards = this.getCreditCards().filter(card => card.accountId === id);
+    const linkedPurchases = this.getCreditCardPurchases().filter(purchase => purchase.accountId === id);
     const entries = this.getEntries().map(entry =>
       entry.accountId === id ? { ...entry, accountId: null } : entry
     );
@@ -1920,6 +2026,25 @@ const FinanceData = {
     }
     const accountResult = await this.saveAccounts(accounts.filter(account => account.id !== id), { flush: false });
     if (!accountResult.success) return accountResult;
+    const pending = this.getPendingSync();
+    pending.transactionalOperations ||= [];
+    if (!pending.transactionalOperations.some(operation =>
+      operation.type === 'deleteAccount' && operation.accountId === id
+    )) {
+      pending.transactionalOperations.push({
+        type: 'deleteAccount',
+        operationId: crypto.randomUUID(),
+        accountId: id,
+        clientEditedAt: this.getClientEditedAt('accounts', id, true),
+        linked: {
+          entries: linkedEntries.map(entry => ({ ...entry, accountId: null })),
+          templates: linkedTemplates.map(template => ({ ...template, accountId: null })),
+          creditCards: linkedCreditCards.map(card => ({ ...card, accountId: null })),
+          creditCardPurchases: linkedPurchases.map(purchase => ({ ...purchase, accountId: null }))
+        }
+      });
+      this.savePendingSync(pending);
+    }
     const syncResult = await this.flushPendingSync(this.getProfile().userId);
     return syncResult.success ? { success: true } : { success: false, error: syncResult.error };
   },
@@ -2208,28 +2333,41 @@ const FinanceData = {
   // O tipo do item determina se vira lançamento pontual ou template.
   // ================================================================
 
-  async addMany(items) {
-    if (!Array.isArray(items) || items.length === 0) {
+  async importBatch(items, payments = []) {
+    if (!Array.isArray(items) || !Array.isArray(payments)) {
+      return { success: false, items: [], error: 'O lote de importação é inválido.' };
+    }
+    if (items.length + payments.length > MAX_TRANSACTIONAL_IMPORT_ROWS) {
+      return {
+        success: false,
+        items: [],
+        error: `A importação excede o limite de ${MAX_TRANSACTIONAL_IMPORT_ROWS} linhas por transação. Reduza a seleção e tente novamente.`
+      };
+    }
+    if (!items.length && !payments.length) {
       return { success: true, items: [], syncResult: { success: true, skipped: true } };
     }
 
     const newEntries = [];
     const newTemplates = [];
     const addedItems = [];
-
-    items.forEach(item => {
+    for (const item of items) {
+      if (!item || typeof item !== 'object') {
+        return { success: false, items: [], error: 'O lote contém uma linha inválida.' };
+      }
       if (item.type === 'fixed' || item.type === 'debt') {
         const date = item.date || getLocalDateString();
         const category = item.category || (item.type === 'debt' ? 'Empréstimo' : 'Contas');
         const template = {
-          id: crypto.randomUUID(),
+          ...item,
+          id: isUuid(item.id) ? item.id : crypto.randomUUID(),
           desc: item.desc,
           amount: parseFloat(item.amount) || 0,
           category,
           type: 'fixed',
           isDebt: item.type === 'debt' || Boolean(item.endMonth) ||
             category === 'Empréstimo' || category === 'Parcelamento',
-          active: true,
+          active: item.active !== false,
           startMonth: item.month || item.startMonth || date.substring(0, 7),
           endMonth: item.endMonth || null,
           day: date.split('-')[2] || '05',
@@ -2239,31 +2377,86 @@ const FinanceData = {
         };
         newTemplates.push(template);
         addedItems.push(template);
-        return;
+      } else {
+        const date = item.date || getLocalDateString();
+        const entry = {
+          ...item,
+          id: isUuid(item.id) ? item.id : crypto.randomUUID(),
+          date,
+          month: item.month || date.substring(0, 7),
+          paid: item.paid !== undefined ? item.paid : true
+        };
+        newEntries.push(entry);
+        addedItems.push(entry);
       }
+    }
 
-      const date = item.date || getLocalDateString();
-      const entry = {
-        ...item,
-        id: crypto.randomUUID(),
-        date,
-        month: item.month || date.substring(0, 7),
-        paid: item.paid !== undefined ? item.paid : true
-      };
-      newEntries.push(entry);
-      addedItems.push(entry);
+    const previousTemplates = this.getTemplates();
+    const templatesById = new Map(previousTemplates.map(template => [template.id, { ...template }]));
+    newTemplates.forEach(template => templatesById.set(template.id, template));
+    const normalizedPayments = [];
+    const paymentKeys = new Set();
+    for (const payment of payments) {
+      if (!payment || typeof payment.id !== 'string' || !/^\d{4}-\d{2}$/.test(payment.ym || '')) {
+        return { success: false, items: [], error: 'Uma baixa do lote de importação é inválida.' };
+      }
+      const key = `${payment.id}:${payment.ym}`;
+      if (paymentKeys.has(key)) continue;
+      paymentKeys.add(key);
+      const template = templatesById.get(payment.id);
+      if (!template) {
+        return { success: false, items: [], error: 'Uma baixa do lote não corresponde a um template existente.' };
+      }
+      if (!template.paidMonths || !template.paidMonths[payment.ym]) {
+        template.paidMonths = { ...(template.paidMonths || {}), [payment.ym]: true };
+        normalizedPayments.push({ id: payment.id, ym: payment.ym });
+      }
+    }
+
+    const changedExistingTemplates = [...templatesById.values()].filter(template =>
+      !newTemplates.some(newTemplate => newTemplate.id === template.id) &&
+      payments.some(payment => payment.id === template.id && normalizedPayments.some(
+        normalized => normalized.id === payment.id && normalized.ym === payment.ym
+      ))
+    );
+    const batchTemplates = [...newTemplates, ...changedExistingTemplates];
+    const operation = {
+      operationId: crypto.randomUUID(),
+      entries: newEntries,
+      templates: batchTemplates,
+      payments: normalizedPayments
+    };
+    const pending = this.getPendingSync();
+    pending.transactionalOperations ||= [];
+    pending.transactionalOperations.push({ type: 'import', ...operation });
+    this.savePendingSync(pending);
+
+    const entryResult = newEntries.length
+      ? await this.saveEntries([...this.getEntries(), ...newEntries], { flush: false })
+      : { success: true };
+    const currentTemplates = this.getTemplates();
+    batchTemplates.forEach(template => {
+      const index = currentTemplates.findIndex(current => current.id === template.id);
+      if (index >= 0) currentTemplates[index] = template;
+      else currentTemplates.push(template);
     });
+    const templateResult = batchTemplates.length
+      ? await this.saveTemplates(currentTemplates, { flush: false })
+      : { success: true };
+    if (!entryResult.success || !templateResult.success) {
+      return {
+        success: false,
+        items: addedItems,
+        error: entryResult.error || templateResult.error || 'Não foi possível preparar o lote local.'
+      };
+    }
 
-    if (newEntries.length) {
-      const result = await this.saveEntries([...this.getEntries(), ...newEntries], { flush: false });
-      if (!result.success) return { success: false, items: addedItems, error: result.error };
-    }
-    if (newTemplates.length) {
-      const result = await this.saveTemplates([...this.getTemplates(), ...newTemplates], { flush: false });
-      if (!result.success) return { success: false, items: addedItems, error: result.error };
-    }
     const syncResult = await this.flushPendingSync(this.getProfile().userId);
     return { success: syncResult.success, items: addedItems, syncResult, error: syncResult.error };
+  },
+
+  async addMany(items) {
+    return this.importBatch(items, []);
   },
 
   /**

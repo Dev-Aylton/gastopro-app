@@ -915,6 +915,93 @@ const SupabaseAuth = {
   // SINCRONIZAÇÃO DE DADOS NA NUVEM (PostgreSQL com RLS)
   // ================================================================
 
+  async importFinancialBatch(entries, templates, payments, userId) {
+    if (!this.client) return this.reportCloudError('Cliente não inicializado ao importar em lote', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao importar em lote', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      const entryPayload = entries.map(entry => ({
+        id: entry.id,
+        description: entry.desc,
+        amount: entry.amount,
+        category: entry.category,
+        type: entry.type,
+        date: entry.date,
+        paid: Boolean(entry.paid),
+        is_debt: Boolean(entry.isDebt),
+        debt_info: entry.debtInfo || null,
+        active: entry.active !== false,
+        account_id: entry.accountId || null,
+        client_edited_at: window.FinanceData.getClientEditedAt('entries', entry.id)
+      }));
+      const templatePayload = templates.map(template => ({
+        id: template.id,
+        description: template.desc,
+        amount: template.amount,
+        category: template.category,
+        type: template.type || 'fixed',
+        is_debt: Boolean(template.isDebt),
+        active: template.active !== false,
+        start_month: template.startMonth,
+        end_month: template.endMonth || null,
+        day: template.day || '01',
+        paid_months: template.paidMonths || {},
+        account_id: template.accountId || null,
+        client_edited_at: window.FinanceData.getClientEditedAt('templates', template.id)
+      }));
+      const paymentPayload = payments.map(payment => ({
+        id: payment.id,
+        ym: payment.ym,
+        client_edited_at: window.FinanceData.getClientEditedAt('templates', payment.id)
+      }));
+      const { data, error } = await this.client.rpc('import_financial_batch', {
+        p_entries: entryPayload,
+        p_templates: templatePayload,
+        p_payments: paymentPayload
+      });
+      if (error) return this.reportCloudError('Falha ao importar lote na nuvem', error);
+      if (!data || !data.success) {
+        return {
+          success: false,
+          error: data && data.error || 'O lote não foi aplicado.',
+          conflicts: data && data.conflicts || []
+        };
+      }
+      window.FinanceData.saveCloudSyncVersions('entries', data.versions && data.versions.entries);
+      window.FinanceData.saveCloudSyncVersions('templates', data.versions && data.versions.templates);
+      return { success: true, conflicts: [] };
+    } catch (error) {
+      return this.reportCloudError('Falha ao importar lote na nuvem', error);
+    }
+  },
+
+  async deleteAccountTransactional(accountId, clientEditedAt, userId) {
+    if (!this.client) return this.reportCloudError('Cliente não inicializado ao excluir conta', new Error('Cliente Supabase não inicializado.'));
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao excluir conta', new Error('Não há uma sessão autenticada correspondente.'));
+      }
+      const { data, error } = await this.client.rpc('delete_account_transactional', {
+        p_account_id: accountId,
+        p_client_edited_at: clientEditedAt
+      });
+      if (error) return this.reportCloudError('Falha ao excluir conta na nuvem', error);
+      if (!data || !data.success) {
+        return {
+          success: false,
+          error: data && data.error || 'A exclusão não foi aplicada.',
+          conflicts: data && data.conflicts || []
+        };
+      }
+      return { success: true, conflicts: [] };
+    } catch (error) {
+      return this.reportCloudError('Falha ao excluir conta na nuvem', error);
+    }
+  },
+
   /**
    * Busca todos os lançamentos pontuais do usuário logado na nuvem.
    */

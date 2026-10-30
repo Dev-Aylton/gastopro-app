@@ -7380,23 +7380,13 @@ document.addEventListener('DOMContentLoaded', () => {
     items.push(...debtItems, ...launches);
     if (items.length > 0 || payments.length > 0) {
       try {
-        const result = items.length ? await FinanceData.addMany(items) : null;
-        if (result && !result.success) {
+        const result = await FinanceData.importBatch(items, payments);
+        if (!result.success) {
           trackUsageEvent('import_save_error');
           showToast(result.syncResult
-            ? 'Os lançamentos foram salvos neste aparelho, mas a sincronização ficou pendente.'
-            : 'Não foi possível salvar os lançamentos importados neste aparelho.');
+            ? 'O lote ficou salvo neste aparelho e aguarda sincronização.'
+            : result.error || 'Não foi possível salvar o lote importado.');
           return;
-        }
-        if (payments.length) {
-          const paid = await FinanceData.markPaidMany(payments);
-          if (!paid.success) {
-            trackUsageEvent('import_save_error');
-            showToast('Não foi possível concluir a importação. Tente novamente.');
-            renderAll();
-            closeImportModal();
-            return;
-          }
         }
         trackUsageEvent('import_completed');
         const debtCount = debtItems.length;
