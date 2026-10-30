@@ -4699,10 +4699,126 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
     max-height: 92vh;
   }
 
-  .import-preview-table .col-date,
-  .import-preview-table th:nth-child(2),
-  .import-preview-table td:nth-child(2) {
+  .import-preview-table-wrapper {
+    overflow-x: hidden;
+  }
+
+  .import-preview-table {
+    display: block;
+  }
+
+  .import-preview-table thead {
     display: none;
+  }
+
+  .import-preview-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .import-preview-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "check check"
+      "desc desc"
+      "date amount"
+      "category type";
+    gap: 0.5rem;
+    padding: 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+  }
+
+  .import-preview-table tbody td {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.35rem;
+    border: 0;
+  }
+
+  .import-preview-table tbody td::before {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .import-preview-table .col-check {
+    grid-area: check;
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .import-preview-table .col-check::before {
+    content: "Importar";
+  }
+
+  .import-preview-table .col-desc {
+    grid-area: desc;
+    max-width: none;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .import-preview-table .col-desc::before {
+    content: "Descrição";
+  }
+
+  .import-preview-table .col-date {
+    grid-area: date;
+    width: auto;
+    white-space: normal;
+    font-family: inherit;
+    font-size: inherit;
+  }
+
+  .import-preview-table .col-date::before {
+    content: "Data";
+  }
+
+  .import-preview-table .col-amount {
+    grid-area: amount;
+    text-align: left;
+  }
+
+  .import-preview-table .col-amount::before {
+    content: "Valor";
+  }
+
+  .import-preview-table .col-category {
+    grid-area: category;
+  }
+
+  .import-preview-table .col-category::before {
+    content: "Categoria";
+  }
+
+  .import-preview-table .col-category select,
+  .import-preview-table .col-type select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .import-preview-table .col-type {
+    grid-area: type;
+  }
+
+  .import-preview-table .col-type::before {
+    content: "Tipo";
+  }
+
+  .import-preview-table tbody td[colspan] {
+    grid-column: 1 / -1;
   }
 }
 
