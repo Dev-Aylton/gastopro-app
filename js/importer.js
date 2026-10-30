@@ -67,24 +67,33 @@ const GastoProImporter = (() => {
       'prime video', 'star+', 'icloud', 'google one', 'google play', 'dropbox', 'github',
       'xbox', 'playstation', 'linkedin'],
       category: 'Assinaturas' },
+    { keys: ['contas', 'conta de luz', 'conta de agua', 'conta de telefone', 'conta de internet'],
+      category: 'Contas' },
     { keys: ['aluguel', 'condominio', 'energia', 'cemig', 'copel', 'enel', 'agua', 'sabesp',
       'sanepar', 'embasa', 'copasa', 'comgas', 'internet', 'giga', 'algar', 'embratel',
       'telefone', 'iptu', 'imovel', 'reforma', 'neoenergia', 'equatorial', 'energisa',
       'cagece', 'naturgy', 'vivo fibra', 'claro internet', 'claro fatura', 'seguro residencial'],
       category: 'Moradia' },
-    { keys: ['cartao', 'fatura', 'financiamento', 'parcela', 'emprestimo', 'cdc', 'sicredi',
-      'nubank', 'c6', 'neon', 'debito automatico'], category: 'Cartão de crédito' },
+    { keys: ['emprestimo', 'financiamento', 'credito pessoal', 'cdc'], category: 'Empréstimo' },
+    { keys: ['parcelamento', 'parcelado', 'parcelada', 'parcela', 'pcl', 'prestacao'],
+      category: 'Parcelamento' },
+    { keys: ['cartao', 'fatura', 'sicredi', 'nubank', 'c6', 'neon', 'debito automatico'],
+      category: 'Cartão de crédito' },
+    { keys: ['vestuario', 'roupa', 'roupas', 'calcado', 'calcados', 'sapato', 'sapatos',
+      'tenis', 'shein', 'zara', 'renner', 'riachuelo', 'hering'], category: 'Vestuário' },
     { keys: ['shopee', 'americanas', 'magazine', 'magalu',
-      'amazon', 'aliexpress', 'shein', 'zara', 'renner', 'riachuelo', 'hering', 'kabum',
+      'amazon', 'aliexpress', 'kabum',
       'casas bahia', 'ponto frio', 'fast shop', 'leroy merlin', 'netshoes', 'centauro',
       'decathlon', 'temu'], category: 'Compras' },
-    { keys: ['salario', 'pgto sal', 'folha', 'holerite', 'adiantamento', 'pix recebido',
-      'ted recebido', 'doc recebido', 'deposito', 'transferencia recebida', 'receita',
-      'rendimento', 'dividendo', 'cashback', 'reembolso', 'estorno'],
-      category: 'Receita' },
     { keys: ['cinema', 'teatro', 'show', 'ingresso', 'evento', 'bilheteria', 'ticketmaster',
       'sympla', 'parque', 'clube', 'viagem', 'hotel', 'airbnb', 'booking', 'passagem',
       'decolar', 'cvc', 'cinemark', 'kinoplex', 'steam', 'pousada'], category: 'Lazer' }
+  ];
+  const INCOME_CATEGORY_RULES = [
+    { keys: ['salario', 'pgto sal', 'folha', 'holerite', 'adiantamento', 'pix recebido',
+      'ted recebido', 'doc recebido', 'deposito', 'transferencia recebida', 'receita',
+      'rendimento', 'dividendo', 'cashback', 'reembolso', 'estorno'],
+      category: 'Receita' }
   ];
 
   // ================================================================
@@ -109,6 +118,25 @@ const GastoProImporter = (() => {
       }
     }
     return 'Outros';
+  }
+
+  function autoDetectIncomeCategory(desc) {
+    if (!desc) return null;
+    const lower = normalize(desc);
+    for (const rule of INCOME_CATEGORY_RULES) {
+      if (rule.keys.some(key => containsWholeKey(lower, normalize(key)))) {
+        return rule.category;
+      }
+    }
+    return null;
+  }
+
+  function normalizeExpenseCategories(rows) {
+    rows.forEach(row => {
+      if (row.type === 'income' || GastoProCategories.EXPENSE.includes(row.category)) return;
+      row.category = autoDetectCategory(row.desc);
+    });
+    return rows;
   }
 
   function truncateText(value, maxLength) {
@@ -300,12 +328,15 @@ const GastoProImporter = (() => {
         ...GastoProCategories.EXPENSE,
         ...GastoProCategories.INCOME
       ].find(category => normalize(category) === normalizedCategory);
+      const defaultCategory = explicitType === 'income' || !explicitType
+        ? autoDetectIncomeCategory(rawDesc) || autoDetectCategory(rawDesc)
+        : autoDetectCategory(rawDesc);
       const row = {
         date,
         desc: truncateText(rawDesc || 'Lançamento importado', 300),
         amount: Math.abs(signedAmount),
         signedAmount,
-        category: truncateText(canonicalCategory || autoDetectCategory(rawDesc), 100),
+        category: truncateText(canonicalCategory || defaultCategory, 100),
         invalid: !date,
         invalidReason: date ? '' : 'Data inválida ou ausente.',
         raw: line
@@ -351,7 +382,7 @@ const GastoProImporter = (() => {
       }
     });
     setWarnings(warnings);
-    return rows;
+    return normalizeExpenseCategories(rows);
   }
 
   // ================================================================
@@ -626,7 +657,8 @@ const GastoProImporter = (() => {
         desc,
         amount: Math.abs(signedAmount),
         signedAmount,
-        category: truncateText(autoDetectCategory(originalDesc), 100),
+        category: truncateText(autoDetectIncomeCategory(originalDesc) ||
+          autoDetectCategory(originalDesc), 100),
         invalid: !date,
         invalidReason: date ? '' : 'Data inválida ou ausente.',
         raw: truncateText(match[0].trim(), MAX_LINE_CHARS)
@@ -648,7 +680,7 @@ const GastoProImporter = (() => {
     applyDefaultTypes(defaultTypeRows);
     applyInstallments(rows);
     setWarnings(warnings);
-    return rows;
+    return normalizeExpenseCategories(rows);
   }
 
   function parseNFeXML(text) {
@@ -762,7 +794,7 @@ const GastoProImporter = (() => {
         desc: truncateText(desc.trim(), 300),
         amount: Math.abs(signedAmount),
         signedAmount,
-        category: truncateText(autoDetectCategory(desc), 100),
+        category: truncateText(autoDetectIncomeCategory(desc) || autoDetectCategory(desc), 100),
         invalid: !date,
         invalidReason: date ? '' : 'Data inválida ou ausente.',
         raw: line
@@ -772,7 +804,7 @@ const GastoProImporter = (() => {
     applyDefaultTypes(result);
     applyInstallments(result);
     setWarnings(warnings);
-    return result;
+    return normalizeExpenseCategories(result);
   }
 
   function parsePixPayload(payload, today = new Date()) {

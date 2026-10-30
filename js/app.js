@@ -2004,27 +2004,20 @@ document.addEventListener('DOMContentLoaded', () => {
     'Salário': '💼', 'Adiantamento': '📅', 'Extra': '✨',
     'Investimentos': '📈', 'Receita': '💵'
   };
-  const categoryOptions = (select, categories, placeholder) => {
-    if (!select) return;
-    while (select.firstChild) select.removeChild(select.firstChild);
-    if (placeholder) {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = placeholder;
-      select.appendChild(option);
-    }
-    categories.forEach(category => {
-      const option = document.createElement('option');
-      option.value = category;
-      option.textContent = `${categoryIcons[category] || '📦'} ${category}`;
-      select.appendChild(option);
-    });
-  };
   const categoryCatalog = window.GastoProCategories;
-  categoryOptions(document.getElementById('expenseCategory'), categoryCatalog.EXPENSE);
-  categoryOptions(document.getElementById('incomeCategory'), categoryCatalog.INCOME);
-  categoryOptions(document.getElementById('goalCategorySelect'), categoryCatalog.EXPENSE, 'Selecione a categoria...');
-  categoryOptions(document.getElementById('editCategory'), [...categoryCatalog.EXPENSE, ...categoryCatalog.INCOME]);
+  categoryCatalog.populateSelect(document.getElementById('expenseCategory'), categoryCatalog.EXPENSE, categoryIcons);
+  categoryCatalog.populateSelect(document.getElementById('incomeCategory'), categoryCatalog.INCOME, categoryIcons);
+  categoryCatalog.populateSelect(
+    document.getElementById('goalCategorySelect'),
+    categoryCatalog.EXPENSE,
+    categoryIcons,
+    'Selecione a categoria...'
+  );
+  categoryCatalog.populateSelect(
+    document.getElementById('editCategory'),
+    [...categoryCatalog.EXPENSE, ...categoryCatalog.INCOME],
+    categoryIcons
+  );
 
   const reportModal = document.getElementById('reportModal');
   const reportDialog = reportModal && reportModal.querySelector('[role="dialog"]');

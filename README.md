@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-260%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-262%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -114,7 +114,7 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 
 ### 🪄 Wizard de Lançamento Rápido
 - Fluxo em quatro passos: Renda → Gastos Fixos → Gastos Variáveis → Diagnóstico 50/30/20.
-- Fontes de renda múltiplas; checklist de gastos fixos cadastrados; grid de dez categorias para gastos variáveis.
+- Fontes de renda múltiplas; checklist de gastos fixos cadastrados; grid de 16 categorias para gastos variáveis.
 - KPIs de renda, gastos e saldo, diagnóstico textual e salvamento em lote com sincronização automática.
 - **Validação contextual:** impede avançar sem informar renda; categoriza automaticamente gastos avulsos.
 
@@ -389,7 +389,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **260 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **262 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|

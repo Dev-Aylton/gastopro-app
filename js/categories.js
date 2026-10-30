@@ -22,5 +22,22 @@
       .replace(/[\u0300-\u036f]/g, '');
   }
 
-  window.GastoProCategories = Object.freeze({ EXPENSE, INCOME, normalize });
+  function populateSelect(select, categories, icons = {}, placeholder = '') {
+    if (!select) return;
+    while (select.firstChild) select.removeChild(select.firstChild);
+    if (placeholder) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = placeholder;
+      select.appendChild(option);
+    }
+    categories.forEach(category => {
+      const option = document.createElement('option');
+      option.value = category;
+      option.textContent = `${icons[category] || '📦'} ${category}`;
+      select.appendChild(option);
+    });
+  }
+
+  window.GastoProCategories = Object.freeze({ EXPENSE, INCOME, normalize, populateSelect });
 })();

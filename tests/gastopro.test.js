@@ -1841,6 +1841,25 @@ describe('Recuperação de sessão', () => {
 });
 
 describe('Bloco 2 — dívida, orçamento, diagnóstico e categorias', () => {
+  it('preenche selects com as categorias oficiais de gastos e ganhos', () => {
+    const expenseSelect = document.createElement('select');
+    const goalSelect = document.createElement('select');
+    const editSelect = document.createElement('select');
+    GastoProCategories.populateSelect(expenseSelect, GastoProCategories.EXPENSE);
+    GastoProCategories.populateSelect(goalSelect, GastoProCategories.EXPENSE, {}, 'Selecione a categoria...');
+    GastoProCategories.populateSelect(
+      editSelect,
+      [...GastoProCategories.EXPENSE, ...GastoProCategories.INCOME]
+    );
+    const expenseOptions = Array.from(expenseSelect.options, option => option.value);
+    const goalOptions = Array.from(goalSelect.options, option => option.value);
+    const editOptions = Array.from(editSelect.options, option => option.value);
+    assertEqual(expenseOptions, GastoProCategories.EXPENSE);
+    assertEqual(goalOptions, ['', ...GastoProCategories.EXPENSE]);
+    assertEqual(editOptions, [...GastoProCategories.EXPENSE, ...GastoProCategories.INCOME]);
+    assertEqual(expenseOptions.length, 16);
+  });
+
   it('não marca dívida vencida como quitada se ainda houver parcelas abertas', () => {
     const debt = GastoProReportHelpers.getDebtCenterData('2026-12', [{
       id: 'overdue-debt', desc: 'Financiamento', amount: 250, category: 'Empréstimo',
@@ -2663,7 +2682,7 @@ describe('GastoProImporter — autoDetectCategory', () => {
       ['Mercado Pago', 'Outros'],
       ['Pix enviado Mateus Silva', 'Outros'],
       ['Tenda do Churrasco', 'Outros'],
-      ['Pix recebido Joao Vivo', 'Receita'],
+      ['Pix recebido Joao Vivo', 'Outros'],
       ['Vivo Fibra', 'Moradia'],
       ['Claro Fatura', 'Moradia'],
       ['Claro Internet', 'Moradia'],
@@ -2686,12 +2705,36 @@ describe('GastoProImporter — autoDetectCategory', () => {
       ['Prime Video', 'Assinaturas'],
       ['Neoenergia', 'Moradia'],
       ['Kabum', 'Compras'],
-      ['Cashback', 'Receita'],
+      ['Cashback', 'Outros'],
       ['Cinemark', 'Lazer']
     ];
     cases.forEach(([description, category]) => {
       assertEqual(GastoProImporter.autoDetectCategory(description), category);
     });
+  });
+
+  it('classifica gastos apenas nas categorias oficiais e preserva categorias de ganhos', () => {
+    const descriptions = [
+      'Conta de luz', 'Empréstimo pessoal', 'Parcelamento compra', 'Roupa nova'
+    ];
+    const expected = ['Contas', 'Empréstimo', 'Parcelamento', 'Vestuário'];
+    const detected = descriptions.map(description =>
+      GastoProImporter.autoDetectCategory(description)
+    );
+    assertEqual(detected, expected);
+    assertTrue(detected.every(category => GastoProCategories.EXPENSE.includes(category)));
+    assertEqual(GastoProImporter.autoDetectCategory('Pix recebido Joao'), 'Outros');
+
+    const incomeRows = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor\n15/10/2026;Salário recebido;2500,00'
+    );
+    assertEqual(incomeRows.map(row => [row.type, row.category]), [['income', 'Receita']]);
+    const expenseRows = GastoProImporter.parseCSV(
+      'Data;Descrição;Valor;tipo;categoria\n' +
+      '15/10/2026;Pix recebido;10,00;variable;Receita'
+    );
+    assertEqual(expenseRows[0].category, 'Outros');
+    assertTrue(GastoProCategories.EXPENSE.includes(expenseRows[0].category));
   });
 
   it('normaliza acentos e maiúsculas e trata descrições vazias', () => {
