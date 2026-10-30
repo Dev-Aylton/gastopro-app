@@ -1793,6 +1793,60 @@ function calculateUpcomingDueWarning(currentBalance, pendingItems, today, horizo
   };
 }
 
+function getLatestOverdueTemplateItems(templates, today) {
+  const todayDate = new Date(`${today}T00:00:00Z`);
+  if (Number.isNaN(todayDate.getTime())) return [];
+  const currentMonthDate = new Date(Date.UTC(
+    todayDate.getUTCFullYear(), todayDate.getUTCMonth(), 1
+  ));
+  const previousMonthDate = new Date(Date.UTC(
+    currentMonthDate.getUTCFullYear(), currentMonthDate.getUTCMonth() - 1, 1
+  ));
+  const results = [];
+
+  (templates || []).forEach(template => {
+    if (!template || template.active === false) return;
+    const startMonth = /^\d{4}-\d{2}$/.test(template.startMonth || '')
+      ? template.startMonth : null;
+    if (!startMonth) return;
+    const startDate = new Date(`${startMonth}-01T00:00:00Z`);
+    if (Number.isNaN(startDate.getTime())) return;
+    const endMonth = /^\d{4}-\d{2}$/.test(template.endMonth || '')
+      ? template.endMonth : null;
+    let cursor = new Date(previousMonthDate);
+    if (endMonth && endMonth < cursor.toISOString().slice(0, 7)) {
+      const [endYear, endMonthNumber] = endMonth.split('-').map(Number);
+      cursor = new Date(Date.UTC(endYear, endMonthNumber - 1, 1));
+    }
+
+    while (cursor >= startDate) {
+      const month = cursor.toISOString().slice(0, 7);
+      if (!(template.paidMonths && template.paidMonths[month])) {
+        const [year, monthNumber] = month.split('-').map(Number);
+        const monthEnd = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+        const rawDay = Number.parseInt(template.day || '05', 10);
+        const day = Math.min(Number.isInteger(rawDay) && rawDay > 0 ? rawDay : 5, monthEnd);
+        const dueDate = `${month}-${String(day).padStart(2, '0')}`;
+        if (dueDate < today) {
+          results.push({
+            id: template.id,
+            desc: template.desc,
+            type: 'fixed',
+            category: template.category || 'Contas',
+            accountId: template.accountId || null,
+            date: dueDate,
+            paid: false,
+            active: true
+          });
+        }
+        break;
+      }
+      cursor.setUTCMonth(cursor.getUTCMonth() - 1);
+    }
+  });
+  return results;
+}
+
 function buildMonthlyFinancialSummary(currentItems, previousItems) {
   const calculateTotals = items => {
     const eligible = (items || []).filter(item =>
@@ -1850,6 +1904,35 @@ const NOTIFICATION_TYPES = Object.freeze({
   cardLimit: 'Limite do cartão',
   forecast: 'Previsão do fim do mês'
 });
+const NOTIFICATION_PRIORITY_RANK = Object.freeze({ critical: 3, attention: 2, info: 1 });
+const NOTIFICATION_PRIORITY_PRESENTATION = Object.freeze({
+  critical: { label: 'Crítico', icon: 'fa-circle-exclamation' },
+  attention: { label: 'Atenção', icon: 'fa-triangle-exclamation' },
+  info: { label: 'Info', icon: 'fa-circle-info' }
+});
+
+function getNotificationPriority(item) {
+  if (item && Object.prototype.hasOwnProperty.call(NOTIFICATION_PRIORITY_RANK, item.priority)) {
+    return item.priority;
+  }
+  if (!item) return 'info';
+  if (item.type === 'insufficientBalance') return 'critical';
+  if (item.type === 'anomaly') return 'attention';
+  if (item.type === 'forecast') return 'info';
+  if (item.type === 'cardLimit') {
+    return /100\s*%|atingido|excedido/i.test(`${item.title || ''} ${item.message || ''}`)
+      ? 'critical' : 'attention';
+  }
+  if (item.type === 'dueSoon') {
+    return /atrasado|vence hoje|vencimento hoje|hoje ou atrasado/i.test(item.title || '')
+      ? 'critical' : 'attention';
+  }
+  return 'info';
+}
+
+function getNotificationPriorityPresentation(item) {
+  return NOTIFICATION_PRIORITY_PRESENTATION[getNotificationPriority(item)];
+}
 
 function getNotificationPreferences() {
   const preferences = Object.fromEntries(
@@ -1925,9 +2008,10 @@ function syncNotificationEvents(candidates) {
       eventKey: candidate.eventKey,
       scope: typeof candidate.scope === 'string' ? candidate.scope : 'all',
       type: candidate.type,
+      priority: getNotificationPriority(candidate),
       title: candidate.title,
       message: candidate.message,
-      createdAt: previous ? previous.createdAt : new Date().toISOString(),
+      createdAt: previous ? previous.createdAt : candidate.createdAt || new Date().toISOString(),
       read: previous ? previous.read : false,
       dismissed: previous ? previous.dismissed : false
     });
@@ -1949,7 +2033,11 @@ function getVisibleNotifications(scope = 'all') {
     !item.dismissed &&
     preferences[item.type] &&
     (item.scope || 'all') === scope
-  ).sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+  ).sort((left, right) =>
+    NOTIFICATION_PRIORITY_RANK[getNotificationPriority(right)] -
+      NOTIFICATION_PRIORITY_RANK[getNotificationPriority(left)] ||
+    String(right.createdAt).localeCompare(String(left.createdAt))
+  );
 }
 
 function getNotificationUnreadCount(scope = 'all') {
@@ -1991,9 +2079,14 @@ function renderNotificationCenter() {
   if (!trigger || !count || !unreadLabel || !list || !settings) return;
 
   const scope = state.accountBalanceFilter;
-  const unread = getNotificationUnreadCount(scope);
+  const visible = getVisibleNotifications(scope);
+  const unreadItems = visible.filter(item => !item.read);
+  const unread = unreadItems.length;
+  const highestPriority = unreadItems.length ? getNotificationPriority(unreadItems[0]) : 'none';
   count.textContent = unread > 99 ? '99+' : String(unread);
   count.hidden = unread === 0;
+  trigger.dataset.priority = highestPriority;
+  count.dataset.priority = highestPriority;
   trigger.setAttribute('aria-label', unread
     ? `Abrir avisos, ${unread} não lido${unread === 1 ? '' : 's'}`
     : 'Abrir avisos');
@@ -2001,11 +2094,17 @@ function renderNotificationCenter() {
     ? `${unread} aviso${unread === 1 ? '' : 's'} não lido${unread === 1 ? '' : 's'}`
     : 'Nenhum aviso não lido';
 
-  const items = getVisibleNotifications(scope);
-  list.innerHTML = items.length
-    ? items.map(item => `
-      <article class="notification-item ${item.read ? '' : 'is-unread'}">
-        <div>
+  list.innerHTML = visible.length
+    ? visible.map(item => {
+      const priority = getNotificationPriority(item);
+      const presentation = getNotificationPriorityPresentation(item);
+      return `
+      <article class="notification-item ${item.read ? '' : 'is-unread'}" data-priority="${priority}">
+        <div class="notification-item-content">
+          <div class="notification-priority">
+            <i class="fa-solid ${presentation.icon}" aria-hidden="true"></i>
+            <span>${presentation.label}</span>
+          </div>
           <h3>${escapeHtml(item.title)}</h3>
           <p>${escapeHtml(item.message)}</p>
         </div>
@@ -2014,7 +2113,8 @@ function renderNotificationCenter() {
           <button type="button" class="notification-action" data-action="notification-dismiss" data-event-key="${escapeHtml(item.eventKey)}">Dispensar</button>
         </div>
       </article>
-    `).join('')
+    `;
+    }).join('')
     : '<p class="notifications-empty">Nenhum aviso por enquanto.</p>';
 
   const preferences = getNotificationPreferences();
@@ -2031,6 +2131,8 @@ window.GastoProNotificationCenter = {
   TYPES: NOTIFICATION_TYPES,
   PREFERENCES_KEY: NOTIFICATION_PREFERENCES_KEY,
   ITEMS_KEY: NOTIFICATION_ITEMS_KEY,
+  getPriority: getNotificationPriority,
+  getPriorityPresentation: getNotificationPriorityPresentation,
   getPreferences: getNotificationPreferences,
   savePreferences: saveNotificationPreferences,
   getItems: getStoredNotifications,
@@ -2120,26 +2222,45 @@ function renderFinancialInsights() {
     }
 
     const due = calculateUpcomingDueWarning(0, pendingItems, today);
-    if (due) {
-      const key = `due:${alertScope}`;
-      const dueHorizon = new Date(
-        new Date(`${today}T00:00:00Z`).getTime() + 7 * 86400000
-      ).toISOString().slice(0, 10);
-      const dueItems = pendingItems.filter(item =>
-        item && item.type !== 'income' && item.paid !== true &&
-        item.active !== false && !item.isCardInstallment &&
-        typeof item.date === 'string' && item.date >= today &&
-        item.date <= dueHorizon
-      );
-      const dueEventKey = dueItems.map(item => `${item.id || item.desc}:${item.date}`)
-        .sort().join(',');
+    const dueHorizon = new Date(
+      new Date(`${today}T00:00:00Z`).getTime() + 7 * 86400000
+    ).toISOString().slice(0, 10);
+    const isUnpaidDue = item => item && item.type !== 'income' && item.paid !== true &&
+      item.active !== false && !item.isCardInstallment && typeof item.date === 'string';
+    const upcomingDueItems = pendingItems.filter(item =>
+      isUnpaidDue(item) && item.date >= today && item.date <= dueHorizon
+    );
+    const overdueEntryItems = filterFinancialItemsByAccount(
+      FinanceData.getEntries(), accounts, filter
+    ).filter(item => isUnpaidDue(item) && item.date < today);
+    const overdueTemplateItems = filterFinancialItemsByAccount(
+      getLatestOverdueTemplateItems(FinanceData.getTemplates(), today), accounts, filter
+    );
+    const dueByDate = new Map();
+    [...overdueEntryItems, ...overdueTemplateItems, ...upcomingDueItems].forEach(item => {
+      dueByDate.set(`${item.id || item.desc}:${item.date}`, item);
+    });
+    const dueEventItems = [...dueByDate.values()];
+    const dueEventKey = dueEventItems.map(item => `${item.id || item.desc}:${item.date}`)
+      .sort().join(',');
+    if (dueEventItems.length) {
+      const overdueCount = dueEventItems.filter(item => item.date < today).length;
+      const dueTodayCount = dueEventItems.filter(item => item.date === today).length;
+      const upcomingCount = dueEventItems.filter(item => item.date > today).length;
+      const critical = overdueCount > 0 || dueTodayCount > 0;
       notificationEvents.push({
         eventKey: `dueSoon:${actualMonth}:${filter}:${dueEventKey}`,
         scope: filter,
         type: 'dueSoon',
-        title: 'Vencimento próximo',
-        message: `Você tem ${due.dueCount} gasto${due.dueCount === 1 ? '' : 's'} para pagar nos próximos 7 dias.`
+        priority: critical ? 'critical' : 'attention',
+        title: overdueCount ? 'Vencimento atrasado' : dueTodayCount ? 'Vencimento hoje' : 'Vencimento próximo',
+        message: critical
+          ? `${overdueCount} vencido${overdueCount === 1 ? '' : 's'}; ${dueTodayCount} para hoje; ${upcomingCount} nos próximos dias.`
+          : `Você tem ${upcomingCount} gasto${upcomingCount === 1 ? '' : 's'} para pagar nos próximos 7 dias.`
       });
+    }
+    if (due) {
+      const key = `due:${alertScope}`;
       const balanceDue = balance === null
         ? null
         : calculateUpcomingDueWarning(balance, balanceMovements, today);
@@ -2149,6 +2270,7 @@ function renderFinancialInsights() {
           eventKey: `insufficientBalance:${actualMonth}:${filter}:${dueEventKey}`,
           scope: filter,
           type: 'insufficientBalance',
+          priority: 'critical',
           title: 'O saldo pode não ser suficiente',
           message: 'Confira o saldo antes dos próximos vencimentos.'
         });
@@ -2169,6 +2291,7 @@ function renderFinancialInsights() {
         eventKey: `forecast:${actualMonth}:${filter}`,
         scope: filter,
         type: 'forecast',
+        priority: 'info',
         title: 'Previsão do fim do mês',
         message: 'Sua previsão do saldo no fim do mês foi atualizada.'
       });
@@ -2192,6 +2315,7 @@ function renderFinancialInsights() {
         eventKey: `anomaly:${actualMonth}:${filter}:${item.id || index}`,
         scope: filter,
         type: 'anomaly',
+        priority: 'attention',
         title: 'Gasto acima do normal',
         message: `${item.category || 'Um gasto'} está bem acima da média dessa categoria.`
       });
@@ -2223,6 +2347,7 @@ function renderFinancialInsights() {
         eventKey: `cardLimit:${actualMonth}:${filter}:${card.id}:${usage.alert}`,
         scope: filter,
         type: 'cardLimit',
+        priority: usage.alert === 'full' ? 'critical' : 'attention',
         title: usage.alert === 'full' ? 'Limite do cartão atingido' : 'Limite do cartão quase cheio',
         message: `${card.name}: ${Math.round(usage.percent)}% do limite está em uso.`
       });

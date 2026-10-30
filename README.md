@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-330%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-334%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -85,6 +85,11 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 ### 🎯 Metas e alertas
 - Metas de teto de gastos por categoria sincronizadas com a tabela `goals` do Supabase.
 - Alertas visuais nos limiares exatos de 80% e 100%, com seção no dashboard, cards e modal de criação/edição.
+
+### 🔔 Central de avisos
+- Cinco tipos locais, com prioridade dinâmica: saldo insuficiente e vencimento hoje/atrasado Crítico; cartão em 100% Crítico e desde 80% Atenção; vencimento próximo e gasto atípico Atenção; previsão do fim do mês Info.
+- Avisos mostram cor, ícone e rótulo textual; a lista prioriza gravidade e depois recência, e o sino/contador acompanham o aviso não lido mais grave.
+- “Resumo mensal” não é um tipo separado na central; a previsão do fim do mês é o tipo mais próximo e fica como Info.
 
 ### 🔐 Autenticação, perfil e backups
 - Cadastro e login com e-mail e senha, recuperação de senha por e-mail e sincronização multiusuário.
@@ -172,7 +177,7 @@ financeiro-app/
 │       ├── 20261101_sync_versioning.sql # Versões e tombstones; criada, ainda não aplicada
 │       └── 20261102_sync_realtime_publication.sql # Publicação Realtime; rodar antes do push
 ├── tests/
-│   ├── gastopro.test.js       # 330 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 334 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -420,7 +425,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **330 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **334 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -596,6 +601,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - [x] **RM-031 — Guia para obter extrato bancário** / Descrição: guia acessível de três passos com ilustrações genéricas, botão no importador e atalho em Primeiros passos. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/onboarding.js`, `js/app.js`, `css/style.css`, `assets/statement-guide-step-*.svg`, `sw.js`, `tests/gastopro.test.js`.
 - [ ] **RM-032 — Contraste WCAG AA em celular e gráficos** / Descrição: revisar contraste de textos, estados e gráficos em telas de celular. / Critério de pronto: a definir.
 - [ ] **RM-033 — Idioma pt/en (futuro, adiado)** / Descrição: adicionar localização para português e inglês em etapa futura.
+- [x] **RM-034 — Contraste WCAG AA nos avisos** / Descrição: cores de Crítico, Atenção e Info com contraste AA nos temas claro e escuro, exclusivamente na central de avisos. A revisão geral em celulares e gráficos segue pendente no RM-032.
 
 ### Em dúvida
 
@@ -609,6 +615,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 
 ### Planejamento (sem versão)
 
+- Central de avisos: níveis Crítico/Atenção/Info, escalada para vencimentos e cartão, ordenação por prioridade/recência, sino com prioridade não lida e cores AA para os temas claro/escuro; preferências existentes preservadas. Quatro testes adicionados.
 - Lote A: destaque visual dos números financeiros e inteligência de categorização baseada em regras.
 - Lote B1: central de avisos com sino, cinco tipos de alerta e preferências armazenadas no aparelho.
 - “Meus dados”: exportação completa e exclusão definitiva de todos os dados; o menu do avatar também oferece “Atualizar Dados”.

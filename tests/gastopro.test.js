@@ -3587,6 +3587,76 @@ describe('Central de avisos local', () => {
     assertEqual(notifications.getVisible('all').map(item => item.eventKey), ['card-all']);
   });
 
+  it('classifica os cinco tipos e ajusta vencimentos e limite conforme o estado', () => {
+    assertEqual(notifications.getPriority({ type: 'insufficientBalance' }), 'critical');
+    assertEqual(notifications.getPriority({ type: 'cardLimit', title: 'Limite atingido' }), 'critical');
+    assertEqual(notifications.getPriority({ type: 'cardLimit', title: 'Limite quase cheio' }), 'attention');
+    assertEqual(notifications.getPriority({ type: 'dueSoon', title: 'Vencimento atrasado' }), 'critical');
+    assertEqual(notifications.getPriority({ type: 'dueSoon', title: 'Vencimento hoje' }), 'critical');
+    assertEqual(notifications.getPriority({ type: 'dueSoon', title: 'Vencimento amanhã' }), 'attention');
+    assertEqual(notifications.getPriority({ type: 'anomaly' }), 'attention');
+    assertEqual(notifications.getPriority({ type: 'forecast' }), 'info');
+    assertFalse(Object.prototype.hasOwnProperty.call(notifications.TYPES, 'monthlySummary'));
+  });
+
+  it('eleva a prioridade do mesmo aviso sem apagar seu estado de leitura', () => {
+    setupMockLocalStorage();
+    const event = {
+      eventKey: 'due-escalation', scope: 'all', type: 'dueSoon', priority: 'attention',
+      title: 'Vencimento próximo', message: 'Amanhã.', createdAt: '2026-10-30T09:00:00.000Z'
+    };
+    notifications.syncEvents([event]);
+    notifications.markRead(event.eventKey);
+    notifications.syncEvents([{
+      ...event, priority: 'critical', title: 'Vencimento hoje', message: 'Vence hoje.'
+    }]);
+    const updated = notifications.getItems()[0];
+    assertEqual(updated.priority, 'critical');
+    assertTrue(updated.read);
+    assertEqual(updated.createdAt, event.createdAt);
+  });
+
+  it('ordena por gravidade e depois pela data mais recente', () => {
+    setupMockLocalStorage();
+    notifications.syncEvents([
+      { eventKey: 'info-new', scope: 'all', type: 'forecast', priority: 'info', title: 'Info', message: 'Info.', createdAt: '2026-10-30T12:00:00.000Z' },
+      { eventKey: 'critical-old', scope: 'all', type: 'insufficientBalance', priority: 'critical', title: 'Crítico antigo', message: 'Crítico.', createdAt: '2026-10-29T12:00:00.000Z' },
+      { eventKey: 'attention-new', scope: 'all', type: 'anomaly', priority: 'attention', title: 'Atenção nova', message: 'Atenção.', createdAt: '2026-10-30T11:00:00.000Z' },
+      { eventKey: 'critical-new', scope: 'all', type: 'dueSoon', priority: 'critical', title: 'Crítico novo', message: 'Crítico.', createdAt: '2026-10-30T10:00:00.000Z' }
+    ]);
+    assertEqual(notifications.getVisible('all').map(item => item.eventKey), [
+      'critical-new', 'critical-old', 'attention-new', 'info-new'
+    ]);
+  });
+
+  it('usa no sino e contador a prioridade mais grave ainda não lida', () => {
+    setupMockLocalStorage();
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <button id="notificationsTrigger"><i></i></button>
+      <span id="notificationsUnreadCount"></span>
+      <p id="notificationsUnreadLabel"></p>
+      <div id="notificationsList"></div>
+      <div id="notificationSettingsList"></div>`;
+    document.body.appendChild(host);
+    notifications.syncEvents([
+      { eventKey: 'due-critical', scope: 'all', type: 'dueSoon', priority: 'critical', title: 'Hoje', message: 'Vence hoje.' },
+      { eventKey: 'anomaly-attention', scope: 'all', type: 'anomaly', priority: 'attention', title: 'Atípico', message: 'Confira.' }
+    ]);
+    try {
+      notifications.render();
+      assertEqual(host.querySelector('#notificationsTrigger').dataset.priority, 'critical');
+      assertEqual(host.querySelector('#notificationsUnreadCount').dataset.priority, 'critical');
+      assertTrue(host.querySelector('.notification-priority').textContent.includes('Crítico'));
+      notifications.markRead('due-critical');
+      notifications.render();
+      assertEqual(host.querySelector('#notificationsTrigger').dataset.priority, 'attention');
+      assertEqual(host.querySelector('#notificationsUnreadCount').dataset.priority, 'attention');
+    } finally {
+      host.remove();
+    }
+  });
+
   it('salva preferências no aparelho e não cria tipos desligados', () => {
     setupMockLocalStorage();
     notifications.savePreferences({ anomaly: false });
@@ -5158,12 +5228,23 @@ describe('FinanceData — exclusão durante sincronização', () => {
 
   itAsync('sincroniza ao retornar ao app e respeita intervalo de 15 segundos', async () => {
     const signals = [];
+    const documentListeners = {};
+    const windowListeners = {};
+    const lifecycleDocument = {
+      visibilityState: 'visible',
+      addEventListener: (type, callback) => { documentListeners[type] = callback; },
+      removeEventListener: type => { delete documentListeners[type]; }
+    };
+    const lifecycleWindow = {
+      addEventListener: (type, callback) => { windowListeners[type] = callback; },
+      removeEventListener: type => { delete windowListeners[type]; }
+    };
     const removeListeners = window.GastoProSyncHelpers.bindLifecycleListeners(
-      document, window, reason => signals.push(reason)
+      lifecycleDocument, lifecycleWindow, reason => signals.push(reason)
     );
-    document.dispatchEvent(new Event('visibilitychange'));
-    window.dispatchEvent(new Event('focus'));
-    window.dispatchEvent(new Event('online'));
+    documentListeners.visibilitychange();
+    windowListeners.focus();
+    windowListeners.online();
     removeListeners();
     assertEqual(signals, ['visibilitychange', 'focus', 'online']);
 
