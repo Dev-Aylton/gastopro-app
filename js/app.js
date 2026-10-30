@@ -4428,6 +4428,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const importPreviewTbody  = document.getElementById('importPreviewTableBody');
   const previewCountBadge   = document.getElementById('previewCountBadge');
   const importSelectAll     = document.getElementById('importSelectAll');
+  const importDuplicateSelectionNote = document.getElementById('importDuplicateSelectionNote');
   const confirmImportBtn    = document.getElementById('confirmImportBtn');
   let importSaving = false;
 
@@ -4464,6 +4465,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (importPreviewTbody)   importPreviewTbody.innerHTML = '';
     if (previewCountBadge)    previewCountBadge.textContent = '0 itens';
     if (importSelectAll)      importSelectAll.checked = true;
+    if (importDuplicateSelectionNote) {
+      importDuplicateSelectionNote.textContent = '';
+      importDuplicateSelectionNote.hidden = true;
+    }
   }
 
   /** Alterna entre as abas CSV e Texto do modal. */
@@ -4500,6 +4505,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    if (importDuplicateSelectionNote) {
+      importDuplicateSelectionNote.textContent = '';
+      importDuplicateSelectionNote.hidden = true;
+    }
+
     // Categorias únicas e ordenadas para o select
     const allCats = [...new Set([
       ...GastoProCategories.EXPENSE,
@@ -4517,7 +4527,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : 'Data inválida';
       const rowStatus = [
         row.invalid ? '<span class="import-row-status invalid">Data inválida</span>' : '',
-        row.duplicate ? '<span class="import-row-status duplicate">Duplicado</span>' : '',
+        row.duplicate ? '<span class="import-row-status duplicate">Possível duplicado</span>' : '',
         row.pending ? '<span class="import-row-status pending">Sugestão: a pagar</span>' : ''
       ].filter(Boolean).join(' ');
 
@@ -4586,7 +4596,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const duplicateCount = rows.filter(row => row.duplicate).length;
     if (previewCountBadge) {
       previewCountBadge.textContent =
-        `${rows.length} ${rows.length === 1 ? 'item' : 'itens'} · ${invalidCount} inválidos · ${duplicateCount} duplicados`;
+        `${rows.length} ${rows.length === 1 ? 'item' : 'itens'} · ${invalidCount} inválidos · ${duplicateCount} possíveis duplicados`;
     }
     if (importPreviewSection) importPreviewSection.classList.add('visible');
     if (importSelectAll) importSelectAll.checked = rows.length > 0 && rows.every(row => row.selected);
@@ -4828,9 +4838,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const checkboxes = importPreviewTbody
         ? importPreviewTbody.querySelectorAll('.import-row-check')
         : [];
+      const duplicateCount = importSelectAll.checked
+        ? _importParsedRows.filter(row => row.duplicate && !row.invalid).length
+        : 0;
       checkboxes.forEach(cb => {
-        if (!cb.disabled) cb.checked = importSelectAll.checked;
+        if (cb.disabled) return;
+        const row = _importParsedRows[Number(cb.dataset.row)];
+        cb.checked = importSelectAll.checked && !row.duplicate;
       });
+      if (importDuplicateSelectionNote) {
+        importDuplicateSelectionNote.hidden = duplicateCount === 0;
+        importDuplicateSelectionNote.textContent = duplicateCount === 1
+          ? '1 possível duplicado ficou desmarcado.'
+          : duplicateCount > 1
+            ? `${duplicateCount} possíveis duplicados ficaram desmarcados.`
+            : '';
+      }
     });
   }
 

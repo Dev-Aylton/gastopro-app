@@ -3127,6 +3127,18 @@ describe('GastoProImporter — extratos bancários robustos', () => {
     ]);
     assertEqual(marked.map(row => row.duplicate), [true, true, false]);
     assertEqual(marked.map(row => row.selected), [false, false, true]);
+    marked[0].selected = true;
+    assertTrue(marked[0].selected, 'Um possível duplicado pode ser marcado manualmente');
+  });
+
+  it('não marca linhas idênticas entre si quando não há lançamentos salvos', () => {
+    const rows = [
+      { date: '2026-10-15', amount: 10, desc: 'Mercado EXTRA' },
+      { date: '2026-10-15', amount: 10, desc: 'mercado extra' }
+    ];
+    const marked = GastoProImporter.markDuplicates(rows);
+    assertEqual(marked.map(row => row.duplicate), [false, false]);
+    assertEqual(marked.map(row => row.selected), [true, true]);
   });
 
   it('detecta conta fixa ou dívida já cadastrada pelo nome, valor e mês inicial', () => {

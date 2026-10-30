@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-259%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-260%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -389,7 +389,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **259 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **260 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -567,6 +567,7 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 
 ### Planejamento (sem versão)
 
+- Importação: possíveis duplicados (iguais a lançamentos já salvos) vêm desmarcados, com contagem; linhas repetidas dentro do mesmo arquivo continuam marcadas.
 - RM-030: ações de gravação usam trava compartilhada, estado “Salvando...”/“Ainda sincronizando” e aria-busy; importação bloqueia cancelamento e fechamento durante a gravação; modo local não aguarda sync; três testes adicionados.
 - Ajuste RM-029: logout remove `gastopro_last_view_v1`; o Reset financeiro continua preservando a última tela principal.
 - RM-029: CSV passa a sugerir a pagar para despesas futuras e parcelas futuras; nova etiqueta textual na prévia; detector CSV-only `N de M`; a última tela principal é restaurada por usuário, com Admin fechado até autorização; oito testes adicionados.

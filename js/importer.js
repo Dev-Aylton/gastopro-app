@@ -917,7 +917,6 @@ const GastoProImporter = (() => {
     return rows.map(row => {
       const key = makeKey(row);
       const duplicate = Boolean(key && seen.has(key));
-      if (key) seen.add(key);
       return { ...row, duplicate, selected: !row.invalid && !duplicate };
     });
   }
