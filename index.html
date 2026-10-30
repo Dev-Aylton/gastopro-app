@@ -1166,7 +1166,10 @@
         <div class="form-group auth-field">
           <div class="label-with-action">
             <label for="loginPassword">Senha</label>
-            <a href="#" class="auth-forgot-link" id="forgotPasswordLink">Esqueceu a senha?</a>
+            <div class="auth-recovery-links">
+              <a href="#" class="auth-forgot-link" id="forgotPasswordLink" aria-live="polite">Esqueceu a senha?</a>
+              <button type="button" class="auth-email-help-link" data-action="open-email-help">Não lembro meu e-mail</button>
+            </div>
           </div>
           <div class="auth-input-wrapper">
             <i class="fa-solid fa-lock input-leading-icon"></i>
@@ -1197,8 +1200,17 @@
           <label for="registerEmail">E-mail</label>
           <div class="auth-input-wrapper">
             <i class="fa-regular fa-envelope input-leading-icon"></i>
-            <input type="email" id="registerEmail" placeholder="seu@email.com" required autocomplete="email" />
+            <input type="email" id="registerEmail" class="auth-email-input" placeholder="seu@email.com" required autocomplete="email" />
           </div>
+        </div>
+
+        <div class="form-group auth-field">
+          <label for="registerEmailConfirmation">Confirmar e-mail</label>
+          <div class="auth-input-wrapper">
+            <i class="fa-regular fa-envelope input-leading-icon"></i>
+            <input type="email" id="registerEmailConfirmation" class="auth-email-input" placeholder="Repita seu e-mail" required autocomplete="off" aria-describedby="registerEmailMismatch" />
+          </div>
+          <p class="auth-inline-error" id="registerEmailMismatch" role="alert" aria-live="polite" hidden></p>
         </div>
 
         <div class="form-group auth-field">
@@ -1253,6 +1265,25 @@
         </button>
       </div>
     </div>
+  </div>
+
+  <div class="modal-overlay" id="emailHelpModal" aria-hidden="true">
+    <section class="modal-content modal-auth-content email-help-content" role="dialog" aria-modal="true"
+      aria-labelledby="emailHelpTitle" aria-describedby="emailHelpDescription" tabindex="-1">
+      <button type="button" class="modal-close-btn auth-close-btn" data-action="close-email-help"
+        aria-label="Fechar ajuda sobre o e-mail">&times;</button>
+      <h2 id="emailHelpTitle">Não lembro meu e-mail</h2>
+      <p id="emailHelpDescription">O GastoPro não consulta nem revela endereços de e-mail. Você pode:</p>
+      <ul>
+        <li>Procurar na caixa de entrada e no spam mensagens do Supabase ou do GastoPro.</li>
+        <li>Tentar outros endereços de e-mail que costuma usar.</li>
+        <li>Se não tiver acesso ao e-mail da conta, não é possível recuperar a conta na nuvem por aqui.</li>
+        <li>Continuar no Modo Local ou criar uma nova conta.</li>
+      </ul>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" data-action="close-email-help">Fechar</button>
+      </div>
+    </section>
   </div>
 
   <div class="modal-overlay" id="discardPendingModal" aria-hidden="true">

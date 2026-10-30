@@ -3542,11 +3542,24 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 
 .label-with-action {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+
+.auth-recovery-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem;
 }
 
 .auth-forgot-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.25rem;
   font-size: 0.78rem;
   color: var(--primary);
   text-decoration: none;
@@ -3554,9 +3567,28 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   transition: opacity 0.2s;
 }
 
-.auth-forgot-link:hover {
+.auth-forgot-link:hover,
+.auth-email-help-link:hover {
   opacity: 0.8;
   text-decoration: underline;
+}
+
+.auth-forgot-link[aria-disabled="true"] {
+  color: var(--text-dim);
+  cursor: wait;
+  pointer-events: none;
+}
+
+.auth-email-help-link {
+  min-height: 44px;
+  padding: 0.35rem 0.25rem;
+  border: 0;
+  background: var(--theme-background-transparent);
+  color: var(--primary-text);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 .auth-input-wrapper {
@@ -3585,6 +3617,10 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   transition: all 0.2s ease;
 }
 
+.auth-input-wrapper input.auth-email-input {
+  font-size: 16px;
+}
+
 .auth-input-wrapper input:focus {
   outline: none;
   border-color: var(--primary);
@@ -3595,6 +3631,44 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 .auth-input-wrapper input:focus + .input-leading-icon,
 .auth-input-wrapper input:focus ~ .input-leading-icon {
   color: var(--primary);
+}
+
+.auth-inline-error {
+  margin: 0.4rem 0 0;
+  color: var(--danger-text);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.auth-inline-error[hidden] {
+  display: none;
+}
+
+.email-help-content {
+  line-height: 1.55;
+}
+
+.email-help-content h2 {
+  margin: 0 2rem 0.75rem 0;
+  color: var(--text-main);
+  font-size: 1.2rem;
+}
+
+.email-help-content p,
+.email-help-content li {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.email-help-content ul {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0.8rem 0 1.2rem;
+  padding-left: 1.25rem;
+}
+
+.email-help-content .modal-actions > button {
+  min-height: 44px;
 }
 
 .btn-toggle-password {

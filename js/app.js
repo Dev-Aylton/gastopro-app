@@ -221,6 +221,30 @@ function isValidPassword(password) {
   return typeof password === 'string' && password.length >= 8;
 }
 
+window.GastoProAuthHelpers = {
+  normalizeEmail(email) {
+    return typeof email === 'string' ? email.trim().toLowerCase() : '';
+  },
+
+  emailsMatch(email, confirmation) {
+    return this.normalizeEmail(email) === this.normalizeEmail(confirmation);
+  },
+
+  getPasswordRecoverySuccessMessage() {
+    return 'Se esse e-mail tiver conta, você receberá as instruções. Confira também o spam.';
+  },
+
+  getPasswordRecoveryErrorMessage(error) {
+    const message = error && typeof error.message === 'string' ? error.message.toLowerCase() : '';
+    const code = error && typeof error.code === 'string' ? error.code.toLowerCase() : '';
+    if (Number(error && error.status) === 429 ||
+      /rate[\s_-]?limit|too many|\b429\b|60\s*(?:seconds?|secs?|s)\b|once\s+every|security purposes/.test(`${message} ${code}`)) {
+      return 'Muitos pedidos de e-mail agora. Aguarde alguns minutos e tente de novo.';
+    }
+    return 'Não foi possível enviar o e-mail. Verifique o endereço informado.';
+  }
+};
+
 /**
  * Gera a string de mês/ano no formato YYYY-MM, com zero à esquerda no mês.
  * Usado como chave padrão de competência em todo o app.
@@ -3134,9 +3158,82 @@ document.addEventListener('DOMContentLoaded', () => {
   const passwordRecoveryDialog = passwordRecoveryModal && passwordRecoveryModal.querySelector('[role="dialog"]');
   const passwordRecoveryForm = document.getElementById('passwordRecoveryForm');
   const passwordRecoveryError = document.getElementById('passwordRecoveryError');
+  const emailHelpModal = document.getElementById('emailHelpModal');
+  const registerEmailInput = document.getElementById('registerEmail');
+  const registerEmailConfirmationInput = document.getElementById('registerEmailConfirmation');
+  const registerEmailMismatch = document.getElementById('registerEmailMismatch');
   let recoveryPreviousFocus = null;
   let pendingAccountSwitchUser = null;
+  let recoveryCooldownInterval = null;
   if (passwordRecoveryError) passwordRecoveryError.style.display = 'none';
+
+  function openEmailHelpModal() {
+    if (!emailHelpModal) return;
+    emailHelpModal.classList.add('active');
+    emailHelpModal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeEmailHelpModal() {
+    if (!emailHelpModal) return;
+    emailHelpModal.classList.remove('active');
+    emailHelpModal.setAttribute('aria-hidden', 'true');
+  }
+
+  document.addEventListener('click', event => {
+    if (!(event.target instanceof Element)) return;
+    const actionElement = event.target.closest('[data-action="open-email-help"], [data-action="close-email-help"]');
+    if (!actionElement) return;
+    event.preventDefault();
+    if (actionElement.dataset.action === 'open-email-help') openEmailHelpModal();
+    else closeEmailHelpModal();
+  });
+
+  if (emailHelpModal) {
+    emailHelpModal.addEventListener('click', event => {
+      if (event.target === emailHelpModal) closeEmailHelpModal();
+    });
+  }
+
+  function clearRegisterEmailMismatch() {
+    if (registerEmailMismatch) {
+      registerEmailMismatch.textContent = '';
+      registerEmailMismatch.hidden = true;
+    }
+    if (registerEmailConfirmationInput) {
+      registerEmailConfirmationInput.removeAttribute('aria-invalid');
+    }
+  }
+
+  [registerEmailInput, registerEmailConfirmationInput].forEach(input => {
+    if (input) input.addEventListener('input', clearRegisterEmailMismatch);
+  });
+
+  function startRecoveryCooldown() {
+    const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+    if (!forgotPasswordLink) return;
+    if (recoveryCooldownInterval) clearInterval(recoveryCooldownInterval);
+
+    const expiresAt = Date.now() + 60000;
+    const updateCountdown = () => {
+      const secondsLeft = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+      if (secondsLeft === 0) {
+        clearInterval(recoveryCooldownInterval);
+        recoveryCooldownInterval = null;
+        forgotPasswordLink.textContent = 'Esqueceu a senha?';
+        forgotPasswordLink.removeAttribute('aria-disabled');
+        forgotPasswordLink.removeAttribute('aria-label');
+        forgotPasswordLink.removeAttribute('tabindex');
+        return;
+      }
+      forgotPasswordLink.textContent = `Tente novamente em ${secondsLeft}s`;
+      forgotPasswordLink.setAttribute('aria-disabled', 'true');
+      forgotPasswordLink.setAttribute('aria-label', `Esqueceu a senha? Aguarde ${secondsLeft} segundos`);
+      forgotPasswordLink.setAttribute('tabindex', '-1');
+    };
+
+    updateCountdown();
+    recoveryCooldownInterval = setInterval(updateCountdown, 1000);
+  }
 
   function closePasswordRecovery() {
     if (!passwordRecoveryModal) return;
@@ -3648,6 +3745,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      if (!window.GastoProAuthHelpers.emailsMatch(email, registerEmailConfirmationInput.value)) {
+        if (registerEmailMismatch) {
+          registerEmailMismatch.textContent = 'Os e-mails não coincidem. Confira os dois campos.';
+          registerEmailMismatch.hidden = false;
+        }
+        registerEmailConfirmationInput.setAttribute('aria-invalid', 'true');
+        registerEmailConfirmationInput.focus();
+        return;
+      }
+      clearRegisterEmailMismatch();
+
       if (password !== confirmPassword) {
         showAuthAlert('As senhas não coincidem!');
         return;
@@ -3678,7 +3786,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const authenticatedProfile = await prepareAuthenticatedUser(user);
           if (authenticatedProfile) await syncUserDataFromCloud(authenticatedProfile.userId);
         } else {
-          showAuthAlert('Conta criada! Se a confirmação de e-mail estiver ativa, verifique sua caixa de entrada.', true);
+          showAuthAlert('Conta criada! A confirmação por e-mail pode demorar alguns minutos. Confira sua caixa de entrada e a pasta de spam.', true);
         }
       } catch (err) {
         console.error('[GastoPro Auth] Erro no cadastro:', err);
@@ -3849,6 +3957,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (forgotPasswordLink) {
     forgotPasswordLink.addEventListener('click', async (e) => {
       e.preventDefault();
+      if (forgotPasswordLink.getAttribute('aria-disabled') === 'true') return;
       const emailInput = document.getElementById('loginEmail');
       const email = emailInput ? emailInput.value.trim() : '';
 
@@ -3858,21 +3967,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       forgotPasswordLink.textContent = 'Enviando...';
-      forgotPasswordLink.style.pointerEvents = 'none';
+      forgotPasswordLink.setAttribute('aria-busy', 'true');
+      let requestAttempted = false;
 
       try {
         if (window.SupabaseAuth && window.SupabaseAuth.resetPasswordForEmail) {
+          requestAttempted = true;
           await window.SupabaseAuth.resetPasswordForEmail(email);
-          showAuthAlert(`Link de recuperação enviado para ${email}. Verifique sua caixa de entrada.`, true);
+          showAuthAlert(window.GastoProAuthHelpers.getPasswordRecoverySuccessMessage(), true);
         } else {
           showAuthAlert('Serviço de recuperação não disponível. Tente novamente mais tarde.');
         }
       } catch (err) {
         console.error('[GastoPro] Erro ao enviar reset de senha:', err);
-        showAuthAlert('Não foi possível enviar o e-mail. Verifique o endereço informado.');
+        showAuthAlert(window.GastoProAuthHelpers.getPasswordRecoveryErrorMessage(err));
       } finally {
-        forgotPasswordLink.textContent = 'Esqueceu a senha?';
-        forgotPasswordLink.style.pointerEvents = '';
+        forgotPasswordLink.removeAttribute('aria-busy');
+        if (requestAttempted) startRecoveryCooldown();
+        else forgotPasswordLink.textContent = 'Esqueceu a senha?';
       }
     });
   }

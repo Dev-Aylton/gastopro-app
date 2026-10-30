@@ -679,6 +679,34 @@ describe('FinanceData — Contas Bancárias', () => {
   });
 });
 
+describe('Recuperação de conta e confirmação de e-mail', () => {
+  it('compara e-mails ignorando caixa e espaços nas pontas', () => {
+    assertTrue(window.GastoProAuthHelpers.emailsMatch('  Pessoa@Exemplo.com ', 'pessoa@exemplo.com'));
+    assertFalse(window.GastoProAuthHelpers.emailsMatch('pessoa@exemplo.com', 'outra@exemplo.com'));
+  });
+
+  it('mapeia erros de limite e mantém uma mensagem genérica para outras falhas', () => {
+    const rateLimitMessage = 'Muitos pedidos de e-mail agora. Aguarde alguns minutos e tente de novo.';
+    assertEqual(window.GastoProAuthHelpers.getPasswordRecoveryErrorMessage({ status: 429 }), rateLimitMessage);
+    assertEqual(window.GastoProAuthHelpers.getPasswordRecoveryErrorMessage({
+      code: 'over_email_send_rate_limit'
+    }), rateLimitMessage);
+    assertEqual(window.GastoProAuthHelpers.getPasswordRecoveryErrorMessage({
+      message: 'For security purposes, wait 60 seconds before requesting again'
+    }), rateLimitMessage);
+    assertEqual(window.GastoProAuthHelpers.getPasswordRecoveryErrorMessage({
+      message: 'Network error'
+    }), 'Não foi possível enviar o e-mail. Verifique o endereço informado.');
+  });
+
+  it('usa uma mensagem neutra após solicitar redefinição de senha', () => {
+    assertEqual(
+      window.GastoProAuthHelpers.getPasswordRecoverySuccessMessage(),
+      'Se esse e-mail tiver conta, você receberá as instruções. Confira também o spam.'
+    );
+  });
+});
+
 describe('Tema — preferência local', () => {
   it('normaliza valores ausentes ou inválidos para escuro', () => {
     assertEqual(window.GastoProThemeHelpers.normalizeSavedTheme(null), 'dark');
