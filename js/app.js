@@ -258,6 +258,45 @@ function isValidPassword(password) {
   return typeof password === 'string' && password.length >= 8;
 }
 
+let savingInProgress = false;
+
+async function withSaving(button, action, timeoutMs = 15000) {
+  if (savingInProgress) return false;
+  savingInProgress = true;
+
+  const originalHtml = button.innerHTML;
+  const originalDisabled = button.disabled;
+  const originalAriaBusy = button.getAttribute('aria-busy');
+  button.disabled = true;
+  button.textContent = 'Salvando...';
+  button.setAttribute('aria-busy', 'true');
+
+  const timeoutId = setTimeout(() => {
+    button.textContent = 'Ainda sincronizando, aguarde...';
+  }, timeoutMs);
+
+  try {
+    return await action();
+  } finally {
+    clearTimeout(timeoutId);
+    button.innerHTML = originalHtml;
+    button.disabled = originalDisabled;
+    if (originalAriaBusy === null) button.removeAttribute('aria-busy');
+    else button.setAttribute('aria-busy', originalAriaBusy);
+    savingInProgress = false;
+  }
+}
+
+window.GastoProSaving = { withSaving };
+
+async function waitForAuthenticatedSave() {
+  const profile = FinanceData.getProfile();
+  if (!profile.userId || !window.SupabaseAuth || !window.SupabaseAuth.client) {
+    return { success: true, skipped: true };
+  }
+  return FinanceData.flushPendingSync(profile.userId);
+}
+
 window.GastoProAuthHelpers = {
   normalizeEmail(email) {
     return typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -1722,7 +1761,7 @@ function deleteAccount(id) {
  */
 function showConfirm({
   title, message, iconClass, okLabel, okBtnClass, onConfirm,
-  onBackup, secondaryLabel, onSecondary
+  onBackup, secondaryLabel, onSecondary, keepOpenOnConfirm = false
 }) {
   const modal = document.getElementById('confirmModal');
   const iconEl = document.getElementById('confirmIcon');
@@ -1754,8 +1793,8 @@ function showConfirm({
   newOk.className = okBtnClass || 'btn-danger';
 
   newOk.addEventListener('click', async () => {
-    modal.classList.remove('active');
-    await onConfirm();
+    if (!keepOpenOnConfirm) modal.classList.remove('active');
+    await onConfirm(newOk);
   });
   newCancel.addEventListener('click', () => {
     modal.classList.remove('active');
@@ -1763,8 +1802,8 @@ function showConfirm({
   if (newBackup && (onBackup || onSecondary)) {
     newBackup.addEventListener('click', async () => {
       if (onSecondary) {
-        modal.classList.remove('active');
-        await onSecondary();
+        if (!keepOpenOnConfirm) modal.classList.remove('active');
+        await onSecondary(newBackup);
       } else {
         onBackup();
       }
@@ -2653,7 +2692,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const incomeDateInput = document.getElementById('incomeDate');
   if (incomeDateInput) incomeDateInput.value = getTodayString();
 
-  document.getElementById('incomeForm').addEventListener('submit', (e) => {
+  document.getElementById('incomeForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const desc     = document.getElementById('incomeDesc').value.trim();
     const amount   = parseFloat(document.getElementById('incomeAmount').value);
@@ -2674,29 +2713,33 @@ document.addEventListener('DOMContentLoaded', () => {
     // (permite lançar ganhos de outros meses sem mudar o mês ativo)
     const itemMonth = dateVal ? dateVal.substring(0, 7) : getYearMonthString(state.currentYear, state.currentMonth);
 
-    try {
-      FinanceData.add({
-        month: itemMonth,
-        type: 'income',
-        desc: desc,
-        amount: amount,
-        category: category,
-        accountId: document.getElementById('incomeAccount').value || null,
-        date: dateVal
-      });
+    const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
+    await withSaving(saveButton, async () => {
+      try {
+        FinanceData.add({
+          month: itemMonth,
+          type: 'income',
+          desc: desc,
+          amount: amount,
+          category: category,
+          accountId: document.getElementById('incomeAccount').value || null,
+          date: dateVal
+        });
 
-      document.getElementById('incomeDesc').value = '';
-      document.getElementById('incomeAmount').value = '';
-      document.getElementById('incomeDate').value = getTodayString();
-      document.getElementById('incomeAccount').value = '';
-      document.getElementById('incomeDesc').focus();
+        document.getElementById('incomeDesc').value = '';
+        document.getElementById('incomeAmount').value = '';
+        document.getElementById('incomeDate').value = getTodayString();
+        document.getElementById('incomeAccount').value = '';
+        document.getElementById('incomeDesc').focus();
 
-      renderAll();
-      showToast(`Ganho de ${formatCurrency(amount)} adicionado!`);
-    } catch (err) {
-      console.error('Erro ao adicionar ganho:', err);
-      alert('Ocorreu um erro ao salvar o ganho: ' + err.message);
-    }
+        renderAll();
+        const syncResult = await waitForAuthenticatedSave();
+        if (syncResult.success) showToast(`Ganho de ${formatCurrency(amount)} adicionado!`);
+      } catch (err) {
+        console.error('Erro ao adicionar ganho:', err);
+        alert('Ocorreu um erro ao salvar o ganho: ' + err.message);
+      }
+    });
   });
 
   // ── 6. Formulário de Novo Gasto ────────────────────────────────
@@ -2719,7 +2762,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (expenseTypeSelect) expenseTypeSelect.addEventListener('change', checkDebtVisibility);
   if (expenseCatSelect) expenseCatSelect.addEventListener('change', checkDebtVisibility);
 
-  document.getElementById('expenseForm').addEventListener('submit', (e) => {
+  document.getElementById('expenseForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const desc = document.getElementById('expenseDesc').value.trim();
     const amount = parseFloat(document.getElementById('expenseAmount').value);
@@ -2739,46 +2782,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const itemMonth = dateVal ? dateVal.substring(0, 7) : getYearMonthString(state.currentYear, state.currentMonth);
 
-    try {
-      FinanceData.add({
-        month: itemMonth,
-        type: type,
-        desc: desc,
-        amount: amount,
-        category: category,
-        paid: false,
-        date: dateVal,
-        accountId: document.getElementById('expenseAccount').value || null,
-        endMonth: endMonthVal || null
-      });
+    const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
+    await withSaving(saveButton, async () => {
+      try {
+        FinanceData.add({
+          month: itemMonth,
+          type: type,
+          desc: desc,
+          amount: amount,
+          category: category,
+          paid: false,
+          date: dateVal,
+          accountId: document.getElementById('expenseAccount').value || null,
+          endMonth: endMonthVal || null
+        });
 
-      document.getElementById('expenseDesc').value = '';
-      document.getElementById('expenseAmount').value = '';
-      document.getElementById('expenseDate').value = getTodayString();
-      document.getElementById('expenseAccount').value = '';
-      if (document.getElementById('expenseEndMonth')) document.getElementById('expenseEndMonth').value = '';
-      checkDebtVisibility();
-      document.getElementById('expenseDesc').focus();
+        document.getElementById('expenseDesc').value = '';
+        document.getElementById('expenseAmount').value = '';
+        document.getElementById('expenseDate').value = getTodayString();
+        document.getElementById('expenseAccount').value = '';
+        if (document.getElementById('expenseEndMonth')) document.getElementById('expenseEndMonth').value = '';
+        checkDebtVisibility();
+        document.getElementById('expenseDesc').focus();
 
-      // Garante que o filtro exiba o novo gasto imediatamente
-      state.expenseFilter = 'all';
-      document.querySelectorAll('.filter-tabs-row .filter-btn').forEach(b => {
-        b.classList.toggle('active', b.getAttribute('data-filter') === 'all');
-      });
+        state.expenseFilter = 'all';
+        document.querySelectorAll('.filter-tabs-row .filter-btn').forEach(b => {
+          b.classList.toggle('active', b.getAttribute('data-filter') === 'all');
+        });
 
-      renderAll();
+        renderAll();
+        const syncResult = await waitForAuthenticatedSave();
+        if (!syncResult.success) return;
 
-      let toastMsg = `Gasto de ${formatCurrency(amount)} cadastrado!`;
-      if (type === 'debt' || category === 'Empréstimo' || category === 'Parcelamento') {
-        toastMsg = `Parcelamento adicionado! Veja no Centro de Dívidas.`;
-      } else if (type === 'fixed') {
-        toastMsg = `Gasto fixo de ${formatCurrency(amount)} cadastrado!`;
+        let toastMsg = `Gasto de ${formatCurrency(amount)} cadastrado!`;
+        if (type === 'debt' || category === 'Empréstimo' || category === 'Parcelamento') {
+          toastMsg = `Parcelamento adicionado! Veja no Centro de Dívidas.`;
+        } else if (type === 'fixed') {
+          toastMsg = `Gasto fixo de ${formatCurrency(amount)} cadastrado!`;
+        }
+        showToast(toastMsg);
+      } catch (err) {
+        console.error('Erro ao adicionar gasto:', err);
+        alert('Ocorreu um erro ao salvar o gasto: ' + err.message);
       }
-      showToast(toastMsg);
-    } catch (err) {
-      console.error('Erro ao adicionar gasto:', err);
-      alert('Ocorreu um erro ao salvar o gasto: ' + err.message);
-    }
+    });
   });
 
   // ── 7. Filtros de Gastos ──────────────────────────────────────
@@ -2794,7 +2841,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 8. Modal de Edição ────────────────────────────────────────
   // Salva as alterações do formulário ao submeter o modal
-  document.getElementById('editForm').addEventListener('submit', (e) => {
+  document.getElementById('editForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const id = document.getElementById('editItemId').value;
     const desc = document.getElementById('editDesc').value.trim();
@@ -2811,24 +2858,34 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const updated = FinanceData.update(id, {
-      desc: desc,
-      amount: amount,
-      category: category,
-      type: type,
-      date: date,
-      active: active,
-      endMonth: endMonth,
-      accountId: document.getElementById('editAccount').value || null
-    });
-    if (!updated) {
-      showToast('Não é possível alterar entre lançamento pontual e recorrente pela edição.');
-      return;
-    }
+    const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
+    await withSaving(saveButton, async () => {
+      try {
+        const updated = FinanceData.update(id, {
+          desc: desc,
+          amount: amount,
+          category: category,
+          type: type,
+          date: date,
+          active: active,
+          endMonth: endMonth,
+          accountId: document.getElementById('editAccount').value || null
+        });
+        if (!updated) {
+          showToast('Não é possível alterar entre lançamento pontual e recorrente pela edição.');
+          return;
+        }
 
-    closeEditModal();
-    renderAll();
-    showToast('Informações alteradas com sucesso!');
+        renderAll();
+        const syncResult = await waitForAuthenticatedSave();
+        if (!syncResult.success) return;
+        closeEditModal();
+        showToast('Informações alteradas com sucesso!');
+      } catch (error) {
+        console.error('[GastoPro] Erro ao salvar alterações:', error);
+        showToast(error.message || 'Não foi possível salvar as alterações. Tente novamente.');
+      }
+    });
   });
 
   document.getElementById('accountForm').addEventListener('submit', async e => {
@@ -2994,16 +3051,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const summary = `Backup com ${preview.entries.length} lançamentos, ${preview.templates.length} gastos fixos e ${preview.goals.length} metas. Escolha como restaurar.`;
-        const restore = async mode => {
-          const result = await FinanceData.importJSON(text, mode);
-          if (!result.success) {
-            showToast(result.error || 'Não foi possível restaurar o backup.');
-            return;
+        const restore = (mode, button) => withSaving(button, async () => {
+          try {
+            const result = await FinanceData.importJSON(text, mode);
+            if (!result.success) {
+              showToast(result.error || 'Não foi possível restaurar o backup.');
+              return;
+            }
+            renderAll();
+            renderUserProfile();
+            showToast(mode === 'merge' ? 'Backup mesclado com sucesso.' : 'Backup restaurado; os dados anteriores foram substituídos.');
+            document.getElementById('confirmModal').classList.remove('active');
+          } catch (error) {
+            console.error('[GastoPro] Falha ao restaurar backup:', error);
+            showToast(error.message || 'Não foi possível restaurar o backup.');
           }
-          renderAll();
-          renderUserProfile();
-          showToast(mode === 'merge' ? 'Backup mesclado com sucesso.' : 'Backup restaurado; os dados anteriores foram substituídos.');
-        };
+        });
         showConfirm({
           title: 'Prévia do backup',
           message: summary,
@@ -3011,8 +3074,9 @@ document.addEventListener('DOMContentLoaded', () => {
           okLabel: 'Mesclar',
           okBtnClass: 'btn-primary',
           secondaryLabel: 'Substituir tudo',
-          onConfirm: () => restore('merge'),
-          onSecondary: () => restore('replace')
+          keepOpenOnConfirm: true,
+          onConfirm: button => restore('merge', button),
+          onSecondary: button => restore('replace', button)
         });
       } catch (error) {
         console.error('[GastoPro] Falha ao ler backup:', error);
@@ -4365,6 +4429,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const previewCountBadge   = document.getElementById('previewCountBadge');
   const importSelectAll     = document.getElementById('importSelectAll');
   const confirmImportBtn    = document.getElementById('confirmImportBtn');
+  let importSaving = false;
 
   /** Abre o modal de importação e reseta o estado. */
   function openImportModal() {
@@ -4375,8 +4440,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /** Fecha o modal de importação. */
-  function closeImportModal() {
-    if (!importModal) return;
+  function closeImportModal(force = false) {
+    if (!importModal || (importSaving && !force)) return;
     importModal.classList.remove('active');
   }
 
@@ -4687,7 +4752,7 @@ document.addEventListener('DOMContentLoaded', () => {
           `${launchCount} lançamento${launchCount === 1 ? '' : 's'} importado${launchCount === 1 ? '' : 's'} com sucesso!`
         );
         renderAll();
-        closeImportModal();
+        closeImportModal(true);
       } catch (err) {
         console.error('[GastoPro Importer] Erro ao salvar os lançamentos:', err);
         showToast('Não foi possível concluir a importação. Tente novamente.');
@@ -4771,7 +4836,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   // Confirmar importação
-  if (confirmImportBtn) confirmImportBtn.addEventListener('click', handleConfirmImport);
+  if (confirmImportBtn) confirmImportBtn.addEventListener('click', async () => {
+    if (importSaving) return;
+    const previousCancelDisabled = cancelImportBtn.disabled;
+    const previousCloseDisabled = closeImportModalBtn.disabled;
+    await withSaving(confirmImportBtn, async () => {
+      importSaving = true;
+      cancelImportBtn.disabled = true;
+      closeImportModalBtn.disabled = true;
+      try {
+        await handleConfirmImport();
+      } finally {
+        importSaving = false;
+        cancelImportBtn.disabled = previousCancelDisabled;
+        closeImportModalBtn.disabled = previousCloseDisabled;
+      }
+    });
+  });
 
 
   // ── 14. MÓDULO WIZARD DE LANÇAMENTO RÁPIDO ───────────────────
@@ -5249,7 +5330,7 @@ document.addEventListener('DOMContentLoaded', () => {
    * Persiste todos os dados coletados no wizard:
    * rendas, baixa de fixos existentes, novos fixos e variáveis.
    */
-  function handleWizardFinish() {
+  async function handleWizardFinish() {
     const ym = getYearMonthString(state.currentYear, state.currentMonth);
     let saved = 0;
 
@@ -5322,8 +5403,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (saved > 0) {
-      showToast(`✅ ${saved} lançamento${saved > 1 ? 's' : ''} salvo${saved > 1 ? 's' : ''} com sucesso!`);
       renderAll();
+      const syncResult = await waitForAuthenticatedSave();
+      if (syncResult.success) {
+        showToast(`✅ ${saved} lançamento${saved > 1 ? 's' : ''} salvo${saved > 1 ? 's' : ''} com sucesso!`);
+      } else {
+        showToast('Os lançamentos foram salvos neste aparelho, mas a sincronização ficou pendente.');
+      }
     } else {
       showToast('Nenhum dado foi informado para salvar.');
     }
@@ -5334,7 +5420,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Navegação ────────────────────────────────────────────────
 
   /** Avança para o próximo passo ou finaliza. */
-  function handleWizardNext() {
+  async function handleWizardNext() {
     const step = wizardState.step;
 
     if (step === 1) {
@@ -5351,7 +5437,14 @@ document.addEventListener('DOMContentLoaded', () => {
       goToWizardStep(4, 'forward');
 
     } else if (step === 4) {
-      handleWizardFinish();
+      await withSaving(wizardNextBtn, async () => {
+        try {
+          await handleWizardFinish();
+        } catch (error) {
+          console.error('[GastoPro] Erro ao salvar o lançamento rápido:', error);
+          showToast(error.message || 'Não foi possível salvar o lançamento rápido.');
+        }
+      });
     }
   }
 
@@ -5726,7 +5819,7 @@ function initGoalModalListeners() {
 
   // Salvar meta
   if (saveBtn) {
-    saveBtn.addEventListener('click', () => {
+    saveBtn.addEventListener('click', async () => {
       const category = document.getElementById('goalCategorySelect').value.trim();
       const limit    = parseFloat(document.getElementById('goalLimitInput').value);
 
@@ -5739,10 +5832,18 @@ function initGoalModalListeners() {
         return;
       }
 
-      FinanceData.saveGoal(category, limit);
-      closeGoalModal();
-      renderAll();
-      showToast(`✅ Meta de ${category}: ${formatCurrency(limit)} salva!`);
+      await withSaving(saveBtn, async () => {
+        try {
+          FinanceData.saveGoal(category, limit);
+          const syncResult = await waitForAuthenticatedSave();
+          closeGoalModal();
+          renderAll();
+          if (syncResult.success) showToast(`✅ Meta de ${category}: ${formatCurrency(limit)} salva!`);
+        } catch (error) {
+          console.error('[GastoPro] Erro ao salvar meta:', error);
+          showToast(error.message || 'Não foi possível salvar a meta.');
+        }
+      });
     });
   }
 

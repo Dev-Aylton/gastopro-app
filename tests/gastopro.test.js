@@ -731,6 +731,62 @@ describe('Restauração da tela principal', () => {
   });
 });
 
+describe('Salvamento com trava', () => {
+  itAsync('ignora segundo clique após timeout e restaura botão quando a ação original termina', async () => {
+    const button = document.createElement('button');
+    button.innerHTML = '<i class="fa-solid fa-check"></i> Salvar';
+    const originalHtml = button.innerHTML;
+    let resolveOriginal;
+    let calls = 0;
+    const originalAction = new Promise(resolve => { resolveOriginal = resolve; });
+
+    const firstSave = window.GastoProSaving.withSaving(button, () => {
+      calls++;
+      return originalAction;
+    }, 5);
+    await new Promise(resolve => setTimeout(resolve, 15));
+
+    assertEqual(button.textContent, 'Ainda sincronizando, aguarde...');
+    assertTrue(button.disabled);
+    assertEqual(button.getAttribute('aria-busy'), 'true');
+    assertFalse(await window.GastoProSaving.withSaving(button, async () => { calls++; }));
+    assertEqual(calls, 1);
+
+    resolveOriginal('salvo');
+    assertEqual(await firstSave, 'salvo');
+    assertEqual(button.innerHTML, originalHtml);
+    assertFalse(button.disabled);
+    assertNull(button.getAttribute('aria-busy'));
+  });
+
+  itAsync('restaura botão após sucesso', async () => {
+    const button = document.createElement('button');
+    button.innerHTML = 'Salvar meta';
+    const result = await window.GastoProSaving.withSaving(button, async () => 'ok');
+    assertEqual(result, 'ok');
+    assertEqual(button.innerHTML, 'Salvar meta');
+    assertFalse(button.disabled);
+    assertNull(button.getAttribute('aria-busy'));
+  });
+
+  itAsync('restaura botão após erro e repassa a rejeição', async () => {
+    const button = document.createElement('button');
+    button.innerHTML = 'Salvar backup';
+    let message = '';
+    try {
+      await window.GastoProSaving.withSaving(button, async () => {
+        throw new Error('falha de teste');
+      });
+    } catch (error) {
+      message = error.message;
+    }
+    assertEqual(message, 'falha de teste');
+    assertEqual(button.innerHTML, 'Salvar backup');
+    assertFalse(button.disabled);
+    assertNull(button.getAttribute('aria-busy'));
+  });
+});
+
 describe('Tema — preferência local', () => {
   it('normaliza valores ausentes ou inválidos para escuro', () => {
     assertEqual(window.GastoProThemeHelpers.normalizeSavedTheme(null), 'dark');
