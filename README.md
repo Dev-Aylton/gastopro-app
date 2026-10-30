@@ -171,11 +171,11 @@ financeiro-app/
 │   └── migrations/
 │       ├── 20261027_hardening.sql # Hardening aplicado e validado em 28/10/2026
 │       ├── 20261028_accounts.sql  # RM-025 parte A; aplicada em produção
-│       ├── 20261028_delete_my_account.sql # Exclusão de conta; aplicar manualmente no Supabase
-│       ├── 20261029_feedback.sql # Canal de contato; aplicar manualmente no Supabase
-│       ├── 20261031_admin_analytics.sql # Painel admin, eventos de uso e retenção de 12 meses
-│       ├── 20261101_sync_versioning.sql # Versões e tombstones; criada, ainda não aplicada
-│       └── 20261102_sync_realtime_publication.sql # Publicação Realtime; rodar antes do push
+│       ├── 20261028_delete_my_account.sql # Exclusão de conta; aplicada no Supabase
+│       ├── 20261029_feedback.sql # Canal de contato; aplicada no Supabase
+│       ├── 20261031_admin_analytics.sql # Painel admin, eventos de uso e retenção de 12 meses; aplicada
+│       ├── 20261101_sync_versioning.sql # Etapa 1 da sincronização; aplicada no Supabase
+│       └── 20261102_sync_realtime_publication.sql # Etapa 2 Realtime; aplicada no Supabase
 ├── tests/
 │   ├── gastopro.test.js       # 334 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
@@ -283,11 +283,27 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 
 ### Sincronização entre aparelhos
 
-- **Etapa 1 — em andamento:** versão por registro, `updated_at` definido no servidor, tombstones `deleted_at` e limpeza após 90 dias. A migration `20261101_sync_versioning.sql` foi criada, mas ainda não aplicada. Após a poda, um registro com versão conhecida que sumiu da nuvem é tratado como excluído; só criações nunca sincronizadas são enviadas como novas.
-- **Etapa 2 — em andamento:** sync completa ao voltar ao app, focar a janela ou reconectar, no máximo uma por vez e com intervalo de 15 segundos; um canal Realtime assina as oito tabelas. Eventos antigos são ignorados, tombstones são aplicados, e alterações do registro em edição aguardam o fechamento do modal. Sem Realtime, permanece a sync ao retornar.
-- **Etapa 3 — pendente:** operações transacionais.
-- **Etapa 4 — pendente:** escopo a definir.
-- As migrations `20261101_sync_versioning.sql` e `20261102_sync_realtime_publication.sql` precisam ser aplicadas nessa ordem no Supabase antes do push. A segunda adiciona as tabelas à publicação `supabase_realtime` sem duplicar membros existentes.
+- **Etapa 1 — [x]:** versão por registro, `updated_at` definido no servidor, tombstones `deleted_at` e limpeza após 90 dias. Migration aplicada no Supabase. Commit `9219da3`. Após a poda, registro com versão conhecida ausente é tratado como excluído; só criações nunca sincronizadas são enviadas como novas.
+- **Etapa 2 — [x]:** sync completa ao voltar ao app, focar a janela ou reconectar, serializada e com intervalo de 15 segundos; um canal Realtime assina as oito tabelas. Eventos antigos são ignorados, tombstones são aplicados, e alterações do registro em edição aguardam o fechamento do modal. Migration de publicação aplicada no Supabase.
+- **Etapa 3 — não iniciada:** operações transacionais para parcelas, apagar conta e importação em lote, com semântica tudo-ou-nada, idempotência e integração à fila offline. Ainda não há migration desta etapa.
+- **Etapa 4 — [ ]:** reset e exclusões seguros, tela de aviso e testes finais.
+
+### Pendências de validação manual
+
+- Testar sincronização entre PC e celular: editar, excluir, edição simultânea e aviso de conflito.
+- Testar “Meus dados” usando uma conta de teste, sem dados de produção.
+- No iPhone, testar compra em 3x e limite, botão de topo, clique real no sino e cores dos avisos nos temas claro e escuro.
+
+### Próximos passos
+
+1. Etapa 4: reset e exclusões seguros, tela de aviso e testes finais.
+2. RM-016 — Simulador de Cenários Futuros.
+3. RM-017 — Exportação de dados adicionais.
+4. RM-018 — Notificações push (parte 2).
+5. RM-019 — Offline-First aprimorado com IndexedDB.
+6. RM-020 — Ampliar cobertura de testes automatizados.
+7. RM-032 — Contraste WCAG AA nas demais telas e gráficos (RM-034 cobre somente os avisos).
+8. Itens em dúvida: mapeamento de colunas do CSV, cache offline de fontes e ícones, CI/CD.
 
 ### API de SupabaseAuth
 
@@ -409,13 +425,34 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 
 ## 🗄️ Banco de dados
 
+### Migrations
+
+| Ordem | Migration | Estado no Supabase |
+|---|---|---|
+| 1 | `20261027_hardening.sql` | Aplicada |
+| 2 | `20261028_accounts.sql` | Aplicada |
+| 3 | `20261028_delete_my_account.sql` | Aplicada |
+| 4 | `20261029_feedback.sql` | Aplicada |
+| 5 | `20261030_account_balance_date.sql` | Aplicada |
+| 6 | `20261030_credit_cards.sql` | Aplicada |
+| 7 | `20261030_credit_cards_details.sql` | Aplicada |
+| 8 | `20261030_credit_cards_purchases.sql` | Aplicada |
+| 9 | `20261030_fixed_import_rules.sql` | Aplicada |
+| 10 | `20261031_admin_analytics.sql` | Aplicada |
+| 11 | `20261101_sync_versioning.sql` | Aplicada |
+| 12 | `20261102_sync_realtime_publication.sql` | Aplicada |
+
+`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **334 testes**.
+
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
-As oito tabelas sincronizadas são `entries`, `fixed_templates`, `profiles`, `goals`, `accounts`, `credit_cards`, `credit_card_purchases` e `fixed_import_rules`; todas são restritas ao dono por RLS. A migration [`supabase/migrations/20261101_sync_versioning.sql`](./supabase/migrations/20261101_sync_versioning.sql) adiciona versionamento e exclusão lógica, mas ainda não foi aplicada. A migration [`supabase/migrations/20261102_sync_realtime_publication.sql`](./supabase/migrations/20261102_sync_realtime_publication.sql) registra as tabelas na publicação `supabase_realtime` de forma idempotente; aplique-a depois da migration de versionamento e antes do push. Exclusão total de dados e exclusão de conta continuam físicas.
+As oito tabelas sincronizadas são `entries`, `fixed_templates`, `profiles`, `goals`, `accounts`, `credit_cards`, `credit_card_purchases` e `fixed_import_rules`; todas são restritas ao dono por RLS. As migrations [`supabase/migrations/20261101_sync_versioning.sql`](./supabase/migrations/20261101_sync_versioning.sql) e [`supabase/migrations/20261102_sync_realtime_publication.sql`](./supabase/migrations/20261102_sync_realtime_publication.sql) estão aplicadas. Exclusão total de dados e exclusão de conta continuam físicas.
 
-`public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) foi aplicada em produção. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) também precisa ser aplicada manualmente. O app envia nome e avatar para `profiles` ao editar o perfil autenticado; alterações pendentes são mantidas para nova tentativa. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
+`public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) foi aplicada em produção. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) está aplicada.
 
-A migração [`supabase/migrations/20261029_feedback.sql`](./supabase/migrations/20261029_feedback.sql) cria `app_admins` e `feedback_messages`, as policies de RLS, `is_admin()` e o limite de cinco mensagens por usuário em 24 horas. Ela **ainda precisa ser aplicada manualmente** no SQL Editor do Supabase. O administrador pode ler mensagens e responder, mas não recebe acesso às tabelas financeiras nem a `profiles`; a lista de administradores é mantida diretamente pelo SQL Editor. Mensagens são obtidas sob demanda e não entram no localStorage, na fila financeira, no backup ou no Reset.
+O app envia nome e avatar para `profiles` ao editar o perfil autenticado; alterações locais são preservadas para nova tentativa de sincronização. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
+
+A migração [`supabase/migrations/20261029_feedback.sql`](./supabase/migrations/20261029_feedback.sql), aplicada no Supabase, cria `app_admins` e `feedback_messages`, as policies de RLS, `is_admin()` e o limite de cinco mensagens por usuário em 24 horas. O administrador pode ler mensagens e responder, mas não recebe acesso às tabelas financeiras nem a `profiles`; a lista de administradores é mantida diretamente pelo SQL Editor. Mensagens são obtidas sob demanda e não entram no localStorage, na fila financeira, no backup ou no Reset.
 
 A migration [`supabase/migrations/20261031_admin_analytics.sql`](./supabase/migrations/20261031_admin_analytics.sql) implementa `admin_analytics_summary()` com métricas agregadas, `usage_events` com lista permitida de eventos e limpeza automática após 12 meses via `pg_cron`. O usuário pode desativar a coleta no aparelho (`gastopro_usage_telemetry_enabled_v1`); eventos não incluem payload financeiro. O painel também usa `app_admins`/`is_admin()` e o canal `feedback_messages`.
 
@@ -622,7 +659,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - Identidade visual: logo e ícones PWA/iOS atualizados em `assets/`.
 - Painel de administrador: `app_admins`/`is_admin()`, métricas agregadas via `admin_analytics_summary()`, feedback em `feedback_messages` e eventos permitidos em `usage_events`; telemetria tem opt-out local e retenção de 12 meses via `pg_cron` (`20261031_admin_analytics.sql`).
 - Coleta de uso: eventos mínimos de telas e importação são enviados somente com a preferência habilitada; sem payload financeiro.
-- Sincronização: Etapas 1 e 2 implementadas no código e aguardando aplicação das migrations `20261101_sync_versioning.sql` e `20261102_sync_realtime_publication.sql`; Etapas 3 e 4 permanecem pendentes.
+- Sincronização: Etapas 1 e 2 concluídas (commit `9219da3`; migrations `20261101` e `20261102` aplicadas). Etapa 3 não iniciada; Etapa 4 pendente.
 - RM-031: guia “Como pegar meu extrato” com três ilustrações genéricas, atalho no tutorial Primeiros passos e arquivos SVG adicionados ao cache sem alterar o CACHE_NAME; três testes adicionados.
 - Importação: possíveis duplicados (iguais a lançamentos já salvos) vêm desmarcados, com contagem; linhas repetidas dentro do mesmo arquivo continuam marcadas.
 - RM-030: ações de gravação usam trava compartilhada, estado “Salvando...”/“Ainda sincronizando” e aria-busy; importação bloqueia cancelamento e fechamento durante a gravação; modo local não aguarda sync; três testes adicionados.
@@ -633,7 +670,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - RM-027: ampliadas as palavras-chave da categorização automática, corrigida a classificação de 'Mercado Livre' para Compras, removidas palavras ambíguas e 'Mercado Pago' direcionado para Outros.
 - Adicionados quatro testes de `autoDetectCategory`, incluindo palavras-chave, normalização e precedência da categoria informada no CSV.
 - RM-025 parte A: contas PF/PJ, vínculos opcionais em lançamentos/templates, saldos, sincronização e backup implementados; migração aplicada em produção.
-- Exclusão da própria conta Supabase pela função `public.delete_my_account()`, com confirmação explícita e limpeza dos dados/sessão locais após sucesso; migração pendente de aplicação manual.
+- Exclusão da própria conta Supabase pela função `public.delete_my_account()`, com confirmação explícita e limpeza dos dados/sessão locais após sucesso; migration `20261028_delete_my_account.sql` aplicada.
 - Reset agora também apaga contas bancárias, preservando sessão, nome e foto; testes cobrem fila de exclusões e limpeza após apagar a conta de login.
 - Sessão expirada preserva alterações pendentes, orienta o login na mesma conta e exige confirmação explícita antes de descartá-las para trocar de conta.
 - Validação estrita do backup JSON impede restauração parcial de dados inválidos e mantém compatibilidade com backups antigos.
