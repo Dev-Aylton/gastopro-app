@@ -1135,6 +1135,7 @@ function initOnboarding() {
   const title = document.getElementById('onboardingTitle');
   const text = document.getElementById('onboardingText');
   const icon = document.getElementById('onboardingIcon');
+  const topicActionButton = document.getElementById('onboardingStatementGuideButton');
   const counter = document.getElementById('onboardingCounter');
   const backButton = document.getElementById('onboardingBackBtn');
   const nextButton = document.getElementById('onboardingNextBtn');
@@ -1145,6 +1146,13 @@ function initOnboarding() {
 
   if (!tutorial || !modal || !title || !text || !icon || !counter ||
     !backButton || !nextButton || !skipButton || !closeButton || !topicsContainer) return;
+
+  const statementGuideMount = tutorial.mountStatementGuide(
+    document.getElementById(tutorial.getStatementGuide().triggerContainerId)
+  );
+  if (!statementGuideMount) {
+    console.error('[GastoPro] Não foi possível montar o guia de importação de extrato.');
+  }
 
   const topics = tutorial.getTopics();
   let currentIndex = tutorial.getStartIndex();
@@ -1170,6 +1178,10 @@ function initOnboarding() {
     title.textContent = topic.title;
     text.textContent = topic.text;
     icon.className = topic.icon;
+    if (topicActionButton) {
+      topicActionButton.hidden = !topic.action;
+      topicActionButton.textContent = topic.actionLabel || '';
+    }
     counter.textContent = `${currentIndex + 1} de ${topics.length}`;
     backButton.disabled = currentIndex === 0;
     nextButton.textContent = currentIndex === topics.length - 1 ? 'Concluir' : 'Próximo';
@@ -2258,6 +2270,22 @@ document.addEventListener('DOMContentLoaded', () => {
           details.open = true;
           summary.focus();
           summary.scrollIntoView({ block: 'center' });
+        }
+        break;
+      }
+      case 'open-statement-guide': {
+        const guideModal = document.getElementById('statementGuideModal');
+        if (guideModal) {
+          guideModal.setAttribute('aria-hidden', 'false');
+          guideModal.classList.add('active');
+        }
+        break;
+      }
+      case 'close-statement-guide': {
+        const guideModal = document.getElementById('statementGuideModal');
+        if (guideModal) {
+          guideModal.classList.remove('active');
+          guideModal.setAttribute('aria-hidden', 'true');
         }
         break;
       }

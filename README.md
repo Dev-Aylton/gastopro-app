@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-262%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-265%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -143,7 +143,10 @@ financeiro-app/
 │   ├── icon-192.png           # Ícone PWA 192x192
 │   ├── icon-512.png           # Ícone PWA 512x512
 │   ├── icon-maskable-512.png  # Ícone maskable
-│   └── apple-touch-icon.png   # Ícone para iOS
+│   ├── apple-touch-icon.png   # Ícone para iOS
+│   ├── statement-guide-step-1.svg # Ilustração genérica: localizar extrato
+│   ├── statement-guide-step-2.svg # Ilustração genérica: exportar arquivo
+│   └── statement-guide-step-3.svg # Ilustração genérica: importar e conferir
 ├── css/
 │   └── style.css              # Design System, dark mode, variáveis e animações
 ├── js/
@@ -165,7 +168,7 @@ financeiro-app/
 │       ├── 20261028_delete_my_account.sql # Exclusão de conta; aplicar manualmente no Supabase
 │       └── 20261029_feedback.sql # Canal de contato; aplicar manualmente no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 259 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 265 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -389,7 +392,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **262 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **265 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -560,6 +563,7 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 - [x] **RM-028 — Recuperação de conta e confirmação de e-mail** / Descrição: mensagens neutras e específicas para redefinição, espera visual entre pedidos, confirmação dupla no cadastro e orientação sem consulta a e-mails existentes. / Critério de pronto: testes automatizados aprovados e validação responsiva. / Arquivos: `index.html`, `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-029 — Importação de despesas futuras e restauração de tela** / Descrição: despesas futuras de CSV entram como a pagar; parcelas `N de M` são reconhecidas apenas no CSV; a última tela principal é restaurada com isolamento por usuário e verificação de Admin. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/importer.js`, `js/app.js`, `js/data.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-030 — Evitar gravações duplicadas ao salvar** / Descrição: trava reutilizável de salvamento com estado visual/acessível e espera de sincronização; modo local sem espera. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/app.js`, `tests/gastopro.test.js`.
+- [x] **RM-031 — Guia para obter extrato bancário** / Descrição: guia acessível de três passos com ilustrações genéricas, botão no importador e atalho em Primeiros passos. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/onboarding.js`, `js/app.js`, `css/style.css`, `assets/statement-guide-step-*.svg`, `sw.js`, `tests/gastopro.test.js`.
 
 ---
 
@@ -567,6 +571,7 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 
 ### Planejamento (sem versão)
 
+- RM-031: guia “Como pegar meu extrato” com três ilustrações genéricas, atalho no tutorial Primeiros passos e arquivos SVG adicionados ao cache sem alterar o CACHE_NAME; três testes adicionados.
 - Importação: possíveis duplicados (iguais a lançamentos já salvos) vêm desmarcados, com contagem; linhas repetidas dentro do mesmo arquivo continuam marcadas.
 - RM-030: ações de gravação usam trava compartilhada, estado “Salvando...”/“Ainda sincronizando” e aria-busy; importação bloqueia cancelamento e fechamento durante a gravação; modo local não aguarda sync; três testes adicionados.
 - Ajuste RM-029: logout remove `gastopro_last_view_v1`; o Reset financeiro continua preservando a última tela principal.

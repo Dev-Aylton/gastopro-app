@@ -208,7 +208,7 @@ describe('Tutorial de primeiro acesso', () => {
 
   it('oferece sete tópicos com título, texto e ícone', () => {
     const topics = window.GastoProOnboarding.getTopics();
-    assertEqual(topics.length, 7);
+    assertEqual(topics.length, 8);
     assertTrue(topics.every(topic => topic.title && topic.text && topic.icon));
   });
 
@@ -228,7 +228,7 @@ describe('Tutorial de primeiro acesso', () => {
   it('navega para trás e para frente e fecha ao pular ou concluir', () => {
     assertEqual(window.GastoProOnboarding.navigate(0, 'back'), { index: 0, close: false });
     assertEqual(window.GastoProOnboarding.navigate(0, 'next'), { index: 1, close: false });
-    assertEqual(window.GastoProOnboarding.navigate(6, 'next'), { index: 6, close: true });
+    assertEqual(window.GastoProOnboarding.navigate(7, 'next'), { index: 7, close: true });
     assertEqual(window.GastoProOnboarding.navigate(2, 'skip'), { index: 2, close: true });
   });
 
@@ -2388,6 +2388,62 @@ describe('Acessibilidade dos modais', () => {
       if (overlay) overlay.remove();
       previousFocus.remove();
     }
+  });
+});
+
+describe('Tutorial de importação de extrato', () => {
+  it('inclui um botão no importador e um atalho no passo Primeiros passos', () => {
+    const guide = GastoProOnboarding.getStatementGuide();
+    const topic = GastoProOnboarding.getTopics().find(item =>
+      item.title === 'Comece rápido com o extrato do seu banco'
+    );
+    assertEqual(topic.action, 'open-statement-guide');
+    assertEqual(topic.actionLabel, 'Como pegar meu extrato');
+    const slot = document.createElement('div');
+    document.body.appendChild(slot);
+    const appBaseUrl = new URL('../', document.baseURI);
+    let mounted;
+    try {
+      mounted = GastoProOnboarding.mountStatementGuide(slot, document, appBaseUrl);
+      assertTrue(mounted, 'O guia deve ser criado junto com seu botão');
+      assertEqual(mounted.trigger.id, guide.triggerId);
+      assertEqual(mounted.trigger.dataset.action, topic.action);
+      assertEqual(mounted.trigger.textContent, topic.actionLabel);
+      assertEqual(mounted.modal.id, guide.modalId);
+      assertEqual(mounted.modal.querySelectorAll('.statement-guide-step').length, 3);
+      const illustrations = mounted.modal.querySelectorAll('img.statement-guide-illustration[alt]');
+      assertEqual(illustrations.length, 3);
+      assertTrue(Array.from(illustrations).every(image =>
+        image.getAttribute('loading') === null && image.alt
+      ));
+      assertEqual(mounted.modal.querySelector('.modal-close-btn').dataset.action, 'close-statement-guide');
+    } finally {
+      if (mounted) mounted.modal.remove();
+      slot.remove();
+    }
+  });
+
+  it('contém três passos curtos sem nomes de bancos', () => {
+    const guide = GastoProOnboarding.getStatementGuide();
+    const text = `${guide.steps.map(step => step.text).join(' ')} ${guide.note}`;
+    assertEqual(guide.steps.length, 3);
+    assertTrue(guide.steps[0].text.includes('procure “Extrato”'));
+    assertTrue(guide.steps[1].text.includes('Salvar em Arquivos'));
+    assertTrue(guide.steps[2].text.includes('confira a prévia antes de confirmar'));
+    assertEqual(guide.note, 'O nome dos botões muda de banco para banco.');
+    assertFalse(/\b(nubank|ita[uú]|bradesco|santander|banco do brasil|caixa|inter|c6)\b/i.test(text));
+  });
+
+  itAsync('referencia ilustrações SVG existentes para os três passos', async () => {
+    const guide = GastoProOnboarding.getStatementGuide();
+    const appBaseUrl = new URL('../', document.baseURI);
+    const images = await Promise.all(guide.steps.map(step => new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(step.illustration);
+      image.onerror = () => reject(new Error(`Ilustração não encontrada: ${step.illustration}`));
+      image.src = new URL(step.illustration, appBaseUrl).href;
+    })));
+    assertEqual(images.length, 3);
   });
 });
 

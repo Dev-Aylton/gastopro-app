@@ -4013,6 +4013,83 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   line-height: 1.6;
 }
 
+.onboarding-topic-action {
+  margin-top: 1rem;
+}
+
+.statement-guide-trigger {
+  margin: 0.75rem 0 1rem;
+}
+
+.statement-guide-content {
+  max-width: min(680px, calc(100% - 2rem));
+}
+
+.statement-guide-content .modal-header h2 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 1.2rem;
+}
+
+.statement-guide-steps {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: statement-guide;
+}
+
+.statement-guide-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(100px, 160px) 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  counter-increment: statement-guide;
+}
+
+.statement-guide-step::before {
+  content: counter(statement-guide);
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+  z-index: 1;
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary-bg);
+  color: var(--primary-text);
+  font-weight: 700;
+}
+
+.statement-guide-illustration {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  height: auto;
+}
+
+.statement-guide-step p {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  color: var(--text-main);
+  line-height: 1.5;
+}
+
+.statement-guide-note {
+  margin: 1rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 .onboarding-counter {
   margin: 0 0 0.85rem;
   color: var(--text-muted);
@@ -4047,6 +4124,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 @media (max-width: 420px) {
   .onboarding-modal-content {
     padding: 1.25rem;
+  }
+
+  .statement-guide-step {
+    grid-template-columns: 88px 1fr;
+    gap: 0.65rem;
+    padding: 0.65rem;
   }
 
   .onboarding-navigation {

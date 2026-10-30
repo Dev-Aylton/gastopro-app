@@ -33,7 +33,10 @@ const OPTIONAL_ASSETS = [
   './assets/icon-192.png',
   './assets/icon-512.png',
   './assets/icon-maskable-512.png',
-  './assets/apple-touch-icon.png'
+  './assets/apple-touch-icon.png',
+  './assets/statement-guide-step-1.svg',
+  './assets/statement-guide-step-2.svg',
+  './assets/statement-guide-step-3.svg'
 ];
 const LOCAL_ASSETS = [...ESSENTIAL_ASSETS, ...OPTIONAL_ASSETS];
 const EXTERNAL_ASSETS = [
