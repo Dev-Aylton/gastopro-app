@@ -1063,6 +1063,113 @@ describe('FinanceData — delete()', () => {
 describe('Canal Fale comigo', () => {
   const helpers = window.GastoProFeedbackHelpers;
 
+  it('valida respostas entre 1 e 2000 caracteres após trim', () => {
+    assertNull(helpers.validateReply('  Resposta válida  '));
+    assertNull(helpers.validateReply('a'.repeat(2000)));
+    assertTrue(helpers.validateReply('   ').includes('1 a 2000'));
+    assertTrue(helpers.validateReply('a'.repeat(2001)).includes('1 a 2000'));
+  });
+
+  it('monta o payload de resposta com texto, status e data juntos', () => {
+    const built = helpers.buildReplyPayload('  Obrigado pelo contato  ', '2026-10-29T12:30:00Z');
+    assertNull(built.error);
+    assertEqual(built.payload, {
+      reply: 'Obrigado pelo contato',
+      status: 'answered',
+      replied_at: '2026-10-29T12:30:00.000Z'
+    });
+  });
+
+  it('filtra mensagens pelo status sem alterar a lista original', () => {
+    const messages = [{ status: 'new' }, { status: 'answered' }, { status: 'new' }];
+    assertEqual(helpers.filterByStatus(messages, 'new'), [messages[0], messages[2]]);
+    assertEqual(helpers.filterByStatus(messages, 'answered'), [messages[1]]);
+    assertEqual(helpers.filterByStatus(messages, 'all'), messages);
+    assertEqual(messages.length, 3);
+  });
+
+  it('ordena novas da mais antiga e as demais da mais recente', () => {
+    const messages = [
+      { id: 'c', created_at: '2026-10-30T00:00:00Z' },
+      { id: 'a', created_at: '2026-10-28T00:00:00Z' },
+      { id: 'b', created_at: '2026-10-29T00:00:00Z' }
+    ];
+    assertEqual(helpers.sortMessages(messages, 'new').map(item => item.id), ['a', 'b', 'c']);
+    assertEqual(helpers.sortMessages(messages, 'answered').map(item => item.id), ['c', 'b', 'a']);
+    assertEqual(helpers.sortMessages(messages, 'all').map(item => item.id), ['c', 'b', 'a']);
+  });
+
+  it('conta novas e cria rótulos neutros sequenciais', () => {
+    assertEqual(helpers.countNew([{ status: 'new' }, { status: 'answered' }, { status: 'new' }]), 2);
+    assertEqual(helpers.getAdminLabel(0), 'Mensagem #1');
+    assertEqual(helpers.getAdminLabel(2), 'Mensagem #3');
+  });
+
+  itAsync('checkIsAdmin falha fechado em erro ou resposta inesperada', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const authenticatedClient = rpcResult => ({
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: '550e8400-e29b-41d4-a716-446655440001' } } },
+          error: null
+        })
+      },
+      rpc: async () => rpcResult
+    });
+    try {
+      window.SupabaseAuth.client = authenticatedClient({ data: true, error: new Error('offline') });
+      assertFalse(await window.SupabaseAuth.checkIsAdmin());
+      window.SupabaseAuth.client = authenticatedClient({ data: { is_admin: true }, error: null });
+      assertFalse(await window.SupabaseAuth.checkIsAdmin());
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('lista administrativa seleciona apenas campos sem identificador do autor', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    let selectedColumns = '';
+    const rows = [{
+      id: '550e8400-e29b-41d4-a716-446655440002',
+      category: 'duvida',
+      message: 'Mensagem de teste',
+      status: 'new',
+      reply: null,
+      replied_at: null,
+      created_at: '2026-10-29T12:00:00Z'
+    }];
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: '550e8400-e29b-41d4-a716-446655440001' } } },
+          error: null
+        })
+      },
+      rpc: async () => ({ data: true, error: null }),
+      from(table) {
+        assertEqual(table, 'feedback_messages');
+        return {
+          select(columns) {
+            selectedColumns = columns;
+            return this;
+          },
+          eq() { return this; },
+          order() { return this; },
+          range: async () => ({ data: rows, error: null })
+        };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.fetchAllFeedback({ status: 'new', limit: 20, offset: 0 });
+      assertTrue(result.success);
+      assertEqual(selectedColumns, 'id, category, message, status, reply, replied_at, created_at');
+      assertFalse(selectedColumns.includes('user_id'));
+      assertEqual(result.messages, rows);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
   it('valida categoria e mensagem entre 10 e 1000 caracteres após trim', () => {
     assertNull(helpers.validateMessage('duvida', '  mensagem válida  '));
     assertNull(helpers.validateMessage('problema', 'a'.repeat(1000)));

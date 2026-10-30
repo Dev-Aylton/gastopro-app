@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-238%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-245%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -90,6 +90,7 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 - Cadastro e login com e-mail e senha, recuperação de senha por e-mail e sincronização multiusuário.
 - Dados isolados por usuário via Row Level Security (RLS).
 - Canal "Fale comigo" para usuários logados enviarem mensagens, acompanharem respostas e excluírem suas conversas; conteúdo fica somente no Supabase.
+- Área Admin para administradores confirmados pelo RPC `is_admin()`, com mensagens paginadas, filtros e respostas; RLS continua sendo a proteção efetiva.
 - Nome e foto de perfil personalizados e sincronizados com `profiles` ao usar login; imagens JPEG, PNG ou WebP podem ser recortadas e salvas como JPEG 256×256.
 - Status da conta Conectado (Nuvem) ou Modo Local.
 - Exportação de backup JSON e restauração com prévia, mesclagem por ID ou substituição.
@@ -146,7 +147,7 @@ financeiro-app/
 ├── css/
 │   └── style.css              # Design System, dark mode, variáveis e animações
 ├── js/
-│   ├── app.js                 # Controller: telas, renderização, contas, eventos, gráficos e auth
+│   ├── app.js                 # Controller: telas, renderização, contas, eventos, gráficos, auth e área Admin
 │   ├── theme.js               # Aplica antecipadamente o tema salvo no aparelho
 │   ├── data.js                # Camada de dados: CRUD local e sincronização
 │   ├── supabase.js            # Autenticação e persistência Supabase
@@ -263,7 +264,11 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 - `sendFeedback({ category, message })`: envia uma mensagem autenticada diretamente a `feedback_messages`; não usa armazenamento local nem fila offline.
 - `fetchMyFeedback()`: busca as mensagens do usuário autenticado, incluindo respostas.
 - `deleteMyFeedback(id)`: exclui uma mensagem própria após confirmação na interface.
-- `GastoProFeedbackHelpers` oferece validação de categoria/texto, rótulos de status e contagem para o formulário.
+- `checkIsAdmin()`: confirma o acesso pela RPC `is_admin()` e falha fechado.
+- `countNewFeedback()`: conta mensagens novas somente após confirmar acesso administrativo.
+- `fetchAllFeedback({ status, limit, offset })`: lista mensagens administrativas paginadas, selecionando somente `id`, `category`, `message`, `status`, `reply`, `replied_at` e `created_at`; nunca solicita `user_id`.
+- `replyFeedback(id, reply)`: grava resposta, status respondido e data juntos após validação.
+- `GastoProFeedbackHelpers` oferece validação, filtro, ordenação, contagem e rótulos neutros para a área administrativa, além dos helpers do formulário de contato.
 
 ### API pública de `FinanceData` (`js/data.js`)
 
@@ -384,7 +389,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **238 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **245 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -396,6 +401,7 @@ Suite com **238 casos de teste** em JavaScript puro, sem frameworks. Os testes u
 | `Interface — filtros e opções de contas` | Seleção de saldo consolidado/PF/PJ e opções dos campos de conta. |
 | `Tema — preferência local` | Normalização, tema inicial escuro e alternância de tema. |
 | `Canal Fale comigo` | API autenticada, validação, status, contador, erros amigáveis e isolamento das mensagens em relação a backup e Reset. |
+| `Admin — mensagens de contato` | Validação e payload de resposta, filtros, ordenação, contagem, rótulos neutros, falha fechada e seleção explícita sem identificador do autor. |
 | `Exclusão de conta do usuário` | RPC, resposta de sucesso/erro, texto exato de confirmação, limpeza dos dados/sessão locais e preservação após falha. |
 | `FinanceData — Templates de Gastos Fixos` | Leitura e gravação de templates. |
 | `FinanceData — add() Lançamentos` | Inserção de tipos de lançamento. |
@@ -568,11 +574,13 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 - Validação estrita do backup JSON impede restauração parcial de dados inválidos e mantém compatibilidade com backups antigos.
 - Erros ao verificar a sessão preservam os dados locais; merges da nuvem respeitam alterações e exclusões pendentes.
 - Nome e foto agora são sincronizados com `profiles` sob RLS; o modal de recorte do avatar permite arrastar, teclado e zoom, e o backup permanece sem dados de perfil.
+- Área Admin de mensagens: confirmação de acesso por `is_admin()`, lista paginada sem identificador do autor, filtros e respostas com atualização atômica dos campos no app; adicionados sete testes.
 - Tema claro em preparação: a folha de estilos usa tokens semânticos com paleta escura preservada e uma paleta clara em validação.
 - Tutorial de primeiro acesso com dicas sobre lançamentos, contas fixas, dívidas, metas, importação, relatórios e dados; disponível novamente em “Como usar” no perfil.
 - RM-025 parte B: tela e modais de contas PF/PJ, vínculos em ganhos/gastos, saldo consolidado filtrável no Dashboard e duas funções puras cobertas por testes; cache do Service Worker atualizado.
 - Tema claro/escuro alternável no cabeçalho, escolhido no carregamento antes dos estilos e persistido por aparelho; limpeza de dados e restauração de backup preservam a preferência.
 - Canal "Fale comigo": mensagens autenticadas e respostas armazenadas somente no Supabase, com exclusão pelo usuário, limite de envio e migração SQL pendente de aplicação manual.
+- Ajustes responsivos para telas estreitas e reorganização do Painel do Usuário: ações irreversíveis recolhidas por padrão, logout neutro e correções de alinhamento e overflow.
 
 ### v4.0 — 28/10/2026 (versão atual)
 

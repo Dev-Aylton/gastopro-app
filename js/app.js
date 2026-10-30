@@ -166,6 +166,22 @@ const feedbackViewState = {
   noticeType: 'status'
 };
 
+const adminViewState = {
+  access: 'unknown',
+  filter: 'new',
+  messages: [],
+  offset: 0,
+  hasMore: false,
+  loading: false,
+  saving: false,
+  editingId: null,
+  draftReply: '',
+  newCount: 0,
+  notice: '',
+  noticeType: 'status',
+  requestId: 0
+};
+
 // ================================================================
 // 2. CONSTANTES
 // ================================================================
@@ -182,7 +198,8 @@ const VIEW_TITLES = {
   incomes:   'Gerenciador de Ganhos do Mês',
   expenses:  'Gerenciador de Gastos do Mês',
   accounts:  'Contas',
-  contact:   'Fale comigo'
+  contact:   'Fale comigo',
+  admin:     'Admin'
 };
 
 // ================================================================
@@ -379,6 +396,191 @@ async function loadMyFeedback(preserveNotice = false) {
   }
 }
 
+function updateAdminNavigation() {
+  const navItem = document.getElementById('navAdmin');
+  const badge = document.getElementById('adminNewCount');
+  if (!navItem || !badge) return;
+  const isAdmin = adminViewState.access === 'allowed';
+  navItem.hidden = !isAdmin;
+  badge.textContent = String(adminViewState.newCount);
+  badge.setAttribute('aria-label', `${adminViewState.newCount} mensagens novas`);
+  badge.hidden = !isAdmin || adminViewState.newCount === 0;
+}
+
+function resetAdminSession() {
+  adminViewState.requestId++;
+  adminViewState.access = 'denied';
+  adminViewState.messages = [];
+  adminViewState.offset = 0;
+  adminViewState.hasMore = false;
+  adminViewState.loading = false;
+  adminViewState.saving = false;
+  adminViewState.editingId = null;
+  adminViewState.draftReply = '';
+  adminViewState.newCount = 0;
+  adminViewState.notice = '';
+  updateAdminNavigation();
+  if (state.currentView === 'admin') renderAdminView();
+}
+
+function renderAdminView() {
+  const container = document.getElementById('adminContent');
+  if (!container) return;
+  if (adminViewState.access !== 'allowed') {
+    container.innerHTML = adminViewState.access === 'denied'
+      ? '<div class="empty-state" role="status">Área restrita</div>'
+      : '<p role="status" aria-live="polite">Verificando acesso...</p>';
+    return;
+  }
+
+  const helper = window.GastoProFeedbackHelpers;
+  const cards = adminViewState.messages.map((message, index) => {
+    const label = helper.getAdminLabel(index);
+    const category = helper.categories[message.category] || 'Mensagem';
+    const editing = adminViewState.editingId === message.id;
+    return `
+      <article class="manage-item-card admin-feedback-card">
+        <div class="feedback-message-content">
+          <div class="feedback-message-heading">
+            <strong>${escapeHtml(label)}</strong>
+            <span class="tag-badge">${escapeHtml(category)}</span>
+            <span class="tag-badge feedback-status-badge ${message.status === 'answered' ? 'is-answered' : ''}">
+              ${message.status === 'answered' ? 'Respondida' : 'Nova'}
+            </span>
+            <time datetime="${escapeHtml(message.created_at || '')}">${escapeHtml(formatFeedbackDate(message.created_at))}</time>
+          </div>
+          <p class="feedback-message-text">${escapeHtml(message.message)}</p>
+          ${message.reply && !editing ? `
+            <div class="feedback-reply">
+              <strong>Resposta atual</strong>
+              <p class="feedback-message-text">${escapeHtml(message.reply)}</p>
+            </div>
+          ` : ''}
+          ${editing ? `
+            <div class="admin-reply-editor">
+              <label for="adminReplyText">Resposta para ${escapeHtml(label)}</label>
+              <textarea id="adminReplyText" maxlength="2000" rows="5">${escapeHtml(adminViewState.draftReply)}</textarea>
+              <div class="feedback-text-meta">
+                <span id="adminReplyCount" aria-live="polite">${helper.getCharacterCount(adminViewState.draftReply)}/2000</span>
+              </div>
+              <div class="admin-reply-actions">
+                <button type="button" class="btn-primary admin-action-button" data-action="admin-send-reply" data-id="${escapeHtml(message.id)}" ${adminViewState.saving ? 'disabled' : ''}>
+                  ${adminViewState.saving ? 'Enviando...' : 'Enviar'}
+                </button>
+                <button type="button" class="btn-secondary admin-action-button" data-action="admin-cancel-reply" ${adminViewState.saving ? 'disabled' : ''}>Cancelar</button>
+              </div>
+            </div>
+          ` : `
+            <button type="button" class="btn-secondary admin-action-button" data-action="admin-reply" data-id="${escapeHtml(message.id)}">
+              ${message.reply ? 'Editar resposta' : 'Responder'}
+            </button>
+          `}
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="filter-buttons admin-feedback-filters" role="group" aria-label="Filtrar mensagens">
+      <button type="button" class="filter-btn ${adminViewState.filter === 'new' ? 'active' : ''}" data-action="admin-filter" data-filter="new" aria-pressed="${adminViewState.filter === 'new'}">Novas</button>
+      <button type="button" class="filter-btn ${adminViewState.filter === 'answered' ? 'active' : ''}" data-action="admin-filter" data-filter="answered" aria-pressed="${adminViewState.filter === 'answered'}">Respondidas</button>
+      <button type="button" class="filter-btn ${adminViewState.filter === 'all' ? 'active' : ''}" data-action="admin-filter" data-filter="all" aria-pressed="${adminViewState.filter === 'all'}">Todas</button>
+    </div>
+    <p class="admin-feedback-notice ${adminViewState.noticeType === 'error' ? 'feedback-notice-error' : ''}" role="${adminViewState.noticeType === 'error' ? 'alert' : 'status'}" aria-live="polite">${escapeHtml(adminViewState.notice)}</p>
+    ${adminViewState.loading && !adminViewState.messages.length ? '<p role="status">Carregando mensagens...</p>' : ''}
+    ${!adminViewState.loading && !adminViewState.messages.length
+      ? '<div class="empty-state">Nenhuma mensagem nesta categoria.</div>'
+      : `<div class="items-cards-list">${cards}</div>`}
+    ${adminViewState.hasMore ? `
+      <button type="button" class="btn-secondary admin-load-more" data-action="admin-load-more" ${adminViewState.loading ? 'disabled' : ''}>
+        ${adminViewState.loading ? 'Carregando...' : 'Carregar mais'}
+      </button>
+    ` : ''}
+  `;
+}
+
+async function refreshAdminBadge() {
+  const requestId = ++adminViewState.requestId;
+  const isAdmin = await window.SupabaseAuth.checkIsAdmin();
+  if (requestId !== adminViewState.requestId) return false;
+  adminViewState.access = isAdmin ? 'allowed' : 'denied';
+  if (!isAdmin) {
+    adminViewState.newCount = 0;
+    adminViewState.messages = [];
+    adminViewState.editingId = null;
+  } else {
+    const result = await window.SupabaseAuth.countNewFeedback();
+    if (requestId !== adminViewState.requestId) return false;
+    if (result.success) {
+      adminViewState.newCount = result.count;
+    } else {
+      adminViewState.newCount = 0;
+      console.warn('[GastoPro] Não foi possível atualizar o contador de mensagens novas:', result.error);
+    }
+  }
+  updateAdminNavigation();
+  if (state.currentView === 'admin') renderAdminView();
+  return isAdmin;
+}
+
+async function loadAdminMessages({ reset = false } = {}) {
+  if (adminViewState.access !== 'allowed' || adminViewState.loading) return;
+  if (reset) {
+    adminViewState.messages = [];
+    adminViewState.offset = 0;
+    adminViewState.hasMore = false;
+  }
+  const requestId = ++adminViewState.requestId;
+  const offset = adminViewState.offset;
+  adminViewState.loading = true;
+  renderAdminView();
+  try {
+    const result = await window.SupabaseAuth.fetchAllFeedback({
+      status: adminViewState.filter,
+      limit: 20,
+      offset
+    });
+    if (requestId !== adminViewState.requestId || state.currentView !== 'admin') return;
+    if (!result.success) {
+      adminViewState.notice = result.error;
+      adminViewState.noticeType = 'error';
+      return;
+    }
+    adminViewState.messages = reset
+      ? result.messages
+      : [...adminViewState.messages, ...result.messages];
+    adminViewState.offset = offset + result.messages.length;
+    adminViewState.hasMore = result.messages.length === 20;
+    adminViewState.notice = '';
+  } catch (error) {
+    if (requestId !== adminViewState.requestId) return;
+    console.error('[GastoPro] Não foi possível carregar mensagens administrativas:', error);
+    adminViewState.notice = 'Não foi possível carregar as mensagens. Tente novamente.';
+    adminViewState.noticeType = 'error';
+  } finally {
+    if (requestId === adminViewState.requestId) {
+      adminViewState.loading = false;
+      renderAdminView();
+    }
+  }
+}
+
+async function openAdminView() {
+  adminViewState.access = 'checking';
+  adminViewState.messages = [];
+  adminViewState.offset = 0;
+  adminViewState.hasMore = false;
+  adminViewState.loading = false;
+  adminViewState.notice = '';
+  renderAdminView();
+  const isAdmin = await refreshAdminBadge();
+  if (!isAdmin || state.currentView !== 'admin') {
+    if (state.currentView === 'admin') renderAdminView();
+    return;
+  }
+  await loadAdminMessages({ reset: true });
+}
+
 function getDailyBudgetInfo(balance, year, month, today) {
   const currentYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const targetYm = `${year}-${String(month).padStart(2, '0')}`;
@@ -480,6 +682,12 @@ window.switchToView = function(viewId) {
   // Re-renderiza toda a interface para refletir a tela ativa
   renderAll();
   if (viewId === 'contact') loadMyFeedback();
+  if (viewId === 'admin') {
+    openAdminView();
+  } else {
+    adminViewState.requestId++;
+    adminViewState.loading = false;
+  }
 };
 
 // ================================================================
@@ -543,6 +751,8 @@ function renderAll() {
   renderExpensesView(allFixed, variables, totalFixed, totalVariable, totalExpenses);
   renderAccountsView();
   renderContactView();
+  renderAdminView();
+  updateAdminNavigation();
 }
 
 function updateAccountSelects() {
@@ -1947,6 +2157,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const { action, id } = actionElement.dataset;
     switch (action) {
+      case 'open-irreversible-actions': {
+        const details = document.getElementById('irreversibleActions');
+        const summary = details?.querySelector('summary');
+        if (details && summary) {
+          details.open = true;
+          summary.focus();
+          summary.scrollIntoView({ block: 'center' });
+        }
+        break;
+      }
+      case 'admin-filter': {
+        const filter = actionElement.dataset.filter;
+        if (!['new', 'answered', 'all'].includes(filter)) break;
+        adminViewState.filter = filter;
+        adminViewState.editingId = null;
+        adminViewState.draftReply = '';
+        adminViewState.notice = '';
+        loadAdminMessages({ reset: true });
+        break;
+      }
+      case 'admin-reply': {
+        if (adminViewState.access !== 'allowed') break;
+        const message = adminViewState.messages.find(item => item.id === id);
+        if (!message) break;
+        adminViewState.editingId = id;
+        adminViewState.draftReply = message.reply || '';
+        adminViewState.notice = '';
+        renderAdminView();
+        document.getElementById('adminReplyText')?.focus();
+        break;
+      }
+      case 'admin-send-reply':
+        saveAdminReply(id);
+        break;
+      case 'admin-cancel-reply':
+        adminViewState.editingId = null;
+        adminViewState.draftReply = '';
+        adminViewState.notice = '';
+        renderAdminView();
+        break;
+      case 'admin-load-more':
+        loadAdminMessages();
+        break;
       case 'send-feedback': {
         e.preventDefault();
         const form = actionElement.closest('#feedbackForm');
@@ -2001,6 +2254,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.addEventListener('input', (e) => {
     if (!(e.target instanceof Element)) return;
+    if (e.target.id === 'adminReplyText') {
+      adminViewState.draftReply = e.target.value;
+      const count = document.getElementById('adminReplyCount');
+      if (count) count.textContent = `${window.GastoProFeedbackHelpers.getCharacterCount(e.target.value)}/2000`;
+      return;
+    }
     if (e.target.id !== 'feedbackMessage') return;
     feedbackViewState.draftMessage = e.target.value;
     const counter = document.getElementById('feedbackCharacterCount');
@@ -2054,6 +2313,46 @@ document.addEventListener('DOMContentLoaded', () => {
     feedbackViewState.notice = 'Mensagem enviada. Vou responder quando possível.';
     feedbackViewState.noticeType = 'status';
     await loadMyFeedback(true);
+  }
+
+  async function saveAdminReply(messageId) {
+    if (adminViewState.access !== 'allowed' || adminViewState.saving) return;
+    const validationError = window.GastoProFeedbackHelpers.validateReply(adminViewState.draftReply);
+    if (validationError) {
+      adminViewState.notice = validationError;
+      adminViewState.noticeType = 'error';
+      renderAdminView();
+      return;
+    }
+    const reply = adminViewState.draftReply.trim();
+    adminViewState.saving = true;
+    adminViewState.notice = '';
+    renderAdminView();
+    const result = await window.SupabaseAuth.replyFeedback(messageId, reply);
+    adminViewState.saving = false;
+    if (!result.success) {
+      adminViewState.notice = result.error;
+      adminViewState.noticeType = 'error';
+      renderAdminView();
+      return;
+    }
+
+    adminViewState.editingId = null;
+    adminViewState.draftReply = '';
+    adminViewState.notice = 'Resposta enviada.';
+    adminViewState.noticeType = 'status';
+    await refreshAdminBadge();
+    if (adminViewState.filter === 'new') {
+      await loadAdminMessages({ reset: true });
+    } else {
+      const message = adminViewState.messages.find(item => item.id === messageId);
+      if (message) {
+        message.reply = reply;
+        message.status = 'answered';
+        message.replied_at = new Date().toISOString();
+      }
+      renderAdminView();
+    }
   }
 
   function deleteFeedbackMessage(messageId) {
@@ -2786,17 +3085,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Atualiza status de Conta & Autenticação no Drawer
     const accountGuestCard   = document.getElementById('accountGuestCard');
     const accountLoggedCard  = document.getElementById('accountLoggedCard');
+    const deleteAccountAction = document.getElementById('deleteAccountAction');
     const loggedUserEmail    = document.getElementById('loggedUserEmail');
     const accountStatusText  = document.getElementById('accountStatusText');
 
     if (profile.email) {
       if (accountGuestCard)  accountGuestCard.style.display = 'none';
       if (accountLoggedCard) accountLoggedCard.style.display = 'flex';
+      if (deleteAccountAction) deleteAccountAction.hidden = false;
       if (loggedUserEmail)   loggedUserEmail.textContent = profile.email;
       if (accountStatusText) accountStatusText.textContent = 'Conta Conectada (Nuvem)';
     } else {
       if (accountGuestCard)  accountGuestCard.style.display = 'flex';
       if (accountLoggedCard) accountLoggedCard.style.display = 'none';
+      if (deleteAccountAction) deleteAccountAction.hidden = true;
       if (accountStatusText) {
         accountStatusText.textContent = 'Modo Local (Não conectado)';
       }
@@ -3149,6 +3451,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function clearUserSessionData() {
+    resetAdminSession();
     try {
       FinanceData.clearUserData();
     } catch (e) {
@@ -3229,6 +3532,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       if (event === 'SIGNED_OUT' || (!user && event === 'TOKEN_REFRESHED')) {
+        resetAdminSession();
         feedbackViewState.requestId++;
         feedbackViewState.loading = false;
         feedbackViewState.mode = 'signed_out';
@@ -3253,10 +3557,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       feedbackViewState.userId = user.id;
       const switchedUser = FinanceData.activateUser(user.id);
+      if (switchedUser) resetAdminSession();
       if (switchedUser || event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-        prepareAuthenticatedUser(user).then(profile => {
+        prepareAuthenticatedUser(user).then(async profile => {
           if (!profile) return false;
+          await refreshAdminBadge();
           if (state.currentView === 'contact') loadMyFeedback();
+          if (state.currentView === 'admin') openAdminView();
           if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
             return syncUserDataFromCloud(user.id);
           }
@@ -5036,7 +5343,10 @@ document.addEventListener('DOMContentLoaded', () => {
       renderAll();
       document.body.classList.remove('auth-checking');
 
+      if (user) await refreshAdminBadge();
+      else resetAdminSession();
       if (user && state.currentView === 'contact') loadMyFeedback();
+      if (user && state.currentView === 'admin') openAdminView();
       if (user) await syncUserDataFromCloud(user.id);
     })();
     try {

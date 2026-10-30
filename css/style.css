@@ -396,6 +396,10 @@ body {
   position: relative;
 }
 
+#navAdmin[hidden] {
+  display: none;
+}
+
 .nav-item i {
   font-size: 1.15rem;
   width: 22px;
@@ -560,6 +564,8 @@ body {
   border: none;
   cursor: pointer;
   padding: 0;
+  flex: 0 0 auto;
+  aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -628,6 +634,10 @@ body {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.profile-drawer[aria-hidden="true"] {
+  box-shadow: none;
+}
+
 .profile-drawer.open {
   transform: translateX(0);
 }
@@ -676,6 +686,7 @@ body {
 .drawer-user-card {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 1rem;
   background: var(--bg-input);
   border: 1px solid rgba(var(--theme-rgb-border-ffffff), 0.04);
@@ -684,10 +695,9 @@ body {
 }
 
 .drawer-user-avatar {
-  width: 48px;
-  height: 48px;
   width: 52px;
   height: 52px;
+  flex: 0 0 52px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--primary), var(--theme-background-3b82f6));
   color: var(--theme-text-ffffff);
@@ -742,7 +752,14 @@ body {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
   margin-bottom: 0.2rem;
+}
+
+.drawer-user-info {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .profile-name-input {
@@ -753,7 +770,9 @@ body {
   font-weight: 700 !important;
   padding: 0.35rem 0.65rem !important;
   border-radius: var(--radius-sm) !important;
-  width: 170px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  flex: 1 1 0;
   transition: border-color 0.2s, background 0.2s;
 }
 
@@ -826,6 +845,7 @@ body {
   cursor: pointer;
   transition: all 0.2s;
   width: 100%;
+  min-width: 0;
 }
 
 .drawer-action-btn:hover {
@@ -879,6 +899,7 @@ body {
 
 .action-icon {
   width: 36px;
+  min-width: 36px;
   height: 36px;
   border-radius: var(--radius-sm);
   display: flex;
@@ -894,7 +915,21 @@ body {
 .action-text {
   display: flex;
   flex-direction: column;
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+.action-text strong,
+.action-text span {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .action-text strong {
   font-size: 0.88rem;
   color: var(--theme-text-ffffff);
@@ -902,6 +937,100 @@ body {
 .action-text span {
   font-size: 0.75rem;
   color: var(--text-dim);
+}
+
+.irreversible-actions-hint {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.drawer-inline-link {
+  display: inline;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary-text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.irreversible-actions {
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.irreversible-actions-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-height: 44px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.irreversible-actions-summary::-webkit-details-marker {
+  display: none;
+}
+
+.irreversible-actions:not([open]) > .irreversible-action {
+  display: none;
+}
+
+.irreversible-actions[open] > .irreversible-action {
+  display: flex;
+}
+
+.irreversible-actions-summary > i {
+  flex: 0 0 36px;
+  color: var(--warning);
+  text-align: center;
+}
+
+.irreversible-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+  padding-top: 0.75rem;
+}
+
+.irreversible-action p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.irreversible-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--danger-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.irreversible-action-button:hover {
+  background: var(--danger-bg);
+}
+
+#deleteAccountAction[hidden] {
+  display: none;
 }
 
 .drawer-tip {
@@ -2212,6 +2341,61 @@ button:active { transform: scale(0.98); }
   color: var(--primary-text);
 }
 
+.admin-panel,
+.admin-feedback-card {
+  min-width: 0;
+}
+
+.admin-feedback-filters {
+  margin-bottom: 1rem;
+}
+
+.admin-feedback-notice {
+  min-height: 1.25rem;
+  margin-bottom: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-reply-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.admin-reply-editor label {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.admin-reply-editor textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 16px;
+  resize: vertical;
+}
+
+.admin-reply-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.admin-action-button,
+.admin-load-more {
+  min-height: 44px;
+}
+
+.admin-load-more {
+  margin-top: 1rem;
+}
+
 /* ================================================================
    9. MODAL DE EDIÇÃO
    ================================================================ */
@@ -2315,8 +2499,8 @@ button:active { transform: scale(0.98); }
 
 .avatar-crop-frame {
   position: relative;
-  width: min(256px, 70vw);
-  height: min(256px, 70vw);
+  width: min(256px, 100%);
+  aspect-ratio: 1;
   margin: 1.25rem auto;
   overflow: hidden;
   border-radius: 50%;
@@ -2455,10 +2639,11 @@ button:active { transform: scale(0.98); }
 @media (max-width: 900px) {
   .sidebar {
     transform: translateX(-100%);
-    box-shadow: 10px 0 30px rgba(var(--theme-rgb-shadow-000000), 0.7);
+    box-shadow: none;
   }
   .sidebar.open {
     transform: translateX(0);
+    box-shadow: 10px 0 30px rgba(var(--theme-rgb-shadow-000000), 0.7);
   }
   .sidebar-close-btn {
     display: flex;
@@ -2893,6 +3078,152 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   }
 }
 
+@media (max-width: 480px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-areas:
+      "menu actions"
+      "month month";
+    align-items: center;
+    column-gap: 0.5rem;
+    row-gap: 0.5rem;
+  }
+
+  .topbar-left {
+    grid-area: menu;
+    min-width: 44px;
+  }
+
+  .topbar-right {
+    grid-area: actions;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .topbar-refresh-btn,
+  .theme-toggle-btn,
+  .user-avatar-btn,
+  .menu-toggle-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
+  }
+
+  .user-avatar-sm {
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    aspect-ratio: 1;
+    flex: 0 0 38px;
+  }
+
+  .month-selector-bar {
+    grid-area: month;
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .month-selector-bar .btn-icon {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+  }
+
+  .current-month-display {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .profile-drawer {
+    box-shadow: none;
+  }
+
+  .profile-drawer.open {
+    box-shadow: -8px 0 30px rgba(var(--theme-rgb-shadow-000000), 0.7);
+  }
+
+  .profile-name-edit-row {
+    gap: 0.35rem;
+  }
+
+  .profile-name-input {
+    flex: 1 1 0;
+  }
+
+  .filter-tabs-row,
+  .filter-buttons,
+  .expenses-subtotals {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .filter-tabs-row > *,
+  .filter-buttons > * {
+    min-width: 0;
+  }
+
+  .expenses-subtotals {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    column-gap: 0.5rem;
+    row-gap: 0.35rem;
+  }
+
+  .expenses-subtotals > * {
+    min-width: 0;
+  }
+
+  .wizard-add-row {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .wizard-input {
+    min-width: 0;
+  }
+
+  .wizard-input-amount {
+    flex: 0 1 120px;
+  }
+
+  .wizard-input-date {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .btn-auth-guest {
+    width: 100%;
+    max-width: 100%;
+    justify-content: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .import-tabs,
+  .import-tab-btn {
+    min-width: 0;
+  }
+
+  .import-tab-btn {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* ================================================================
    14. ESTILOS DE STATUS ATIVO / INATIVO PARA GASTOS FIXOS
    ================================================================ */
@@ -3024,10 +3355,11 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 
 .btn-auth-logout {
   width: 100%;
+  min-height: 44px;
   padding: 0.55rem;
-  background: rgba(var(--theme-rgb-background-ef4444), 0.12);
-  color: var(--danger-text);
-  border: 1px solid rgba(var(--theme-rgb-border-ef4444), 0.25);
+  background: transparent;
+  color: var(--text-main);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 0.85rem;
   font-weight: 600;
@@ -3040,7 +3372,8 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 }
 
 .btn-auth-logout:hover {
-  background: rgba(var(--theme-rgb-background-ef4444), 0.22);
+  background: var(--bg-input);
+  border-color: var(--primary-text);
 }
 
 .btn-delete-account {

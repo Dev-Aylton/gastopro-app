@@ -103,11 +103,63 @@ function getFeedbackCharacterCount(message) {
   return typeof message === 'string' ? message.length : 0;
 }
 
+function validateFeedbackReply(reply) {
+  if (typeof reply !== 'string') return 'A resposta deve ter de 1 a 2000 caracteres.';
+  const trimmedReply = reply.trim();
+  return trimmedReply.length >= 1 && trimmedReply.length <= 2000
+    ? null
+    : 'A resposta deve ter de 1 a 2000 caracteres após remover espaços extras.';
+}
+
+function buildFeedbackReplyPayload(reply, repliedAt) {
+  const validationError = validateFeedbackReply(reply);
+  if (validationError) return { error: validationError, payload: null };
+  const timestamp = new Date(repliedAt);
+  if (Number.isNaN(timestamp.getTime())) {
+    return { error: 'Não foi possível registrar a data da resposta.', payload: null };
+  }
+  return {
+    error: null,
+    payload: {
+      reply: reply.trim(),
+      status: 'answered',
+      replied_at: timestamp.toISOString()
+    }
+  };
+}
+
+function filterFeedbackByStatus(messages, status = 'all') {
+  if (status === 'all') return messages.slice();
+  return messages.filter(message => message.status === status);
+}
+
+function sortFeedbackMessages(messages, status = 'all') {
+  const direction = status === 'new' ? 1 : -1;
+  return messages.slice().sort((left, right) => {
+    const timeDifference = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+    return timeDifference === 0 ? String(left.id).localeCompare(String(right.id)) : timeDifference * direction;
+  });
+}
+
+function countNewFeedback(messages) {
+  return messages.filter(message => message.status === 'new').length;
+}
+
+function getFeedbackAdminLabel(index) {
+  return `Mensagem #${Number(index) + 1}`;
+}
+
 window.GastoProFeedbackHelpers = {
   categories: FEEDBACK_CATEGORIES,
   validateMessage: validateFeedbackMessage,
   getStatusLabel: getFeedbackStatusLabel,
-  getCharacterCount: getFeedbackCharacterCount
+  getCharacterCount: getFeedbackCharacterCount,
+  validateReply: validateFeedbackReply,
+  buildReplyPayload: buildFeedbackReplyPayload,
+  filterByStatus: filterFeedbackByStatus,
+  sortMessages: sortFeedbackMessages,
+  countNew: countNewFeedback,
+  getAdminLabel: getFeedbackAdminLabel
 };
 
 const SupabaseAuth = {
@@ -179,6 +231,80 @@ const SupabaseAuth = {
     const user = await this.getSessionUser();
     if (!user || (expectedUserId && user.id !== expectedUserId)) return null;
     return user.id;
+  },
+
+  async checkIsAdmin() {
+    if (!this.client) return false;
+    try {
+      const sessionState = await this.getSessionState();
+      if (sessionState.status !== 'authenticated') return false;
+      const { data, error } = await this.client.rpc('is_admin');
+      return !error && data === true;
+    } catch (error) {
+      console.warn('[Supabase] Não foi possível confirmar acesso administrativo:', error);
+      return false;
+    }
+  },
+
+  async countNewFeedback() {
+    if (!this.client || !(await this.checkIsAdmin())) {
+      return { success: false, error: 'Acesso restrito.' };
+    }
+    try {
+      const { count, error } = await this.client.from('feedback_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'new');
+      if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
+      return { success: true, count: Number(count) || 0 };
+    } catch (error) {
+      return { success: false, error: this.getFeedbackErrorMessage(error) };
+    }
+  },
+
+  async fetchAllFeedback({ status = 'all', limit = 20, offset = 0 } = {}) {
+    if (!['new', 'answered', 'all'].includes(status)) {
+      return { success: false, error: 'O filtro de mensagens é inválido.' };
+    }
+    const safeLimit = Math.min(100, Math.max(1, Math.floor(Number(limit) || 20)));
+    const safeOffset = Math.max(0, Math.floor(Number(offset) || 0));
+    if (!this.client || !(await this.checkIsAdmin())) {
+      return { success: false, error: 'Área restrita.' };
+    }
+    try {
+      let query = this.client.from('feedback_messages')
+        .select('id, category, message, status, reply, replied_at, created_at')
+        .order('created_at', { ascending: status === 'new' });
+      if (status !== 'all') query = query.eq('status', status);
+      const { data, error } = await query.range(safeOffset, safeOffset + safeLimit - 1);
+      if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
+      if (!Array.isArray(data) || data.some(item =>
+        !item || typeof item !== 'object' ||
+        ['user_id', 'name', 'email'].some(key => Object.prototype.hasOwnProperty.call(item, key))
+      )) {
+        return { success: false, error: 'A resposta do servidor contém dados inesperados.' };
+      }
+      return { success: true, messages: data };
+    } catch (error) {
+      return { success: false, error: this.getFeedbackErrorMessage(error) };
+    }
+  },
+
+  async replyFeedback(id, reply) {
+    if (!isValidCloudUuid(id)) return { success: false, error: 'A mensagem selecionada é inválida.' };
+    const built = buildFeedbackReplyPayload(reply, new Date());
+    if (built.error) return { success: false, error: built.error };
+    if (!this.client || !(await this.checkIsAdmin())) {
+      return { success: false, error: 'Área restrita.' };
+    }
+    try {
+      const { error } = await this.client.from('feedback_messages')
+        .update(built.payload)
+        .eq('id', id);
+      if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: this.getFeedbackErrorMessage(error) };
+    }
   },
 
   getFeedbackErrorMessage(error) {

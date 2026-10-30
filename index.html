@@ -109,6 +109,12 @@
           <span>Fale comigo</span>
         </button>
 
+        <button class="nav-item" data-view="admin" id="navAdmin" hidden>
+          <i class="fa-solid fa-shield-halved"></i>
+          <span>Admin</span>
+          <span class="nav-badge admin-nav-badge" id="adminNewCount" aria-label="0 mensagens novas" hidden>0</span>
+        </button>
+
         <!-- Botão 5: Importar Extrato (No rodapé, acima de Atualizar Dados) -->
         <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
           <i class="fa-solid fa-file-import"></i>
@@ -248,9 +254,6 @@
               <button type="button" id="logoutBtn" class="btn-auth-logout">
                 <i class="fa-solid fa-arrow-right-from-bracket"></i> Sair da Conta
               </button>
-              <button type="button" id="deleteAccountBtn" class="btn-auth-logout btn-delete-account">
-                <i class="fa-solid fa-user-xmark"></i> Excluir minha conta
-              </button>
             </div>
             <button type="button" class="btn-auth-trigger contact-shortcut" data-action="open-contact">
               <i class="fa-regular fa-comment-dots"></i> Fale comigo
@@ -316,15 +319,11 @@
               </div>
             </button>
 
-            <button id="clearDataBtn" class="drawer-action-btn btn-danger-action" title="Zerar todos os lançamentos">
-              <div class="action-icon bg-danger-soft">
-                <i class="fa-solid fa-trash-can text-danger"></i>
-              </div>
-              <div class="action-text">
-                <strong>Reset</strong>
-                <span>Limpar todos os dados e começar do zero</span>
-              </div>
-            </button>
+            <p class="irreversible-actions-hint">
+              Reset e exclusão de conta ficam em '
+              <button type="button" class="drawer-inline-link" data-action="open-irreversible-actions">Ações irreversíveis</button>',
+              no final deste painel.
+            </p>
           </div>
 
           <!-- Dica de Privacidade -->
@@ -334,6 +333,28 @@
               <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Política de Privacidade (LGPD)</a>
             </p>
           </div>
+
+          <details class="drawer-section irreversible-actions" id="irreversibleActions">
+            <summary class="irreversible-actions-summary">
+              <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              <span class="action-text">
+                <strong>Ações irreversíveis</strong>
+                <span>Reset e exclusão de conta ficam aqui</span>
+              </span>
+            </summary>
+            <div class="irreversible-action">
+              <p>Apaga lançamentos, gastos fixos, metas e contas deste aparelho e, se logado, também os dados sincronizados na nuvem. Mantém sessão, nome e foto.</p>
+              <button id="clearDataBtn" class="irreversible-action-button" title="Zerar todos os lançamentos">
+                <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Reset
+              </button>
+            </div>
+            <div class="irreversible-action irreversible-action-account" id="deleteAccountAction" hidden>
+              <p>Apaga a conta de login e todos os dados na nuvem e neste aparelho. Esta ação é irreversível.</p>
+              <button type="button" id="deleteAccountBtn" class="irreversible-action-button">
+                <i class="fa-solid fa-user-xmark" aria-hidden="true"></i> Excluir minha conta
+              </button>
+            </div>
+          </details>
         </div>
       </aside>
 
@@ -779,6 +800,23 @@
           <div class="panel-box contact-panel">
             <div id="feedbackContent" aria-live="polite">
               <p>Verificando seu acesso ao canal...</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="view-section" id="view-admin">
+          <div class="view-header-card">
+            <div class="view-header-info">
+              <div class="view-icon-badge"><i class="fa-solid fa-shield-halved"></i></div>
+              <div>
+                <h2>Administração de mensagens</h2>
+                <p>Leia e responda às mensagens enviadas pelo canal Fale comigo.</p>
+              </div>
+            </div>
+          </div>
+          <div class="panel-box admin-panel">
+            <div id="adminContent" aria-live="polite">
+              <div class="empty-state" role="status">Área restrita</div>
             </div>
           </div>
         </section>
