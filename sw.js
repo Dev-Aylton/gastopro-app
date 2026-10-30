@@ -4,7 +4,7 @@
    para fontes e folha de estilos do Font Awesome.
    ================================================================ */
 
-const CACHE_NAME = 'gastopro-v4.1';
+const CACHE_NAME = 'gastopro-v4.2';
 const ESSENTIAL_ASSETS = [
   './',
   './index.html',
@@ -28,7 +28,7 @@ const OPTIONAL_ASSETS = [
   './js/vendor/pdf.mjs',
   './js/vendor/pdf.worker.mjs',
   './js/vendor/LICENSE.pdfjs.txt',
-  './assets/logo.jpg',
+  './assets/logo-symbol.png',
   './assets/default_avatar.jpg',
   './assets/icon-192.png',
   './assets/icon-512.png',

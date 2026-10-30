@@ -5,6 +5,20 @@
 
 const SUPABASE_URL = 'https://xfjhgzcqlrhpckqwnqtk.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_-TwM1I7tRwAQWveicUTWsw_1ZkCueNt';
+const USAGE_EVENT_NAMES = Object.freeze([
+  'screen_dashboard',
+  'screen_incomes',
+  'screen_expenses',
+  'screen_accounts',
+  'screen_contact',
+  'screen_import',
+  'import_completed',
+  'import_parse_error',
+  'import_save_error',
+  'sync_error'
+]);
+
+window.GastoProTelemetryConstants = { eventNames: USAGE_EVENT_NAMES };
 
 // Inicializa o cliente oficial do Supabase
 const sb = (typeof window !== 'undefined' && window.supabase)
@@ -190,6 +204,79 @@ function validateFeedbackReply(reply) {
     : 'A resposta deve ter de 1 a 2000 caracteres após remover espaços extras.';
 }
 
+function sanitizeAdminAnalytics(data) {
+  const isCount = value => Number.isSafeInteger(value) && value >= 0;
+  const isPeriod = value => typeof value === 'string' &&
+    (/^\d{4}-\d{2}$/.test(value) || /^\d{4}-\d{2}-\d{2}$/.test(value));
+  const isMetricList = (items, validNames) => Array.isArray(items) && items.every(item =>
+    item && typeof item === 'object' &&
+    validNames.includes(item.name) &&
+    isCount(item.count) &&
+    Object.keys(item).every(key => ['name', 'count'].includes(key))
+  );
+  const users = data && data.users;
+  const records = data && data.records;
+  const feedback = data && data.feedback;
+  const usage = data && data.usage;
+  const registrations = data && data.registrations;
+  const screenNames = USAGE_EVENT_NAMES.filter(name => name.startsWith('screen_'));
+  const errorNames = ['import_parse_error', 'import_save_error', 'sync_error'];
+  const feedbackStatuses = ['new', 'answered'];
+  const feedbackCategories = ['duvida', 'sugestao', 'problema'];
+
+  if (!data || typeof data !== 'object' ||
+    !users || !records || !feedback || !usage ||
+    !['total', 'newWeek', 'newMonth', 'active7Days', 'active30Days'].every(key => isCount(users[key])) ||
+    !['entries', 'accounts', 'cards', 'goals'].every(key => isCount(records[key])) ||
+    !Array.isArray(registrations) || registrations.some(item =>
+      !item || typeof item !== 'object' || !isPeriod(item.period) || !isCount(item.count) ||
+      Object.keys(item).some(key => !['period', 'count'].includes(key))
+    ) ||
+    !isMetricList(feedback.status, feedbackStatuses) ||
+    !isMetricList(feedback.categories, feedbackCategories) ||
+    !isCount(usage.uniqueUsers30Days) ||
+    !isMetricList(usage.screens, screenNames) ||
+    !Array.isArray(usage.importsByDay) || usage.importsByDay.some(item =>
+      !item || typeof item !== 'object' || !isPeriod(item.period) || !isCount(item.count) ||
+      Object.keys(item).some(key => !['period', 'count'].includes(key))
+    ) ||
+    !isMetricList(usage.errors, errorNames) ||
+    Object.keys(data).some(key => !['users', 'registrations', 'records', 'feedback', 'usage'].includes(key)) ||
+    Object.keys(users).some(key => !['total', 'newWeek', 'newMonth', 'active7Days', 'active30Days'].includes(key)) ||
+    Object.keys(records).some(key => !['entries', 'accounts', 'cards', 'goals'].includes(key)) ||
+    Object.keys(feedback).some(key => !['status', 'categories'].includes(key)) ||
+    Object.keys(usage).some(key => !['uniqueUsers30Days', 'screens', 'importsByDay', 'errors'].includes(key))) {
+    return null;
+  }
+
+  return {
+    users: {
+      total: users.total,
+      newWeek: users.newWeek,
+      newMonth: users.newMonth,
+      active7Days: users.active7Days,
+      active30Days: users.active30Days
+    },
+    registrations: registrations.map(item => ({ period: item.period, count: item.count })),
+    records: {
+      entries: records.entries,
+      accounts: records.accounts,
+      cards: records.cards,
+      goals: records.goals
+    },
+    feedback: {
+      status: feedback.status.map(item => ({ name: item.name, count: item.count })),
+      categories: feedback.categories.map(item => ({ name: item.name, count: item.count }))
+    },
+    usage: {
+      uniqueUsers30Days: usage.uniqueUsers30Days,
+      screens: usage.screens.map(item => ({ name: item.name, count: item.count })),
+      importsByDay: usage.importsByDay.map(item => ({ period: item.period, count: item.count })),
+      errors: usage.errors.map(item => ({ name: item.name, count: item.count }))
+    }
+  };
+}
+
 function buildFeedbackReplyPayload(reply, repliedAt) {
   const validationError = validateFeedbackReply(reply);
   if (validationError) return { error: validationError, payload: null };
@@ -322,6 +409,59 @@ const SupabaseAuth = {
     } catch (error) {
       console.warn('[Supabase] Não foi possível confirmar acesso administrativo:', error);
       return false;
+    }
+  },
+
+  async fetchAdminAnalytics() {
+    if (!this.client || !(await this.checkIsAdmin())) {
+      return { success: false, error: 'Área restrita.' };
+    }
+    try {
+      const { data, error } = await this.client.rpc('admin_analytics_summary');
+      if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
+      const analytics = sanitizeAdminAnalytics(data);
+      if (!analytics) {
+        return { success: false, error: 'Os indicadores recebidos do servidor são inválidos.' };
+      }
+      return { success: true, analytics };
+    } catch (error) {
+      return { success: false, error: this.getFeedbackErrorMessage(error) };
+    }
+  },
+
+  async recordUsageEvent(eventName) {
+    if (!USAGE_EVENT_NAMES.includes(eventName)) {
+      return { success: false, error: 'Evento de uso não permitido.' };
+    }
+    if (window.GastoProUsageTelemetry &&
+      !window.GastoProUsageTelemetry.getEnabled()) {
+      return { success: true, skipped: true };
+    }
+    if (!this.client) {
+      return { success: false, error: 'Cliente Supabase não inicializado.' };
+    }
+    try {
+      const sessionState = await this.getSessionState();
+      if (sessionState.status === 'signed_out') return { success: true, skipped: true };
+      if (sessionState.status !== 'authenticated' || !sessionState.user.id) {
+        return { success: false, error: 'Não foi possível verificar a sessão.' };
+      }
+      if (window.GastoProUsageTelemetry &&
+        !window.GastoProUsageTelemetry.getEnabled()) {
+        return { success: true, skipped: true };
+      }
+      const { error } = await this.client.from('usage_events').insert({
+        user_id: sessionState.user.id,
+        event_name: eventName
+      });
+      if (error) {
+        const result = this.reportCloudError('Erro ao registrar evento de uso', error);
+        return { success: false, error: result.error.message };
+      }
+      return { success: true };
+    } catch (error) {
+      const result = this.reportCloudError('Falha ao registrar evento de uso', error);
+      return { success: false, error: result.error.message };
     }
   },
 
@@ -482,6 +622,11 @@ const SupabaseAuth = {
       const sessionUserId = await this.getAuthenticatedUserId(expectedUserId);
       if (!sessionUserId) {
         return this.reportCloudError('Sessão inválida ao excluir dados do usuário', new Error('Entre novamente na sua conta para excluir os dados sincronizados.'));
+      }
+
+      const { error: usageEventsError } = await this.client.rpc('delete_my_usage_events');
+      if (usageEventsError) {
+        return this.reportCloudError('Erro ao excluir eventos de uso', usageEventsError);
       }
 
       const deletions = [

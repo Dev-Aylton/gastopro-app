@@ -1710,6 +1710,124 @@ describe('Canal Fale comigo', () => {
     }
   });
 
+  itAsync('indicadores administrativos usam apenas RPC e removem campos não agregados', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const rpcCalls = [];
+    const summary = {
+      users: { total: 12, newWeek: 2, newMonth: 4, active7Days: 5, active30Days: 8 },
+      registrations: [{ period: '2026-10', count: 4 }],
+      records: { entries: 30, accounts: 8, cards: 3, goals: 5 },
+      feedback: {
+        status: [{ name: 'new', count: 2 }],
+        categories: [{ name: 'duvida', count: 1 }]
+      },
+      usage: {
+        uniqueUsers30Days: 6,
+        screens: [{ name: 'screen_dashboard', count: 10 }],
+        importsByDay: [{ period: '2026-10-30', count: 3 }],
+        errors: [{ name: 'sync_error', count: 1 }]
+      }
+    };
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: '550e8400-e29b-41d4-a716-446655440001' } } },
+          error: null
+        })
+      },
+      rpc: async name => {
+        rpcCalls.push(name);
+        return { data: name === 'is_admin' ? true : summary, error: null };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.fetchAdminAnalytics();
+      assertTrue(result.success);
+      assertEqual(rpcCalls, ['is_admin', 'admin_analytics_summary']);
+      assertEqual(result.analytics.users.total, 12);
+      assertEqual(result.analytics.usage.screens, [{ name: 'screen_dashboard', count: 10 }]);
+      assertFalse(Object.prototype.hasOwnProperty.call(result.analytics, 'user_id'));
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('rejeita resposta agregada com identificador ou campos inesperados', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const summary = {
+      users: { total: 1, newWeek: 0, newMonth: 0, active7Days: 0, active30Days: 0 },
+      registrations: [],
+      records: { entries: 0, accounts: 0, cards: 0, goals: 0 },
+      feedback: { status: [], categories: [] },
+      usage: { uniqueUsers30Days: 0, screens: [], importsByDay: [], errors: [] },
+      user_id: 'não deve chegar ao painel'
+    };
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: '550e8400-e29b-41d4-a716-446655440001' } } },
+          error: null
+        })
+      },
+      rpc: async name => ({
+        data: name === 'is_admin' ? true : summary,
+        error: null
+      })
+    };
+    try {
+      const result = await window.SupabaseAuth.fetchAdminAnalytics();
+      assertFalse(result.success);
+      assertTrue(result.error.includes('inválidos'));
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('envia apenas eventos permitidos com usuário e nome fixos', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const previousPreference = localStorage.getItem(window.GastoProUsageTelemetry.PREFERENCE_KEY);
+    const inserted = [];
+    localStorage.removeItem(window.GastoProUsageTelemetry.PREFERENCE_KEY);
+    assertTrue(window.GastoProUsageTelemetry.getEnabled());
+    window.GastoProUsageTelemetry.setEnabled(true);
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: '550e8400-e29b-41d4-a716-446655440001' } } },
+          error: null
+        })
+      },
+      from(table) {
+        assertEqual(table, 'usage_events');
+        return {
+          insert: async payload => {
+            inserted.push(payload);
+            return { error: null };
+          }
+        };
+      }
+    };
+    try {
+      assertTrue((await window.SupabaseAuth.recordUsageEvent('screen_dashboard')).success);
+      assertFalse((await window.SupabaseAuth.recordUsageEvent('screen_secret')).success);
+      window.GastoProUsageTelemetry.setEnabled(false);
+      const optedOut = await window.SupabaseAuth.recordUsageEvent('screen_dashboard');
+      assertTrue(optedOut.success);
+      assertTrue(optedOut.skipped);
+      assertEqual(inserted, [{
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+        event_name: 'screen_dashboard'
+      }]);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+      if (previousPreference === null) {
+        localStorage.removeItem(window.GastoProUsageTelemetry.PREFERENCE_KEY);
+      } else {
+        localStorage.setItem(window.GastoProUsageTelemetry.PREFERENCE_KEY, previousPreference);
+      }
+    }
+  });
+
   itAsync('lista administrativa seleciona apenas campos sem identificador do autor', async () => {
     const previousClient = window.SupabaseAuth.client;
     let selectedColumns = '';
@@ -1842,9 +1960,14 @@ describe('Canal Fale comigo', () => {
     const previousGetAuthenticatedUserId = window.SupabaseAuth.getAuthenticatedUserId;
     const userId = '550e8400-e29b-41d4-a716-446655440001';
     const deletedTables = [];
+    const rpcCalls = [];
     window.SupabaseAuth.getAuthenticatedUserId = async expectedUserId =>
       expectedUserId === userId ? userId : null;
     window.SupabaseAuth.client = {
+      rpc: async name => {
+        rpcCalls.push(name);
+        return { error: null };
+      },
       from(table) {
         return {
           delete() { return this; },
@@ -1858,6 +1981,7 @@ describe('Canal Fale comigo', () => {
     try {
       const result = await window.SupabaseAuth.deleteAllMyData(userId);
       assertTrue(result.success);
+      assertEqual(rpcCalls, ['delete_my_usage_events']);
       assertEqual(deletedTables, [
         ['feedback_messages', 'user_id', userId],
         ['credit_card_purchases', 'user_id', userId],
@@ -3442,6 +3566,122 @@ describe('Inteligência financeira local', () => {
       className: 'financial-amount financial-amount--negative'
     });
     assertEqual(insights.getAmountPresentation(0).className, 'financial-amount financial-amount--neutral');
+  });
+});
+
+describe('Central de avisos local', () => {
+  const notifications = window.GastoProNotificationCenter;
+
+  it('inicia com todos os avisos ligados e filtra pelo escopo selecionado', () => {
+    setupMockLocalStorage();
+    assertTrue(Object.values(notifications.getPreferences()).every(Boolean));
+    assertEqual(Object.keys(notifications.TYPES), [
+      'dueSoon', 'insufficientBalance', 'anomaly', 'cardLimit', 'forecast'
+    ]);
+    notifications.syncEvents([
+      { eventKey: 'due-pf', scope: 'PF', type: 'dueSoon', title: 'Vencimento', message: 'Há um gasto próximo.' },
+      { eventKey: 'card-all', scope: 'all', type: 'cardLimit', title: 'Cartão', message: 'Limite quase cheio.' }
+    ]);
+    assertEqual(notifications.getUnreadCount('PF'), 1);
+    assertEqual(notifications.getVisible('PF').map(item => item.eventKey), ['due-pf']);
+    assertEqual(notifications.getVisible('all').map(item => item.eventKey), ['card-all']);
+  });
+
+  it('salva preferências no aparelho e não cria tipos desligados', () => {
+    setupMockLocalStorage();
+    notifications.savePreferences({ anomaly: false });
+    notifications.syncEvents([
+      { eventKey: 'anomaly-event', scope: 'all', type: 'anomaly', title: 'Gasto alto', message: 'Confira.' },
+      { eventKey: 'forecast-event', scope: 'all', type: 'forecast', title: 'Previsão', message: 'Atualizada.' }
+    ]);
+    assertFalse(notifications.getPreferences().anomaly);
+    assertTrue(notifications.getPreferences().forecast);
+    assertEqual(notifications.getItems().map(item => item.eventKey), ['forecast-event']);
+    assertNotNull(localStorage.getItem(notifications.PREFERENCES_KEY));
+  });
+
+  it('marca como lido, dispensa e não repete o mesmo evento após sincronizar de novo', () => {
+    setupMockLocalStorage();
+    const event = {
+      eventKey: 'due-event',
+      scope: 'all',
+      type: 'dueSoon',
+      title: 'Vencimento próximo',
+      message: 'Há uma conta para pagar.'
+    };
+    notifications.syncEvents([event]);
+    notifications.markRead(event.eventKey);
+    assertEqual(notifications.getUnreadCount('all'), 0);
+    notifications.dismiss(event.eventKey);
+    notifications.syncEvents([event]);
+    assertEqual(notifications.getVisible('all'), []);
+    assertTrue(notifications.getItems()[0].dismissed);
+  });
+
+  it('limpar tudo dispensa avisos existentes e mantém o histórico contra repetição', () => {
+    setupMockLocalStorage();
+    const event = {
+      eventKey: 'forecast-event',
+      scope: 'all',
+      type: 'forecast',
+      title: 'Previsão',
+      message: 'Confira o fim do mês.'
+    };
+    notifications.syncEvents([event]);
+    notifications.clearAll();
+    notifications.syncEvents([event]);
+    assertEqual(notifications.getVisible('all'), []);
+    assertEqual(notifications.getUnreadCount('all'), 0);
+  });
+
+  it('renderiza estado vazio e cinco opções acessíveis de configuração', () => {
+    setupMockLocalStorage();
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <button id="notificationsTrigger"></button>
+      <span id="notificationsUnreadCount"></span>
+      <p id="notificationsUnreadLabel"></p>
+      <div id="notificationsList"></div>
+      <div id="notificationSettingsList"></div>`;
+    document.body.appendChild(host);
+    try {
+      notifications.render();
+      assertEqual(host.querySelector('#notificationsList').textContent.trim(), 'Nenhum aviso por enquanto.');
+      assertEqual(host.querySelectorAll('#notificationSettingsList input[type="checkbox"]').length, 5);
+      assertTrue([...host.querySelectorAll('#notificationSettingsList input')].every(input => input.checked));
+      assertTrue(host.querySelector('#notificationsUnreadCount').hidden);
+    } finally {
+      host.remove();
+    }
+  });
+
+  itAsync('mantém preferências após reset e limpa apenas na exclusão da conta', async () => {
+    setupMockLocalStorage();
+    notifications.savePreferences({ cardLimit: false });
+    window.GastoProUsageTelemetry.setEnabled(false);
+    notifications.syncEvents([{
+      eventKey: 'card-event',
+      scope: 'all',
+      type: 'cardLimit',
+      title: 'Limite',
+      message: 'Quase cheio.'
+    }]);
+    const resetResult = await FinanceData.clearAll();
+    assertTrue(resetResult.success);
+    assertFalse(notifications.getPreferences().cardLimit);
+    assertFalse(window.GastoProUsageTelemetry.getEnabled());
+    FinanceData.clearUserData();
+    assertFalse(notifications.getPreferences().cardLimit);
+    assertFalse(window.GastoProUsageTelemetry.getEnabled());
+    assertEqual(notifications.getItems(), []);
+
+    await window.GastoProAccountDeletion.deleteAccountAndClearPendingSync({
+      deleteAccount: async () => ({ success: true }),
+      signOut: async () => {}
+    }, FinanceData);
+    assertNull(localStorage.getItem(notifications.PREFERENCES_KEY));
+    assertNull(localStorage.getItem(window.GastoProUsageTelemetry.PREFERENCE_KEY));
+    assertEqual(notifications.getItems(), []);
   });
 });
 
@@ -5139,6 +5379,7 @@ describe('Exclusão de conta do usuário', () => {
     localStorage.setItem('gastopro_theme', 'light');
     localStorage.setItem('gastopro_last_uid', 'user-delete');
     localStorage.setItem('sb-project-auth-token', 'sessao');
+    localStorage.setItem(window.GastoProUsageTelemetry.PREFERENCE_KEY, 'false');
     let signOutScope = null;
 
     const result = await window.GastoProAccountDeletion.deleteAccountAndClearPendingSync({
@@ -5155,6 +5396,7 @@ describe('Exclusão de conta do usuário', () => {
     assertEqual(signOutScope, 'local');
     assertEqual(localStorage.length, 1);
     assertEqual(localStorage.getItem('gastopro_theme'), 'light');
+    assertNull(localStorage.getItem(window.GastoProUsageTelemetry.PREFERENCE_KEY));
   });
 
   itAsync('preserva dados, fila e sessão se a exclusão no servidor falhar', async () => {

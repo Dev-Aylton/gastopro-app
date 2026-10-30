@@ -60,7 +60,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-top">
         <div class="brand">
-          <img src="assets/logo.jpg" alt="Logo GastoPro" class="brand-logo-img" />
+          <img src="assets/logo-symbol.png" alt="Símbolo GastoPro" class="brand-logo-img" />
           <div class="brand-text">
             <h2>GastoPro</h2>
             <span>Gestão Financeira</span>
@@ -190,6 +190,12 @@
             </div>
           </div>
 
+          <button type="button" class="notifications-trigger" id="notificationsTrigger" data-action="toggle-notifications"
+            aria-label="Abrir avisos" aria-expanded="false" aria-controls="notificationsPanel">
+            <i class="fa-regular fa-bell" aria-hidden="true"></i>
+            <span class="notifications-unread-count" id="notificationsUnreadCount" hidden>0</span>
+          </button>
+
           <span id="themeToggleDesktopPlaceholder" hidden aria-hidden="true"></span>
           <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Mudar para tema claro" aria-pressed="false" title="Mudar para tema claro">
             <i class="fa-solid fa-moon" id="themeToggleIcon" aria-hidden="true"></i>
@@ -201,6 +207,25 @@
           </button>
         </div>
       </header>
+
+      <section class="notifications-panel" id="notificationsPanel" aria-label="Central de avisos" hidden>
+        <div class="notifications-panel-header">
+          <div>
+            <h2>Avisos</h2>
+            <p id="notificationsUnreadLabel">Nenhum aviso não lido</p>
+          </div>
+          <button type="button" class="drawer-close-btn notifications-close" id="closeNotificationsBtn"
+            aria-label="Fechar avisos">&times;</button>
+        </div>
+        <div class="notifications-panel-actions">
+          <button type="button" class="notification-text-action" data-action="notifications-clear-all">Limpar tudo</button>
+        </div>
+        <div class="notifications-list" id="notificationsList" aria-live="polite"></div>
+        <details class="notifications-settings">
+          <summary>Escolher quais avisos aparecem</summary>
+          <div id="notificationSettingsList"></div>
+        </details>
+      </section>
 
       <!-- ==========================================
            DRAWER LATERAL DO USUÁRIO (DIREITA)
@@ -301,6 +326,17 @@
                 <span>Apagar os dados deste aparelho e da nuvem sem excluir o login</span>
               </div>
             </button>
+          </div>
+
+          <div class="drawer-section">
+            <span class="drawer-section-title">Privacidade e uso</span>
+            <label class="usage-telemetry-setting" for="usageTelemetryEnabled">
+              <input type="checkbox" id="usageTelemetryEnabled" checked />
+              <span>
+                <strong>Compartilhar eventos anônimos de uso</strong>
+                <small>Ajuda a entender telas usadas, importações e erros. Não inclui textos nem dados financeiros.</small>
+              </span>
+            </label>
           </div>
 
           <!-- Seção de Ações de Dados -->
@@ -867,13 +903,25 @@
             <div class="view-header-info">
               <div class="view-icon-badge"><i class="fa-solid fa-shield-halved"></i></div>
               <div>
-                <h2>Administração de mensagens</h2>
-                <p>Leia e responda às mensagens enviadas pelo canal Fale comigo.</p>
+                <h2>Painel do administrador</h2>
+                <p>Indicadores gerais e mensagens do canal Fale comigo.</p>
               </div>
             </div>
           </div>
-          <div class="panel-box admin-panel">
-            <div id="adminContent" aria-live="polite">
+          <div class="admin-panel-tabs" id="adminPanelTabs" role="tablist" aria-label="Seções administrativas">
+            <button type="button" class="filter-btn active" id="adminAnalyticsTab" role="tab"
+              aria-selected="true" aria-controls="adminAnalyticsContent" data-action="admin-panel-tab"
+              data-tab="analytics">Indicadores</button>
+            <button type="button" class="filter-btn" id="adminMessagesTab" role="tab"
+              aria-selected="false" aria-controls="adminContent" data-action="admin-panel-tab"
+              data-tab="messages">Mensagens</button>
+          </div>
+          <div class="panel-box admin-panel admin-analytics-panel" id="adminAnalyticsContent"
+            role="tabpanel" aria-labelledby="adminAnalyticsTab" aria-live="polite">
+            <p role="status">Área restrita</p>
+          </div>
+          <div class="panel-box admin-panel" id="adminMessagesPanel" hidden>
+            <div id="adminContent" role="tabpanel" aria-labelledby="adminMessagesTab" aria-live="polite">
               <div class="empty-state" role="status">Área restrita</div>
             </div>
           </div>
@@ -888,7 +936,7 @@
         <div class="footer-container">
           <div class="footer-top">
             <div class="footer-brand">
-              <img src="assets/logo.jpg" alt="Logo GastoPro" class="footer-logo-img" />
+              <img src="assets/logo-symbol.png" alt="Símbolo GastoPro" class="footer-logo-img" />
               <div>
                 <h4>GastoPro</h4>
                 <p>Gestão Financeira & Saúde Orçamentária Pessoal</p>
@@ -1299,7 +1347,7 @@
       <!-- Cabeçalho com Identidade Visual -->
       <div class="auth-header">
         <div class="auth-brand-badge">
-          <img src="assets/logo.jpg" alt="Logo GastoPro" class="auth-logo-img" />
+          <img src="assets/logo-symbol.png" alt="Símbolo GastoPro" class="auth-logo-img" />
           <div class="auth-brand-info">
             <h2 id="authModalTitle">GastoPro</h2>
             <span>Gestão Financeira & Nuvem</span>
@@ -1923,6 +1971,7 @@
           <li><strong>Sessão de login</strong>: é mantida pelo cliente Supabase no armazenamento do navegador.</li>
         </ul>
         <p>Quando você usa o canal "Fale comigo" com login, armazenamos a categoria (dúvida, sugestão ou problema), o texto da mensagem, a data de envio e, quando houver, a resposta do desenvolvedor. Esses dados ficam no Supabase e são usados para responder dúvidas e melhorar o app. A tela de administração do app não exibe seu nome nem seu e-mail automaticamente e não dá acesso aos seus dados financeiros. Se você optar por incluir um contato (como WhatsApp ou e-mail) na mensagem, ele será visto apenas pelo desenvolvedor e usado só para responder. Pedimos que não inclua senhas, dados de cartão ou dados bancários. As mensagens ficam armazenadas até você apagá-las ou excluir sua conta, não são vendidas e não são usadas para publicidade.</p>
+        <p>Com login, o app também pode registrar eventos de uso com nomes fechados (telas abertas, importações concluídas e tipos de erro), sem texto livre, nomes de arquivos ou dados financeiros. O identificador da conta é usado para contar usuários distintos e apagar os eventos quando você exclui seus dados ou sua conta; o painel administrativo recebe apenas contagens agregadas, nunca esse identificador. Os eventos são apagados após 12 meses. Você pode desativar essa coleta a qualquer momento em "Privacidade e uso" no menu do usuário.</p>
 
         <h4>3. Como os dados são armazenados</h4>
         <p><strong>Modo Local (sem login):</strong> os dados financeiros ficam no <em>localStorage</em> deste navegador. Google Fonts e cdnjs (Font Awesome) são carregados de terceiros; esses provedores podem receber seu endereço IP e dados técnicos da conexão. Os dados financeiros não são enviados a esses provedores.</p>

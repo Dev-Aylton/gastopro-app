@@ -138,7 +138,8 @@ financeiro-app/
 ├── manifest.json              # Manifesto PWA: nome, ícones, cores e orientação
 ├── sw.js                      # Service Worker: cache offline e atualização automática
 ├── assets/
-│   ├── logo.jpg               # Logotipo do app
+│   ├── logo-symbol.png        # Símbolo transparente da marca
+│   ├── logo.jpg               # Logotipo legado preservado
 │   ├── default_avatar.jpg     # Avatar padrão
 │   ├── icon-192.png           # Ícone PWA 192x192
 │   ├── icon-512.png           # Ícone PWA 512x512

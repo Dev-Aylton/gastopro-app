@@ -353,12 +353,12 @@
     }
 
     try {
-      const logo = await loadImage(options.logoUrl || 'assets/logo.jpg');
+      const logo = await loadImage(options.logoUrl || 'assets/logo-symbol.png');
       const canvas = document.createElement('canvas');
       canvas.width = logo.naturalWidth;
       canvas.height = logo.naturalHeight;
       canvas.getContext('2d').drawImage(logo, 0, 0);
-      doc.addImage(canvas.toDataURL('image/jpeg'), 'JPEG', 165, 14, 28, 22);
+      doc.addImage(canvas.toDataURL('image/png'), 'PNG', 165, 14, 22, 22);
     } catch (error) {
       console.warn('[GastoPro] O relatório será gerado sem a logo:', error);
     }

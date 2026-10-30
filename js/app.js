@@ -187,6 +187,16 @@ const adminViewState = {
   requestId: 0
 };
 
+const adminAnalyticsState = {
+  data: null,
+  loading: false,
+  error: '',
+  requestId: 0,
+  activeTab: 'analytics',
+  growthChart: null,
+  importsChart: null
+};
+
 // ================================================================
 // 2. CONSTANTES
 // ================================================================
@@ -209,6 +219,61 @@ const VIEW_TITLES = {
 
 const LAST_VIEW_STORAGE_KEY = 'gastopro_last_view_v1';
 const PERSISTED_VIEW_IDS = Object.freeze(Object.keys(VIEW_TITLES));
+const USAGE_TELEMETRY_PREFERENCE_KEY = 'gastopro_usage_telemetry_enabled_v1';
+
+function isUsageTelemetryEnabled() {
+  try {
+    const stored = localStorage.getItem(USAGE_TELEMETRY_PREFERENCE_KEY);
+    return stored !== 'false';
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível ler a preferência de coleta de uso:', error);
+    return true;
+  }
+}
+
+function setUsageTelemetryEnabled(enabled) {
+  if (typeof enabled !== 'boolean') throw new TypeError('A preferência de coleta deve ser booleana.');
+  try {
+    localStorage.setItem(USAGE_TELEMETRY_PREFERENCE_KEY, String(enabled));
+    return enabled;
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível salvar a preferência de coleta de uso:', error);
+    throw error;
+  }
+}
+
+function clearUsageTelemetryPreference() {
+  try {
+    localStorage.removeItem(USAGE_TELEMETRY_PREFERENCE_KEY);
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível apagar a preferência de coleta de uso:', error);
+  }
+}
+
+function trackUsageEvent(eventName) {
+  const allowedEvents = window.GastoProTelemetryConstants &&
+    window.GastoProTelemetryConstants.eventNames;
+  if (!Array.isArray(allowedEvents) || !allowedEvents.includes(eventName) ||
+    !isUsageTelemetryEnabled() || !window.SupabaseAuth ||
+    typeof window.SupabaseAuth.recordUsageEvent !== 'function') return;
+
+  Promise.resolve()
+    .then(() => window.SupabaseAuth.recordUsageEvent(eventName))
+    .then(result => {
+      if (!result || !result.success) {
+        console.warn('[GastoPro] O evento de uso não foi registrado:', result && result.error);
+      }
+    })
+    .catch(error => console.warn('[GastoPro] Falha ao registrar evento de uso:', error));
+}
+
+window.GastoProUsageTelemetry = {
+  PREFERENCE_KEY: USAGE_TELEMETRY_PREFERENCE_KEY,
+  getEnabled: isUsageTelemetryEnabled,
+  setEnabled: setUsageTelemetryEnabled,
+  clearPreference: clearUsageTelemetryPreference,
+  track: trackUsageEvent
+};
 
 function isFutureImportDate(date) {
   if (!date) return false;
@@ -711,8 +776,232 @@ function updateAdminNavigation() {
   badge.hidden = !isAdmin || adminViewState.newCount === 0;
 }
 
+function syncAdminPanelTabs() {
+  const tabs = document.getElementById('adminPanelTabs');
+  const analyticsTab = document.getElementById('adminAnalyticsTab');
+  const messagesTab = document.getElementById('adminMessagesTab');
+  const analyticsPanel = document.getElementById('adminAnalyticsContent');
+  const messagesPanel = document.getElementById('adminMessagesPanel');
+  const showAnalytics = adminAnalyticsState.activeTab === 'analytics';
+  if (tabs) tabs.hidden = adminViewState.access !== 'allowed';
+  if (analyticsTab) analyticsTab.setAttribute('aria-selected', String(showAnalytics));
+  if (messagesTab) messagesTab.setAttribute('aria-selected', String(!showAnalytics));
+  if (analyticsPanel) analyticsPanel.hidden = !showAnalytics;
+  if (messagesPanel) messagesPanel.hidden = showAnalytics;
+}
+
+function getAdminEventLabel(eventName) {
+  const labels = {
+    screen_dashboard: 'Dashboard',
+    screen_incomes: 'Ganhos',
+    screen_expenses: 'Gastos',
+    screen_accounts: 'Contas',
+    screen_contact: 'Fale comigo',
+    screen_import: 'Importação',
+    import_parse_error: 'Falha ao ler importação',
+    import_save_error: 'Falha ao salvar importação',
+    sync_error: 'Falha de sincronização'
+  };
+  return labels[eventName] || 'Outro';
+}
+
+function renderAdminMetricRows(items, labelFor) {
+  if (!items.length) return '<p class="admin-analytics-empty">Sem eventos neste período.</p>';
+  return `<ul class="admin-analytics-list">${items.map(item => `
+    <li><span>${escapeHtml(labelFor(item.name))}</span><strong>${escapeHtml(String(item.count))}</strong></li>
+  `).join('')}</ul>`;
+}
+
+function renderAdminAnalytics() {
+  const container = document.getElementById('adminAnalyticsContent');
+  if (!container) return;
+  syncAdminPanelTabs();
+
+  if (adminViewState.access !== 'allowed') {
+    container.innerHTML = adminViewState.access === 'denied'
+      ? '<div class="empty-state" role="status">Área restrita</div>'
+      : '<p role="status" aria-live="polite">Verificando acesso...</p>';
+    return;
+  }
+  if (adminAnalyticsState.loading && !adminAnalyticsState.data) {
+    container.innerHTML = '<p role="status" aria-live="polite">Carregando indicadores...</p>';
+    return;
+  }
+  if (adminAnalyticsState.error) {
+    container.innerHTML = `
+      <p class="admin-feedback-notice feedback-notice-error" role="alert">${escapeHtml(adminAnalyticsState.error)}</p>
+      <button type="button" class="btn-secondary" data-action="admin-analytics-refresh"
+        ${adminAnalyticsState.loading ? 'disabled' : ''}>Tentar novamente</button>
+    `;
+    return;
+  }
+  if (!adminAnalyticsState.data) {
+    container.innerHTML = '<p role="status">Os indicadores ainda não foram carregados.</p>';
+    return;
+  }
+
+  const { users, records, feedback, usage, registrations } = adminAnalyticsState.data;
+  const statusLabels = { new: 'Novas', answered: 'Respondidas' };
+  const categoryLabels = { duvida: 'Dúvidas', sugestao: 'Sugestões', problema: 'Problemas' };
+  const screenRows = usage.screens.filter(item => item.name.startsWith('screen_'));
+  const recordItems = [
+    ['Lançamentos', records.entries],
+    ['Contas', records.accounts],
+    ['Cartões', records.cards],
+    ['Metas', records.goals]
+  ];
+
+  container.innerHTML = `
+    <div class="admin-analytics-toolbar">
+      <p>Indicadores gerais. Uso de telas, importações e erros considera os últimos 30 dias.</p>
+      <button type="button" class="btn-secondary admin-analytics-refresh" data-action="admin-analytics-refresh"
+        ${adminAnalyticsState.loading ? 'disabled' : ''}>Atualizar indicadores</button>
+    </div>
+    <section class="admin-analytics-section" aria-labelledby="adminUsersTitle">
+      <h3 id="adminUsersTitle">Usuários</h3>
+      <div class="admin-stat-grid">
+        <article class="admin-stat-card"><span>Total</span><strong>${users.total}</strong></article>
+        <article class="admin-stat-card"><span>Novos nesta semana</span><strong>${users.newWeek}</strong></article>
+        <article class="admin-stat-card"><span>Novos neste mês</span><strong>${users.newMonth}</strong></article>
+        <article class="admin-stat-card"><span>Ativos em 7 dias</span><strong>${users.active7Days}</strong></article>
+        <article class="admin-stat-card"><span>Ativos em 30 dias</span><strong>${users.active30Days}</strong></article>
+      </div>
+      <div class="admin-analytics-chart">
+        <h4>Cadastros por mês</h4>
+        <canvas id="adminGrowthChart" role="img" aria-label="Gráfico de cadastros nos últimos 12 meses"></canvas>
+      </div>
+    </section>
+    <section class="admin-analytics-section" aria-labelledby="adminRecordsTitle">
+      <h3 id="adminRecordsTitle">Registros no app</h3>
+      <div class="admin-stat-grid">
+        ${recordItems.map(([label, count]) => `
+          <article class="admin-stat-card"><span>${label}</span><strong>${count}</strong></article>
+        `).join('')}
+      </div>
+    </section>
+    <section class="admin-analytics-section admin-analytics-columns" aria-label="Mensagens e uso do app">
+      <div>
+        <h3>Mensagens por status</h3>
+        ${renderAdminMetricRows(feedback.status, name => statusLabels[name] || 'Outro')}
+        <h3>Mensagens por categoria</h3>
+        ${renderAdminMetricRows(feedback.categories, name => categoryLabels[name] || 'Outra')}
+      </div>
+      <div>
+        <h3>Telas mais usadas (30 dias)</h3>
+        <p class="admin-analytics-caption">${usage.uniqueUsers30Days} usuários distintos</p>
+        ${renderAdminMetricRows(screenRows, getAdminEventLabel)}
+      </div>
+    </section>
+    <section class="admin-analytics-section" aria-labelledby="adminImportsTitle">
+      <h3 id="adminImportsTitle">Importações concluídas por dia (30 dias)</h3>
+      <div class="admin-analytics-chart">
+        <canvas id="adminImportsChart" role="img" aria-label="Gráfico de importações diárias nos últimos 30 dias"></canvas>
+      </div>
+    </section>
+    <section class="admin-analytics-section">
+      <h3>Erros mais comuns (30 dias)</h3>
+      ${renderAdminMetricRows(usage.errors, getAdminEventLabel)}
+    </section>
+  `;
+
+  [adminAnalyticsState.growthChart, adminAnalyticsState.importsChart]
+    .filter(Boolean)
+    .forEach(chart => chart.destroy());
+  adminAnalyticsState.growthChart = null;
+  adminAnalyticsState.importsChart = null;
+  if (typeof window.Chart !== 'function') return;
+
+  const styles = getComputedStyle(document.documentElement);
+  const primary = styles.getPropertyValue('--primary').trim();
+  const success = styles.getPropertyValue('--success').trim();
+  const textColor = styles.getPropertyValue('--text-main').trim();
+  const borderColor = styles.getPropertyValue('--border').trim();
+  const makeOptions = () => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: textColor, maxRotation: 45, minRotation: 0 }, grid: { color: borderColor } },
+      y: { beginAtZero: true, ticks: { color: textColor, precision: 0 }, grid: { color: borderColor } }
+    }
+  });
+  const growthCanvas = document.getElementById('adminGrowthChart');
+  if (growthCanvas) {
+    adminAnalyticsState.growthChart = new window.Chart(growthCanvas, {
+      type: 'line',
+      data: {
+        labels: registrations.map(item => item.period),
+        datasets: [{
+          data: registrations.map(item => item.count),
+          borderColor: primary,
+          backgroundColor: primary,
+          tension: 0.25
+        }]
+      },
+      options: makeOptions()
+    });
+  }
+  const importsCanvas = document.getElementById('adminImportsChart');
+  if (importsCanvas) {
+    adminAnalyticsState.importsChart = new window.Chart(importsCanvas, {
+      type: 'bar',
+      data: {
+        labels: usage.importsByDay.map(item => item.period.slice(5)),
+        datasets: [{
+          data: usage.importsByDay.map(item => item.count),
+          backgroundColor: success,
+          borderColor: success
+        }]
+      },
+      options: makeOptions()
+    });
+  }
+}
+
+async function loadAdminAnalytics() {
+  if (adminViewState.access !== 'allowed' || adminAnalyticsState.loading) return;
+  const requestId = ++adminAnalyticsState.requestId;
+  adminAnalyticsState.loading = true;
+  adminAnalyticsState.error = '';
+  renderAdminAnalytics();
+  try {
+    const result = await window.SupabaseAuth.fetchAdminAnalytics();
+    if (requestId !== adminAnalyticsState.requestId || state.currentView !== 'admin') return;
+    if (!result.success) {
+      adminAnalyticsState.error = result.error || 'Não foi possível carregar os indicadores.';
+      return;
+    }
+    adminAnalyticsState.data = result.analytics;
+  } catch (error) {
+    if (requestId !== adminAnalyticsState.requestId) return;
+    console.error('[GastoPro] Não foi possível carregar indicadores administrativos:', error);
+    adminAnalyticsState.error = 'Não foi possível carregar os indicadores. Tente novamente.';
+  } finally {
+    if (requestId === adminAnalyticsState.requestId) {
+      adminAnalyticsState.loading = false;
+      renderAdminAnalytics();
+    }
+  }
+}
+
+function selectAdminPanelTab(tab) {
+  if (!['analytics', 'messages'].includes(tab) || adminViewState.access !== 'allowed') return;
+  adminAnalyticsState.activeTab = tab;
+  syncAdminPanelTabs();
+}
+
 function resetAdminSession() {
   adminViewState.requestId++;
+  adminAnalyticsState.requestId++;
+  [adminAnalyticsState.growthChart, adminAnalyticsState.importsChart]
+    .filter(Boolean)
+    .forEach(chart => chart.destroy());
+  adminAnalyticsState.data = null;
+  adminAnalyticsState.loading = false;
+  adminAnalyticsState.error = '';
+  adminAnalyticsState.activeTab = 'analytics';
+  adminAnalyticsState.growthChart = null;
+  adminAnalyticsState.importsChart = null;
   adminViewState.access = 'denied';
   adminViewState.messages = [];
   adminViewState.offset = 0;
@@ -724,12 +1013,16 @@ function resetAdminSession() {
   adminViewState.newCount = 0;
   adminViewState.notice = '';
   updateAdminNavigation();
-  if (state.currentView === 'admin') renderAdminView();
+  if (state.currentView === 'admin') {
+    renderAdminView();
+    renderAdminAnalytics();
+  }
 }
 
 function renderAdminView() {
   const container = document.getElementById('adminContent');
   if (!container) return;
+  syncAdminPanelTabs();
   if (adminViewState.access !== 'allowed') {
     container.innerHTML = adminViewState.access === 'denied'
       ? '<div class="empty-state" role="status">Área restrita</div>'
@@ -824,6 +1117,7 @@ async function refreshAdminBadge() {
   }
   updateAdminNavigation();
   if (state.currentView === 'admin') renderAdminView();
+  if (state.currentView === 'admin') renderAdminAnalytics();
   return isAdmin;
 }
 
@@ -882,7 +1176,16 @@ async function openAdminView() {
     if (state.currentView === 'admin') renderAdminView();
     return;
   }
-  await loadAdminMessages({ reset: true });
+  [adminAnalyticsState.growthChart, adminAnalyticsState.importsChart]
+    .filter(Boolean)
+    .forEach(chart => chart.destroy());
+  adminAnalyticsState.growthChart = null;
+  adminAnalyticsState.importsChart = null;
+  adminAnalyticsState.data = null;
+  await Promise.all([
+    loadAdminAnalytics(),
+    loadAdminMessages({ reset: true })
+  ]);
 }
 
 function getDailyBudgetInfo(balance, year, month, today) {
@@ -983,6 +1286,14 @@ window.switchToView = function(viewId) {
   // Ignora IDs de tela desconhecidos para evitar erros silenciosos
   if (!VIEW_TITLES[viewId]) return;
   state.currentView = viewId;
+  const screenEventNames = {
+    dashboard: 'screen_dashboard',
+    incomes: 'screen_incomes',
+    expenses: 'screen_expenses',
+    accounts: 'screen_accounts',
+    contact: 'screen_contact'
+  };
+  if (screenEventNames[viewId]) trackUsageEvent(screenEventNames[viewId]);
   persistMainView(viewId);
 
   // Marca o botão ativo na sidebar e desmarca os demais
@@ -1018,7 +1329,7 @@ window.switchToView = function(viewId) {
   }
 
   // Re-renderiza toda a interface para refletir a tela ativa
-  if (isAdmin && state.currentView === 'admin') persistMainView('admin');
+  if (adminViewState.access === 'allowed' && state.currentView === 'admin') persistMainView('admin');
   renderAll();
   if (viewId === 'contact') loadMyFeedback();
   if (viewId === 'admin') {
@@ -1530,6 +1841,209 @@ function filterFinancialItemsByAccount(items, accounts, filter) {
   return items;
 }
 
+const NOTIFICATION_PREFERENCES_KEY = 'gastopro_notification_preferences_v1';
+const NOTIFICATION_ITEMS_KEY = 'gastopro_notifications_v1';
+const NOTIFICATION_TYPES = Object.freeze({
+  dueSoon: 'Vencimentos próximos',
+  insufficientBalance: 'Saldo insuficiente',
+  anomaly: 'Gastos fora do padrão',
+  cardLimit: 'Limite do cartão',
+  forecast: 'Previsão do fim do mês'
+});
+
+function getNotificationPreferences() {
+  const preferences = Object.fromEntries(
+    Object.keys(NOTIFICATION_TYPES).map(type => [type, true])
+  );
+  try {
+    const stored = localStorage.getItem(NOTIFICATION_PREFERENCES_KEY);
+    if (!stored) return preferences;
+    const parsed = JSON.parse(stored);
+    Object.keys(NOTIFICATION_TYPES).forEach(type => {
+      if (typeof parsed[type] === 'boolean') preferences[type] = parsed[type];
+    });
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível ler as preferências de avisos:', error);
+  }
+  return preferences;
+}
+
+function saveNotificationPreferences(preferences) {
+  const next = getNotificationPreferences();
+  Object.keys(NOTIFICATION_TYPES).forEach(type => {
+    if (typeof preferences[type] === 'boolean') next[type] = preferences[type];
+  });
+  try {
+    localStorage.setItem(NOTIFICATION_PREFERENCES_KEY, JSON.stringify(next));
+    return next;
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível salvar as preferências de avisos:', error);
+    throw error;
+  }
+}
+
+function getStoredNotifications() {
+  try {
+    const stored = localStorage.getItem(NOTIFICATION_ITEMS_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) throw new Error('Formato inválido para os avisos salvos.');
+    return parsed.filter(item =>
+      item && typeof item.eventKey === 'string' &&
+      Object.prototype.hasOwnProperty.call(NOTIFICATION_TYPES, item.type) &&
+      typeof item.title === 'string' &&
+      typeof item.message === 'string' &&
+      typeof item.read === 'boolean' &&
+      typeof item.dismissed === 'boolean'
+    );
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível ler os avisos salvos:', error);
+    return [];
+  }
+}
+
+function storeNotifications(items) {
+  try {
+    localStorage.setItem(NOTIFICATION_ITEMS_KEY, JSON.stringify(items));
+    return items;
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível salvar os avisos:', error);
+    throw error;
+  }
+}
+
+function syncNotificationEvents(candidates) {
+  const preferences = getNotificationPreferences();
+  const stored = getStoredNotifications();
+  const byEvent = new Map(stored.map(item => [item.eventKey, item]));
+  (Array.isArray(candidates) ? candidates : []).forEach(candidate => {
+    if (!candidate || !Object.prototype.hasOwnProperty.call(NOTIFICATION_TYPES, candidate.type) ||
+      !preferences[candidate.type] || typeof candidate.eventKey !== 'string' ||
+      typeof candidate.title !== 'string' || typeof candidate.message !== 'string') return;
+    const previous = byEvent.get(candidate.eventKey);
+    byEvent.set(candidate.eventKey, {
+      eventKey: candidate.eventKey,
+      scope: typeof candidate.scope === 'string' ? candidate.scope : 'all',
+      type: candidate.type,
+      title: candidate.title,
+      message: candidate.message,
+      createdAt: previous ? previous.createdAt : new Date().toISOString(),
+      read: previous ? previous.read : false,
+      dismissed: previous ? previous.dismissed : false
+    });
+  });
+  return storeNotifications([...byEvent.values()]);
+}
+
+function updateStoredNotification(eventKey, changes) {
+  const notifications = getStoredNotifications();
+  const index = notifications.findIndex(item => item.eventKey === eventKey);
+  if (index < 0) return notifications;
+  notifications[index] = { ...notifications[index], ...changes };
+  return storeNotifications(notifications);
+}
+
+function getVisibleNotifications(scope = 'all') {
+  const preferences = getNotificationPreferences();
+  return getStoredNotifications().filter(item =>
+    !item.dismissed &&
+    preferences[item.type] &&
+    (item.scope || 'all') === scope
+  ).sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+}
+
+function getNotificationUnreadCount(scope = 'all') {
+  return getVisibleNotifications(scope).filter(item => !item.read).length;
+}
+
+function markNotificationAsRead(eventKey) {
+  return updateStoredNotification(eventKey, { read: true });
+}
+
+function dismissNotification(eventKey) {
+  return updateStoredNotification(eventKey, { read: true, dismissed: true });
+}
+
+function clearAllNotifications() {
+  return storeNotifications(getStoredNotifications().map(item => ({
+    ...item,
+    read: true,
+    dismissed: true
+  })));
+}
+
+function clearNotificationPreferences() {
+  try {
+    localStorage.removeItem(NOTIFICATION_PREFERENCES_KEY);
+    return true;
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível apagar as preferências de avisos:', error);
+    return false;
+  }
+}
+
+function renderNotificationCenter() {
+  const trigger = document.getElementById('notificationsTrigger');
+  const count = document.getElementById('notificationsUnreadCount');
+  const unreadLabel = document.getElementById('notificationsUnreadLabel');
+  const list = document.getElementById('notificationsList');
+  const settings = document.getElementById('notificationSettingsList');
+  if (!trigger || !count || !unreadLabel || !list || !settings) return;
+
+  const scope = state.accountBalanceFilter;
+  const unread = getNotificationUnreadCount(scope);
+  count.textContent = unread > 99 ? '99+' : String(unread);
+  count.hidden = unread === 0;
+  trigger.setAttribute('aria-label', unread
+    ? `Abrir avisos, ${unread} não lido${unread === 1 ? '' : 's'}`
+    : 'Abrir avisos');
+  unreadLabel.textContent = unread
+    ? `${unread} aviso${unread === 1 ? '' : 's'} não lido${unread === 1 ? '' : 's'}`
+    : 'Nenhum aviso não lido';
+
+  const items = getVisibleNotifications(scope);
+  list.innerHTML = items.length
+    ? items.map(item => `
+      <article class="notification-item ${item.read ? '' : 'is-unread'}">
+        <div>
+          <h3>${escapeHtml(item.title)}</h3>
+          <p>${escapeHtml(item.message)}</p>
+        </div>
+        <div class="notification-item-actions">
+          ${item.read ? '' : `<button type="button" class="notification-action" data-action="notification-mark-read" data-event-key="${escapeHtml(item.eventKey)}">Marcar como lido</button>`}
+          <button type="button" class="notification-action" data-action="notification-dismiss" data-event-key="${escapeHtml(item.eventKey)}">Dispensar</button>
+        </div>
+      </article>
+    `).join('')
+    : '<p class="notifications-empty">Nenhum aviso por enquanto.</p>';
+
+  const preferences = getNotificationPreferences();
+  settings.innerHTML = Object.entries(NOTIFICATION_TYPES).map(([type, label]) => `
+    <label class="notification-setting">
+      <input type="checkbox" data-notification-type="${escapeHtml(type)}"
+        ${preferences[type] ? 'checked' : ''}>
+      <span>${escapeHtml(label)}</span>
+    </label>
+  `).join('');
+}
+
+window.GastoProNotificationCenter = {
+  TYPES: NOTIFICATION_TYPES,
+  PREFERENCES_KEY: NOTIFICATION_PREFERENCES_KEY,
+  ITEMS_KEY: NOTIFICATION_ITEMS_KEY,
+  getPreferences: getNotificationPreferences,
+  savePreferences: saveNotificationPreferences,
+  getItems: getStoredNotifications,
+  syncEvents: syncNotificationEvents,
+  getVisible: getVisibleNotifications,
+  getUnreadCount: getNotificationUnreadCount,
+  markRead: markNotificationAsRead,
+  dismiss: dismissNotification,
+  clearAll: clearAllNotifications,
+  clearPreferences: clearNotificationPreferences,
+  render: renderNotificationCenter
+};
+
 window.GastoProFinancialInsights = {
   getAmountPresentation: getFinancialAmountPresentation,
   normalizeDescription: normalizeInsightDescription,
@@ -1575,6 +2089,7 @@ function renderFinancialInsights() {
   const summary = buildMonthlyFinancialSummary(currentItems, previousItems);
   const alertScope = `${selectedMonth}:${filter}`;
   const alerts = [];
+  const notificationEvents = [];
 
   if (selectedMonth === actualMonth) {
     const balance = accounts.length ? getAccountBalanceForFilter(
@@ -1607,11 +2122,38 @@ function renderFinancialInsights() {
     const due = calculateUpcomingDueWarning(0, pendingItems, today);
     if (due) {
       const key = `due:${alertScope}`;
+      const dueHorizon = new Date(
+        new Date(`${today}T00:00:00Z`).getTime() + 7 * 86400000
+      ).toISOString().slice(0, 10);
+      const dueItems = pendingItems.filter(item =>
+        item && item.type !== 'income' && item.paid !== true &&
+        item.active !== false && !item.isCardInstallment &&
+        typeof item.date === 'string' && item.date >= today &&
+        item.date <= dueHorizon
+      );
+      const dueEventKey = dueItems.map(item => `${item.id || item.desc}:${item.date}`)
+        .sort().join(',');
+      notificationEvents.push({
+        eventKey: `dueSoon:${actualMonth}:${filter}:${dueEventKey}`,
+        scope: filter,
+        type: 'dueSoon',
+        title: 'Vencimento próximo',
+        message: `Você tem ${due.dueCount} gasto${due.dueCount === 1 ? '' : 's'} para pagar nos próximos 7 dias.`
+      });
+      const balanceDue = balance === null
+        ? null
+        : calculateUpcomingDueWarning(balance, balanceMovements, today);
+      const shortage = balanceDue ? balanceDue.insufficientAmount : 0;
+      if (shortage > 0) {
+        notificationEvents.push({
+          eventKey: `insufficientBalance:${actualMonth}:${filter}:${dueEventKey}`,
+          scope: filter,
+          type: 'insufficientBalance',
+          title: 'O saldo pode não ser suficiente',
+          message: 'Confira o saldo antes dos próximos vencimentos.'
+        });
+      }
       if (!state.dismissedInsights.has(key)) {
-        const balanceDue = balance === null
-          ? null
-          : calculateUpcomingDueWarning(balance, balanceMovements, today);
-        const shortage = balanceDue ? balanceDue.insufficientAmount : 0;
         const shortfall = shortage > 0
           ? ` O saldo pode ficar insuficiente em <strong class="financial-amount financial-amount--negative">${escapeHtml(getFinancialAmountPresentation(-shortage, { signed: true }).text)}</strong>.`
           : '';
@@ -1621,6 +2163,15 @@ function renderFinancialInsights() {
           `${due.dueCount} gasto${due.dueCount === 1 ? '' : 's'} vence${due.dueCount === 1 ? '' : 'm'} nos próximos 7 dias.${shortfall}`
         ));
       }
+    }
+    if (forecast) {
+      notificationEvents.push({
+        eventKey: `forecast:${actualMonth}:${filter}`,
+        scope: filter,
+        type: 'forecast',
+        title: 'Previsão do fim do mês',
+        message: 'Sua previsão do saldo no fim do mês foi atualizada.'
+      });
     }
   }
 
@@ -1636,6 +2187,15 @@ function renderFinancialInsights() {
   ).slice(0, 2);
   anomalies.forEach(({ item, average }, index) => {
     const key = `anomaly:${alertScope}:${item.id || index}`;
+    if (selectedMonth === actualMonth) {
+      notificationEvents.push({
+        eventKey: `anomaly:${actualMonth}:${filter}:${item.id || index}`,
+        scope: filter,
+        type: 'anomaly',
+        title: 'Gasto acima do normal',
+        message: `${item.category || 'Um gasto'} está bem acima da média dessa categoria.`
+      });
+    }
     if (state.dismissedInsights.has(key)) return;
     const amount = getFinancialAmountPresentation(-Number(item.amount), { signed: true });
     alerts.push(getFinancialInsightAlertMarkup(
@@ -1644,6 +2204,37 @@ function renderFinancialInsights() {
       `${escapeHtml(item.category || 'Outros')}: <strong class="${amount.className}">${escapeHtml(amount.text)}</strong>, acima de 1,5× a média histórica da categoria (${escapeHtml(formatCurrency(average))}).`
     ));
   });
+
+  if (selectedMonth === actualMonth) {
+    const accountTypeById = new Map(accounts.map(account => [account.id, account.type]));
+    const cards = FinanceData.getCreditCards();
+    const purchases = FinanceData.getCreditCardPurchases();
+    cards.forEach(card => {
+      const cardType = accountTypeById.get(card.accountId);
+      const matchesScope = filter === 'all'
+        ? true
+        : filter === 'PF' || filter === 'PJ'
+          ? cardType === filter
+          : card.accountId === filter.slice('account:'.length);
+      if (!matchesScope) return;
+      const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(card, purchases);
+      if (usage.alert === 'normal') return;
+      notificationEvents.push({
+        eventKey: `cardLimit:${actualMonth}:${filter}:${card.id}:${usage.alert}`,
+        scope: filter,
+        type: 'cardLimit',
+        title: usage.alert === 'full' ? 'Limite do cartão atingido' : 'Limite do cartão quase cheio',
+        message: `${card.name}: ${Math.round(usage.percent)}% do limite está em uso.`
+      });
+    });
+  }
+
+  try {
+    syncNotificationEvents(notificationEvents);
+  } catch (error) {
+    showToast('Não foi possível atualizar a central de avisos neste aparelho.');
+  }
+  renderNotificationCenter();
   alertContainer.innerHTML = alerts.length
     ? alerts.join('')
     : '<p class="financial-insights-empty">Nenhum alerta para este período.</p>';
@@ -1856,6 +2447,16 @@ window.GastoProAccountDeletion = {
         console.error('[GastoPro] Falha ao encerrar a sessão local após excluir a conta:', error);
       } finally {
         financeData.clearUserData();
+        if (window.GastoProNotificationCenter) {
+          window.GastoProNotificationCenter.clearPreferences();
+        } else {
+          localStorage.removeItem('gastopro_notification_preferences_v1');
+        }
+        if (window.GastoProUsageTelemetry) {
+          window.GastoProUsageTelemetry.clearPreference();
+        } else {
+          localStorage.removeItem('gastopro_usage_telemetry_enabled_v1');
+        }
         if (window.GastoProOnboarding) {
           window.GastoProOnboarding.clearSeen();
         } else {
@@ -3282,6 +3883,12 @@ document.addEventListener('DOMContentLoaded', () => {
         loadAdminMessages({ reset: true });
         break;
       }
+      case 'admin-panel-tab':
+        selectAdminPanelTab(actionElement.dataset.tab);
+        break;
+      case 'admin-analytics-refresh':
+        loadAdminAnalytics();
+        break;
       case 'admin-reply': {
         if (adminViewState.access !== 'allowed') break;
         const message = adminViewState.messages.find(item => item.id === id);
@@ -3372,8 +3979,75 @@ document.addEventListener('DOMContentLoaded', () => {
           renderFinancialInsights();
         }
         break;
+      case 'toggle-notifications': {
+        const panel = document.getElementById('notificationsPanel');
+        const trigger = document.getElementById('notificationsTrigger');
+        if (panel && trigger) {
+          const opening = panel.hidden;
+          if (opening) closeProfileDrawer();
+          panel.hidden = !opening;
+          trigger.setAttribute('aria-expanded', String(opening));
+          if (opening) renderNotificationCenter();
+        }
+        break;
+      }
+      case 'notification-mark-read':
+        if (actionElement.dataset.eventKey) {
+          markNotificationAsRead(actionElement.dataset.eventKey);
+          renderNotificationCenter();
+        }
+        break;
+      case 'notification-dismiss':
+        if (actionElement.dataset.eventKey) {
+          dismissNotification(actionElement.dataset.eventKey);
+          renderNotificationCenter();
+        }
+        break;
+      case 'notifications-clear-all':
+        clearAllNotifications();
+        renderNotificationCenter();
+        break;
     }
   });
+
+  const notificationsPanel = document.getElementById('notificationsPanel');
+  const notificationsTrigger = document.getElementById('notificationsTrigger');
+  const closeNotificationsBtn = document.getElementById('closeNotificationsBtn');
+  const closeNotifications = () => {
+    if (notificationsPanel) notificationsPanel.hidden = true;
+    if (notificationsTrigger) notificationsTrigger.setAttribute('aria-expanded', 'false');
+  };
+  if (closeNotificationsBtn) closeNotificationsBtn.addEventListener('click', closeNotifications);
+  if (notificationsPanel) {
+    notificationsPanel.addEventListener('change', event => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || !input.dataset.notificationType) return;
+      const type = input.dataset.notificationType;
+      try {
+        saveNotificationPreferences({ [type]: input.checked });
+      } catch (error) {
+        showToast('Não foi possível salvar essa preferência neste aparelho.');
+        return;
+      }
+      renderFinancialInsights();
+      document.querySelector(`[data-notification-type="${type}"]`)?.focus();
+    });
+    document.addEventListener('click', event => {
+      if (!(event.target instanceof Element) ||
+        notificationsPanel.hidden ||
+        notificationsPanel.contains(event.target) ||
+        (notificationsTrigger && notificationsTrigger.contains(event.target))) return;
+      closeNotifications();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !notificationsPanel.hidden) {
+        closeNotifications();
+        notificationsTrigger?.focus();
+      }
+    });
+  }
+  const userMenuButton = document.getElementById('userMenuBtn');
+  if (userMenuButton) userMenuButton.addEventListener('click', closeNotifications);
 
   const accountBalanceView = document.getElementById('accountBalanceView');
   if (accountBalanceView) {
@@ -4418,6 +5092,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const profileDrawerOverlay = document.getElementById('profileDrawerOverlay');
   const userMenuBtn          = document.getElementById('userMenuBtn');
   const closeDrawerBtn       = document.getElementById('closeDrawerBtn');
+  const usageTelemetryToggle = document.getElementById('usageTelemetryEnabled');
+
+  if (usageTelemetryToggle) {
+    usageTelemetryToggle.checked = isUsageTelemetryEnabled();
+    usageTelemetryToggle.addEventListener('change', () => {
+      try {
+        setUsageTelemetryEnabled(usageTelemetryToggle.checked);
+        showToast(usageTelemetryToggle.checked
+          ? 'Coleta de eventos de uso ativada.'
+          : 'Coleta de eventos de uso desativada.');
+      } catch (error) {
+        console.error('[GastoPro] Não foi possível atualizar a preferência de coleta:', error);
+        usageTelemetryToggle.checked = !usageTelemetryToggle.checked;
+        showToast('Não foi possível salvar essa preferência neste aparelho.');
+      }
+    });
+  }
 
   /** Desliza o painel de perfil para a direita, tornando-o visível. */
   function openProfileDrawer() {
@@ -4506,6 +5197,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (userMenuBtn) {
       userMenuBtn.title = profile.name ? `Menu do Usuário (${profile.name})` : 'Menu do Usuário (Escreva seu nome)';
     }
+    if (usageTelemetryToggle) usageTelemetryToggle.checked = isUsageTelemetryEnabled();
 
     // Atualiza status de Conta & Autenticação no Drawer
     const accountGuestCard   = document.getElementById('accountGuestCard');
@@ -5804,6 +6496,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : hasCloudSession
           ? 'Dados locais mantidos; não foi possível sincronizar agora.'
           : 'Dados atualizados com sucesso!';
+      if (hasCloudSession && !isCloud) trackUsageEvent('sync_error');
       showToast(refreshMessage);
 
       // Se a sidebar ou o drawer estiverem abertos, fecha-os
@@ -5811,6 +6504,7 @@ document.addEventListener('DOMContentLoaded', () => {
       closeProfileDrawer();
     } catch (err) {
       console.warn('[GastoPro] Erro durante o refresh:', err);
+      trackUsageEvent('sync_error');
       renderAll();
       showToast('Dados locais atualizados.');
     } finally {
@@ -5950,6 +6644,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /** Abre o modal de importação e reseta o estado. */
   function openImportModal() {
     if (!importModal) return;
+    trackUsageEvent('screen_import');
     importModal.classList.add('active');
     resetImportModal();
     updateImportAccountSelector();
@@ -6279,6 +6974,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error('[GastoPro Importer] Erro ao ler o arquivo:', err);
+      trackUsageEvent('import_parse_error');
       showToast('Erro ao ler o arquivo. Verifique o formato.');
     } finally {
       if (pdfReadingStatus) pdfReadingStatus.hidden = true;
@@ -6303,6 +6999,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error('[GastoPro Importer] Erro ao parsear texto:', err);
+      trackUsageEvent('import_parse_error');
       showToast('Erro ao interpretar o texto. Verifique o formato.');
     }
   }
@@ -6382,6 +7079,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const result = items.length ? await FinanceData.addMany(items) : null;
         if (result && !result.success) {
+          trackUsageEvent('import_save_error');
           showToast(result.syncResult
             ? 'Os lançamentos foram salvos neste aparelho, mas a sincronização ficou pendente.'
             : 'Não foi possível salvar os lançamentos importados neste aparelho.');
@@ -6390,12 +7088,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (payments.length) {
           const paid = await FinanceData.markPaidMany(payments);
           if (!paid.success) {
+            trackUsageEvent('import_save_error');
             showToast('Não foi possível concluir a importação. Tente novamente.');
             renderAll();
             closeImportModal();
             return;
           }
         }
+        trackUsageEvent('import_completed');
         const debtCount = debtItems.length;
         const paymentCount = payments.length;
         const launchCount = launches.length;
@@ -6408,6 +7108,7 @@ document.addEventListener('DOMContentLoaded', () => {
         closeImportModal(true);
       } catch (err) {
         console.error('[GastoPro Importer] Erro ao salvar os lançamentos:', err);
+        trackUsageEvent('import_save_error');
         showToast('Não foi possível concluir a importação. Tente novamente.');
       }
     } else {

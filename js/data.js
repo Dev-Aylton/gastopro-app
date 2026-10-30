@@ -566,7 +566,8 @@ const FinanceData = {
       const key = localStorage.key(index);
       if (key && key.startsWith('gastopro_') &&
         key !== STORAGE_TUTORIAL_SEEN && key !== STORAGE_ACCOUNT_SETUP_SEEN &&
-        key !== 'gastopro_theme') keysToRemove.push(key);
+        key !== 'gastopro_theme' && key !== 'gastopro_notification_preferences_v1' &&
+        key !== 'gastopro_usage_telemetry_enabled_v1') keysToRemove.push(key);
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
   },
