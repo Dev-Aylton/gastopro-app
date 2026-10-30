@@ -154,6 +154,7 @@ const state = {
   currentMonth: _initDate.getMonth() + 1, // Mês selecionado 1–12 (inicializa com mês atual)
   expenseFilter: 'all',                   // Filtro de gastos: 'all' | 'fixed' | 'variable'
   accountBalanceFilter: 'all',
+  dismissedInsights: new Set(),
   chartInstance: null                     // Instância ativa do Chart.js (para destruir antes de recriar)
 };
 
@@ -1082,8 +1083,7 @@ function renderAll() {
 
   const topbarMonthlyResult = document.getElementById('topbarMonthlyResult');
   if (topbarMonthlyResult) {
-    topbarMonthlyResult.textContent = formatCurrency(balance);
-    topbarMonthlyResult.style.color = balance >= 0 ? 'var(--success)' : 'var(--danger)';
+    setFinancialAmount(topbarMonthlyResult, balance, { signed: true });
   }
 
   // Delega para cada tela sua renderização específica
@@ -1189,7 +1189,7 @@ function renderAccountsView() {
   const accounts = FinanceData.getAccounts();
   const list = document.getElementById('accountsList');
   const total = document.getElementById('accountsPageTotal');
-  if (total) total.textContent = formatCurrency(FinanceData.getAccountBalances().total);
+  setFinancialAmount(total, FinanceData.getAccountBalances().total, { signed: true });
   if (!list) return;
 
   if (!accounts.length) {
@@ -1220,7 +1220,7 @@ function renderAccountsView() {
         </div>
       </div>
       <div class="account-item-right">
-        <strong class="account-balance-amount">${formatCurrency(FinanceData.getAccountBalance(account.id))}</strong>
+        <strong class="account-balance-amount ${getFinancialAmountPresentation(FinanceData.getAccountBalance(account.id), { signed: true }).className}">${escapeHtml(getFinancialAmountPresentation(FinanceData.getAccountBalance(account.id), { signed: true }).text)}</strong>
         <div class="account-item-actions">
           <button type="button" class="btn-secondary account-action-button" data-action="edit-account" data-id="${escapeHtml(account.id)}" aria-label="Editar conta ${escapeHtml(account.name)}" title="Editar">
             <i class="fa-solid fa-pen"></i><span>Editar</span>
@@ -1256,7 +1256,7 @@ function renderAccountBalancesPanel() {
     balances, state.accountBalanceFilter, accounts, accountId => FinanceData.getAccountBalance(accountId)
   );
   const filterLabel = getAccountBalanceFilterLabel(accounts, state.accountBalanceFilter);
-  if (display) display.textContent = formatCurrency(amount);
+  setFinancialAmount(display, amount, { signed: true });
   if (label) label.textContent = filterLabel;
   if (empty) {
     empty.hidden = accounts.length > 0;
@@ -1272,14 +1272,14 @@ function renderAccountBalancesPanel() {
   const topbarEmpty = document.getElementById('topbarBalanceEmpty');
   const topbarDateNote = document.getElementById('topbarBalanceDateNote');
   if (topbarBalance) {
-    topbarBalance.textContent = formatCurrency(amount);
-    topbarBalance.style.color = amount >= 0 ? 'var(--success)' : 'var(--danger)';
+    setFinancialAmount(topbarBalance, amount, { signed: true });
     topbarBalance.hidden = accounts.length === 0;
   }
   if (topbarEmpty) topbarEmpty.hidden = accounts.length > 0;
   if (topbarDateNote) topbarDateNote.hidden =
     !accountsNeedBalanceDateNotice(accounts, state.accountBalanceFilter);
   renderCreditCardsPanel();
+  renderFinancialInsights();
 }
 
 function renderCreditCardsPanel() {
@@ -1311,8 +1311,8 @@ function renderCreditCardsPanel() {
           </div>
           <div class="credit-card-usage">
             <div class="credit-card-usage-labels">
-              <span>Usado: <strong>${formatCurrency(usage.used)}</strong></span>
-              <span>Disponível: <strong>${formatCurrency(usage.available)}</strong></span>
+              <span>Usado: <strong class="financial-amount financial-amount--neutral">${escapeHtml(formatCurrency(usage.used))}</strong></span>
+              <span>Disponível: <strong class="${getFinancialAmountPresentation(usage.available).className}">${escapeHtml(getFinancialAmountPresentation(usage.available).text)}</strong></span>
             </div>
             <progress class="credit-card-usage-progress" value="${Math.min(100, usage.percent)}" max="100"
               aria-label="Uso do limite de ${escapeHtml(card.name)}"
@@ -1343,6 +1343,334 @@ function getCreditCardUsagePresentation(alert) {
   return { className: '', message: '' };
 }
 
+function getFinancialAmountPresentation(value, { signed = false, tone = 'auto' } = {}) {
+  const amount = Number(value) || 0;
+  const resolvedTone = tone === 'auto'
+    ? amount > 0 ? 'positive' : amount < 0 ? 'negative' : 'neutral'
+    : tone;
+  const sign = signed && amount > 0 ? '+ ' : amount < 0 ? '− ' : '';
+  return {
+    text: `${sign}${formatCurrency(Math.abs(amount))}`,
+    className: `financial-amount financial-amount--${resolvedTone}`
+  };
+}
+
+function setFinancialAmount(element, value, options = {}) {
+  if (!element) return;
+  const presentation = getFinancialAmountPresentation(value, options);
+  element.textContent = presentation.text;
+  element.classList.remove(
+    'financial-amount--positive',
+    'financial-amount--negative',
+    'financial-amount--neutral'
+  );
+  presentation.className.split(' ').forEach(className => element.classList.add(className));
+}
+
+function normalizeInsightDescription(description) {
+  const monthNames = new Set([
+    'jan', 'janeiro', 'fev', 'fevereiro', 'mar', 'marco', 'abril', 'abr',
+    'mai', 'maio', 'jun', 'junho', 'jul', 'julho', 'ago', 'agosto', 'set',
+    'setembro', 'out', 'outubro', 'nov', 'novembro', 'dez', 'dezembro'
+  ]);
+  return String(description || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\d+/g, ' ')
+    .replace(/[^a-z]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(token => token.length > 1 && !monthNames.has(token));
+}
+
+function areInsightDescriptionsSimilar(left, right) {
+  const leftTokens = new Set(normalizeInsightDescription(left));
+  const rightTokens = new Set(normalizeInsightDescription(right));
+  if (!leftTokens.size || !rightTokens.size) return false;
+  const overlap = [...leftTokens].filter(token => rightTokens.has(token)).length;
+  return overlap / Math.min(leftTokens.size, rightTokens.size) >= 0.6;
+}
+
+function findSimilarCategoryEntries(source, entries, category) {
+  if (!source || !Array.isArray(entries)) return [];
+  return entries.filter(entry =>
+    entry && entry.id !== source.id &&
+    entry.type === source.type &&
+    GastoProCategories.normalize(entry.category || '') !== GastoProCategories.normalize(category || '') &&
+    areInsightDescriptionsSimilar(source.desc, entry.desc)
+  );
+}
+
+function calculateCategoryAnomalies(currentExpenses, historicalExpenses, multiplier = 1.5, minimumHistory = 3) {
+  const historyByCategory = new Map();
+  (historicalExpenses || []).forEach(item => {
+    if (!item || !['fixed', 'variable'].includes(item.type) || item.active === false) return;
+    const category = GastoProCategories.normalize(item.category || 'Outros');
+    const amounts = historyByCategory.get(category) || [];
+    amounts.push(Number(item.amount) || 0);
+    historyByCategory.set(category, amounts);
+  });
+  return (currentExpenses || [])
+    .filter(item => item && ['fixed', 'variable'].includes(item.type) && item.active !== false)
+    .map(item => {
+      const category = GastoProCategories.normalize(item.category || 'Outros');
+      const history = historyByCategory.get(category) || [];
+      const average = history.length
+        ? history.reduce((sum, amount) => sum + amount, 0) / history.length
+        : 0;
+      return { item, category, average, historyCount: history.length };
+    })
+    .filter(result =>
+      result.historyCount >= minimumHistory &&
+      result.average > 0 &&
+      Number(result.item.amount) > result.average * multiplier
+    )
+    .sort((left, right) =>
+      Number(right.item.amount) / right.average - Number(left.item.amount) / left.average
+    );
+}
+
+function calculateMonthEndForecast(currentBalance, pendingItems, today, monthEnd, minimumMovements = 2) {
+  const movements = (pendingItems || []).filter(item =>
+    item && item.paid !== true &&
+    item.active !== false &&
+    !item.isCardInstallment &&
+    typeof item.date === 'string' &&
+    item.date >= today && item.date <= monthEnd &&
+    (item.type === 'income' || ['fixed', 'variable', 'debt'].includes(item.type))
+  );
+  if (movements.length < minimumMovements) return null;
+  const pendingTotal = movements.reduce((total, item) =>
+    total + (item.type === 'income' ? 1 : -1) * (Number(item.amount) || 0), 0
+  );
+  return {
+    amount: Math.round((Number(currentBalance) + pendingTotal) * 100) / 100,
+    movementCount: movements.length
+  };
+}
+
+function calculateUpcomingDueWarning(currentBalance, pendingItems, today, horizonDays = 7) {
+  const todayDate = new Date(`${today}T00:00:00Z`);
+  if (Number.isNaN(todayDate.getTime())) return null;
+  const horizon = new Date(todayDate.getTime() + horizonDays * 86400000).toISOString().slice(0, 10);
+  const movements = (pendingItems || []).filter(item =>
+    item && item.paid !== true &&
+    item.active !== false &&
+    !item.isCardInstallment &&
+    typeof item.date === 'string' &&
+    item.date >= today && item.date <= horizon &&
+    (item.type === 'income' || ['fixed', 'variable', 'debt'].includes(item.type))
+  );
+  const dueExpenses = movements.filter(item => item.type !== 'income');
+  if (!dueExpenses.length) return null;
+  const byDate = new Map();
+  movements.forEach(item => {
+    byDate.set(item.date, (byDate.get(item.date) || 0) +
+      (item.type === 'income' ? 1 : -1) * (Number(item.amount) || 0));
+  });
+  let runningBalance = Number(currentBalance) || 0;
+  let lowestBalance = runningBalance;
+  [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right)).forEach(([, amount]) => {
+    runningBalance += amount;
+    lowestBalance = Math.min(lowestBalance, runningBalance);
+  });
+  return {
+    dueCount: dueExpenses.length,
+    dueTotal: dueExpenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+    insufficientAmount: Math.max(0, Math.round(-lowestBalance * 100) / 100)
+  };
+}
+
+function buildMonthlyFinancialSummary(currentItems, previousItems) {
+  const calculateTotals = items => {
+    const eligible = (items || []).filter(item =>
+      item && item.active !== false &&
+      (item.type === 'income' || item.type === 'fixed' || item.type === 'variable')
+    );
+    const income = eligible.filter(item => item.type === 'income')
+      .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const expenses = eligible.filter(item => item.type !== 'income');
+    const expenseTotal = expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const categories = new Map();
+    expenses.forEach(item => {
+      const name = item.category || 'Outros';
+      categories.set(name, (categories.get(name) || 0) + (Number(item.amount) || 0));
+    });
+    return { income, expenses: expenseTotal, categories };
+  };
+  const current = calculateTotals(currentItems);
+  if (!current.income && !current.expenses) return null;
+  const previous = calculateTotals(previousItems);
+  return {
+    income: current.income,
+    expenses: current.expenses,
+    result: current.income - current.expenses,
+    previousExpenses: previous.expenses,
+    expenseChange: previous.expenses > 0
+      ? ((current.expenses - previous.expenses) / previous.expenses) * 100
+      : null,
+    topCategories: [...current.categories.entries()]
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((left, right) => right.amount - left.amount)
+      .slice(0, 3)
+  };
+}
+
+function filterFinancialItemsByAccount(items, accounts, filter) {
+  if (filter === 'all') return items;
+  const accountTypeById = new Map(accounts.map(account => [account.id, account.type]));
+  if (filter === 'PF' || filter === 'PJ') {
+    return items.filter(item => item.accountId && accountTypeById.get(item.accountId) === filter);
+  }
+  if (filter.startsWith('account:')) {
+    const accountId = filter.slice('account:'.length);
+    return items.filter(item => item.accountId === accountId);
+  }
+  return items;
+}
+
+window.GastoProFinancialInsights = {
+  getAmountPresentation: getFinancialAmountPresentation,
+  normalizeDescription: normalizeInsightDescription,
+  areDescriptionsSimilar: areInsightDescriptionsSimilar,
+  findSimilarCategoryEntries,
+  calculateCategoryAnomalies,
+  calculateMonthEndForecast,
+  calculateUpcomingDueWarning,
+  buildMonthlySummary: buildMonthlyFinancialSummary,
+  filterByAccount: filterFinancialItemsByAccount
+};
+
+function getFinancialInsightAlertMarkup(key, title, content) {
+  const escapedKey = escapeHtml(key);
+  return `
+    <article class="financial-insight-alert">
+      <div>
+        <h3>${escapeHtml(title)}</h3>
+        <p>${content}</p>
+      </div>
+      <button type="button" class="financial-insight-dismiss" data-action="dismiss-insight"
+        data-insight-key="${escapedKey}" aria-label="Dispensar alerta: ${escapeHtml(title)}">Dispensar</button>
+    </article>`;
+}
+
+function renderFinancialInsights() {
+  const alertContainer = document.getElementById('financialInsightsAlerts');
+  const summaryContainer = document.getElementById('financialMonthSummary');
+  if (!alertContainer || !summaryContainer) return;
+
+  const accounts = FinanceData.getAccounts();
+  const filter = state.accountBalanceFilter;
+  const selectedMonth = getYearMonthString(state.currentYear, state.currentMonth);
+  const currentDate = new Date();
+  const today = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+  const actualMonth = today.slice(0, 7);
+  const previousDate = new Date(Date.UTC(state.currentYear, state.currentMonth - 2, 1));
+  const previousMonth = getYearMonthString(previousDate.getUTCFullYear(), previousDate.getUTCMonth() + 1);
+  const monthEndDay = new Date(Date.UTC(state.currentYear, state.currentMonth, 0)).getUTCDate();
+  const monthEnd = `${selectedMonth}-${String(monthEndDay).padStart(2, '0')}`;
+  const currentItems = filterFinancialItemsByAccount(FinanceData.getByMonth(selectedMonth), accounts, filter);
+  const previousItems = filterFinancialItemsByAccount(FinanceData.getByMonth(previousMonth), accounts, filter);
+  const summary = buildMonthlyFinancialSummary(currentItems, previousItems);
+  const alertScope = `${selectedMonth}:${filter}`;
+  const alerts = [];
+
+  if (selectedMonth === actualMonth) {
+    const balance = accounts.length ? getAccountBalanceForFilter(
+      FinanceData.getAccountBalances(),
+      filter,
+      accounts,
+      accountId => FinanceData.getAccountBalance(accountId)
+    ) : null;
+    const pendingItems = filterFinancialItemsByAccount(
+      FinanceData.getByMonth(actualMonth), accounts, filter
+    );
+    const balanceMovements = pendingItems.filter(item =>
+      item.accountId && accounts.some(account => account.id === item.accountId)
+    );
+    const forecast = balance === null
+      ? null
+      : calculateMonthEndForecast(balance, balanceMovements, today, monthEnd);
+    if (forecast) {
+      const key = `forecast:${alertScope}`;
+      if (!state.dismissedInsights.has(key)) {
+        const presentation = getFinancialAmountPresentation(forecast.amount, { signed: true });
+        alerts.push(getFinancialInsightAlertMarkup(
+          key,
+          'Previsão do saldo no fim do mês',
+          `Considerando o saldo atual e ${forecast.movementCount} lançamentos pendentes: <strong class="${presentation.className}">${escapeHtml(presentation.text)}</strong>.`
+        ));
+      }
+    }
+
+    const due = calculateUpcomingDueWarning(0, pendingItems, today);
+    if (due) {
+      const key = `due:${alertScope}`;
+      if (!state.dismissedInsights.has(key)) {
+        const balanceDue = balance === null
+          ? null
+          : calculateUpcomingDueWarning(balance, balanceMovements, today);
+        const shortage = balanceDue ? balanceDue.insufficientAmount : 0;
+        const shortfall = shortage > 0
+          ? ` O saldo pode ficar insuficiente em <strong class="financial-amount financial-amount--negative">${escapeHtml(getFinancialAmountPresentation(-shortage, { signed: true }).text)}</strong>.`
+          : '';
+        alerts.push(getFinancialInsightAlertMarkup(
+          key,
+          'Vencimentos próximos',
+          `${due.dueCount} gasto${due.dueCount === 1 ? '' : 's'} vence${due.dueCount === 1 ? '' : 'm'} nos próximos 7 dias.${shortfall}`
+        ));
+      }
+    }
+  }
+
+  const historicalItems = [];
+  for (let offset = 1; offset <= 3; offset++) {
+    const date = new Date(Date.UTC(state.currentYear, state.currentMonth - 1 - offset, 1));
+    const month = getYearMonthString(date.getUTCFullYear(), date.getUTCMonth() + 1);
+    historicalItems.push(...filterFinancialItemsByAccount(FinanceData.getByMonth(month), accounts, filter));
+  }
+  const anomalies = calculateCategoryAnomalies(
+    currentItems.filter(item => item.type !== 'income'),
+    historicalItems
+  ).slice(0, 2);
+  anomalies.forEach(({ item, average }, index) => {
+    const key = `anomaly:${alertScope}:${item.id || index}`;
+    if (state.dismissedInsights.has(key)) return;
+    const amount = getFinancialAmountPresentation(-Number(item.amount), { signed: true });
+    alerts.push(getFinancialInsightAlertMarkup(
+      key,
+      'Gasto fora do padrão',
+      `${escapeHtml(item.category || 'Outros')}: <strong class="${amount.className}">${escapeHtml(amount.text)}</strong>, acima de 1,5× a média histórica da categoria (${escapeHtml(formatCurrency(average))}).`
+    ));
+  });
+  alertContainer.innerHTML = alerts.length
+    ? alerts.join('')
+    : '<p class="financial-insights-empty">Nenhum alerta para este período.</p>';
+
+  if (!summary) {
+    summaryContainer.innerHTML = `
+      <h3>Resumo do mês</h3>
+      <p class="financial-insights-empty">Adicione lançamentos para ver o resumo mensal.</p>`;
+    return;
+  }
+  const resultPresentation = getFinancialAmountPresentation(summary.result, { signed: true });
+  const changeText = summary.expenseChange === null
+    ? 'Ainda não há gastos no mês anterior para comparar.'
+    : `Gastos ${summary.expenseChange > 0 ? 'subiram' : summary.expenseChange < 0 ? 'caíram' : 'ficaram iguais'} ${Math.abs(Math.round(summary.expenseChange))}% em relação ao mês anterior.`;
+  summaryContainer.innerHTML = `
+    <h3>Resumo de ${escapeHtml(MONTH_NAMES[state.currentMonth - 1])}</h3>
+    <p>Resultado do mês: <strong class="${resultPresentation.className}">${escapeHtml(resultPresentation.text)}</strong></p>
+    <p>${escapeHtml(changeText)}</p>
+    <h4>Maiores categorias de gastos</h4>
+    ${summary.topCategories.length
+      ? `<ol>${summary.topCategories.map(item => {
+        const amount = getFinancialAmountPresentation(-item.amount, { signed: true });
+        return `<li><span>${escapeHtml(item.category)}</span><strong class="${amount.className}">${escapeHtml(amount.text)}</strong></li>`;
+      }).join('')}</ol>`
+      : '<p class="financial-insights-empty">Nenhum gasto neste período.</p>'}`;
+}
+
 window.GastoProCreditCardDashboardHelpers = {
   getUsagePresentation: getCreditCardUsagePresentation,
   renderVisual: renderCreditCardVisual
@@ -1367,23 +1695,23 @@ window.GastoProCreditCardDashboardHelpers = {
  */
 function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed, totalVariable, balance, ym) {
   // --- KPI: Total Recebido ---
-  document.getElementById('totalIncomeDisplay').textContent = formatCurrency(totalIncome);
+  setFinancialAmount(document.getElementById('totalIncomeDisplay'), totalIncome, { signed: true });
   document.getElementById('incomeCount').textContent =
     `${incomes.length} ${incomes.length === 1 ? 'entrada' : 'entradas'}`;
 
   // --- KPI: Gastos Fixos ---
-  document.getElementById('totalFixedDisplay').textContent = formatCurrency(totalFixed);
+  setFinancialAmount(document.getElementById('totalFixedDisplay'), -totalFixed, { signed: true });
   const fixedPaidCount = fixed.filter(f => f.paid).length;
   document.getElementById('fixedPaidStatus').textContent =
     fixed.length > 0 ? `${fixedPaidCount} de ${fixed.length} contas pagas` : 'Nenhuma conta no mês';
 
   // --- KPI: Gastos Variáveis ---
-  document.getElementById('totalVariableDisplay').textContent = formatCurrency(totalVariable);
+  setFinancialAmount(document.getElementById('totalVariableDisplay'), -totalVariable, { signed: true });
 
   // --- KPI: Saldo / Sobra (cor muda conforme positivo ou negativo) ---
   const balanceCard = document.getElementById('balanceDisplay');
-  balanceCard.textContent = formatCurrency(balance);
-  balanceCard.className   = balance >= 0 ? 'kpi-value text-success' : 'kpi-value text-danger';
+  setFinancialAmount(balanceCard, balance, { signed: true });
+  balanceCard.classList.remove('text-success', 'text-danger');
 
   // --- Cálculo das porcentagens para a regra 50/30/20 ---
   // Evita divisão por zero quando não há renda cadastrada
@@ -1995,7 +2323,7 @@ function renderCategoryChart(fixed, variables) {
  * @param {number} totalIncome - Soma total de ganhos do mês em R$.
  */
 function renderIncomesView(incomes, totalIncome) {
-  document.getElementById('incomesPageTotal').textContent = formatCurrency(totalIncome);
+  setFinancialAmount(document.getElementById('incomesPageTotal'), totalIncome, { signed: true });
 
   const container = document.getElementById('incomesListDetailed');
   if (!container) return;
@@ -2034,7 +2362,7 @@ function renderIncomesView(incomes, totalIncome) {
       </div>
 
       <div class="card-item-right">
-        <div class="card-item-amount text-success">+ ${formatCurrency(item.amount)}</div>
+        <div class="card-item-amount text-success financial-amount financial-amount--positive">+ ${formatCurrency(item.amount)}</div>
         <div class="card-item-actions">
           <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Ganho" aria-label="Editar ganho ${escapeHtml(item.desc)}">
             <i class="fa-solid fa-pen"></i>
@@ -2066,9 +2394,9 @@ function renderIncomesView(incomes, totalIncome) {
  * @param {number} totalExpenses - totalFixed + totalVariable.
  */
 function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalExpenses) {
-  document.getElementById('expensesPageTotal').textContent = formatCurrency(totalExpenses);
-  document.getElementById('subtotalFixedLabel').textContent = formatCurrency(totalFixed);
-  document.getElementById('subtotalVarLabel').textContent = formatCurrency(totalVariable);
+  setFinancialAmount(document.getElementById('expensesPageTotal'), -totalExpenses, { signed: true });
+  setFinancialAmount(document.getElementById('subtotalFixedLabel'), -totalFixed, { signed: true });
+  setFinancialAmount(document.getElementById('subtotalVarLabel'), -totalVariable, { signed: true });
 
   const container = document.getElementById('expensesListDetailed');
   if (!container) return;
@@ -2144,8 +2472,8 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
             <span>${item.paid ? 'Pago' : 'Pagar'}</span>
           </label>
 
-          <div class="card-item-amount ${isFixed ? 'text-warning' : 'text-danger'} ${isInactive ? 'text-muted' : ''}">
-            - ${formatCurrency(item.amount)}
+          <div class="card-item-amount financial-amount financial-amount--negative ${isInactive ? 'text-muted' : ''}">
+            − ${formatCurrency(item.amount)}
           </div>
 
           ${item.isCardInstallment ? '' : `
@@ -3038,6 +3366,12 @@ document.addEventListener('DOMContentLoaded', () => {
         state.accountBalanceFilter = actionElement.dataset.filter;
         renderAccountBalancesPanel();
         break;
+      case 'dismiss-insight':
+        if (actionElement.dataset.insightKey) {
+          state.dismissedInsights.add(actionElement.dataset.insightKey);
+          renderFinancialInsights();
+        }
+        break;
     }
   });
 
@@ -3635,7 +3969,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
-    const source = FinanceData.getEntries().find(entry => entry.id === id);
+    const source = FinanceData.getAll().find(entry => entry.id === id);
     if (source && source.type === 'variable' && type === 'fixed') {
       const sourceForMatching = { ...source, desc, date };
       const matches = findFutureFixedDescriptionMatches(sourceForMatching, FinanceData.getEntries());
@@ -3691,6 +4025,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const categoryMatches = source && source.type === type && source.category !== category
+      ? findSimilarCategoryEntries({ ...source, desc }, FinanceData.getAll(), category)
+      : [];
     await withSaving(saveButton, async () => {
       try {
         const updated = FinanceData.update(id, {
@@ -3712,7 +4049,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const syncResult = await waitForAuthenticatedSave();
         if (!syncResult.success) return;
         closeEditModal();
-        showToast('Informações alteradas com sucesso!');
+        if (categoryMatches.length) {
+          showConfirm({
+            title: 'Aplicar categoria a lançamentos parecidos?',
+            message: `Encontramos ${categoryMatches.length} lançamento${categoryMatches.length === 1 ? '' : 's'} com descrição parecida. Aplicar a categoria "${category}" também a eles?`,
+            iconClass: 'fa-solid fa-tags',
+            okLabel: 'Aplicar categoria',
+            okBtnClass: 'btn-primary',
+            secondaryLabel: 'Só este lançamento',
+            onConfirm: button => withSaving(button, async () => {
+              let failedCount = 0;
+              const changed = categoryMatches.filter(match => {
+                const result = FinanceData.update(match.id, { category });
+                if (!result) failedCount++;
+                return Boolean(result);
+              });
+              renderAll();
+              const categorySync = await waitForAuthenticatedSave();
+              if (!categorySync.success) return;
+              showToast(failedCount
+                ? `${changed.length} lançamento${changed.length === 1 ? '' : 's'} atualizado${changed.length === 1 ? '' : 's'}; ${failedCount} não puderam ser alterados.`
+                : `${changed.length} lançamento${changed.length === 1 ? '' : 's'} atualizado${changed.length === 1 ? '' : 's'} com a categoria ${category}.`);
+            }),
+            onSecondary: () => showToast('Categoria atualizada somente neste lançamento.')
+          });
+        } else {
+          showToast('Informações alteradas com sucesso!');
+        }
       } catch (error) {
         console.error('[GastoPro] Erro ao salvar alterações:', error);
         showToast(error.message || 'Não foi possível salvar as alterações. Tente novamente.');
@@ -7067,9 +7430,9 @@ function renderGoalsSection(fixed, variables) {
           </button>
         </div>
         <div class="goal-amounts">
-          <span class="goal-spent">${formatCurrency(goal.spent)}</span>
+          <span class="goal-spent ${getFinancialAmountPresentation(-goal.spent, { signed: true }).className}">${escapeHtml(getFinancialAmountPresentation(-goal.spent, { signed: true }).text)}</span>
           <span class="goal-separator">de</span>
-          <span class="goal-limit">${formatCurrency(goal.limit)}</span>
+          <span class="goal-limit financial-amount financial-amount--neutral">${formatCurrency(goal.limit)}</span>
           <span class="goal-pct-badge ${isDanger ? 'badge-danger' : isWarning ? 'badge-warning' : 'badge-success'}">${goal.percentageLabel}%</span>
         </div>
         <div class="goal-bar-track">

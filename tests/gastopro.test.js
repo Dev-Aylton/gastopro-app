@@ -3358,6 +3358,93 @@ describe('Lógica de Negócio — Gastos Fixos Inativos', () => {
   });
 });
 
+describe('Inteligência financeira local', () => {
+  const insights = window.GastoProFinancialInsights;
+
+  it('sugere categorias por descrição normalizada sem alterar lançamentos', () => {
+    const source = { id: 'a', type: 'variable', desc: 'UNINTER (12322044)', category: 'Outros' };
+    const similar = { id: 'b', type: 'variable', desc: 'Uninter 995512', category: 'Outros' };
+    const unrelated = { id: 'c', type: 'variable', desc: 'Mercado semanal', category: 'Mercado' };
+    assertEqual(insights.normalizeDescription(source.desc), ['uninter']);
+    assertTrue(insights.areDescriptionsSimilar('Shopee SParcelado out/nov', 'Shopee SParcelado jan/fev'));
+    assertEqual(insights.findSimilarCategoryEntries(source, [source, similar, unrelated], 'Educação'), [similar]);
+    assertEqual(similar.category, 'Outros');
+  });
+
+  it('só alerta gasto acima de 1,5x com pelo menos três ocorrências históricas', () => {
+    const history = [100, 100, 100].map(amount => ({ type: 'variable', category: 'Mercado', amount }));
+    const alerts = insights.calculateCategoryAnomalies(
+      [{ id: 'large', type: 'variable', category: 'Mercado', amount: 151 }],
+      history
+    );
+    assertEqual(alerts.length, 1);
+    assertEqual(alerts[0].average, 100);
+    assertEqual(insights.calculateCategoryAnomalies(
+      [{ type: 'variable', category: 'Mercado', amount: 151 }],
+      history.slice(0, 2)
+    ), []);
+  });
+
+  it('prevê saldo com dois movimentos pendentes e suprime previsão com poucos dados', () => {
+    const pending = [
+      { type: 'fixed', amount: 100, date: '2026-10-31', paid: false },
+      { type: 'income', amount: 50, date: '2026-10-30', paid: false },
+      { type: 'variable', amount: 400, date: '2026-10-31', paid: false, isCardInstallment: true }
+    ];
+    assertEqual(
+      insights.calculateMonthEndForecast(500, pending, '2026-10-30', '2026-10-31'),
+      { amount: 450, movementCount: 2 }
+    );
+    assertNull(insights.calculateMonthEndForecast(500, pending.slice(0, 1), '2026-10-30', '2026-10-31'));
+  });
+
+  it('avisa vencimento em até sete dias e calcula eventual insuficiência', () => {
+    const due = [{ type: 'fixed', amount: 120, date: '2026-11-05', paid: false }];
+    assertEqual(
+      insights.calculateUpcomingDueWarning(80, due, '2026-11-01'),
+      { dueCount: 1, dueTotal: 120, insufficientAmount: 40 }
+    );
+    assertNull(insights.calculateUpcomingDueWarning(80, due, '2026-11-01', 3));
+  });
+
+  it('resume categorias, resultado e variação contra o mês anterior', () => {
+    const summary = insights.buildMonthlySummary([
+      { type: 'income', amount: 1000 },
+      { type: 'variable', category: 'Mercado', amount: 300 },
+      { type: 'fixed', category: 'Moradia', amount: 200 }
+    ], [{ type: 'variable', category: 'Mercado', amount: 250 }]);
+    assertEqual(summary.result, 500);
+    assertEqual(summary.expenseChange, 100);
+    assertEqual(summary.topCategories.map(item => item.category), ['Mercado', 'Moradia']);
+    assertNull(insights.buildMonthlySummary([], []));
+  });
+
+  it('aplica escopo de Todas, PF, PJ e conta aos lançamentos', () => {
+    const accounts = [{ id: 'pf', type: 'PF' }, { id: 'pj', type: 'PJ' }];
+    const items = [
+      { id: 'a', accountId: 'pf' },
+      { id: 'b', accountId: 'pj' },
+      { id: 'c', accountId: null }
+    ];
+    assertEqual(insights.filterByAccount(items, accounts, 'all').length, 3);
+    assertEqual(insights.filterByAccount(items, accounts, 'PF').map(item => item.id), ['a']);
+    assertEqual(insights.filterByAccount(items, accounts, 'PJ').map(item => item.id), ['b']);
+    assertEqual(insights.filterByAccount(items, accounts, 'account:pf').map(item => item.id), ['a']);
+  });
+
+  it('reforça valores com sinal e classe semântica positiva ou negativa', () => {
+    assertEqual(insights.getAmountPresentation(125, { signed: true }), {
+      text: '+ R$\xa0125,00',
+      className: 'financial-amount financial-amount--positive'
+    });
+    assertEqual(insights.getAmountPresentation(-125, { signed: true }), {
+      text: '− R$\xa0125,00',
+      className: 'financial-amount financial-amount--negative'
+    });
+    assertEqual(insights.getAmountPresentation(0).className, 'financial-amount financial-amount--neutral');
+  });
+});
+
 describe('Lógica de Negócio — Regra 50/30/20', () => {
   it('deve calcular porcentagens corretamente com renda conhecida', () => {
     const totalIncome   = 4000;

@@ -177,22 +177,18 @@
             <div class="topbar-balance-content">
               <div class="topbar-balance-line">
                 <span class="topbar-label">Saldo atual:</span>
-                <span class="topbar-value" id="topbarBalance">R$ 0,00</span>
+                <span class="topbar-value financial-amount financial-amount--neutral" id="topbarBalance">R$ 0,00</span>
                 <span class="topbar-empty-message" id="topbarBalanceEmpty" hidden>Cadastre uma conta para ver seu saldo.</span>
               </div>
               <div class="topbar-month-result">
                 <span>Resultado do mês:</span>
-                <strong id="topbarMonthlyResult">R$ 0,00</strong>
+                <strong class="financial-amount financial-amount--neutral" id="topbarMonthlyResult">R$ 0,00</strong>
               </div>
               <small class="account-balance-date-note topbar-balance-date-note" id="topbarBalanceDateNote" hidden>
                 Informe a data do saldo inicial para maior precisão.
               </small>
             </div>
           </div>
-
-          <button class="topbar-refresh-btn" id="refreshAppBtn" title="Atualizar dados" aria-label="Atualizar dados">
-            <i class="fa-solid fa-arrows-rotate" id="refreshIcon"></i>
-          </button>
 
           <span id="themeToggleDesktopPlaceholder" hidden aria-hidden="true"></span>
           <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Mudar para tema claro" aria-pressed="false" title="Mudar para tema claro">
@@ -311,6 +307,16 @@
           <div class="drawer-section">
             <span class="drawer-section-title">Gerenciamento de Dados</span>
 
+            <button type="button" id="refreshAppBtn" class="drawer-action-btn" title="Atualizar Dados e Sincronizar">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-arrows-rotate text-primary" id="refreshIcon"></i>
+              </div>
+              <div class="action-text">
+                <strong>Atualizar Dados</strong>
+                <span>Sincronizar com a nuvem e recarregar</span>
+              </div>
+            </button>
+
             <button id="drawerRefreshBtn" class="drawer-action-btn" title="Buscar nova versão do app" aria-label="Buscar nova versão do app">
               <div class="action-icon bg-primary-soft">
                 <i class="fa-solid fa-cloud-arrow-down text-primary" id="drawerRefreshIcon"></i>
@@ -398,7 +404,7 @@
                 <span class="kpi-title"><i class="fa-solid fa-arrow-down"></i> Total Recebido</span>
                 <span class="badge badge-success" id="incomeCount">0 entradas</span>
               </div>
-              <div class="kpi-value text-success" id="totalIncomeDisplay">R$ 0,00</div>
+              <div class="kpi-value text-success financial-amount financial-amount--positive" id="totalIncomeDisplay">R$ 0,00</div>
               <span class="kpi-caption">Clique para ver e editar ganhos</span>
             </div>
 
@@ -408,7 +414,7 @@
                 <span class="kpi-title"><i class="fa-solid fa-house-lock"></i> Gastos Fixos</span>
                 <span class="badge badge-warning" id="fixedPercentage">0%</span>
               </div>
-              <div class="kpi-value text-warning" id="totalFixedDisplay">R$ 0,00</div>
+              <div class="kpi-value text-warning financial-amount financial-amount--neutral" id="totalFixedDisplay">R$ 0,00</div>
               <span class="kpi-caption" id="fixedPaidStatus">Contas essenciais do mês</span>
             </div>
 
@@ -418,7 +424,7 @@
                 <span class="kpi-title"><i class="fa-solid fa-bag-shopping"></i> Gastos Variáveis</span>
                 <span class="badge badge-danger" id="variablePercentage">0%</span>
               </div>
-              <div class="kpi-value text-danger" id="totalVariableDisplay">R$ 0,00</div>
+              <div class="kpi-value text-danger financial-amount financial-amount--negative" id="totalVariableDisplay">R$ 0,00</div>
               <span class="kpi-caption">Alimentação, lazer, compras</span>
             </div>
 
@@ -428,10 +434,26 @@
                 <span class="kpi-title"><i class="fa-solid fa-piggy-bank"></i> Saldo / Sobra</span>
                 <span class="badge" id="healthBadge">Excelente</span>
               </div>
-              <div class="kpi-value" id="balanceDisplay">R$ 0,00</div>
+              <div class="kpi-value financial-amount financial-amount--neutral" id="balanceDisplay">R$ 0,00</div>
               <span class="kpi-caption" id="dailyBudgetDisplay">Disponível para poupar</span>
             </div>
           </div>
+
+          <section class="panel-box financial-insights-panel" id="financialInsightsPanel" aria-label="Alertas e resumo financeiro">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-green-soft"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i></div>
+                <div>
+                  <h2>Alertas e resumo</h2>
+                  <p>Orientações calculadas neste aparelho com seus lançamentos</p>
+                </div>
+              </div>
+            </div>
+            <div class="financial-insights-grid">
+              <div class="financial-insights-alerts" id="financialInsightsAlerts" aria-live="polite"></div>
+              <section class="financial-month-summary" id="financialMonthSummary" aria-live="polite"></section>
+            </div>
+          </section>
 
           <!-- Diagnóstico de Saúde Financeira -->
           <div class="health-banner" id="healthBanner">
@@ -583,7 +605,7 @@
             </div>
             <div class="view-header-total">
               <span class="total-caption">Total de Ganhos:</span>
-              <span class="total-big text-white" id="incomesPageTotal">R$ 0,00</span>
+              <span class="total-big text-white financial-amount financial-amount--positive" id="incomesPageTotal">R$ 0,00</span>
             </div>
           </div>
 
@@ -680,7 +702,7 @@
             </div>
             <div class="view-header-total">
               <span class="total-caption">Total de Gastos:</span>
-              <span class="total-big text-white" id="expensesPageTotal">R$ 0,00</span>
+              <span class="total-big text-white financial-amount financial-amount--negative" id="expensesPageTotal">R$ 0,00</span>
             </div>
           </div>
 
@@ -800,7 +822,7 @@
             </div>
             <div class="view-header-total">
               <span class="total-caption">Saldo total:</span>
-              <span class="total-big text-white" id="accountsPageTotal">R$ 0,00</span>
+              <span class="total-big text-white financial-amount financial-amount--neutral" id="accountsPageTotal">R$ 0,00</span>
             </div>
           </div>
 
