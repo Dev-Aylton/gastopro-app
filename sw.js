@@ -4,11 +4,12 @@
    para fontes e folha de estilos do Font Awesome.
    ================================================================ */
 
-const CACHE_NAME = 'gastopro-v4.0';
+const CACHE_NAME = 'gastopro-v4.1';
 const ESSENTIAL_ASSETS = [
   './',
   './index.html',
   './css/style.css',
+  './js/theme.js',
   './js/supabase.js',
   './js/data.js',
   './js/categories.js',

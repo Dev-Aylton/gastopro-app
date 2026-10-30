@@ -374,12 +374,14 @@ describe('FinanceData — Isolamento entre usuários', () => {
     localStorage.setItem('gastopro_goals_v1', '[]');
     localStorage.setItem('gastopro_avatar_cache', 'avatar');
     localStorage.setItem('gastopro_tutorial_seen', 'true');
+    localStorage.setItem('gastopro_theme', 'light');
     localStorage.setItem('sb-project-auth-token', 'session');
 
     FinanceData.clearUserData();
 
     const remainingKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
-    assertEqual(remainingKeys, ['gastopro_tutorial_seen', 'sb-project-auth-token']);
+    assertEqual(remainingKeys, ['gastopro_tutorial_seen', 'gastopro_theme', 'sb-project-auth-token']);
+    assertEqual(localStorage.getItem('gastopro_theme'), 'light');
   });
 
   it('falha ou resposta vazia da nuvem não deve zerar dados locais do mesmo usuário', () => {
@@ -650,6 +652,7 @@ describe('FinanceData — Contas Bancárias', () => {
 
   itAsync('inclui contas e vínculos no backup, na validação e na restauração', async () => {
     setupMockLocalStorage();
+    localStorage.setItem('gastopro_theme', 'light');
     const accountId = crypto.randomUUID();
     const account = {
       id: accountId, name: 'Conta backup', institution: null, type: 'PF', initialBalance: 250
@@ -672,6 +675,55 @@ describe('FinanceData — Contas Bancárias', () => {
     assertTrue(result.success);
     assertEqual(FinanceData.getAccounts(), [account]);
     assertEqual(FinanceData.getEntries()[0].accountId, accountId);
+    assertEqual(localStorage.getItem('gastopro_theme'), 'light');
+  });
+});
+
+describe('Tema — preferência local', () => {
+  it('normaliza valores ausentes ou inválidos para escuro', () => {
+    assertEqual(window.GastoProThemeHelpers.normalizeSavedTheme(null), 'dark');
+    assertEqual(window.GastoProThemeHelpers.normalizeSavedTheme('invalid'), 'dark');
+    assertEqual(window.GastoProThemeHelpers.normalizeSavedTheme('light'), 'light');
+  });
+
+  it('escolhe o tema salvo ou escuro por padrão sem consultar o sistema', () => {
+    assertEqual(window.GastoProThemeHelpers.chooseTheme(null), 'dark');
+    assertEqual(window.GastoProThemeHelpers.chooseTheme('light'), 'light');
+    assertEqual(window.GastoProThemeHelpers.chooseTheme('dark'), 'dark');
+  });
+
+  it('alterna nos dois sentidos', () => {
+    assertEqual(window.GastoProThemeHelpers.toggleTheme('dark'), 'light');
+    assertEqual(window.GastoProThemeHelpers.toggleTheme('light'), 'dark');
+  });
+
+  it('lê e persiste a preferência local com escuro como padrão', () => {
+    setupMockLocalStorage();
+    assertEqual(window.GastoProTheme.readTheme(), 'dark');
+    localStorage.setItem('gastopro_theme', 'light');
+    assertEqual(window.GastoProTheme.readTheme(), 'light');
+    window.GastoProTheme.setTheme('dark');
+    assertEqual(localStorage.getItem('gastopro_theme'), 'dark');
+  });
+});
+
+describe('Interface — filtros e opções de contas', () => {
+  it('seleciona o saldo consolidado ou por tipo sem alterar os valores', () => {
+    const balances = { total: 1450, PF: 900, PJ: 550 };
+    assertEqual(getAccountBalanceForFilter(balances, 'all'), 1450);
+    assertEqual(getAccountBalanceForFilter(balances, 'PF'), 900);
+    assertEqual(getAccountBalanceForFilter(balances, 'PJ'), 550);
+  });
+
+  it('monta as opções de conta com Sem conta como primeira opção', () => {
+    assertEqual(buildAccountSelectOptions([
+      { id: 'account-1', name: 'Conta pessoal' },
+      { id: 'account-2', name: 'Conta empresa' }
+    ]), [
+      { value: '', label: 'Sem conta' },
+      { value: 'account-1', label: 'Conta pessoal' },
+      { value: 'account-2', label: 'Conta empresa' }
+    ]);
   });
 });
 
@@ -1027,6 +1079,7 @@ describe('FinanceData — clearAll()', () => {
     const templateId = crypto.randomUUID();
     const accountId = crypto.randomUUID();
     localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_theme', 'light');
     FinanceData.saveProfile({ name: 'Pessoa', avatar: 'data:image/png;base64,abc', email: 'pessoa@example.com', userId });
     localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([makeIncome({ id: entryId })]));
     localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([makeFixed({ id: templateId })]));
@@ -1064,6 +1117,7 @@ describe('FinanceData — clearAll()', () => {
       assertFalse(FinanceData.hasPendingSync(), 'A fila não deve ressuscitar dados após reset concluído');
       assertEqual(FinanceData.getProfile().name, 'Pessoa');
       assertEqual(FinanceData.getProfile().avatar, 'data:image/png;base64,abc');
+      assertEqual(localStorage.getItem('gastopro_theme'), 'light');
     } finally {
       window.SupabaseAuth = previousAuth;
     }
@@ -1785,6 +1839,8 @@ describe('FinanceData — exportJSON()', () => {
       assertTrue(Array.isArray(backup.templates), 'templates deve ser array');
       assertTrue(Array.isArray(backup.goals), 'goals deve ser array');
       assertTrue(Array.isArray(backup.accounts), 'accounts deve ser array');
+      assertFalse(Object.prototype.hasOwnProperty.call(backup, 'theme'));
+      assertFalse(Object.prototype.hasOwnProperty.call(backup, 'gastopro_theme'));
       assertEqual(backup.entries.length, 1);
       assertEqual(backup.templates.length, 1);
     } finally {
@@ -3521,6 +3577,7 @@ describe('Exclusão de conta do usuário', () => {
     });
     localStorage.setItem('gastopro_entries_v4', JSON.stringify([{ id: 'local-entry' }]));
     localStorage.setItem('gastopro_profile_real_v2', JSON.stringify({ name: 'Pessoa', avatar: 'foto' }));
+    localStorage.setItem('gastopro_theme', 'light');
     localStorage.setItem('gastopro_last_uid', 'user-delete');
     localStorage.setItem('sb-project-auth-token', 'sessao');
     let signOutScope = null;
@@ -3537,7 +3594,8 @@ describe('Exclusão de conta do usuário', () => {
     assertFalse(FinanceData.hasPendingSync());
     assertFalse(window.GastoProOnboarding.hasSeen());
     assertEqual(signOutScope, 'local');
-    assertEqual(localStorage.length, 0);
+    assertEqual(localStorage.length, 1);
+    assertEqual(localStorage.getItem('gastopro_theme'), 'light');
   });
 
   itAsync('preserva dados, fila e sessão se a exclusão no servidor falhar', async () => {

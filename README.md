@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-226%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-232%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -54,6 +54,7 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 
 ### 📊 Dashboard e saúde financeira
 - Resumo em tempo real de Total Recebido, Gastos Fixos, Gastos Variáveis e Saldo Livre.
+- Saldo consolidado das contas bancárias com filtro Todos/PF/PJ e atalho para a tela Contas.
 - Diagnóstico visual baseado na metodologia 50/30/20, com barras de progresso.
 - Cálculo automático da sobra média diária até o fim do mês.
 - Gráfico de rosca com distribuição de gastos por categoria via Chart.js.
@@ -68,8 +69,14 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 
 ### 💰 Receitas e despesas
 - Cadastro, edição e exclusão de receitas e gastos.
+- Vínculo opcional de ganhos e gastos a uma conta; o saldo muda conforme os lançamentos pagos.
 - Categorias de receita: Salário, Adiantamento, Renda Extra, Rendimentos e Outros.
 - Lançamentos vinculados ao mês de competência da data informada.
+
+### 🏦 Contas bancárias PF/PJ
+- Cadastro e edição de contas com nome, instituição opcional, tipo e saldo inicial; ajuste manual do saldo atual.
+- Saldos atuais por conta e consolidados, calculados pela camada FinanceData.
+- Exclusão desvincula lançamentos e gastos fixos sem apagá-los; contas e vínculos são incluídos na sincronização e no backup.
 
 ### 🗓️ Navegação
 - Setas de navegação rápida com virada automática de ano.
@@ -116,6 +123,7 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 
 ### ♿ Acessibilidade e PWA
 - Gerenciamento de foco, navegação por Tab e fechamento de modais por Esc.
+- Alternância entre tema claro e escuro, com preferência local independente dos dados sincronizados e dos backups.
 - Instalável em celular ou desktop; Service Worker com funcionamento offline (Network First + Cache Fallback).
 
 ---
@@ -137,7 +145,8 @@ financeiro-app/
 ├── css/
 │   └── style.css              # Design System, dark mode, variáveis e animações
 ├── js/
-│   ├── app.js                 # Controller: lógica, renderização, eventos, gráficos e auth
+│   ├── app.js                 # Controller: telas, renderização, contas, eventos, gráficos e auth
+│   ├── theme.js               # Aplica antecipadamente o tema salvo no aparelho
 │   ├── data.js                # Camada de dados: CRUD local e sincronização
 │   ├── supabase.js            # Autenticação e persistência Supabase
 │   ├── categories.js          # Categorias compartilhadas e normalização
@@ -150,10 +159,10 @@ financeiro-app/
 │   ├── schema.sql             # Tabelas, validações, RLS, índices, permissões e triggers
 │   └── migrations/
 │       ├── 20261027_hardening.sql # Hardening aplicado e validado em 28/10/2026
-│       ├── 20261028_accounts.sql  # RM-025 parte A; aplicar manualmente no Supabase
+│       ├── 20261028_accounts.sql  # RM-025 parte A; aplicada em produção
 │       └── 20261028_delete_my_account.sql # Exclusão de conta; aplicar manualmente no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 226 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 232 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -190,6 +199,7 @@ localStorage               Supabase Auth + PostgreSQL
 | `gastopro_profile_real_v2` | Perfil local: nome, e-mail, userId e avatar |
 | `gastopro_goals_v1` | Metas por categoria |
 | `gastopro_accounts_v1` | Contas bancárias PF/PJ |
+| `gastopro_theme` | Preferência de aparência deste aparelho (`dark` ou `light`), não sincronizada nem incluída no backup |
 | `gastopro_last_uid` | UID da conta dona dos dados locais ativos |
 | `gastopro_pending_sync_v1` | Fila de sincronização pendente |
 
@@ -353,7 +363,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
-As tabelas `entries`, `fixed_templates`, `goals`, `accounts` e `profiles` têm RLS ativo. `public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) está pendente de aplicação manual no painel. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) também precisa ser aplicada manualmente. O app envia nome e avatar para `profiles` ao editar o perfil autenticado; alterações pendentes são mantidas para nova tentativa. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
+As tabelas `entries`, `fixed_templates`, `goals`, `accounts` e `profiles` têm RLS ativo. `public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) foi aplicada em produção. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) também precisa ser aplicada manualmente. O app envia nome e avatar para `profiles` ao editar o perfil autenticado; alterações pendentes são mantidas para nova tentativa. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
 
 Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Consulte também [Executar, configurar e publicar](#-executar-configurar-e-publicar).
 
@@ -361,7 +371,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **226 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **232 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -370,6 +380,8 @@ Suite com **226 casos de teste** em JavaScript puro, sem frameworks. Os testes u
 | `Recuperação de sessão` | Preservação de alterações pendentes após expiração, sincronização ao entrar na mesma conta e confirmação antes de descartar dados para trocar de conta. |
 | `FinanceData — Metas por Categoria` | Criação, edição, remoção e alertas de metas. |
 | `FinanceData — Contas Bancárias` | CRUD, validação, saldos, ajuste, exclusão, sincronização e backup de contas. |
+| `Interface — filtros e opções de contas` | Seleção de saldo consolidado/PF/PJ e opções dos campos de conta. |
+| `Tema — preferência local` | Normalização, tema inicial escuro e alternância de tema. |
 | `Exclusão de conta do usuário` | RPC, resposta de sucesso/erro, texto exato de confirmação, limpeza dos dados/sessão locais e preservação após falha. |
 | `FinanceData — Templates de Gastos Fixos` | Leitura e gravação de templates. |
 | `FinanceData — add() Lançamentos` | Inserção de tipos de lançamento. |
@@ -522,7 +534,7 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 
 ### Novas melhorias
 
-- [ ] **RM-025 — Contas bancárias PF/PJ** / Descrição: cadastro de contas (nome, instituição, tipo PF ou PJ, saldo inicial, saldo atual); campo de conta nos lançamentos atualizando o saldo; saldo consolidado e filtro Todos/PF/PJ no Dashboard; ajuste rápido manual de saldo; sincronização com Supabase. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-025 — Contas bancárias PF/PJ** / Descrição: partes A e B implementadas: cadastro e gerenciamento de contas, vínculos em ganhos e gastos, saldos consolidados/filtro no Dashboard, ajuste rápido, sincronização e backup. / Critério de pronto: testes automatizados aprovados; fluxos integrados pendentes de validação manual. / Arquivos: `index.html`, `js/app.js`, `css/style.css`.
 - [ ] **RM-026 — Cartões de crédito e limites** / Descrição: cadastro de cartão (nome, limite total, dia de fechamento, dia de vencimento, conta vinculada); compras parceladas de 1x a 24x com abatimento do limite disponível e parcelas projetadas nos meses futuros; barra de uso do limite e alerta em 80%. Antes de implementar, confirmar com o Aylton como isso convive com as parcelas e dívidas "a pagar" já existentes. / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-027 — Mais palavras-chave na categorização** / Descrição: ampliar as regras de categoria automática do importador. / Critério de pronto: a definir. / Arquivos: a definir.
 
@@ -535,7 +547,7 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 - O Roadmap foi atualizado com RM-025 a RM-027.
 - RM-027: ampliadas as palavras-chave da categorização automática, corrigida a classificação de 'Mercado Livre' para Compras, removidas palavras ambíguas e 'Mercado Pago' direcionado para Outros.
 - Adicionados quatro testes de `autoDetectCategory`, incluindo palavras-chave, normalização e precedência da categoria informada no CSV.
-- RM-025 parte A: contas PF/PJ, vínculos opcionais em lançamentos/templates, saldos, sincronização e backup implementados sem interface; migração SQL pendente de aplicação manual.
+- RM-025 parte A: contas PF/PJ, vínculos opcionais em lançamentos/templates, saldos, sincronização e backup implementados; migração aplicada em produção.
 - Exclusão da própria conta Supabase pela função `public.delete_my_account()`, com confirmação explícita e limpeza dos dados/sessão locais após sucesso; migração pendente de aplicação manual.
 - Reset agora também apaga contas bancárias, preservando sessão, nome e foto; testes cobrem fila de exclusões e limpeza após apagar a conta de login.
 - Sessão expirada preserva alterações pendentes, orienta o login na mesma conta e exige confirmação explícita antes de descartá-las para trocar de conta.
@@ -544,6 +556,8 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 - Nome e foto agora são sincronizados com `profiles` sob RLS; o modal de recorte do avatar permite arrastar, teclado e zoom, e o backup permanece sem dados de perfil.
 - Tema claro em preparação: a folha de estilos usa tokens semânticos com paleta escura preservada e uma paleta clara em validação.
 - Tutorial de primeiro acesso com dicas sobre lançamentos, contas fixas, dívidas, metas, importação, relatórios e dados; disponível novamente em “Como usar” no perfil.
+- RM-025 parte B: tela e modais de contas PF/PJ, vínculos em ganhos/gastos, saldo consolidado filtrável no Dashboard e duas funções puras cobertas por testes; cache do Service Worker atualizado.
+- Tema claro/escuro alternável no cabeçalho, escolhido no carregamento antes dos estilos e persistido por aparelho; limpeza de dados e restauração de backup preservam a preferência.
 
 ### v4.0 — 28/10/2026 (versão atual)
 

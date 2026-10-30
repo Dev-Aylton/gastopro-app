@@ -145,10 +145,11 @@ const _initDate = new Date();
  * "qual tela está visível" deve ler este objeto.
  */
 const state = {
-  currentView:  'dashboard',              // Tela ativa: 'dashboard' | 'incomes' | 'expenses'
+  currentView:  'dashboard',              // Tela ativa
   currentYear:  _initDate.getFullYear(),  // Ano selecionado (inicializa com o ano atual)
   currentMonth: _initDate.getMonth() + 1, // Mês selecionado 1–12 (inicializa com mês atual)
   expenseFilter: 'all',                   // Filtro de gastos: 'all' | 'fixed' | 'variable'
+  accountBalanceFilter: 'all',
   chartInstance: null                     // Instância ativa do Chart.js (para destruir antes de recriar)
 };
 
@@ -166,7 +167,8 @@ const MONTH_NAMES = [
 const VIEW_TITLES = {
   dashboard: 'Dashboard & Saúde Financeira',
   incomes:   'Gerenciador de Ganhos do Mês',
-  expenses:  'Gerenciador de Gastos do Mês'
+  expenses:  'Gerenciador de Gastos do Mês',
+  accounts:  'Contas'
 };
 
 // ================================================================
@@ -198,6 +200,17 @@ function isValidPassword(password) {
  */
 function getYearMonthString(year, month) {
   return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function getAccountBalanceForFilter(balances, filter) {
+  return filter === 'PF' || filter === 'PJ' ? Number(balances[filter]) : Number(balances.total);
+}
+
+function buildAccountSelectOptions(accounts) {
+  return [
+    { value: '', label: 'Sem conta' },
+    ...accounts.map(account => ({ value: account.id, label: account.name }))
+  ];
 }
 
 function getDailyBudgetInfo(balance, year, month, today) {
@@ -319,6 +332,7 @@ window.switchToView = function(viewId) {
  *  5. Delega para as funções de renderização de cada tela.
  */
 function renderAll() {
+  updateAccountSelects();
   const ym         = getYearMonthString(state.currentYear, state.currentMonth);
   const monthLabel = `${MONTH_NAMES[state.currentMonth - 1]} ${state.currentYear}`;
 
@@ -360,6 +374,89 @@ function renderAll() {
   renderIncomesView(incomes, totalIncome);
   // allFixed (com inativos) é passado para permitir gerenciar gastos pausados na tela de Gastos
   renderExpensesView(allFixed, variables, totalFixed, totalVariable, totalExpenses);
+  renderAccountsView();
+}
+
+function updateAccountSelects() {
+  const accounts = FinanceData.getAccounts();
+  document.querySelectorAll('.account-select').forEach(select => {
+    const selectedId = select.value;
+    const options = buildAccountSelectOptions(accounts);
+    select.innerHTML = options.map(option =>
+      `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
+    ).join('');
+    select.value = accounts.some(account => account.id === selectedId) ? selectedId : '';
+  });
+}
+
+function renderAccountsView() {
+  const accounts = FinanceData.getAccounts();
+  const list = document.getElementById('accountsList');
+  const total = document.getElementById('accountsPageTotal');
+  if (total) total.textContent = formatCurrency(FinanceData.getAccountBalances().total);
+  if (!list) return;
+
+  if (!accounts.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <i class="fa-solid fa-building-columns account-empty-icon"></i>
+        <p>Nenhuma conta cadastrada.</p>
+        <span>Cadastre uma conta PF ou PJ para acompanhar o saldo e vincular lançamentos.</span>
+        <button type="button" class="btn-primary account-empty-action" data-action="new-account">
+          <i class="fa-solid fa-plus"></i> Cadastrar primeira conta
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  list.innerHTML = accounts.map(account => `
+    <article class="manage-item-card account-item-card">
+      <div class="card-item-left">
+        <div class="card-type-icon bg-green-soft"><i class="fa-solid fa-building-columns"></i></div>
+        <div class="card-item-info">
+          <div class="card-item-title">${escapeHtml(account.name)}</div>
+          <div class="card-item-meta account-card-meta">
+            ${account.institution ? `<span>${escapeHtml(account.institution)}</span>` : ''}
+            <span class="tag-badge account-type-badge">${escapeHtml(account.type)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="account-item-right">
+        <strong class="account-balance-amount">${formatCurrency(FinanceData.getAccountBalance(account.id))}</strong>
+        <div class="account-item-actions">
+          <button type="button" class="btn-secondary account-action-button" data-action="edit-account" data-id="${escapeHtml(account.id)}" aria-label="Editar conta ${escapeHtml(account.name)}" title="Editar">
+            <i class="fa-solid fa-pen"></i><span>Editar</span>
+          </button>
+          <button type="button" class="btn-secondary account-action-button" data-action="adjust-account" data-id="${escapeHtml(account.id)}" aria-label="Ajustar saldo da conta ${escapeHtml(account.name)}" title="Ajustar saldo">
+            <i class="fa-solid fa-scale-balanced"></i><span>Ajustar saldo</span>
+          </button>
+          <button type="button" class="btn-secondary account-action-button account-delete-action" data-action="delete-account" data-id="${escapeHtml(account.id)}" aria-label="Excluir conta ${escapeHtml(account.name)}" title="Excluir">
+            <i class="fa-solid fa-trash-can"></i><span>Excluir</span>
+          </button>
+        </div>
+      </div>
+    </article>
+  `).join('');
+}
+
+function renderAccountBalancesPanel() {
+  const balances = FinanceData.getAccountBalances();
+  const accounts = FinanceData.getAccounts();
+  const display = document.getElementById('dashboardAccountBalance');
+  const label = document.getElementById('accountBalanceFilterLabel');
+  const empty = document.getElementById('dashboardAccountsEmpty');
+  if (display) display.textContent = formatCurrency(getAccountBalanceForFilter(balances, state.accountBalanceFilter));
+  if (label) {
+    label.textContent = state.accountBalanceFilter === 'all'
+      ? 'Saldo consolidado de todas as contas'
+      : `Saldo das contas ${state.accountBalanceFilter}`;
+  }
+  if (empty) empty.hidden = accounts.length > 0;
+  document.querySelectorAll('[data-action="filter-account-balance"]').forEach(button => {
+    button.classList.toggle('active', button.dataset.filter === state.accountBalanceFilter);
+    button.setAttribute('aria-pressed', button.dataset.filter === state.accountBalanceFilter ? 'true' : 'false');
+  });
 }
 
 // ================================================================
@@ -431,6 +528,7 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
   renderDebtCenter(ym);
   renderCategoryChart(fixed, variables);
   renderGoalsSection(fixed, variables);
+  renderAccountBalancesPanel();
 }
 
 /**
@@ -890,7 +988,10 @@ function renderIncomesView(incomes, totalIncome) {
     return;
   }
 
-  container.innerHTML = incomes.map(item => `
+  const accountNames = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
+  container.innerHTML = incomes.map(item => {
+    const accountName = accountNames.get(item.accountId);
+    return `
     <div class="manage-item-card">
       <div class="card-item-left">
         <div class="card-type-icon bg-green-soft">
@@ -900,6 +1001,7 @@ function renderIncomesView(incomes, totalIncome) {
           <div class="card-item-title">${escapeHtml(item.desc)}</div>
           <div class="card-item-meta">
             <span class="tag-badge">${escapeHtml(item.category || 'Renda')}</span>
+            ${accountName ? `<span class="tag-badge">${escapeHtml(accountName)}</span>` : ''}
             <span><i class="fa-regular fa-calendar"></i> ${escapeHtml(formatDate(item.date))}</span>
           </div>
         </div>
@@ -917,7 +1019,8 @@ function renderIncomesView(incomes, totalIncome) {
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 // ================================================================
@@ -966,12 +1069,14 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
     return;
   }
 
+  const accountNames = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
   container.innerHTML = itemsToDisplay.map(item => {
     const isFixed = item.type === 'fixed';
     const typeLabel = isFixed ? 'Conta Fixa Recorrente' : 'Gasto Variável';
     const iconClass = isFixed ? 'bg-yellow-soft' : 'bg-red-soft';
     const iconI = isFixed ? 'fa-solid fa-lock' : 'fa-solid fa-cart-shopping';
     const isInactive = isFixed && item.active === false;
+    const accountName = accountNames.get(item.accountId);
 
     return `
       <div class="manage-item-card ${item.paid ? 'is-paid' : ''} ${isInactive ? 'is-inactive-card' : ''}">
@@ -983,6 +1088,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
             <div class="card-item-title">${escapeHtml(item.desc)}</div>
             <div class="card-item-meta">
               <span class="tag-badge">${escapeHtml(item.category || typeLabel)}</span>
+              ${accountName ? `<span class="tag-badge">${escapeHtml(accountName)}</span>` : ''}
               <span class="tag-badge" style="opacity: 0.8;">${typeLabel}</span>
               ${isFixed ? `
                 <button class="badge-status-btn ${item.active ? 'status-active' : 'status-inactive'}" 
@@ -1067,6 +1173,8 @@ window.openEditModal = function(id) {
   }
 
   document.getElementById('editDate').value = item.date || getTodayString();
+  const editAccount = document.getElementById('editAccount');
+  if (editAccount) editAccount.value = item.accountId || '';
 
   const isFixed = item.type === 'fixed' || item.type === 'debt' || item.isTemplate ||
     FinanceData.getTemplates().some(template => template.id === id);
@@ -1090,6 +1198,69 @@ window.openEditModal = function(id) {
 
 function closeEditModal() {
   document.getElementById('editModal').classList.remove('active');
+}
+
+function openAccountModal(id) {
+  const account = id ? FinanceData.getAccounts().find(item => item.id === id) : null;
+  const modal = document.getElementById('accountModal');
+  document.getElementById('accountModalTitle').textContent = account ? 'Editar conta' : 'Nova conta';
+  document.getElementById('accountId').value = account ? account.id : '';
+  document.getElementById('accountName').value = account ? account.name : '';
+  document.getElementById('accountInstitution').value = account ? account.institution || '' : '';
+  document.getElementById('accountType').value = account ? account.type : 'PF';
+  document.getElementById('accountInitialBalance').value = account ? account.initialBalance : '0';
+  const error = document.getElementById('accountFormError');
+  error.textContent = '';
+  error.hidden = true;
+  modal.classList.add('active');
+  setTimeout(() => document.getElementById('accountName').focus(), 100);
+}
+
+function closeAccountModal() {
+  document.getElementById('accountModal').classList.remove('active');
+}
+
+function openAdjustAccountModal(id) {
+  const account = FinanceData.getAccounts().find(item => item.id === id);
+  if (!account) return;
+  document.getElementById('adjustAccountId').value = account.id;
+  document.getElementById('adjustAccountName').textContent = account.name;
+  document.getElementById('adjustAccountBalance').value = FinanceData.getAccountBalance(id);
+  const error = document.getElementById('adjustAccountError');
+  error.textContent = '';
+  error.hidden = true;
+  document.getElementById('adjustAccountModal').classList.add('active');
+  setTimeout(() => document.getElementById('adjustAccountBalance').focus(), 100);
+}
+
+function closeAdjustAccountModal() {
+  document.getElementById('adjustAccountModal').classList.remove('active');
+}
+
+function deleteAccount(id) {
+  const account = FinanceData.getAccounts().find(item => item.id === id);
+  if (!account) return;
+  showConfirm({
+    title: 'Excluir conta?',
+    message: `Excluir "${account.name}"? Os lançamentos e gastos fixos vinculados NÃO serão apagados; apenas ficarão sem conta.`,
+    iconClass: 'fa-solid fa-trash-can',
+    okLabel: 'Sim, excluir conta',
+    onConfirm: async () => {
+      try {
+        const result = await FinanceData.deleteAccount(id);
+        renderAll();
+        if (!result.success) {
+          showToast(`Não foi possível concluir a sincronização da exclusão: ${result.error && result.error.message || result.error || 'erro desconhecido'}`);
+          return;
+        }
+        showToast('Conta excluída. Os lançamentos vinculados foram mantidos sem conta.');
+      } catch (error) {
+        console.error('[GastoPro] Falha ao excluir conta:', error);
+        renderAll();
+        showToast(`Não foi possível excluir a conta: ${error.message || error}`);
+      }
+    }
+  });
 }
 
 // ================================================================
@@ -1340,6 +1511,9 @@ window.GastoProKeyboardPanels = {
  *  12. Registro do Service Worker (PWA).
  */
 document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('gastopro:themechange', () => {
+    if (document.getElementById('categoryChart')) renderAll();
+  });
   if (!document.getElementById('prevMonthBtn')) return;
 
   const categoryIcons = {
@@ -1620,6 +1794,22 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'edit-goal':
         openGoalModal(id);
         break;
+      case 'new-account':
+        openAccountModal();
+        break;
+      case 'edit-account':
+        openAccountModal(id);
+        break;
+      case 'adjust-account':
+        openAdjustAccountModal(id);
+        break;
+      case 'delete-account':
+        deleteAccount(id);
+        break;
+      case 'filter-account-balance':
+        state.accountBalanceFilter = actionElement.dataset.filter;
+        renderAccountBalancesPanel();
+        break;
     }
   });
 
@@ -1864,12 +2054,14 @@ document.addEventListener('DOMContentLoaded', () => {
         desc: desc,
         amount: amount,
         category: category,
+        accountId: document.getElementById('incomeAccount').value || null,
         date: dateVal
       });
 
       document.getElementById('incomeDesc').value = '';
       document.getElementById('incomeAmount').value = '';
       document.getElementById('incomeDate').value = getTodayString();
+      document.getElementById('incomeAccount').value = '';
       document.getElementById('incomeDesc').focus();
 
       renderAll();
@@ -1929,19 +2121,21 @@ document.addEventListener('DOMContentLoaded', () => {
         category: category,
         paid: false,
         date: dateVal,
+        accountId: document.getElementById('expenseAccount').value || null,
         endMonth: endMonthVal || null
       });
 
       document.getElementById('expenseDesc').value = '';
       document.getElementById('expenseAmount').value = '';
       document.getElementById('expenseDate').value = getTodayString();
+      document.getElementById('expenseAccount').value = '';
       if (document.getElementById('expenseEndMonth')) document.getElementById('expenseEndMonth').value = '';
       checkDebtVisibility();
       document.getElementById('expenseDesc').focus();
 
       // Garante que o filtro exiba o novo gasto imediatamente
       state.expenseFilter = 'all';
-      document.querySelectorAll('.filter-btn').forEach(b => {
+      document.querySelectorAll('.filter-tabs-row .filter-btn').forEach(b => {
         b.classList.toggle('active', b.getAttribute('data-filter') === 'all');
       });
 
@@ -1962,9 +2156,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 7. Filtros de Gastos ──────────────────────────────────────
   // Atualiza state.expenseFilter e re-renderiza ao clicar em cada aba de filtro
-  document.querySelectorAll('.filter-btn').forEach(btn => {
+  document.querySelectorAll('.filter-tabs-row .filter-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.filter-tabs-row .filter-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.expenseFilter = btn.getAttribute('data-filter');
       renderAll();
@@ -1997,7 +2191,8 @@ document.addEventListener('DOMContentLoaded', () => {
       type: type,
       date: date,
       active: active,
-      endMonth: endMonth
+      endMonth: endMonth,
+      accountId: document.getElementById('editAccount').value || null
     });
     if (!updated) {
       showToast('Não é possível alterar entre lançamento pontual e recorrente pela edição.');
@@ -2007,6 +2202,103 @@ document.addEventListener('DOMContentLoaded', () => {
     closeEditModal();
     renderAll();
     showToast('Informações alteradas com sucesso!');
+  });
+
+  document.getElementById('accountForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const errorEl = document.getElementById('accountFormError');
+    const id = document.getElementById('accountId').value;
+    const name = document.getElementById('accountName').value.trim();
+    const institution = document.getElementById('accountInstitution').value.trim();
+    const type = document.getElementById('accountType').value;
+    const balanceRaw = document.getElementById('accountInitialBalance').value;
+    const balance = Number(balanceRaw);
+    let validationError = '';
+
+    if (!name || name.length > 100) validationError = 'O nome deve ter de 1 a 100 caracteres.';
+    else if (institution.length > 100) validationError = 'A instituição deve ter até 100 caracteres.';
+    else if (!['PF', 'PJ'].includes(type)) validationError = 'O tipo deve ser PF ou PJ.';
+    else if (balanceRaw === '' || !Number.isFinite(balance) || Math.abs(balance) > 9999999999.99) {
+      validationError = 'O saldo inicial deve ser um valor numérico válido.';
+    }
+
+    if (validationError) {
+      errorEl.textContent = validationError;
+      errorEl.hidden = false;
+      return;
+    }
+
+    const saveButton = document.getElementById('saveAccountBtn');
+    saveButton.disabled = true;
+    errorEl.hidden = true;
+    try {
+      const fields = { name, institution: institution || null, type, initialBalance: balance };
+      const previousAccountIds = new Set(FinanceData.getAccounts().map(account => account.id));
+      const result = id
+        ? await FinanceData.updateAccount(id, fields)
+        : await FinanceData.addAccount(fields);
+      if (!result.success) {
+        if (!id) {
+          const newlySaved = FinanceData.getAccounts().find(account =>
+            !previousAccountIds.has(account.id)
+          );
+          if (newlySaved) {
+            document.getElementById('accountId').value = newlySaved.id;
+            document.getElementById('accountModalTitle').textContent = 'Editar conta';
+          }
+        }
+        renderAll();
+        errorEl.textContent = result.error && result.error.message || result.error || 'Não foi possível salvar a conta.';
+        errorEl.hidden = false;
+        return;
+      }
+      closeAccountModal();
+      renderAll();
+      showToast(id ? 'Conta atualizada com sucesso.' : 'Conta cadastrada com sucesso.');
+    } catch (error) {
+      console.error('[GastoPro] Falha ao salvar conta:', error);
+      errorEl.textContent = `Não foi possível salvar a conta: ${error.message || error}`;
+      errorEl.hidden = false;
+    } finally {
+      saveButton.disabled = false;
+    }
+  });
+
+  document.getElementById('adjustAccountForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const errorEl = document.getElementById('adjustAccountError');
+    const rawBalance = document.getElementById('adjustAccountBalance').value;
+    const balance = Number(rawBalance);
+    if (rawBalance === '' || !Number.isFinite(balance) || Math.abs(balance) > 9999999999.99) {
+      errorEl.textContent = 'Informe um saldo atual válido.';
+      errorEl.hidden = false;
+      return;
+    }
+
+    const saveButton = document.getElementById('saveAdjustAccountBtn');
+    saveButton.disabled = true;
+    errorEl.hidden = true;
+    try {
+      const result = await FinanceData.adjustAccountBalance(
+        document.getElementById('adjustAccountId').value,
+        balance
+      );
+      if (!result.success) {
+        renderAll();
+        errorEl.textContent = result.error && result.error.message || result.error || 'Não foi possível ajustar o saldo.';
+        errorEl.hidden = false;
+        return;
+      }
+      closeAdjustAccountModal();
+      renderAll();
+      showToast('Saldo atualizado com sucesso.');
+    } catch (error) {
+      console.error('[GastoPro] Falha ao ajustar saldo da conta:', error);
+      errorEl.textContent = `Não foi possível ajustar o saldo: ${error.message || error}`;
+      errorEl.hidden = false;
+    } finally {
+      saveButton.disabled = false;
+    }
   });
 
   const editModalEl = document.getElementById('editModal');
@@ -2030,6 +2322,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('closeModalBtn').addEventListener('click', closeEditModal);
   document.getElementById('cancelEditBtn').addEventListener('click', closeEditModal);
+
+  document.getElementById('closeAccountModalBtn').addEventListener('click', closeAccountModal);
+  document.getElementById('cancelAccountModalBtn').addEventListener('click', closeAccountModal);
+  document.getElementById('closeAdjustAccountModalBtn').addEventListener('click', closeAdjustAccountModal);
+  document.getElementById('cancelAdjustAccountBtn').addEventListener('click', closeAdjustAccountModal);
+  document.getElementById('accountModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeAccountModal();
+  });
+  document.getElementById('adjustAccountModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeAdjustAccountModal();
+  });
 
   // ── 9. Exportação e Reset de Dados ───────────────────────────
   document.getElementById('exportBtn').addEventListener('click', () => {

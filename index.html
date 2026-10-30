@@ -14,6 +14,7 @@
              form-action 'self';
              connect-src 'self' https://xfjhgzcqlrhpckqwnqtk.supabase.co wss://xfjhgzcqlrhpckqwnqtk.supabase.co;" />
 
+  <script src="js/theme.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>GastoPro — Controle de Gastos & Saúde Financeira</title>
   <meta name="description"
@@ -98,6 +99,11 @@
           <span class="nav-badge text-danger" id="sidebarExpenseCount"></span>
         </button>
 
+        <button class="nav-item" data-view="accounts" id="navAccounts">
+          <i class="fa-solid fa-building-columns"></i>
+          <span>Contas</span>
+        </button>
+
         <!-- Botão 5: Importar Extrato (No rodapé, acima de Atualizar Dados) -->
         <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
           <i class="fa-solid fa-file-import"></i>
@@ -170,6 +176,10 @@
 
           <button class="topbar-refresh-btn" id="refreshAppBtn" title="Atualizar dados (Refresh)" aria-label="Atualizar dados">
             <i class="fa-solid fa-arrows-rotate" id="refreshIcon"></i>
+          </button>
+
+          <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Mudar para tema claro" aria-pressed="false" title="Mudar para tema claro">
+            <i class="fa-solid fa-moon" id="themeToggleIcon" aria-hidden="true"></i>
           </button>
 
           <button class="user-avatar-btn" id="userMenuBtn" title="Menu do Usuário" aria-label="Abrir menu do usuário" aria-haspopup="dialog" aria-expanded="false">
@@ -465,6 +475,33 @@
             </div>
           </div>
 
+          <div class="panel-box account-balance-panel">
+            <div class="account-balance-navigation">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <div class="panel-icon bg-green-soft"><i class="fa-solid fa-building-columns"></i></div>
+                  <div>
+                    <h2>Saldo em contas</h2>
+                    <p id="accountBalanceFilterLabel">Saldo consolidado de todas as contas</p>
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="account-balance-link" data-goto="accounts" aria-label="Abrir tela de Contas">
+                <strong id="dashboardAccountBalance">R$ 0,00</strong>
+                <span>Gerenciar contas <i class="fa-solid fa-arrow-right"></i></span>
+              </button>
+            </div>
+            <div class="filter-buttons account-balance-filters" role="group" aria-label="Filtrar saldo por tipo de conta">
+              <button type="button" class="filter-btn active" data-action="filter-account-balance" data-filter="all">Todos</button>
+              <button type="button" class="filter-btn" data-action="filter-account-balance" data-filter="PF">PF</button>
+              <button type="button" class="filter-btn" data-action="filter-account-balance" data-filter="PJ">PJ</button>
+            </div>
+            <div class="account-balance-empty" id="dashboardAccountsEmpty" hidden>
+              <p>Nenhuma conta cadastrada.</p>
+              <button type="button" class="btn-secondary" data-goto="accounts">Cadastrar conta</button>
+            </div>
+          </div>
+
 
 
 
@@ -502,7 +539,7 @@
               </div>
             </div>
 
-            <form id="incomeForm" class="form-grid-5">
+            <form id="incomeForm" class="form-grid-6">
               <div>
                 <label for="incomeDesc">Descrição</label>
                 <input type="text" id="incomeDesc" placeholder="Ex: Salário / Freela" required />
@@ -530,6 +567,13 @@
               <div>
                 <label for="incomeDate">Data do Recebimento</label>
                 <input type="date" id="incomeDate" required />
+              </div>
+
+              <div>
+                <label for="incomeAccount">Conta</label>
+                <select id="incomeAccount" class="account-select">
+                  <option value="">Sem conta</option>
+                </select>
               </div>
 
               <div class="form-btn-align">
@@ -643,6 +687,13 @@
                 <input type="date" id="expenseDate" required />
               </div>
 
+              <div>
+                <label for="expenseAccount">Conta</label>
+                <select id="expenseAccount" class="account-select">
+                  <option value="">Sem conta</option>
+                </select>
+              </div>
+
               <div class="form-btn-align">
                 <button type="submit" class="btn-danger w-100">
                   <i class="fa-solid fa-plus"></i> Inserir Gasto
@@ -671,6 +722,40 @@
             </div>
           </div>
 
+        </section>
+
+        <section class="view-section" id="view-accounts">
+          <div class="view-header-card bg-green-gradient">
+            <div class="view-header-info">
+              <div class="view-icon-badge"><i class="fa-solid fa-building-columns"></i></div>
+              <div>
+                <h2>Contas bancárias</h2>
+                <p>Gerencie contas PF e PJ e acompanhe seus saldos</p>
+              </div>
+            </div>
+            <div class="view-header-total">
+              <span class="total-caption">Saldo total:</span>
+              <span class="total-big text-white" id="accountsPageTotal">R$ 0,00</span>
+            </div>
+          </div>
+
+          <div class="panel-box">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-green-soft"><i class="fa-solid fa-wallet"></i></div>
+                <div>
+                  <h3>Suas contas</h3>
+                  <p>O saldo considera somente lançamentos pagos</p>
+                </div>
+              </div>
+              <button type="button" class="btn-primary" data-action="new-account">
+                <i class="fa-solid fa-plus"></i> Nova conta
+              </button>
+            </div>
+            <div class="items-cards-list" id="accountsList">
+              <!-- Renderizado dinamicamente -->
+            </div>
+          </div>
         </section>
 
       </main> <!-- /mainContent -->
@@ -775,6 +860,13 @@
           </div>
         </div>
 
+        <div class="form-group">
+          <label for="editAccount">Conta</label>
+          <select id="editAccount" class="account-select">
+            <option value="">Sem conta</option>
+          </select>
+        </div>
+
         <div class="form-group" id="editEndMonthGroup">
           <label for="editEndMonth">Mês de Término / Quitação (Opcional)</label>
           <input type="month" id="editEndMonth" placeholder="Ex: 2027-12" />
@@ -784,6 +876,66 @@
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="cancelEditBtn">Cancelar</button>
           <button type="submit" class="btn-primary">Salvar Alterações</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="accountModal">
+    <div class="modal-content account-modal-content" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle" tabindex="-1">
+      <div class="modal-header">
+        <h3 id="accountModalTitle">Nova conta</h3>
+        <button type="button" class="modal-close-btn" id="closeAccountModalBtn" aria-label="Fechar conta">&times;</button>
+      </div>
+      <form id="accountForm" novalidate>
+        <input type="hidden" id="accountId" />
+        <div class="form-group">
+          <label for="accountName">Nome</label>
+          <input type="text" id="accountName" minlength="1" maxlength="100" required autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label for="accountInstitution">Instituição (opcional)</label>
+          <input type="text" id="accountInstitution" maxlength="100" autocomplete="off" />
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="accountType">Tipo</label>
+            <select id="accountType" required>
+              <option value="PF">PF — Pessoa Física</option>
+              <option value="PJ">PJ — Pessoa Jurídica</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="accountInitialBalance">Saldo inicial (R$)</label>
+            <input type="number" id="accountInitialBalance" step="0.01" min="-9999999999.99" max="9999999999.99" required />
+          </div>
+        </div>
+        <p class="form-error account-form-error" id="accountFormError" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="cancelAccountModalBtn">Cancelar</button>
+          <button type="submit" class="btn-primary" id="saveAccountBtn">Salvar conta</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="adjustAccountModal">
+    <div class="modal-content account-modal-content" role="dialog" aria-modal="true" aria-labelledby="adjustAccountModalTitle" tabindex="-1">
+      <div class="modal-header">
+        <h3 id="adjustAccountModalTitle">Ajustar saldo</h3>
+        <button type="button" class="modal-close-btn" id="closeAdjustAccountModalBtn" aria-label="Fechar ajuste de saldo">&times;</button>
+      </div>
+      <form id="adjustAccountForm" novalidate>
+        <input type="hidden" id="adjustAccountId" />
+        <p class="account-adjust-hint" id="adjustAccountName"></p>
+        <div class="form-group">
+          <label for="adjustAccountBalance">Saldo atual informado (R$)</label>
+          <input type="number" id="adjustAccountBalance" step="0.01" min="-9999999999.99" max="9999999999.99" required />
+        </div>
+        <p class="form-error account-form-error" id="adjustAccountError" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="cancelAdjustAccountBtn">Cancelar</button>
+          <button type="submit" class="btn-primary" id="saveAdjustAccountBtn">Atualizar saldo</button>
         </div>
       </form>
     </div>

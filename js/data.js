@@ -352,7 +352,8 @@ const FinanceData = {
     const keysToRemove = [];
     for (let index = 0; index < localStorage.length; index++) {
       const key = localStorage.key(index);
-      if (key && key.startsWith('gastopro_') && key !== STORAGE_TUTORIAL_SEEN) keysToRemove.push(key);
+      if (key && key.startsWith('gastopro_') &&
+        key !== STORAGE_TUTORIAL_SEEN && key !== 'gastopro_theme') keysToRemove.push(key);
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
   },
