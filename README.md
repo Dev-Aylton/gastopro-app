@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-232%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-238%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -89,6 +89,7 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 ### 🔐 Autenticação, perfil e backups
 - Cadastro e login com e-mail e senha, recuperação de senha por e-mail e sincronização multiusuário.
 - Dados isolados por usuário via Row Level Security (RLS).
+- Canal "Fale comigo" para usuários logados enviarem mensagens, acompanharem respostas e excluírem suas conversas; conteúdo fica somente no Supabase.
 - Nome e foto de perfil personalizados e sincronizados com `profiles` ao usar login; imagens JPEG, PNG ou WebP podem ser recortadas e salvas como JPEG 256×256.
 - Status da conta Conectado (Nuvem) ou Modo Local.
 - Exportação de backup JSON e restauração com prévia, mesclagem por ID ou substituição.
@@ -160,9 +161,10 @@ financeiro-app/
 │   └── migrations/
 │       ├── 20261027_hardening.sql # Hardening aplicado e validado em 28/10/2026
 │       ├── 20261028_accounts.sql  # RM-025 parte A; aplicada em produção
-│       └── 20261028_delete_my_account.sql # Exclusão de conta; aplicar manualmente no Supabase
+│       ├── 20261028_delete_my_account.sql # Exclusão de conta; aplicar manualmente no Supabase
+│       └── 20261029_feedback.sql # Canal de contato; aplicar manualmente no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 232 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 238 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -185,6 +187,8 @@ localStorage               Supabase Auth + PostgreSQL
        ├── report.js: relatório PDF
        └── a11y.js: comportamento acessível dos modais
 ```
+
+O canal "Fale comigo" é uma consulta sob demanda entre a tela em `js/app.js` e `SupabaseAuth` em `js/supabase.js`; suas mensagens não passam por `FinanceData`, localStorage ou fila de sincronização.
 
 ---
 
@@ -253,6 +257,13 @@ Lançamentos e templates usam UUID v4; metas usam um ID local com prefixo `goal-
 O registro pendente contém `full`, `entries`, `templates`, `deletedEntries`, `deletedTemplates`, `goals`, `deletedGoals`, `accounts` e `deletedAccounts`. Entradas, templates e contas são identificados por ID; metas e exclusões de metas são identificadas pela categoria. Alterações são enfileiradas localmente e removidas da fila após sincronização bem-sucedida.
 
 Metas são gravadas em `public.goals` por categoria, com upsert usando `onConflict: 'user_id,category'`; exclusões enfileiradas são enviadas pela fila pendente.
+
+### API de SupabaseAuth
+
+- `sendFeedback({ category, message })`: envia uma mensagem autenticada diretamente a `feedback_messages`; não usa armazenamento local nem fila offline.
+- `fetchMyFeedback()`: busca as mensagens do usuário autenticado, incluindo respostas.
+- `deleteMyFeedback(id)`: exclui uma mensagem própria após confirmação na interface.
+- `GastoProFeedbackHelpers` oferece validação de categoria/texto, rótulos de status e contagem para o formulário.
 
 ### API pública de `FinanceData` (`js/data.js`)
 
@@ -365,13 +376,15 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 
 As tabelas `entries`, `fixed_templates`, `goals`, `accounts` e `profiles` têm RLS ativo. `public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) foi aplicada em produção. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) também precisa ser aplicada manualmente. O app envia nome e avatar para `profiles` ao editar o perfil autenticado; alterações pendentes são mantidas para nova tentativa. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
 
+A migração [`supabase/migrations/20261029_feedback.sql`](./supabase/migrations/20261029_feedback.sql) cria `app_admins` e `feedback_messages`, as policies de RLS, `is_admin()` e o limite de cinco mensagens por usuário em 24 horas. Ela **ainda precisa ser aplicada manualmente** no SQL Editor do Supabase. O administrador pode ler mensagens e responder, mas não recebe acesso às tabelas financeiras nem a `profiles`; a lista de administradores é mantida diretamente pelo SQL Editor. Mensagens são obtidas sob demanda e não entram no localStorage, na fila financeira, no backup ou no Reset.
+
 Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Consulte também [Executar, configurar e publicar](#-executar-configurar-e-publicar).
 
 ---
 
 ## 🧪 Testes
 
-Suite com **232 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **238 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -382,6 +395,7 @@ Suite com **232 casos de teste** em JavaScript puro, sem frameworks. Os testes u
 | `FinanceData — Contas Bancárias` | CRUD, validação, saldos, ajuste, exclusão, sincronização e backup de contas. |
 | `Interface — filtros e opções de contas` | Seleção de saldo consolidado/PF/PJ e opções dos campos de conta. |
 | `Tema — preferência local` | Normalização, tema inicial escuro e alternância de tema. |
+| `Canal Fale comigo` | API autenticada, validação, status, contador, erros amigáveis e isolamento das mensagens em relação a backup e Reset. |
 | `Exclusão de conta do usuário` | RPC, resposta de sucesso/erro, texto exato de confirmação, limpeza dos dados/sessão locais e preservação após falha. |
 | `FinanceData — Templates de Gastos Fixos` | Leitura e gravação de templates. |
 | `FinanceData — add() Lançamentos` | Inserção de tipos de lançamento. |
@@ -558,6 +572,7 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 - Tutorial de primeiro acesso com dicas sobre lançamentos, contas fixas, dívidas, metas, importação, relatórios e dados; disponível novamente em “Como usar” no perfil.
 - RM-025 parte B: tela e modais de contas PF/PJ, vínculos em ganhos/gastos, saldo consolidado filtrável no Dashboard e duas funções puras cobertas por testes; cache do Service Worker atualizado.
 - Tema claro/escuro alternável no cabeçalho, escolhido no carregamento antes dos estilos e persistido por aparelho; limpeza de dados e restauração de backup preservam a preferência.
+- Canal "Fale comigo": mensagens autenticadas e respostas armazenadas somente no Supabase, com exclusão pelo usuário, limite de envio e migração SQL pendente de aplicação manual.
 
 ### v4.0 — 28/10/2026 (versão atual)
 

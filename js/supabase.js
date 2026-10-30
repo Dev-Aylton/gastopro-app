@@ -77,6 +77,39 @@ function validateCloudPayload(item, kind) {
   return 'Tipo de registro inválido.';
 }
 
+const FEEDBACK_CATEGORIES = {
+  duvida: 'Dúvida',
+  sugestao: 'Sugestão',
+  problema: 'Problema'
+};
+
+function validateFeedbackMessage(category, message) {
+  if (!Object.prototype.hasOwnProperty.call(FEEDBACK_CATEGORIES, category)) {
+    return 'Selecione uma categoria válida.';
+  }
+  if (typeof message !== 'string') return 'A mensagem deve ter de 10 a 1000 caracteres.';
+  const trimmedMessage = message.trim();
+  if (trimmedMessage.length < 10 || trimmedMessage.length > 1000) {
+    return 'A mensagem deve ter de 10 a 1000 caracteres após remover espaços extras.';
+  }
+  return null;
+}
+
+function getFeedbackStatusLabel(status) {
+  return status === 'answered' ? 'Respondida' : 'Enviada';
+}
+
+function getFeedbackCharacterCount(message) {
+  return typeof message === 'string' ? message.length : 0;
+}
+
+window.GastoProFeedbackHelpers = {
+  categories: FEEDBACK_CATEGORIES,
+  validateMessage: validateFeedbackMessage,
+  getStatusLabel: getFeedbackStatusLabel,
+  getCharacterCount: getFeedbackCharacterCount
+};
+
 const SupabaseAuth = {
   client: sb,
 
@@ -146,6 +179,94 @@ const SupabaseAuth = {
     const user = await this.getSessionUser();
     if (!user || (expectedUserId && user.id !== expectedUserId)) return null;
     return user.id;
+  },
+
+  getFeedbackErrorMessage(error) {
+    const code = error && error.code ? error.code : '';
+    const message = error && error.message ? error.message.toLowerCase() : '';
+    if (['42P01', 'PGRST205'].includes(code) ||
+      message.includes('feedback_messages') && (message.includes('does not exist') || message.includes('schema cache'))) {
+      return 'O canal ainda não está disponível. A migração de mensagens precisa ser aplicada no Supabase.';
+    }
+    if (code === 'P0001' || message.includes('limite de 5 mensagens')) {
+      return 'Você atingiu o limite de 5 mensagens nas últimas 24 horas. Tente novamente mais tarde.';
+    }
+    if ((typeof navigator !== 'undefined' && navigator.onLine === false) ||
+      /failed to fetch|network|offline|connection|fetch failed|load failed/.test(message)) {
+      return 'Sem conexão com a internet. Conecte-se e tente enviar novamente.';
+    }
+    if (code === '23514') return 'Confira a categoria e o tamanho da mensagem antes de tentar novamente.';
+    return 'Não foi possível concluir esta ação agora. Tente novamente mais tarde.';
+  },
+
+  async getFeedbackUser() {
+    const sessionState = await this.getSessionState();
+    if (sessionState.status === 'indeterminate') {
+      return { user: null, error: 'Não foi possível verificar sua sessão. Confira sua conexão e tente novamente.' };
+    }
+    if (sessionState.status !== 'authenticated' || !sessionState.user) {
+      return { user: null, error: 'Entre na sua conta para usar o canal Fale comigo.' };
+    }
+    return { user: sessionState.user, error: null };
+  },
+
+  async sendFeedback(payload = {}) {
+    const { category, message } = payload && typeof payload === 'object' ? payload : {};
+    const validationError = validateFeedbackMessage(category, message);
+    if (validationError) return { success: false, error: validationError };
+    if (!this.client) {
+      return { success: false, error: 'O canal de mensagens está temporariamente indisponível.' };
+    }
+    try {
+      const { user, error: sessionError } = await this.getFeedbackUser();
+      if (sessionError) return { success: false, error: sessionError };
+      const { error } = await this.client.from('feedback_messages').insert({
+        user_id: user.id,
+        category,
+        message: message.trim()
+      });
+      if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: this.getFeedbackErrorMessage(error) };
+    }
+  },
+
+  async fetchMyFeedback() {
+    if (!this.client) {
+      return { success: false, error: 'O canal de mensagens está temporariamente indisponível.' };
+    }
+    try {
+      const { user, error: sessionError } = await this.getFeedbackUser();
+      if (sessionError) return { success: false, error: sessionError };
+      const { data, error } = await this.client.from('feedback_messages')
+        .select('id,category,message,status,reply,replied_at,created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
+      return { success: true, messages: Array.isArray(data) ? data : [] };
+    } catch (error) {
+      return { success: false, error: this.getFeedbackErrorMessage(error) };
+    }
+  },
+
+  async deleteMyFeedback(id) {
+    if (!isValidCloudUuid(id)) return { success: false, error: 'A mensagem selecionada é inválida.' };
+    if (!this.client) {
+      return { success: false, error: 'O canal de mensagens está temporariamente indisponível.' };
+    }
+    try {
+      const { user, error: sessionError } = await this.getFeedbackUser();
+      if (sessionError) return { success: false, error: sessionError };
+      const { error } = await this.client.from('feedback_messages')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id);
+      if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: this.getFeedbackErrorMessage(error) };
+    }
   },
 
   reportCloudError(operation, error) {

@@ -1060,6 +1060,117 @@ describe('FinanceData — delete()', () => {
   });
 });
 
+describe('Canal Fale comigo', () => {
+  const helpers = window.GastoProFeedbackHelpers;
+
+  it('valida categoria e mensagem entre 10 e 1000 caracteres após trim', () => {
+    assertNull(helpers.validateMessage('duvida', '  mensagem válida  '));
+    assertNull(helpers.validateMessage('problema', 'a'.repeat(1000)));
+    assertEqual(helpers.validateMessage('outra', 'mensagem válida'), 'Selecione uma categoria válida.');
+    assertTrue(helpers.validateMessage('sugestao', '   ').includes('10 a 1000'));
+    assertTrue(helpers.validateMessage('duvida', 'a'.repeat(1001)).includes('10 a 1000'));
+  });
+
+  it('mostra os rótulos enviados e respondidos', () => {
+    assertEqual(helpers.getStatusLabel('new'), 'Enviada');
+    assertEqual(helpers.getStatusLabel('answered'), 'Respondida');
+  });
+
+  it('conta caracteres para o limite do formulário', () => {
+    assertEqual(helpers.getCharacterCount(''), 0);
+    assertEqual(helpers.getCharacterCount('mensagem'), 8);
+    assertEqual(helpers.getCharacterCount(null), 0);
+  });
+
+  itAsync('envia, busca e exclui mensagens pela sessão autenticada', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const userId = '550e8400-e29b-41d4-a716-446655440001';
+    const feedbackId = '550e8400-e29b-41d4-a716-446655440002';
+    const rows = [{
+      id: feedbackId, category: 'duvida', message: 'Minha mensagem', status: 'new',
+      reply: null, replied_at: null, created_at: '2026-10-29T12:00:00Z'
+    }];
+    let insertedPayload = null;
+    let selectedColumns = '';
+    let deleteFilters = [];
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({ data: { session: { user: { id: userId } } }, error: null })
+      },
+      from(table) {
+        assertEqual(table, 'feedback_messages');
+        let mode = '';
+        let filters = [];
+        return {
+          insert: async payload => {
+            insertedPayload = payload;
+            return { error: null };
+          },
+          select(columns) {
+            selectedColumns = columns;
+            return this;
+          },
+          eq(column, value) {
+            filters.push([column, value]);
+            if (mode === 'delete' && filters.length === 2) {
+              deleteFilters = filters;
+              return Promise.resolve({ error: null });
+            }
+            return this;
+          },
+          order: async () => ({ data: rows, error: null }),
+          delete() {
+            mode = 'delete';
+            return this;
+          }
+        };
+      }
+    };
+    try {
+      assertTrue((await window.SupabaseAuth.sendFeedback({
+        category: 'duvida', message: '  Minha mensagem  '
+      })).success);
+      assertEqual(insertedPayload, {
+        user_id: userId, category: 'duvida', message: 'Minha mensagem'
+      });
+
+      const fetched = await window.SupabaseAuth.fetchMyFeedback();
+      assertTrue(fetched.success);
+      assertEqual(fetched.messages, rows);
+      assertTrue(selectedColumns.includes('reply'));
+
+      assertTrue((await window.SupabaseAuth.deleteMyFeedback(feedbackId)).success);
+      assertEqual(deleteFilters, [['id', feedbackId], ['user_id', userId]]);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  it('converte erros comuns do canal em mensagens claras', () => {
+    assertTrue(window.SupabaseAuth.getFeedbackErrorMessage({ code: 'PGRST205' }).includes('migração'));
+    assertTrue(window.SupabaseAuth.getFeedbackErrorMessage({ code: 'P0001' }).includes('5 mensagens'));
+    assertTrue(window.SupabaseAuth.getFeedbackErrorMessage(new TypeError('Failed to fetch')).includes('Sem conexão'));
+  });
+
+  itAsync('clearAll não apaga mensagens na nuvem', async () => {
+    setupMockLocalStorage();
+    let deleteFeedbackCalls = 0;
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      deleteMyFeedback: async () => {
+        deleteFeedbackCalls++;
+        return { success: true };
+      }
+    };
+    try {
+      assertTrue((await FinanceData.clearAll()).success);
+      assertEqual(deleteFeedbackCalls, 0);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+});
+
 describe('FinanceData — clearAll()', () => {
   setupMockLocalStorage();
 
@@ -1841,6 +1952,8 @@ describe('FinanceData — exportJSON()', () => {
       assertTrue(Array.isArray(backup.accounts), 'accounts deve ser array');
       assertFalse(Object.prototype.hasOwnProperty.call(backup, 'theme'));
       assertFalse(Object.prototype.hasOwnProperty.call(backup, 'gastopro_theme'));
+      assertFalse(Object.prototype.hasOwnProperty.call(backup, 'feedback'));
+      assertFalse(Object.prototype.hasOwnProperty.call(backup, 'messages'));
       assertEqual(backup.entries.length, 1);
       assertEqual(backup.templates.length, 1);
     } finally {

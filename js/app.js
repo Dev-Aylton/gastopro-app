@@ -153,6 +153,19 @@ const state = {
   chartInstance: null                     // Instância ativa do Chart.js (para destruir antes de recriar)
 };
 
+const feedbackViewState = {
+  mode: 'unknown',
+  messages: [],
+  loading: false,
+  requestId: 0,
+  userId: null,
+  sending: false,
+  draftCategory: 'duvida',
+  draftMessage: '',
+  notice: '',
+  noticeType: 'status'
+};
+
 // ================================================================
 // 2. CONSTANTES
 // ================================================================
@@ -168,7 +181,8 @@ const VIEW_TITLES = {
   dashboard: 'Dashboard & Saúde Financeira',
   incomes:   'Gerenciador de Ganhos do Mês',
   expenses:  'Gerenciador de Gastos do Mês',
-  accounts:  'Contas'
+  accounts:  'Contas',
+  contact:   'Fale comigo'
 };
 
 // ================================================================
@@ -211,6 +225,158 @@ function buildAccountSelectOptions(accounts) {
     { value: '', label: 'Sem conta' },
     ...accounts.map(account => ({ value: account.id, label: account.name }))
   ];
+}
+
+function formatFeedbackDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Data indisponível' : date.toLocaleString('pt-BR');
+}
+
+function renderContactView() {
+  const container = document.getElementById('feedbackContent');
+  if (!container) return;
+
+  if (feedbackViewState.mode === 'unknown' || feedbackViewState.mode === 'loading') {
+    container.innerHTML = `<p>${escapeHtml(feedbackViewState.notice || 'Verificando seu acesso ao canal...')}</p>`;
+    return;
+  }
+
+  if (feedbackViewState.mode === 'signed_out') {
+    container.innerHTML = `
+      <div class="feedback-guest">
+        <p>Entre na sua conta para enviar mensagens e acompanhar minhas respostas.</p>
+        <button type="button" class="btn-primary feedback-submit" data-action="open-contact" data-login="true">
+          <i class="fa-solid fa-arrow-right-to-bracket"></i> Entrar ou criar conta
+        </button>
+        <p>Se preferir, você também pode escrever para
+          <a href="mailto:desenvolvedor.aylton@gmail.com">desenvolvedor.aylton@gmail.com</a>.
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  if (feedbackViewState.mode === 'error') {
+    container.innerHTML = `
+      <p class="feedback-notice feedback-notice-error" role="alert">${escapeHtml(feedbackViewState.notice)}</p>
+      <button type="button" class="btn-secondary feedback-submit" data-action="open-contact" data-retry="true">
+        Tentar novamente
+      </button>
+    `;
+    return;
+  }
+
+  const helper = window.GastoProFeedbackHelpers;
+  const messageCards = feedbackViewState.messages.map(message => {
+    const category = helper.categories[message.category] || 'Mensagem';
+    const status = helper.getStatusLabel(message.status);
+    return `
+      <article class="manage-item-card feedback-message-card">
+        <div class="feedback-message-content">
+          <div class="feedback-message-heading">
+            <span class="tag-badge">${escapeHtml(category)}</span>
+            <span class="tag-badge feedback-status-badge ${message.status === 'answered' ? 'is-answered' : ''}">${escapeHtml(status)}</span>
+            <time datetime="${escapeHtml(message.created_at || '')}">${escapeHtml(formatFeedbackDate(message.created_at))}</time>
+          </div>
+          <p class="feedback-message-text">${escapeHtml(message.message)}</p>
+          ${message.reply ? `
+            <div class="feedback-reply">
+              <strong>Resposta</strong>
+              <p class="feedback-message-text">${escapeHtml(message.reply)}</p>
+            </div>
+          ` : ''}
+          <button type="button" class="btn-secondary feedback-delete" data-action="delete-feedback" data-id="${escapeHtml(message.id)}">
+            <i class="fa-solid fa-trash-can"></i> Excluir mensagem
+          </button>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <form id="feedbackForm" class="feedback-form">
+      <div>
+        <label for="feedbackCategory">Categoria</label>
+        <select id="feedbackCategory" name="category" required>
+          <option value="duvida" ${feedbackViewState.draftCategory === 'duvida' ? 'selected' : ''}>Dúvida</option>
+          <option value="sugestao" ${feedbackViewState.draftCategory === 'sugestao' ? 'selected' : ''}>Sugestão</option>
+          <option value="problema" ${feedbackViewState.draftCategory === 'problema' ? 'selected' : ''}>Problema</option>
+        </select>
+      </div>
+      <div>
+        <label for="feedbackMessage">Mensagem</label>
+        <textarea id="feedbackMessage" name="message" minlength="10" maxlength="1000" required
+          placeholder="Se quiser que eu responda fora do app, pode deixar seu WhatsApp ou e-mail na mensagem. É opcional e escolha sua.">${escapeHtml(feedbackViewState.draftMessage)}</textarea>
+        <div class="feedback-text-meta">
+          <small class="feedback-contact-tip">Se quiser que eu responda fora do app, pode deixar seu WhatsApp ou e-mail na mensagem. É opcional e escolha sua.</small>
+          <span id="feedbackCharacterCount" aria-live="polite">${helper.getCharacterCount(feedbackViewState.draftMessage)}/1000</span>
+        </div>
+      </div>
+      <p class="feedback-safety-notice">Não envie senhas, dados de cartão nem dados bancários.</p>
+      <p class="feedback-response-note">Respondo quando possível; não há prazo fixo.</p>
+      <p class="feedback-notice ${feedbackViewState.noticeType === 'error' ? 'feedback-notice-error' : 'feedback-notice-success'}"
+        id="feedbackNotice" role="${feedbackViewState.noticeType === 'error' ? 'alert' : 'status'}" aria-live="polite">
+        ${escapeHtml(feedbackViewState.notice)}
+      </p>
+      <button type="submit" class="btn-primary feedback-submit" data-action="send-feedback" ${feedbackViewState.sending ? 'disabled' : ''}>
+        ${feedbackViewState.sending ? '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...' : '<i class="fa-solid fa-paper-plane"></i> Enviar'}
+      </button>
+    </form>
+    <section class="feedback-messages-section" aria-labelledby="feedbackMessagesTitle">
+      <h3 id="feedbackMessagesTitle">Minhas mensagens</h3>
+      ${feedbackViewState.loading ? '<p>Carregando mensagens...</p>' : ''}
+      ${!feedbackViewState.loading && !feedbackViewState.messages.length
+        ? '<div class="empty-state">Você ainda não enviou mensagens. Quando enviar, elas aparecerão aqui.</div>'
+        : `<div class="items-cards-list">${messageCards}</div>`}
+    </section>
+  `;
+}
+
+async function loadMyFeedback(preserveNotice = false) {
+  if (feedbackViewState.loading) return;
+  const requestId = ++feedbackViewState.requestId;
+  feedbackViewState.loading = true;
+  feedbackViewState.mode = 'loading';
+  if (!preserveNotice) feedbackViewState.notice = '';
+  renderContactView();
+  try {
+    const sessionState = await window.SupabaseAuth.getSessionState();
+    if (requestId !== feedbackViewState.requestId) return;
+    if (sessionState.status === 'signed_out') {
+      feedbackViewState.mode = 'signed_out';
+      feedbackViewState.messages = [];
+      feedbackViewState.userId = null;
+      return;
+    }
+    if (sessionState.status !== 'authenticated') {
+      feedbackViewState.mode = 'error';
+      feedbackViewState.notice = 'Não foi possível verificar sua sessão. Confira sua conexão e tente novamente.';
+      return;
+    }
+
+    feedbackViewState.mode = 'signed_in';
+    if (feedbackViewState.userId !== sessionState.user.id) feedbackViewState.messages = [];
+    feedbackViewState.userId = sessionState.user.id;
+    const result = await window.SupabaseAuth.fetchMyFeedback();
+    if (requestId !== feedbackViewState.requestId) return;
+    if (!result.success) {
+      feedbackViewState.notice = result.error;
+      feedbackViewState.noticeType = 'error';
+      return;
+    }
+    feedbackViewState.messages = result.messages;
+    feedbackViewState.noticeType = 'status';
+  } catch (error) {
+    if (requestId !== feedbackViewState.requestId) return;
+    console.error('[GastoPro] Não foi possível carregar as mensagens de contato:', error);
+    feedbackViewState.mode = 'error';
+    feedbackViewState.notice = 'Não foi possível carregar suas mensagens. Tente novamente.';
+  } finally {
+    if (requestId === feedbackViewState.requestId) {
+      feedbackViewState.loading = false;
+      renderContactView();
+    }
+  }
 }
 
 function getDailyBudgetInfo(balance, year, month, today) {
@@ -313,6 +479,7 @@ window.switchToView = function(viewId) {
 
   // Re-renderiza toda a interface para refletir a tela ativa
   renderAll();
+  if (viewId === 'contact') loadMyFeedback();
 };
 
 // ================================================================
@@ -375,6 +542,7 @@ function renderAll() {
   // allFixed (com inativos) é passado para permitir gerenciar gastos pausados na tela de Gastos
   renderExpensesView(allFixed, variables, totalFixed, totalVariable, totalExpenses);
   renderAccountsView();
+  renderContactView();
 }
 
 function updateAccountSelects() {
@@ -1779,6 +1947,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const { action, id } = actionElement.dataset;
     switch (action) {
+      case 'send-feedback': {
+        e.preventDefault();
+        const form = actionElement.closest('#feedbackForm');
+        if (form) submitFeedbackForm(form);
+        break;
+      }
+      case 'delete-feedback':
+        deleteFeedbackMessage(id);
+        break;
+      case 'open-contact':
+        if (actionElement.dataset.retry === 'true') {
+          loadMyFeedback();
+        } else {
+          closeProfileDrawer();
+          switchToView('contact');
+          if (actionElement.dataset.login === 'true') openAuth('login');
+        }
+        break;
       case 'edit':
         openEditModal(id);
         break;
@@ -1812,6 +1998,86 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
     }
   });
+
+  document.addEventListener('input', (e) => {
+    if (!(e.target instanceof Element)) return;
+    if (e.target.id !== 'feedbackMessage') return;
+    feedbackViewState.draftMessage = e.target.value;
+    const counter = document.getElementById('feedbackCharacterCount');
+    if (counter) counter.textContent = `${window.GastoProFeedbackHelpers.getCharacterCount(e.target.value)}/1000`;
+  });
+
+  document.addEventListener('change', (e) => {
+    if (e.target instanceof HTMLSelectElement && e.target.id === 'feedbackCategory') {
+      feedbackViewState.draftCategory = e.target.value;
+    }
+  });
+
+  document.addEventListener('submit', (e) => {
+    if (!(e.target instanceof HTMLFormElement) || e.target.id !== 'feedbackForm') return;
+    e.preventDefault();
+    submitFeedbackForm(e.target);
+  });
+
+  async function submitFeedbackForm(form) {
+    if (feedbackViewState.sending) return;
+    feedbackViewState.draftCategory = form.elements.category.value;
+    feedbackViewState.draftMessage = form.elements.message.value;
+    const validationError = window.GastoProFeedbackHelpers.validateMessage(
+      feedbackViewState.draftCategory,
+      feedbackViewState.draftMessage
+    );
+    if (validationError) {
+      feedbackViewState.notice = validationError;
+      feedbackViewState.noticeType = 'error';
+      renderContactView();
+      return;
+    }
+
+    feedbackViewState.sending = true;
+    feedbackViewState.notice = '';
+    renderContactView();
+    const result = await window.SupabaseAuth.sendFeedback({
+      category: feedbackViewState.draftCategory,
+      message: feedbackViewState.draftMessage
+    });
+    feedbackViewState.sending = false;
+    if (!result.success) {
+      feedbackViewState.notice = result.error;
+      feedbackViewState.noticeType = 'error';
+      renderContactView();
+      return;
+    }
+
+    feedbackViewState.draftCategory = 'duvida';
+    feedbackViewState.draftMessage = '';
+    feedbackViewState.notice = 'Mensagem enviada. Vou responder quando possível.';
+    feedbackViewState.noticeType = 'status';
+    await loadMyFeedback(true);
+  }
+
+  function deleteFeedbackMessage(messageId) {
+    const message = feedbackViewState.messages.find(item => item.id === messageId);
+    if (!message) return;
+    showConfirm({
+      title: 'Excluir mensagem?',
+      message: 'A mensagem será apagada e não poderá ser recuperada.',
+      iconClass: 'fa-solid fa-trash-can',
+      okLabel: 'Excluir mensagem',
+      onConfirm: async () => {
+        const result = await window.SupabaseAuth.deleteMyFeedback(messageId);
+        if (!result.success) {
+          feedbackViewState.notice = result.error;
+          feedbackViewState.noticeType = 'error';
+          renderContactView();
+          return;
+        }
+        feedbackViewState.notice = 'Mensagem excluída.';
+        feedbackViewState.noticeType = 'status';
+        await loadMyFeedback(true);
+      }
+    });
+  }
 
   document.addEventListener('keydown', (e) => {
     if (!(e.target instanceof Element) || !['Enter', ' '].includes(e.key)) return;
@@ -2963,7 +3229,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       if (event === 'SIGNED_OUT' || (!user && event === 'TOKEN_REFRESHED')) {
+        feedbackViewState.requestId++;
+        feedbackViewState.loading = false;
+        feedbackViewState.mode = 'signed_out';
+        feedbackViewState.messages = [];
+        feedbackViewState.userId = null;
+        feedbackViewState.notice = '';
         if (FinanceData.hasPendingSync()) {
+          renderContactView();
           openAuth('login');
           showAuthAlert('Sua sessão expirou e há alterações não sincronizadas neste aparelho. Entre novamente na mesma conta para sincronizá-las.');
           return;
@@ -2973,10 +3246,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (!user) return;
 
+      if (feedbackViewState.userId && feedbackViewState.userId !== user.id) {
+        feedbackViewState.requestId++;
+        feedbackViewState.loading = false;
+        feedbackViewState.messages = [];
+      }
+      feedbackViewState.userId = user.id;
       const switchedUser = FinanceData.activateUser(user.id);
       if (switchedUser || event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         prepareAuthenticatedUser(user).then(profile => {
           if (!profile) return false;
+          if (state.currentView === 'contact') loadMyFeedback();
           if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
             return syncUserDataFromCloud(user.id);
           }
@@ -4756,6 +5036,7 @@ document.addEventListener('DOMContentLoaded', () => {
       renderAll();
       document.body.classList.remove('auth-checking');
 
+      if (user && state.currentView === 'contact') loadMyFeedback();
       if (user) await syncUserDataFromCloud(user.id);
     })();
     try {

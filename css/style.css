@@ -2051,6 +2051,167 @@ button:active { transform: scale(0.98); }
   }
 }
 
+.contact-shortcut {
+  min-height: 44px;
+  margin-top: 0.75rem;
+}
+
+.contact-panel {
+  width: 100%;
+  min-width: 0;
+}
+
+.feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+}
+
+.feedback-form label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.feedback-form select,
+.feedback-form textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 16px;
+}
+
+.feedback-form textarea {
+  min-height: 150px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.feedback-text-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.feedback-text-meta #feedbackCharacterCount {
+  align-self: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.feedback-safety-notice {
+  color: var(--warning);
+  font-size: 0.9rem;
+}
+
+.feedback-response-note {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.feedback-notice {
+  min-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.feedback-notice-error { color: var(--danger); }
+.feedback-notice-success { color: var(--success); }
+
+.feedback-submit,
+.feedback-delete {
+  min-height: 44px;
+  align-self: flex-start;
+}
+
+.feedback-guest {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.feedback-guest a {
+  overflow-wrap: anywhere;
+  color: var(--primary-text);
+}
+
+.feedback-messages-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  min-width: 0;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.feedback-messages-section h3 {
+  color: var(--text-main);
+  font-size: 1.1rem;
+}
+
+.feedback-message-card {
+  align-items: stretch;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.feedback-message-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.8rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.feedback-message-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.feedback-status-badge {
+  color: var(--warning);
+}
+
+.feedback-status-badge.is-answered {
+  color: var(--success);
+}
+
+.feedback-message-text {
+  max-width: 100%;
+  color: var(--text-main);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.feedback-reply {
+  width: 100%;
+  padding: 0.8rem;
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+
+.feedback-reply strong {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--primary-text);
+}
+
 /* ================================================================
    9. MODAL DE EDIÇÃO
    ================================================================ */

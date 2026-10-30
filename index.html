@@ -104,6 +104,11 @@
           <span>Contas</span>
         </button>
 
+        <button class="nav-item" data-view="contact" id="navContact">
+          <i class="fa-regular fa-comment-dots"></i>
+          <span>Fale comigo</span>
+        </button>
+
         <!-- Botão 5: Importar Extrato (No rodapé, acima de Atualizar Dados) -->
         <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
           <i class="fa-solid fa-file-import"></i>
@@ -247,6 +252,9 @@
                 <i class="fa-solid fa-user-xmark"></i> Excluir minha conta
               </button>
             </div>
+            <button type="button" class="btn-auth-trigger contact-shortcut" data-action="open-contact">
+              <i class="fa-regular fa-comment-dots"></i> Fale comigo
+            </button>
           </div>
 
           <div class="drawer-section how-to-use-section">
@@ -754,6 +762,23 @@
             </div>
             <div class="items-cards-list" id="accountsList">
               <!-- Renderizado dinamicamente -->
+            </div>
+          </div>
+        </section>
+
+        <section class="view-section" id="view-contact">
+          <div class="view-header-card">
+            <div class="view-header-info">
+              <div class="view-icon-badge"><i class="fa-regular fa-comment-dots"></i></div>
+              <div>
+                <h2>Fale comigo</h2>
+                <p>Envie uma mensagem e acompanhe minhas respostas por aqui.</p>
+              </div>
+            </div>
+          </div>
+          <div class="panel-box contact-panel">
+            <div id="feedbackContent" aria-live="polite">
+              <p>Verificando seu acesso ao canal...</p>
             </div>
           </div>
         </section>
@@ -1627,7 +1652,7 @@
         <button class="modal-close-btn" id="closePrivacyModalBtn" aria-label="Fechar política de privacidade">&times;</button>
       </div>
       <div class="privacy-body">
-        <p class="privacy-date"><i class="fa-regular fa-calendar"></i> Última atualização: Outubro de 2026</p>
+        <p class="privacy-date"><i class="fa-regular fa-calendar"></i> Última atualização: 29 de outubro de 2026</p>
 
         <h4>1. Quem somos</h4>
         <p>O <strong>GastoPro</strong> é um aplicativo de controle financeiro pessoal desenvolvido por <strong>Aylton Alberto</strong>. Não é uma empresa, não tem fins comerciais e não coleta dados para venda ou publicidade.</p>
@@ -1639,6 +1664,7 @@
           <li><strong>E-mail e senha</strong>: usados para autenticação via Supabase quando você cria uma conta; o e-mail e o nome informado no cadastro são guardados pela conta de login. Senhas não são armazenadas pelo app no localStorage.</li>
           <li><strong>Sessão de login</strong>: é mantida pelo cliente Supabase no armazenamento do navegador.</li>
         </ul>
+        <p>Quando você usa o canal "Fale comigo" com login, armazenamos a categoria (dúvida, sugestão ou problema), o texto da mensagem, a data de envio e, quando houver, a resposta do desenvolvedor. Esses dados ficam no Supabase e são usados para responder dúvidas e melhorar o app. A tela de administração do app não exibe seu nome nem seu e-mail automaticamente e não dá acesso aos seus dados financeiros. Se você optar por incluir um contato (como WhatsApp ou e-mail) na mensagem, ele será visto apenas pelo desenvolvedor e usado só para responder. Pedimos que não inclua senhas, dados de cartão ou dados bancários. As mensagens ficam armazenadas até você apagá-las ou excluir sua conta, não são vendidas e não são usadas para publicidade.</p>
 
         <h4>3. Como os dados são armazenados</h4>
         <p><strong>Modo Local (sem login):</strong> os dados financeiros ficam no <em>localStorage</em> deste navegador. Google Fonts e cdnjs (Font Awesome) são carregados de terceiros; esses provedores podem receber seu endereço IP e dados técnicos da conexão. Os dados financeiros não são enviados a esses provedores.</p>
@@ -1651,7 +1677,8 @@
           <li><strong>Reset com login</strong>: apaga lançamentos, templates, metas e contas deste aparelho e solicita a exclusão desses dados sincronizados na nuvem. Mantém a sessão de login, o nome e a foto locais.</li>
           <li><strong>Reset sem login</strong>: apaga lançamentos, templates, metas e contas somente deste aparelho; mantém o nome e a foto locais.</li>
           <li><strong>Logout</strong>: encerra a sessão e apaga os dados locais deste aparelho; os dados sincronizados na nuvem permanecem.</li>
-          <li><strong>Exclusão da conta</strong>: o botão "Excluir minha conta" apaga a conta de login e os dados na nuvem e neste aparelho. A ação é irreversível; recomendamos exportar o backup antes.</li>
+          <li><strong>Exclusão da conta</strong>: o botão "Excluir minha conta" apaga a conta de login, os dados na nuvem e neste aparelho e também as mensagens vinculadas. A ação é irreversível; recomendamos exportar o backup antes.</li>
+          <li>Você pode apagar suas mensagens a qualquer momento na tela "Fale comigo"; a exclusão da conta apaga também as mensagens; Reset e Logout NÃO apagam as mensagens da nuvem.</li>
         </ul>
 
         <h4>5. Compartilhamento de dados</h4>
