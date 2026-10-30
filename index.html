@@ -281,6 +281,32 @@
             </button>
           </div>
 
+          <div class="drawer-section">
+            <span class="drawer-section-title">Meus dados</span>
+            <p class="user-data-description">
+              A exportação inclui lançamentos, gastos fixos, metas, contas, cartões, compras no cartão,
+              regras de Fixo e mensagens enviadas em Fale comigo.
+            </p>
+            <button id="exportBtn" class="drawer-action-btn" title="Exportar todos os meus dados">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-download text-primary"></i>
+              </div>
+              <div class="action-text">
+                <strong>Exportar todos os meus dados</strong>
+                <span>Baixar uma cópia JSON para guardar neste aparelho</span>
+              </div>
+            </button>
+            <button type="button" id="deleteAllMyDataBtn" class="drawer-action-btn user-data-delete-action">
+              <div class="action-icon bg-danger-soft">
+                <i class="fa-solid fa-trash-can text-danger"></i>
+              </div>
+              <div class="action-text">
+                <strong>Excluir todos os meus dados</strong>
+                <span>Apagar os dados deste aparelho e da nuvem sem excluir o login</span>
+              </div>
+            </button>
+          </div>
+
           <!-- Seção de Ações de Dados -->
           <div class="drawer-section">
             <span class="drawer-section-title">Gerenciamento de Dados</span>
@@ -295,15 +321,6 @@
               </div>
             </button>
 
-            <button id="exportBtn" class="drawer-action-btn" title="Baixar Backup">
-              <div class="action-icon bg-primary-soft">
-                <i class="fa-solid fa-download text-primary"></i>
-              </div>
-              <div class="action-text">
-                <strong>Baixar Backup</strong>
-                <span>Salvar cópia dos seus dados no PC</span>
-              </div>
-            </button>
             <button type="button" id="restoreBackupBtn" class="drawer-action-btn" title="Restaurar backup">
               <div class="action-icon bg-primary-soft">
                 <i class="fa-solid fa-upload text-primary"></i>
@@ -478,11 +495,7 @@
             </div>
             <div class="chart-wrapper">
               <canvas id="categoryChart"></canvas>
-              <div id="chartEmptyMessage" class="chart-empty" style="display: none;">
-                <i class="fa-solid fa-chart-simple"></i>
-                <p>Nenhum gasto lançado neste mês ainda.</p>
-                <span class="empty-state-tip">Use “Inserir Gasto” para registrar uma saída e ver o gráfico por categoria.</span>
-              </div>
+              <div id="chartEmptyMessage" class="chart-empty" style="display: none;"></div>
             </div>
           </div>
 
@@ -503,12 +516,7 @@
             <div id="goalsListContainer" class="goals-list">
               <!-- Renderizado dinamicamente por renderGoalsSection() -->
             </div>
-            <div id="goalsEmptyState" class="goals-empty" style="display:none;">
-              <i class="fa-solid fa-bullseye"></i>
-              <p>Nenhuma meta definida ainda.</p>
-              <span>Clique em <strong>+ Nova Meta</strong> para definir um teto de gastos por categoria.</span>
-              <small class="empty-state-tip">A tela mostra o progresso ao atingir 80% e 100% do limite.</small>
-            </div>
+            <div id="goalsEmptyState" class="goals-empty" style="display:none;"></div>
           </div>
 
           <div class="panel-box account-balance-panel">
@@ -535,10 +543,7 @@
                 <option value="PJ">Todas as contas PJ</option>
               </select>
             </div>
-            <div class="account-balance-empty" id="dashboardAccountsEmpty" hidden>
-              <p>Nenhuma conta cadastrada.</p>
-              <button type="button" class="btn-secondary" data-goto="accounts">Cadastrar conta</button>
-            </div>
+            <div class="account-balance-empty" id="dashboardAccountsEmpty" hidden></div>
           </div>
 
           <div class="panel-box credit-cards-panel">
@@ -555,9 +560,7 @@
               </button>
             </div>
             <div id="creditCardsList" class="goals-list"></div>
-            <div id="creditCardsEmpty" class="goals-empty" hidden>
-              <p>Nenhum cartão cadastrado ainda.</p>
-            </div>
+            <div id="creditCardsEmpty" class="goals-empty" hidden></div>
           </div>
 
 
@@ -1165,6 +1168,29 @@
       <div class="form-group auth-field">
         <label for="deleteAccountConfirmation">Digite EXCLUIR para confirmar</label>
         <input type="text" id="deleteAccountConfirmation" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="modal-overlay" id="deleteAllMyDataModal" aria-hidden="true">
+        <section class="modal-content modal-auth-content" role="dialog" aria-modal="true"
+          aria-labelledby="deleteAllMyDataTitle" tabindex="-1">
+          <button type="button" class="modal-close-btn auth-close-btn" id="closeDeleteAllMyDataModalBtn"
+            title="Fechar" aria-label="Fechar exclusão dos dados">&times;</button>
+          <h2 id="deleteAllMyDataTitle">Excluir todos os meus dados</h2>
+          <p class="account-delete-warning">
+            Serão apagados permanentemente lançamentos, templates, metas, contas, cartões, compras,
+            regras de Fixo e mensagens de feedback deste aparelho e da nuvem. O login será mantido.
+            Não há como desfazer esta ação.
+          </p>
+          <div class="form-group auth-field">
+            <label for="deleteAllMyDataConfirmation">Digite EXCLUIR para confirmar</label>
+            <input type="text" id="deleteAllMyDataConfirmation" autocomplete="off" spellcheck="false" />
+          </div>
+          <p id="deleteAllMyDataError" class="account-delete-error" role="alert" hidden></p>
+          <div class="modal-actions">
+            <button type="button" id="cancelDeleteAllMyDataBtn" class="btn-secondary" data-modal-cancel>Cancelar</button>
+            <button type="button" id="confirmDeleteAllMyDataBtn" class="btn-danger" disabled>Excluir todos os dados</button>
+          </div>
+        </section>
       </div>
       <p id="deleteAccountError" class="account-delete-error" role="alert" hidden></p>
       <div class="modal-actions">
@@ -2011,6 +2037,10 @@
 
   <!-- Toast Notificação -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <button type="button" id="backToTopBtn" class="back-to-top-btn" aria-label="Voltar ao topo"
+    aria-hidden="true" tabindex="-1">
+    <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+  </button>
 
   <!-- Bibliotecas locais e módulos do app -->
   <script src="js/vendor/chart.umd.js"></script>

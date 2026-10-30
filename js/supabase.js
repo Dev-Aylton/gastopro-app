@@ -474,6 +474,37 @@ const SupabaseAuth = {
     }
   },
 
+  async deleteAllMyData(expectedUserId) {
+    if (!this.client) {
+      return this.reportCloudError('Cliente não inicializado ao excluir dados do usuário', new Error('Cliente Supabase não inicializado.'));
+    }
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(expectedUserId);
+      if (!sessionUserId) {
+        return this.reportCloudError('Sessão inválida ao excluir dados do usuário', new Error('Entre novamente na sua conta para excluir os dados sincronizados.'));
+      }
+
+      const deletions = [
+        ['feedback_messages', 'user_id'],
+        ['credit_card_purchases', 'user_id'],
+        ['entries', 'user_id'],
+        ['fixed_templates', 'user_id'],
+        ['goals', 'user_id'],
+        ['fixed_import_rules', 'user_id'],
+        ['credit_cards', 'user_id'],
+        ['accounts', 'user_id'],
+        ['profiles', 'id']
+      ];
+      for (const [table, ownerColumn] of deletions) {
+        const { error } = await this.client.from(table).delete().eq(ownerColumn, sessionUserId);
+        if (error) return this.reportCloudError(`Erro ao excluir dados de ${table}`, error);
+      }
+      return { success: true };
+    } catch (error) {
+      return this.reportCloudError('Falha ao excluir dados do usuário na nuvem', error);
+    }
+  },
+
   reportCloudError(operation, error) {
     const details = {
       message: error && error.message ? error.message : String(error || 'Erro desconhecido.'),

@@ -2070,6 +2070,57 @@ const FinanceData = {
   // LIMPEZA TOTAL DA BASE DE DADOS
   // ================================================================
 
+  async deleteAllUserData(confirmation) {
+    if (confirmation !== 'EXCLUIR') {
+      return { success: false, error: 'Digite EXCLUIR para confirmar a exclusão.' };
+    }
+
+    const profile = this.getProfile();
+    const userId = profile.userId || this.getActiveUserId();
+    if (userId) {
+      if (!window.SupabaseAuth ||
+        typeof window.SupabaseAuth.deleteAllMyData !== 'function') {
+        return { success: false, error: 'A exclusão dos dados na nuvem está indisponível. Seus dados locais foram mantidos.' };
+      }
+      const cloudResult = await window.SupabaseAuth.deleteAllMyData(userId);
+      if (!cloudResult || !cloudResult.success) {
+        return {
+          success: false,
+          error: cloudResult && cloudResult.error
+            ? cloudResult.error
+            : 'Não foi possível excluir os dados na nuvem. Seus dados locais foram mantidos.'
+        };
+      }
+    }
+
+    try {
+      [
+        STORAGE_ENTRIES,
+        STORAGE_TEMPLATES,
+        STORAGE_GOALS,
+        STORAGE_ACCOUNTS,
+        STORAGE_CREDIT_CARDS,
+        STORAGE_CREDIT_CARD_PURCHASES,
+        STORAGE_FIXED_IMPORT_RULES,
+        STORAGE_PENDING_SYNC
+      ].forEach(key => localStorage.removeItem(key));
+      const currentProfile = this.getProfile();
+      const profileResult = this.saveProfile({
+        ...currentProfile,
+        name: '',
+        avatar: null
+      });
+      if (!profileResult.success) throw profileResult.error;
+      return { success: true };
+    } catch (error) {
+      console.error('[GastoPro] Falha ao limpar os dados locais do usuário:', error);
+      return {
+        success: false,
+        error: 'Os dados da nuvem foram excluídos, mas não foi possível limpar completamente este aparelho.'
+      };
+    }
+  },
+
   /**
    * Apaga lançamentos, templates e metas, aguardando a sincronização pendente.
    * Ação irreversível — sempre exibir confirmação ao usuário antes de chamar.
@@ -2104,7 +2155,7 @@ const FinanceData = {
    *   accounts:   [...]      // Contas bancárias
    * }
    */
-  exportJSON() {
+  exportJSON(options = {}) {
     const backup = {
       version:    '4.0',
       exportDate: new Date().toISOString(),
@@ -2116,6 +2167,9 @@ const FinanceData = {
       creditCardPurchases: this.getCreditCardPurchases(),
       fixedImportRules: this.getFixedImportRules()
     };
+    if (Array.isArray(options.feedbackMessages)) {
+      backup.feedbackMessages = options.feedbackMessages;
+    }
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const objectUrl = URL.createObjectURL(blob);
     const dlAnchor = document.createElement('a');
@@ -2127,6 +2181,29 @@ const FinanceData = {
     dlAnchor.remove();
     setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
     return backup;
+  },
+
+  async exportAllUserData() {
+    const profile = this.getProfile();
+    const userId = profile.userId || this.getActiveUserId();
+    let feedbackMessages = [];
+    if (userId) {
+      if (!window.SupabaseAuth ||
+        typeof window.SupabaseAuth.fetchMyFeedback !== 'function') {
+        return { success: false, error: 'Não foi possível exportar as mensagens da sua conta.' };
+      }
+      const result = await window.SupabaseAuth.fetchMyFeedback();
+      if (!result || !result.success) {
+        return {
+          success: false,
+          error: result && result.error
+            ? result.error
+            : 'Não foi possível exportar as mensagens da sua conta.'
+        };
+      }
+      feedbackMessages = result.messages;
+    }
+    return { success: true, backup: this.exportJSON({ feedbackMessages }) };
   },
 
   async importJSON(text, mode = 'merge') {

@@ -974,6 +974,17 @@ body {
   color: var(--text-dim);
 }
 
+.user-data-description {
+  margin: 0 0 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.user-data-delete-action .action-text strong {
+  color: var(--danger);
+}
+
 .irreversible-actions-hint {
   margin: 0.25rem 0 0;
   color: var(--text-muted);
@@ -2110,6 +2121,14 @@ button:active { transform: scale(0.98); }
   border-radius: var(--radius-md);
 }
 
+.empty-state-action {
+  margin: 0.75rem auto;
+}
+
+.empty-state button {
+  margin-top: 0.75rem;
+}
+
 .account-balance-navigation {
   display: flex;
   flex-direction: column;
@@ -2660,6 +2679,46 @@ button:active { transform: scale(0.98); }
 .toast.show {
   transform: translateY(0);
   opacity: 1;
+}
+
+.back-to-top-btn {
+  position: fixed;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: calc(5rem + env(safe-area-inset-bottom));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-card);
+  color: var(--text-main);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(0.5rem);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+  cursor: pointer;
+}
+
+.back-to-top-btn.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.back-to-top-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.back-to-top-btn:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
 }
 
 /* ================================================================
@@ -6078,6 +6137,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 .goals-empty i    { font-size: 2.2rem; opacity: 0.3; }
 .goals-empty p    { font-size: 0.95rem; font-weight: 600; margin: 0; }
 .goals-empty span { font-size: 0.83rem; }
+.goals-empty .empty-state-action { margin: 0.75rem 0 0; }
 
 .goal-card {
   background: var(--bg-card-hover);

@@ -932,6 +932,40 @@ function showToast(msg) {
   setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
+function shouldShowBackToTop(scrollY, scrollHeight, viewportHeight) {
+  return scrollHeight - viewportHeight > 400 && scrollY > 400;
+}
+
+function updateBackToTopVisibility() {
+  const button = document.getElementById('backToTopBtn');
+  if (!button) return;
+  const visible = shouldShowBackToTop(
+    window.scrollY || window.pageYOffset || 0,
+    document.documentElement.scrollHeight,
+    window.innerHeight
+  );
+  button.classList.toggle('is-visible', visible);
+  button.setAttribute('aria-hidden', String(!visible));
+  button.tabIndex = visible ? 0 : -1;
+}
+
+function scrollToPageTop() {
+  const prefersReducedMotion = typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+}
+
+function bindBackToTopClick(button) {
+  button.addEventListener('click', scrollToPageTop);
+}
+
+window.GastoProScrollTop = {
+  shouldShow: shouldShowBackToTop,
+  updateVisibility: updateBackToTopVisibility,
+  scrollToTop: scrollToPageTop,
+  bindClick: bindBackToTopClick
+};
+
 // ================================================================
 // 4. NAVEGAÇÃO SPA — TROCA DE TELAS
 // ================================================================
@@ -1224,7 +1258,16 @@ function renderAccountBalancesPanel() {
   const filterLabel = getAccountBalanceFilterLabel(accounts, state.accountBalanceFilter);
   if (display) display.textContent = formatCurrency(amount);
   if (label) label.textContent = filterLabel;
-  if (empty) empty.hidden = accounts.length > 0;
+  if (empty) {
+    empty.hidden = accounts.length > 0;
+    if (!accounts.length) {
+      empty.innerHTML = `
+        <p>Nenhuma conta cadastrada.</p>
+        <button type="button" class="btn-secondary" data-goto="accounts">
+          Cadastrar conta
+        </button>`;
+    }
+  }
   const topbarBalance = document.getElementById('topbarBalance');
   const topbarEmpty = document.getElementById('topbarBalanceEmpty');
   const topbarDateNote = document.getElementById('topbarBalanceDateNote');
@@ -1246,6 +1289,13 @@ function renderCreditCardsPanel() {
   const accounts = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
   const cards = FinanceData.getCreditCards();
   if (empty) empty.hidden = cards.length > 0;
+  if (empty && !cards.length) {
+    empty.innerHTML = `
+      <p>Nenhum cartão cadastrado ainda.</p>
+      <button type="button" class="btn-primary empty-state-action" data-action="new-credit-card">
+        Cadastrar cartão
+      </button>`;
+  }
   const purchases = FinanceData.getCreditCardPurchases();
   container.innerHTML = cards.map(card => {
     const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(card, purchases);
@@ -1486,6 +1536,12 @@ window.GastoProAccountDeletion = {
       }
     }
     return result;
+  }
+};
+
+window.GastoProUserData = {
+  isDeletionConfirmationValid(value) {
+    return value === 'EXCLUIR';
   }
 };
 
@@ -1779,6 +1835,9 @@ function renderDebtCenter(currentYm) {
         <p style="font-weight: 500; margin-bottom: 0.25rem;">Nenhum parcelamento ou empréstimo em andamento</p>
         <span style="font-size: 0.85rem;">Ao cadastrar um gasto fixo com data final ou categoria de empréstimo/parcelamento, o cronograma de quitação aparecerá aqui automaticamente.</span>
         <small class="empty-state-tip">Informe a data final no cadastro para ver a previsão de término.</small>
+        <button type="button" class="btn-primary empty-state-action" data-goto="expenses">
+          Ir para lançamentos
+        </button>
       </div>
     `;
     if (totalRemainingEl) totalRemainingEl.textContent = formatCurrency(0);
@@ -1852,7 +1911,16 @@ function renderCategoryChart(fixed, variables) {
       state.chartInstance = null;
     }
     ctx.style.display = 'none';
-    if (emptyMsg) emptyMsg.style.display = 'block';
+    if (emptyMsg) {
+      emptyMsg.innerHTML = `
+        <i class="fa-solid fa-chart-simple"></i>
+        <p>Nenhum gasto lançado neste mês ainda.</p>
+        <span class="empty-state-tip">Registre uma saída para ver a distribuição por categoria.</span>
+        <button type="button" class="btn-primary empty-state-action" data-goto="expenses">
+          Adicionar gasto
+        </button>`;
+      emptyMsg.style.display = 'block';
+    }
     return;
   }
 
@@ -1938,6 +2006,8 @@ function renderIncomesView(incomes, totalIncome) {
         <i class="fa-solid fa-hand-holding-dollar" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.4;"></i>
         <p>Nenhum ganho cadastrado para este mês ainda.</p>
         <span>Use o formulário acima para adicionar seu salário ou rendas extras.</span>
+        <button type="button" class="btn-primary empty-state-action" data-action="focus-entry-form"
+          data-form="incomeForm" data-focus="incomeDesc">Adicionar ganho</button>
         <small class="empty-state-tip">Depois de salvar, você pode editar ou excluir o lançamento nesta lista.</small>
       </div>
     `;
@@ -2019,6 +2089,8 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
         <i class="fa-solid fa-receipt" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.4;"></i>
         <p>Nenhum gasto encontrado para este filtro.</p>
         <span>Cadastre uma nova despesa no formulário acima.</span>
+        <button type="button" class="btn-primary empty-state-action" data-action="focus-entry-form"
+          data-form="expenseForm" data-focus="expenseDesc">Adicionar gasto</button>
         <small class="empty-state-tip">Escolha a categoria e confira se o gasto é fixo ou variável antes de salvar.</small>
       </div>
     `;
@@ -2560,6 +2632,13 @@ window.GastoProKeyboardPanels = {
  *  12. Registro do Service Worker (PWA).
  */
 document.addEventListener('DOMContentLoaded', () => {
+  const backToTopBtn = document.getElementById('backToTopBtn');
+  if (backToTopBtn) {
+    window.addEventListener('scroll', updateBackToTopVisibility, { passive: true });
+    window.addEventListener('resize', updateBackToTopVisibility);
+    bindBackToTopClick(backToTopBtn);
+    updateBackToTopVisibility();
+  }
   setupResponsiveThemeToggle();
   document.addEventListener('gastopro:themechange', () => {
     if (document.getElementById('categoryChart')) renderAll();
@@ -2840,6 +2919,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         break;
       }
+      case 'focus-entry-form': {
+        const targets = {
+          incomeForm: 'incomeDesc',
+          expenseForm: 'expenseDesc'
+        };
+        const formId = actionElement.dataset.form;
+        const focusId = targets[formId];
+        const form = focusId && document.getElementById(formId);
+        if (form) {
+          form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          document.getElementById(focusId).focus();
+        }
+        break;
+      }
+      case 'new-goal':
+        openGoalModal();
+        break;
       case 'close-statement-guide': {
         const guideModal = document.getElementById('statementGuideModal');
         if (guideModal) {
@@ -3844,10 +3940,25 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── 9. Exportação e Reset de Dados ───────────────────────────
-  document.getElementById('exportBtn').addEventListener('click', () => {
-    FinanceData.exportJSON();
-    showToast('Backup JSON exportado com sucesso!');
-  });
+  const exportBtn = document.getElementById('exportBtn');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      exportBtn.disabled = true;
+      try {
+        const result = await FinanceData.exportAllUserData();
+        if (!result.success) {
+          showToast(result.error || 'Não foi possível exportar seus dados.');
+          return;
+        }
+        showToast('Exportação JSON concluída com seus dados e mensagens de feedback.');
+      } catch (error) {
+        console.error('[GastoPro] Falha ao exportar todos os dados:', error);
+        showToast('Não foi possível exportar seus dados. Tente novamente.');
+      } finally {
+        exportBtn.disabled = false;
+      }
+    });
+  }
 
   const restoreBackupBtn = document.getElementById('restoreBackupBtn');
   const restoreBackupFile = document.getElementById('restoreBackupFile');
@@ -4080,6 +4191,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const deleteAccountConfirmation = document.getElementById('deleteAccountConfirmation');
   const deleteAccountError   = document.getElementById('deleteAccountError');
   const confirmDeleteAccountBtn = document.getElementById('confirmDeleteAccountBtn');
+  const deleteAllMyDataBtn = document.getElementById('deleteAllMyDataBtn');
+  const deleteAllMyDataModal = document.getElementById('deleteAllMyDataModal');
+  const closeDeleteAllMyDataModalBtn = document.getElementById('closeDeleteAllMyDataModalBtn');
+  const cancelDeleteAllMyDataBtn = document.getElementById('cancelDeleteAllMyDataBtn');
+  const deleteAllMyDataConfirmation = document.getElementById('deleteAllMyDataConfirmation');
+  const deleteAllMyDataError = document.getElementById('deleteAllMyDataError');
+  const confirmDeleteAllMyDataBtn = document.getElementById('confirmDeleteAllMyDataBtn');
   const downloadBackupBeforeAccountDeletion = document.getElementById('downloadBackupBeforeAccountDeletion');
   const passwordRecoveryModal = document.getElementById('passwordRecoveryModal');
   const passwordRecoveryDialog = passwordRecoveryModal && passwordRecoveryModal.querySelector('[role="dialog"]');
@@ -4837,6 +4955,101 @@ document.addEventListener('DOMContentLoaded', () => {
   if (deleteAccountModal) {
     deleteAccountModal.addEventListener('click', event => {
       if (event.target === deleteAccountModal) closeDeleteAccountModal();
+    });
+  }
+
+  function closeDeleteAllMyDataModal() {
+    if (!deleteAllMyDataModal) return;
+    deleteAllMyDataModal.classList.remove('active');
+    deleteAllMyDataModal.setAttribute('aria-hidden', 'true');
+  }
+
+  function showDeleteAllMyDataError(message) {
+    if (!deleteAllMyDataError) return;
+    deleteAllMyDataError.textContent = message;
+    deleteAllMyDataError.hidden = false;
+  }
+
+  function openDeleteAllMyDataModal() {
+    if (!deleteAllMyDataModal) return;
+    deleteAllMyDataConfirmation.value = '';
+    deleteAllMyDataConfirmation.disabled = false;
+    deleteAllMyDataError.textContent = '';
+    deleteAllMyDataError.hidden = true;
+    confirmDeleteAllMyDataBtn.disabled = true;
+    confirmDeleteAllMyDataBtn.textContent = 'Excluir todos os dados';
+    closeDeleteAllMyDataModalBtn.disabled = false;
+    cancelDeleteAllMyDataBtn.disabled = false;
+    deleteAllMyDataModal.classList.add('active');
+    deleteAllMyDataModal.setAttribute('aria-hidden', 'false');
+    setTimeout(() => deleteAllMyDataConfirmation.focus(), 0);
+  }
+
+  if (deleteAllMyDataBtn) {
+    deleteAllMyDataBtn.addEventListener('click', openDeleteAllMyDataModal);
+  }
+  if (closeDeleteAllMyDataModalBtn) {
+    closeDeleteAllMyDataModalBtn.addEventListener('click', closeDeleteAllMyDataModal);
+  }
+  if (cancelDeleteAllMyDataBtn) {
+    cancelDeleteAllMyDataBtn.addEventListener('click', closeDeleteAllMyDataModal);
+  }
+  if (deleteAllMyDataModal) {
+    deleteAllMyDataModal.addEventListener('click', event => {
+      if (event.target === deleteAllMyDataModal) closeDeleteAllMyDataModal();
+    });
+  }
+  if (deleteAllMyDataConfirmation && confirmDeleteAllMyDataBtn) {
+    deleteAllMyDataConfirmation.addEventListener('input', () => {
+      confirmDeleteAllMyDataBtn.disabled =
+        !window.GastoProUserData.isDeletionConfirmationValid(deleteAllMyDataConfirmation.value);
+      deleteAllMyDataError.textContent = '';
+      deleteAllMyDataError.hidden = true;
+    });
+
+    confirmDeleteAllMyDataBtn.addEventListener('click', async () => {
+      if (!window.GastoProUserData.isDeletionConfirmationValid(
+        deleteAllMyDataConfirmation.value
+      )) return;
+      confirmDeleteAllMyDataBtn.disabled = true;
+      confirmDeleteAllMyDataBtn.textContent = 'Excluindo...';
+      deleteAllMyDataConfirmation.disabled = true;
+      closeDeleteAllMyDataModalBtn.disabled = true;
+      cancelDeleteAllMyDataBtn.disabled = true;
+      try {
+        const result = await FinanceData.deleteAllUserData(deleteAllMyDataConfirmation.value);
+        if (!result.success) {
+          showDeleteAllMyDataError(result.error && result.error.message || result.error ||
+            'Não foi possível excluir todos os dados.');
+          deleteAllMyDataConfirmation.disabled = false;
+          closeDeleteAllMyDataModalBtn.disabled = false;
+          cancelDeleteAllMyDataBtn.disabled = false;
+          confirmDeleteAllMyDataBtn.disabled = !window.GastoProUserData.isDeletionConfirmationValid(
+            deleteAllMyDataConfirmation.value
+          );
+          confirmDeleteAllMyDataBtn.textContent = 'Excluir todos os dados';
+          return;
+        }
+      } catch (error) {
+        console.error('[GastoPro] Falha ao excluir todos os dados:', error);
+        showDeleteAllMyDataError('Não foi possível excluir os dados. Verifique a conexão e tente novamente.');
+        deleteAllMyDataConfirmation.disabled = false;
+        closeDeleteAllMyDataModalBtn.disabled = false;
+        cancelDeleteAllMyDataBtn.disabled = false;
+        confirmDeleteAllMyDataBtn.disabled = !window.GastoProUserData.isDeletionConfirmationValid(
+          deleteAllMyDataConfirmation.value
+        );
+        confirmDeleteAllMyDataBtn.textContent = 'Excluir todos os dados';
+        return;
+      }
+
+      feedbackViewState.messages = [];
+      feedbackViewState.notice = '';
+      closeDeleteAllMyDataModal();
+      closeProfileDrawer();
+      renderUserProfile();
+      renderAll();
+      showToast('Todos os dados foram excluídos. Seu login foi mantido.');
     });
   }
 
@@ -6801,7 +7014,17 @@ function renderGoalsSection(fixed, variables) {
 
   if (goals.length === 0) {
     container.innerHTML = '';
-    if (emptyState) emptyState.style.display = 'flex';
+    if (emptyState) {
+      emptyState.innerHTML = `
+        <i class="fa-solid fa-bullseye"></i>
+        <p>Nenhuma meta definida ainda.</p>
+        <span>Defina um teto de gastos por categoria para acompanhar seus limites.</span>
+        <button type="button" class="btn-primary empty-state-action" data-action="new-goal">
+          Criar meta
+        </button>
+        <small class="empty-state-tip">A tela mostra o progresso ao atingir 80% e 100% do limite.</small>`;
+      emptyState.style.display = 'flex';
+    }
     return;
   }
 

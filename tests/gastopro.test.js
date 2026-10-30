@@ -474,6 +474,53 @@ describe('FinanceData — Metas por Categoria', () => {
   });
 });
 
+describe('Estados vazios das telas', () => {
+  it('oferece uma ação nas listas e painéis sem dados', () => {
+    setupMockLocalStorage();
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div id="incomesPageTotal"></div>
+      <div id="incomesListDetailed"></div>
+      <div id="expensesPageTotal"></div>
+      <div id="subtotalFixedLabel"></div>
+      <div id="subtotalVarLabel"></div>
+      <div id="expensesListDetailed"></div>
+      <div id="accountsList"></div>
+      <div id="creditCardsList"></div>
+      <div id="creditCardsEmpty"></div>
+      <div id="goalsListContainer"></div>
+      <div id="goalsEmptyState"></div>
+      <div id="debtCardsGrid"></div>
+      <div id="totalDebtRemaining"></div>
+      <canvas id="categoryChart"></canvas>
+      <div id="chartEmptyMessage"></div>
+      <div id="dashboardAccountsEmpty"></div>`;
+    document.body.appendChild(host);
+    try {
+      state.expenseFilter = 'all';
+      renderIncomesView([], 0);
+      renderExpensesView([], [], 0, 0, 0);
+      renderAccountsView();
+      renderCreditCardsPanel();
+      renderGoalsSection([], [], []);
+      renderDebtCenter('2026-10');
+      renderCategoryChart([], []);
+      renderAccountBalancesPanel();
+
+      assertTrue(host.querySelector('#incomesListDetailed [data-action="focus-entry-form"]'));
+      assertTrue(host.querySelector('#expensesListDetailed [data-action="focus-entry-form"]'));
+      assertTrue(host.querySelector('#accountsList [data-action="new-account"]'));
+      assertTrue(host.querySelector('#creditCardsEmpty [data-action="new-credit-card"]'));
+      assertTrue(host.querySelector('#goalsEmptyState [data-action="new-goal"]'));
+      assertTrue(host.querySelector('#debtCardsGrid [data-goto="expenses"]'));
+      assertTrue(host.querySelector('#chartEmptyMessage [data-goto="expenses"]'));
+      assertTrue(host.querySelector('#dashboardAccountsEmpty [data-goto="accounts"]'));
+    } finally {
+      host.remove();
+    }
+  });
+});
+
 describe('FinanceData — Contas Bancárias', () => {
   setupMockLocalStorage();
 
@@ -1790,6 +1837,44 @@ describe('Canal Fale comigo', () => {
     }
   });
 
+  itAsync('exclui as tabelas próprias sem apagar o usuário de autenticação', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const previousGetAuthenticatedUserId = window.SupabaseAuth.getAuthenticatedUserId;
+    const userId = '550e8400-e29b-41d4-a716-446655440001';
+    const deletedTables = [];
+    window.SupabaseAuth.getAuthenticatedUserId = async expectedUserId =>
+      expectedUserId === userId ? userId : null;
+    window.SupabaseAuth.client = {
+      from(table) {
+        return {
+          delete() { return this; },
+          eq(column, value) {
+            deletedTables.push([table, column, value]);
+            return Promise.resolve({ error: null });
+          }
+        };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.deleteAllMyData(userId);
+      assertTrue(result.success);
+      assertEqual(deletedTables, [
+        ['feedback_messages', 'user_id', userId],
+        ['credit_card_purchases', 'user_id', userId],
+        ['entries', 'user_id', userId],
+        ['fixed_templates', 'user_id', userId],
+        ['goals', 'user_id', userId],
+        ['fixed_import_rules', 'user_id', userId],
+        ['credit_cards', 'user_id', userId],
+        ['accounts', 'user_id', userId],
+        ['profiles', 'id', userId]
+      ]);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+      window.SupabaseAuth.getAuthenticatedUserId = previousGetAuthenticatedUserId;
+    }
+  });
+
   it('converte erros comuns do canal em mensagens claras', () => {
     assertTrue(window.SupabaseAuth.getFeedbackErrorMessage({ code: 'PGRST205' }).includes('migração'));
     assertTrue(window.SupabaseAuth.getFeedbackErrorMessage({ code: 'P0001' }).includes('5 mensagens'));
@@ -1914,6 +1999,111 @@ describe('FinanceData — clearAll()', () => {
       assertEqual(FinanceData.getPendingSync().deletedAccounts, [account.id]);
       assertEqual(FinanceData.getPendingSync().entries, []);
       assertEqual(FinanceData.getPendingSync().templates, []);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+});
+
+describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
+  itAsync('exige EXCLUIR antes de apagar cartões, regras ou outros dados', async () => {
+    setupMockLocalStorage();
+    const card = { id: crypto.randomUUID(), name: 'Cartão preservado', totalLimit: 1000 };
+    localStorage.setItem('gastopro_credit_cards_v1', JSON.stringify([card]));
+    localStorage.setItem('gastopro_fixed_import_rules_v1', JSON.stringify(['mercado']));
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([makeIncome()]));
+    let remoteCalls = 0;
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      deleteAllMyData: async () => {
+        remoteCalls++;
+        return { success: true };
+      }
+    };
+    try {
+      const result = await FinanceData.deleteAllUserData('excluir');
+      assertFalse(result.success);
+      assertEqual(remoteCalls, 0);
+      assertEqual(FinanceData.getCreditCards(), [card]);
+      assertEqual(FinanceData.getFixedImportRules(), ['mercado']);
+      assertEqual(FinanceData.getEntries().length, 1);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('apaga dados locais e remotos sem remover a sessão de login', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-delete-data-only';
+    const card = { id: crypto.randomUUID(), name: 'Cartão', totalLimit: 1000 };
+    const purchase = { id: crypto.randomUUID(), cardId: card.id, desc: 'Compra' };
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_theme', 'light');
+    FinanceData.saveProfile({
+      name: 'Pessoa', avatar: 'data:image/png;base64,abc',
+      email: 'pessoa@example.com', userId
+    });
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([makeIncome()]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([makeFixed()]));
+    localStorage.setItem('gastopro_goals_v1', JSON.stringify([
+      { id: 'goal-1', category: 'Casa', limit: 500 }
+    ]));
+    localStorage.setItem('gastopro_accounts_v1', JSON.stringify([
+      { id: crypto.randomUUID(), name: 'Conta', type: 'PF', initialBalance: 0 }
+    ]));
+    localStorage.setItem('gastopro_credit_cards_v1', JSON.stringify([card]));
+    localStorage.setItem('gastopro_credit_card_purchases_v1', JSON.stringify([purchase]));
+    localStorage.setItem('gastopro_fixed_import_rules_v1', JSON.stringify(['mercado']));
+    FinanceData.savePendingSync({ full: true });
+
+    const deletedForUser = [];
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      deleteAllMyData: async targetUserId => {
+        deletedForUser.push(targetUserId);
+        return { success: true };
+      }
+    };
+    try {
+      const result = await FinanceData.deleteAllUserData('EXCLUIR');
+      assertTrue(result.success);
+      assertEqual(deletedForUser, [userId]);
+      assertEqual(FinanceData.getEntries(), []);
+      assertEqual(FinanceData.getTemplates(), []);
+      assertEqual(FinanceData.getGoals(), []);
+      assertEqual(FinanceData.getAccounts(), []);
+      assertEqual(FinanceData.getCreditCards(), []);
+      assertEqual(FinanceData.getCreditCardPurchases(), []);
+      assertEqual(FinanceData.getFixedImportRules(), []);
+      assertFalse(FinanceData.hasPendingSync());
+      assertEqual(FinanceData.getProfile(), {
+        name: '', email: 'pessoa@example.com', avatar: null, userId
+      });
+      assertEqual(localStorage.getItem('gastopro_last_uid'), userId);
+      assertEqual(localStorage.getItem('gastopro_theme'), 'light');
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('mantém a cópia local quando a exclusão remota falha', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-delete-data-failure';
+    const card = { id: crypto.randomUUID(), name: 'Cartão preservado', totalLimit: 1000 };
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: 'Pessoa', email: 'pessoa@example.com', userId });
+    localStorage.setItem('gastopro_credit_cards_v1', JSON.stringify([card]));
+    localStorage.setItem('gastopro_fixed_import_rules_v1', JSON.stringify(['mercado']));
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      deleteAllMyData: async () => ({ success: false, error: 'Falha de rede.' })
+    };
+    try {
+      const result = await FinanceData.deleteAllUserData('EXCLUIR');
+      assertFalse(result.success);
+      assertEqual(result.error, 'Falha de rede.');
+      assertEqual(FinanceData.getCreditCards(), [card]);
+      assertEqual(FinanceData.getFixedImportRules(), ['mercado']);
     } finally {
       window.SupabaseAuth = previousAuth;
     }
@@ -2634,6 +2824,64 @@ describe('FinanceData — exportJSON()', () => {
     assertEqual(downloadUrl, 'blob:test-backup');
     assertTrue(/^gastopro_backup_\d{4}-\d{2}-\d{2}\.json$/.test(downloadName));
   });
+
+  itAsync('exporta todas as coleções do backup e mensagens da conta', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-export-all-data';
+    const feedbackMessages = [{
+      id: crypto.randomUUID(), category: 'duvida', message: 'Mensagem exportada',
+      status: 'answered', reply: 'Resposta', created_at: '2026-10-30T12:00:00Z'
+    }];
+    FinanceData.saveProfile({ name: 'Pessoa', email: 'pessoa@example.com', userId });
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([makeIncome()]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([makeFixed()]));
+    localStorage.setItem('gastopro_goals_v1', JSON.stringify([
+      { id: 'goal-1', category: 'Casa', limit: 500 }
+    ]));
+    localStorage.setItem('gastopro_accounts_v1', JSON.stringify([
+      { id: crypto.randomUUID(), name: 'Conta', type: 'PF', initialBalance: 0 }
+    ]));
+    localStorage.setItem('gastopro_credit_cards_v1', JSON.stringify([
+      { id: crypto.randomUUID(), name: 'Cartão', totalLimit: 1000 }
+    ]));
+    localStorage.setItem('gastopro_credit_card_purchases_v1', JSON.stringify([
+      { id: crypto.randomUUID(), desc: 'Compra', amount: 10 }
+    ]));
+    localStorage.setItem('gastopro_fixed_import_rules_v1', JSON.stringify(['mercado']));
+
+    const originalCreateElement = document.createElement.bind(document);
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    document.createElement = tagName => {
+      if (tagName !== 'a') return originalCreateElement(tagName);
+      const anchor = originalCreateElement(tagName);
+      anchor.click = () => {};
+      return anchor;
+    };
+    URL.createObjectURL = () => 'blob:all-user-data';
+    URL.revokeObjectURL = () => {};
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      fetchMyFeedback: async () => ({ success: true, messages: feedbackMessages })
+    };
+    try {
+      const result = await FinanceData.exportAllUserData();
+      assertTrue(result.success);
+      assertEqual(result.backup.entries.length, 1);
+      assertEqual(result.backup.templates.length, 1);
+      assertEqual(result.backup.goals.length, 1);
+      assertEqual(result.backup.accounts.length, 1);
+      assertEqual(result.backup.creditCards.length, 1);
+      assertEqual(result.backup.creditCardPurchases.length, 1);
+      assertEqual(result.backup.fixedImportRules, ['mercado']);
+      assertEqual(result.backup.feedbackMessages, feedbackMessages);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+      document.createElement = originalCreateElement;
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
+  });
 });
 
 describe('FinanceData — Perfil do Usuário', () => {
@@ -2685,6 +2933,77 @@ describe('FinanceData — getAll()', () => {
 // SUITE 2: UTILITÁRIOS DO APP (app.js)
 // Estes testes dependem das funções globais definidas em app.js.
 // ================================================================
+
+describe('Utilitários — voltar ao topo', () => {
+  it('mostra o botão após rolar em tela longa e esconde no topo', () => {
+    assertFalse(window.GastoProScrollTop.shouldShow(0, 1200, 700));
+    assertFalse(window.GastoProScrollTop.shouldShow(401, 1100, 700));
+    assertTrue(window.GastoProScrollTop.shouldShow(401, 1201, 700));
+
+    const button = document.createElement('button');
+    button.id = 'backToTopBtn';
+    button.setAttribute('aria-hidden', 'true');
+    button.tabIndex = -1;
+    document.body.appendChild(button);
+    const scrollYDescriptor = Object.getOwnPropertyDescriptor(window, 'scrollY');
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+      document.documentElement, 'scrollHeight'
+    );
+    const innerHeightDescriptor = Object.getOwnPropertyDescriptor(window, 'innerHeight');
+    try {
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: 401 });
+      Object.defineProperty(document.documentElement, 'scrollHeight', {
+        configurable: true, value: 1201
+      });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 700 });
+      window.GastoProScrollTop.updateVisibility();
+      assertTrue(button.classList.contains('is-visible'));
+      assertEqual(button.getAttribute('aria-hidden'), 'false');
+      assertEqual(button.tabIndex, 0);
+
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 });
+      window.GastoProScrollTop.updateVisibility();
+      assertFalse(button.classList.contains('is-visible'));
+      assertEqual(button.getAttribute('aria-hidden'), 'true');
+      assertEqual(button.tabIndex, -1);
+    } finally {
+      if (scrollYDescriptor) Object.defineProperty(window, 'scrollY', scrollYDescriptor);
+      else delete window.scrollY;
+      if (scrollHeightDescriptor) {
+        Object.defineProperty(document.documentElement, 'scrollHeight', scrollHeightDescriptor);
+      } else {
+        delete document.documentElement.scrollHeight;
+      }
+      if (innerHeightDescriptor) Object.defineProperty(window, 'innerHeight', innerHeightDescriptor);
+      else delete window.innerHeight;
+      button.remove();
+    }
+  });
+
+  it('rola ao topo sem animação quando movimento reduzido está ativo', () => {
+    const originalScrollTo = window.scrollTo;
+    const originalMatchMedia = window.matchMedia;
+    const calls = [];
+    window.scrollTo = options => calls.push(options);
+    window.matchMedia = query => ({
+      matches: query === '(prefers-reduced-motion: reduce)'
+    });
+    const button = document.createElement('button');
+    try {
+      window.GastoProScrollTop.bindClick(button);
+      button.click();
+      assertEqual(calls[0], { top: 0, behavior: 'auto' });
+
+      window.matchMedia = () => ({ matches: false });
+      button.click();
+      assertEqual(calls[1], { top: 0, behavior: 'smooth' });
+    } finally {
+      window.scrollTo = originalScrollTo;
+      window.matchMedia = originalMatchMedia;
+      button.remove();
+    }
+  });
+});
 
 describe('Utilitários — formatCurrency()', () => {
   it('deve formatar zero corretamente em BRL', () => {
@@ -4709,6 +5028,9 @@ describe('Exclusão de conta do usuário', () => {
     assertFalse(window.GastoProAccountDeletion.isConfirmationValid('excluir'));
     assertFalse(window.GastoProAccountDeletion.isConfirmationValid(' EXCLUIR'));
     assertFalse(window.GastoProAccountDeletion.isConfirmationValid('EXCLUIR '));
+    assertTrue(window.GastoProUserData.isDeletionConfirmationValid('EXCLUIR'));
+    assertFalse(window.GastoProUserData.isDeletionConfirmationValid('excluir'));
+    assertFalse(window.GastoProUserData.isDeletionConfirmationValid(' EXCLUIR'));
   });
 
   itAsync('limpa todos os dados e a sessão local após excluir a conta com sucesso', async () => {
