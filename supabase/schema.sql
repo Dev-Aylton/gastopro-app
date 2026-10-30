@@ -17,6 +17,8 @@ create table if not exists public.accounts (
   initial_balance numeric(12,2) not null default 0,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
+  client_edited_at timestamptz,
+  deleted_at      timestamptz,
   constraint accounts_user_id_id_key unique (user_id, id)
 );
 
@@ -36,6 +38,8 @@ create table if not exists public.credit_cards (
   account_id  uuid,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
+  client_edited_at timestamptz,
+  deleted_at  timestamptz,
   constraint credit_cards_user_id_id_key unique (user_id, id)
 );
 
@@ -56,6 +60,8 @@ create table if not exists public.credit_card_purchases (
   paid_dates         jsonb not null default '{}'::jsonb check (jsonb_typeof(paid_dates) = 'object'),
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
+  client_edited_at   timestamptz,
+  deleted_at         timestamptz,
   constraint credit_card_purchases_user_id_id_key unique (user_id, id),
   constraint credit_card_purchases_card_fk foreign key (user_id, card_id)
     references public.credit_cards(user_id, id) on delete set null (card_id)
@@ -75,7 +81,9 @@ create table if not exists public.entries (
   active      boolean not null default true,
   account_id  uuid,
   created_at  timestamptz default now(),
-  updated_at  timestamptz not null default now()
+  updated_at  timestamptz not null default now(),
+  client_edited_at timestamptz,
+  deleted_at  timestamptz
 );
 
 create table if not exists public.fixed_templates (
@@ -93,14 +101,18 @@ create table if not exists public.fixed_templates (
   paid_months jsonb default '{}'::jsonb,
   account_id  uuid,
   created_at  timestamptz default now(),
-  updated_at  timestamptz not null default now()
+  updated_at  timestamptz not null default now(),
+  client_edited_at timestamptz,
+  deleted_at  timestamptz
 );
 
 create table if not exists public.profiles (
   id         uuid primary key references auth.users(id) on delete cascade,
   name       text,
   avatar     text,
-  updated_at timestamptz default now()
+  updated_at timestamptz not null default now(),
+  client_edited_at timestamptz,
+  deleted_at timestamptz
 );
 
 create table if not exists public.goals (
@@ -109,13 +121,17 @@ create table if not exists public.goals (
   limit_amount numeric(12,2) not null check (limit_amount >= 0),
   created_at   timestamptz default now(),
   updated_at   timestamptz not null default now(),
+  client_edited_at timestamptz,
+  deleted_at   timestamptz,
   primary key (user_id, category)
 );
 
 create table if not exists public.fixed_import_rules (
   user_id    uuid primary key references auth.users(id) on delete cascade,
   rules      jsonb not null default '[]'::jsonb check (jsonb_typeof(rules) = 'array'),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  client_edited_at timestamptz,
+  deleted_at timestamptz
 );
 
 create table if not exists public.app_admins (
@@ -383,6 +399,45 @@ $$;
 
 revoke execute on function public.set_updated_at() from public, anon, authenticated;
 
+create or replace function public.set_sync_record_timestamps()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+declare
+  server_time timestamptz := pg_catalog.clock_timestamp();
+begin
+  if tg_op = 'UPDATE' then
+    if new.client_edited_at is null or new.client_edited_at <= old.updated_at then
+      return null;
+    end if;
+    if new.deleted_at is distinct from old.deleted_at and new.deleted_at is not null then
+      new.deleted_at := server_time;
+    end if;
+  elsif new.deleted_at is not null then
+    new.deleted_at := server_time;
+  end if;
+  new.updated_at := server_time;
+  return new;
+end;
+$$;
+revoke execute on function public.set_sync_record_timestamps() from public, anon, authenticated;
+
+create or replace function public.get_sync_server_time()
+returns timestamptz
+language plpgsql
+volatile
+security invoker
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  return pg_catalog.clock_timestamp();
+end;
+$$;
+revoke execute on function public.get_sync_server_time() from public, anon;
+grant execute on function public.get_sync_server_time() to authenticated;
+
 create or replace function public.enforce_feedback_daily_limit()
 returns trigger
 language plpgsql
@@ -422,18 +477,19 @@ create trigger feedback_messages_set_updated_at
   for each row execute function public.set_updated_at();
 
 drop trigger if exists entries_set_updated_at on public.entries;
-create trigger entries_set_updated_at
-  before update on public.entries
-  for each row execute function public.set_updated_at();
+drop trigger if exists entries_sync_timestamps on public.entries;
+create trigger entries_sync_timestamps before insert or update on public.entries
+  for each row execute function public.set_sync_record_timestamps();
 
 drop trigger if exists templates_set_updated_at on public.fixed_templates;
-create trigger templates_set_updated_at
-  before update on public.fixed_templates
-  for each row execute function public.set_updated_at();
+drop trigger if exists templates_sync_timestamps on public.fixed_templates;
+create trigger templates_sync_timestamps before insert or update on public.fixed_templates
+  for each row execute function public.set_sync_record_timestamps();
 
 drop trigger if exists profiles_set_updated_at on public.profiles;
-create trigger profiles_set_updated_at before update on public.profiles
-  for each row execute function public.set_updated_at();
+drop trigger if exists profiles_sync_timestamps on public.profiles;
+create trigger profiles_sync_timestamps before insert or update on public.profiles
+  for each row execute function public.set_sync_record_timestamps();
 
 drop trigger if exists goals_set_updated_at on public.goals;
 create trigger goals_set_updated_at before update on public.goals
@@ -454,6 +510,31 @@ create trigger credit_card_purchases_set_updated_at before update on public.cred
 drop trigger if exists fixed_import_rules_set_updated_at on public.fixed_import_rules;
 create trigger fixed_import_rules_set_updated_at before update on public.fixed_import_rules
   for each row execute function public.set_updated_at();
+
+drop trigger if exists entries_sync_timestamps on public.entries;
+create trigger entries_sync_timestamps before insert or update on public.entries
+  for each row execute function public.set_sync_record_timestamps();
+drop trigger if exists templates_sync_timestamps on public.fixed_templates;
+create trigger templates_sync_timestamps before insert or update on public.fixed_templates
+  for each row execute function public.set_sync_record_timestamps();
+drop trigger if exists profiles_sync_timestamps on public.profiles;
+create trigger profiles_sync_timestamps before insert or update on public.profiles
+  for each row execute function public.set_sync_record_timestamps();
+drop trigger if exists goals_sync_timestamps on public.goals;
+create trigger goals_sync_timestamps before insert or update on public.goals
+  for each row execute function public.set_sync_record_timestamps();
+drop trigger if exists accounts_sync_timestamps on public.accounts;
+create trigger accounts_sync_timestamps before insert or update on public.accounts
+  for each row execute function public.set_sync_record_timestamps();
+drop trigger if exists credit_cards_sync_timestamps on public.credit_cards;
+create trigger credit_cards_sync_timestamps before insert or update on public.credit_cards
+  for each row execute function public.set_sync_record_timestamps();
+drop trigger if exists credit_card_purchases_sync_timestamps on public.credit_card_purchases;
+create trigger credit_card_purchases_sync_timestamps before insert or update on public.credit_card_purchases
+  for each row execute function public.set_sync_record_timestamps();
+drop trigger if exists fixed_import_rules_sync_timestamps on public.fixed_import_rules;
+create trigger fixed_import_rules_sync_timestamps before insert or update on public.fixed_import_rules
+  for each row execute function public.set_sync_record_timestamps();
 
 -- ============================================================
 -- EXCLUSÃO DA PRÓPRIA CONTA (LGPD)
@@ -578,10 +659,10 @@ begin
       '[]'::jsonb
     ),
     'records', pg_catalog.jsonb_build_object(
-      'entries', (select pg_catalog.count(*) from public.entries),
-      'accounts', (select pg_catalog.count(*) from public.accounts),
-      'cards', (select pg_catalog.count(*) from public.credit_cards),
-      'goals', (select pg_catalog.count(*) from public.goals)
+      'entries', (select pg_catalog.count(*) from public.entries where deleted_at is null),
+      'accounts', (select pg_catalog.count(*) from public.accounts where deleted_at is null),
+      'cards', (select pg_catalog.count(*) from public.credit_cards where deleted_at is null),
+      'goals', (select pg_catalog.count(*) from public.goals where deleted_at is null)
     ),
     'feedback', pg_catalog.jsonb_build_object(
       'status', coalesce((
@@ -674,6 +755,55 @@ $$;
 
 revoke execute on function public.prune_usage_events() from public, anon, authenticated;
 
+create or replace function public.prune_sync_tombstones()
+returns bigint
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare removed_count bigint := 0; affected bigint;
+begin
+  delete from public.entries where deleted_at < pg_catalog.clock_timestamp() - interval '90 days';
+  get diagnostics affected = row_count; removed_count := removed_count + affected;
+  delete from public.fixed_templates where deleted_at < pg_catalog.clock_timestamp() - interval '90 days';
+  get diagnostics affected = row_count; removed_count := removed_count + affected;
+  delete from public.goals where deleted_at < pg_catalog.clock_timestamp() - interval '90 days';
+  get diagnostics affected = row_count; removed_count := removed_count + affected;
+  delete from public.accounts where deleted_at < pg_catalog.clock_timestamp() - interval '90 days';
+  get diagnostics affected = row_count; removed_count := removed_count + affected;
+  delete from public.credit_cards where deleted_at < pg_catalog.clock_timestamp() - interval '90 days';
+  get diagnostics affected = row_count; removed_count := removed_count + affected;
+  delete from public.credit_card_purchases where deleted_at < pg_catalog.clock_timestamp() - interval '90 days';
+  get diagnostics affected = row_count; removed_count := removed_count + affected;
+  delete from public.profiles where deleted_at < pg_catalog.clock_timestamp() - interval '90 days';
+  get diagnostics affected = row_count; removed_count := removed_count + affected;
+  delete from public.fixed_import_rules where deleted_at < pg_catalog.clock_timestamp() - interval '90 days';
+  get diagnostics affected = row_count; removed_count := removed_count + affected;
+  return removed_count;
+end;
+$$;
+revoke execute on function public.prune_sync_tombstones() from public, anon, authenticated;
+
+do $$
+declare table_name text;
+begin
+  if not exists (select 1 from pg_catalog.pg_publication where pubname = 'supabase_realtime') then
+    return;
+  end if;
+  foreach table_name in array array[
+    'entries', 'fixed_templates', 'profiles', 'goals', 'accounts',
+    'credit_cards', 'credit_card_purchases', 'fixed_import_rules'
+  ] loop
+    if not exists (
+      select 1 from pg_catalog.pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = table_name
+    ) then
+      execute pg_catalog.format('alter publication supabase_realtime add table public.%I', table_name);
+    end if;
+  end loop;
+end;
+$$;
+
 create extension if not exists pg_cron;
 
 do $$
@@ -692,6 +822,19 @@ begin
     'gastopro-prune-usage-events',
     '15 3 * * *',
     'select public.prune_usage_events();'
+  );
+end;
+$$;
+
+do $$
+declare existing_job bigint;
+begin
+  select jobid into existing_job from cron.job where jobname = 'gastopro-prune-sync-tombstones';
+  if existing_job is not null then perform cron.unschedule(existing_job); end if;
+  perform cron.schedule(
+    'gastopro-prune-sync-tombstones',
+    '30 3 * * *',
+    'select public.prune_sync_tombstones();'
   );
 end;
 $$;

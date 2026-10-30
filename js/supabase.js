@@ -330,6 +330,128 @@ window.GastoProFeedbackHelpers = {
 
 const SupabaseAuth = {
   client: sb,
+  syncRealtimeChannel: null,
+  syncRealtimeUserId: null,
+
+  isSyncServerReady() {
+    return Boolean(sb && this.client === sb);
+  },
+
+  subscribeToSyncChanges(userId, onChange, onFailure) {
+    const client = this.client;
+    if (!client || typeof client.channel !== 'function' || !userId) return false;
+    if (this.syncRealtimeChannel && this.syncRealtimeUserId === userId) return true;
+    this.unsubscribeFromSyncChanges();
+
+    const channel = client.channel(`gastopro-sync-${userId}`);
+    const tables = [
+      ['entries', 'user_id'],
+      ['fixed_templates', 'user_id'],
+      ['profiles', 'id'],
+      ['goals', 'user_id'],
+      ['accounts', 'user_id'],
+      ['credit_cards', 'user_id'],
+      ['credit_card_purchases', 'user_id'],
+      ['fixed_import_rules', 'user_id']
+    ];
+    tables.forEach(([table, ownerColumn]) => {
+      channel.on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table,
+        filter: `${ownerColumn}=eq.${userId}`
+      }, payload => {
+        if (payload.eventType === 'DELETE' || !payload.new) return;
+        const change = this.normalizeSyncRealtimeRecord(table, payload.new);
+        if (change) onChange({ ...change, eventType: payload.eventType });
+      });
+    });
+    this.syncRealtimeUserId = userId;
+    this.syncRealtimeChannel = channel;
+    try {
+      channel.subscribe(status => {
+        if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status) &&
+          this.syncRealtimeChannel === channel && this.syncRealtimeUserId === userId) {
+          onFailure(status);
+        }
+      });
+      return true;
+    } catch (error) {
+      this.unsubscribeFromSyncChanges();
+      onFailure(error);
+      return false;
+    }
+  },
+
+  unsubscribeFromSyncChanges() {
+    const channel = this.syncRealtimeChannel;
+    this.syncRealtimeChannel = null;
+    this.syncRealtimeUserId = null;
+    const client = this.client;
+    if (!channel || !client || typeof client.removeChannel !== 'function') return Promise.resolve();
+    return client.removeChannel(channel).catch(error => {
+      console.warn('[Supabase] Falha ao encerrar o canal Realtime:', error);
+    });
+  },
+
+  normalizeSyncRealtimeRecord(table, row) {
+    const base = { version: row.updated_at, deletedAt: row.deleted_at || null };
+    switch (table) {
+      case 'entries':
+        return { ...base, kind: 'entries', item: {
+          id: row.id, desc: row.description, amount: Number(row.amount), category: row.category,
+          type: row.type, date: row.date, month: row.date ? String(row.date).substring(0, 7) : '',
+          paid: Boolean(row.paid), isDebt: Boolean(row.is_debt), debtInfo: row.debt_info,
+          active: row.active !== false, accountId: row.account_id || null
+        } };
+      case 'fixed_templates':
+        return { ...base, kind: 'templates', item: {
+          id: row.id, desc: row.description, amount: Number(row.amount), category: row.category,
+          type: row.type || 'fixed', isDebt: Boolean(row.is_debt), active: row.active !== false,
+          startMonth: row.start_month, endMonth: row.end_month || null, day: row.day || '01',
+          paidMonths: row.paid_months || {}, accountId: row.account_id || null
+        } };
+      case 'profiles':
+        return { ...base, kind: 'profiles', item: {
+          id: row.id, name: row.name || '', avatar: row.avatar || null
+        } };
+      case 'goals':
+        return { ...base, kind: 'goals', item: {
+          id: `goal-${crypto.randomUUID()}`, category: row.category, limit: Number(row.limit_amount)
+        } };
+      case 'accounts':
+        return { ...base, kind: 'accounts', item: {
+          id: row.id, name: row.name, institution: row.institution || null, type: row.type,
+          initialBalance: Number(row.initial_balance), balanceDate: row.balance_date || null,
+          createdAt: row.created_at, updatedAt: row.updated_at
+        } };
+      case 'credit_cards':
+        return { ...base, kind: 'creditCards', item: {
+          id: row.id, name: row.name, totalLimit: Number(row.total_limit),
+          closingDay: row.closing_day, dueDay: row.due_day, brand: row.brand || 'Outra',
+          issuerBank: row.issuer_bank || 'Outro', lastFour: row.last_four || null,
+          customColor: row.custom_color || null, accountId: row.account_id || null,
+          createdAt: row.created_at, updatedAt: row.updated_at
+        } };
+      case 'credit_card_purchases':
+        return { ...base, kind: 'creditCardPurchases', item: {
+          id: row.id, cardId: row.card_id || null, cardName: row.card_name,
+          accountId: row.account_id || null, desc: row.description, amount: Number(row.amount),
+          category: row.category, purchaseDate: row.purchase_date,
+          installmentCount: row.installment_count, closingDay: row.closing_day,
+          dueDay: row.due_day, paidInstallments: Array.isArray(row.paid_installments)
+            ? row.paid_installments : [],
+          paidDates: row.paid_dates && typeof row.paid_dates === 'object' ? row.paid_dates : {},
+          createdAt: row.created_at, updatedAt: row.updated_at
+        } };
+      case 'fixed_import_rules':
+        return { ...base, kind: 'fixedImportRules', item: {
+          rules: Array.isArray(row.rules) ? row.rules : []
+        } };
+      default:
+        return null;
+    }
+  },
 
   async fetchAllPages(fetchPage) {
     const rows = [];
@@ -341,31 +463,93 @@ const SupabaseAuth = {
     }
   },
 
-  async upsertWithFallback(upsert, items, payloads) {
+  async getSyncServerTime() {
+    if (!this.client) return null;
+    try {
+      const { data, error } = await this.client.rpc('get_sync_server_time');
+      return error || !data ? null : data;
+    } catch (error) {
+      return null;
+    }
+  },
+
+  async fetchCloudSyncState(userId) {
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) return null;
+      const definitions = [
+      ['entries', 'entries', 'id', 'user_id'],
+      ['templates', 'fixed_templates', 'id', 'user_id'],
+      ['profiles', 'profiles', 'id', 'id'],
+      ['goals', 'goals', 'category', 'user_id'],
+      ['accounts', 'accounts', 'id', 'user_id'],
+      ['creditCards', 'credit_cards', 'id', 'user_id'],
+      ['creditCardPurchases', 'credit_card_purchases', 'id', 'user_id'],
+      ['fixedImportRules', 'fixed_import_rules', 'user_id', 'user_id']
+    ];
+      const versions = {};
+      const tombstones = {};
+      for (const [kind, table, keyColumn, ownerColumn] of definitions) {
+        const rows = await this.fetchAllPages((from, to) => this.client.from(table)
+          .select(`${keyColumn},updated_at,deleted_at`)
+          .eq(ownerColumn, sessionUserId)
+          .range(from, to));
+        if (!rows) return null;
+        versions[kind] = {};
+        tombstones[kind] = {};
+        rows.forEach(row => {
+          const key = row[keyColumn];
+          if (row.updated_at) versions[kind][key] = row.updated_at;
+          if (row.deleted_at) tombstones[kind][key] = row.updated_at || row.deleted_at;
+        });
+      }
+      return { versions, tombstones };
+    } catch (error) {
+      return null;
+    }
+  },
+
+  async upsertWithFallback(upsert, items, payloads, keyField = 'id', kind = null) {
     let batchError = null;
     try {
-      const { error } = await upsert(payloads);
+      const { data, error } = await upsert(payloads);
       batchError = error;
+      if (!batchError) {
+        const conflictIds = Array.isArray(data)
+          ? items.filter((item, index) => !data.some(row => row[keyField] ===
+            (keyField === 'id' ? item.id : item[keyField]))).map(item => item.id || item[keyField])
+          : [];
+        const versions = Object.fromEntries((data || []).filter(row => row.updated_at)
+          .map(row => [row[keyField], row.updated_at]));
+        if (kind) window.FinanceData?.saveCloudSyncVersions(kind, versions);
+        return { failedIds: [], conflictIds, versions };
+      }
     } catch (error) {
       batchError = error;
     }
-    if (!batchError) return { failedIds: [] };
 
     console.warn('[Supabase] Falha no upsert em lote; tentando cada linha separadamente:', batchError.message || batchError);
     const failedIds = [];
+    const conflictIds = [];
+    const versions = {};
     for (let index = 0; index < items.length; index++) {
       try {
-        const { error } = await upsert(payloads[index]);
+        const { data, error } = await upsert(payloads[index]);
         if (error) {
           failedIds.push(items[index].id);
           console.warn('[Supabase] Linha não sincronizada:', { id: items[index].id, error: error.message });
+        } else if (Array.isArray(data) && !data.length) {
+          conflictIds.push(items[index].id);
+        } else if (Array.isArray(data) && data[0] && data[0].updated_at) {
+          versions[data[0][keyField]] = data[0].updated_at;
         }
       } catch (error) {
         failedIds.push(items[index].id);
         console.warn('[Supabase] Linha não sincronizada:', { id: items[index].id, error: error.message || error });
       }
     }
-    return { failedIds };
+    if (kind) window.FinanceData?.saveCloudSyncVersions(kind, versions);
+    return { failedIds, conflictIds, versions };
   },
 
   async getSessionState() {
@@ -743,6 +927,7 @@ const SupabaseAuth = {
         .from('entries')
         .select('*')
         .eq('user_id', sessionUserId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to));
@@ -810,14 +995,22 @@ const SupabaseAuth = {
         debt_info: entry.debtInfo || null,
         active: entry.active !== false,
         account_id: entry.accountId || null
+        ,client_edited_at: window.FinanceData?.getClientEditedAt('entries', entry.id)
+        ,deleted_at: null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(
-          rows => sb.from('entries').upsert(rows),
+          rows => sb.from('entries').upsert(rows).select('id,updated_at'),
           validEntries,
-          payload
+          payload,
+          'id',
+          'entries'
         );
         failedIds.push(...result.failedIds);
+        if (result.conflictIds.length) {
+          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
+          return { success: true, failedIds: [], conflictIds: result.conflictIds };
+        }
       }
       return failedIds.length
         ? { success: false, failedIds, error: new Error('Um ou mais lançamentos não foram sincronizados.') }
@@ -858,16 +1051,26 @@ const SupabaseAuth = {
         return this.reportCloudError('ID inválido ao excluir entries', new Error('A exclusão contém um ID que não é UUID v4.'));
       }
       if (!validIds.length) return { success: true };
-      for (const batch of this.splitIntoBatches(validIds, 100)) {
-        const { error } = await sb.from('entries').delete()
-          .in('id', batch)
-          .eq('user_id', sessionUserId);
-        if (error) return this.reportCloudError('Erro ao excluir entries', error);
-      }
-      return { success: true };
+      return this.markCloudDeleted('entries', 'id', validIds, 'entries', sessionUserId);
     } catch (e) {
       return this.reportCloudError('Falha ao excluir entries na nuvem', e);
     }
+  },
+
+  async markCloudDeleted(table, keyColumn, ids, kind, sessionUserId) {
+    const conflictIds = [];
+    for (const id of ids) {
+      const { data, error } = await sb.from(table).update({
+        deleted_at: new Date().toISOString(),
+        client_edited_at: window.FinanceData?.getClientEditedAt(kind, id, true)
+      }).eq('user_id', sessionUserId).eq(keyColumn, id).select(keyColumn);
+      if (error) return this.reportCloudError(`Erro ao excluir ${table}`, error);
+      if (Array.isArray(data) && !data.length) conflictIds.push(id);
+    }
+    if (conflictIds.length && typeof window.showToast === 'function') {
+      window.showToast('Um item foi atualizado em outro aparelho');
+    }
+    return { success: true, conflictIds };
   },
 
   /**
@@ -882,6 +1085,7 @@ const SupabaseAuth = {
         .from('fixed_templates')
         .select('*')
         .eq('user_id', sessionUserId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to));
@@ -949,14 +1153,22 @@ const SupabaseAuth = {
         day: tpl.day || '01',
         paid_months: tpl.paidMonths || {},
         account_id: tpl.accountId || null
+        ,client_edited_at: window.FinanceData?.getClientEditedAt('templates', tpl.id)
+        ,deleted_at: null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(
-          rows => sb.from('fixed_templates').upsert(rows),
+          rows => sb.from('fixed_templates').upsert(rows).select('id,updated_at'),
           validTemplates,
-          payload
+          payload,
+          'id',
+          'templates'
         );
         failedIds.push(...result.failedIds);
+        if (result.conflictIds.length) {
+          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
+          return { success: true, failedIds: [], conflictIds: result.conflictIds };
+        }
       }
       return failedIds.length
         ? { success: false, failedIds, error: new Error('Um ou mais templates não foram sincronizados.') }
@@ -989,13 +1201,7 @@ const SupabaseAuth = {
         return this.reportCloudError('ID inválido ao excluir templates', new Error('A exclusão contém um ID que não é UUID v4.'));
       }
       if (!validIds.length) return { success: true };
-      for (const batch of this.splitIntoBatches(validIds, 100)) {
-        const { error } = await sb.from('fixed_templates').delete()
-          .in('id', batch)
-          .eq('user_id', sessionUserId);
-        if (error) return this.reportCloudError('Erro ao excluir templates', error);
-      }
-      return { success: true };
+      return this.markCloudDeleted('fixed_templates', 'id', validIds, 'templates', sessionUserId);
     } catch (e) {
       return this.reportCloudError('Falha ao excluir templates na nuvem', e);
     }
@@ -1010,6 +1216,7 @@ const SupabaseAuth = {
         .from('accounts')
         .select('*')
         .eq('user_id', sessionUserId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to));
@@ -1064,14 +1271,22 @@ const SupabaseAuth = {
         initial_balance: Math.round(Number(account.initialBalance) * 100) / 100,
         balance_date: account.balanceDate || null,
         ...(account.createdAt ? { created_at: account.createdAt } : {})
+        ,client_edited_at: window.FinanceData?.getClientEditedAt('accounts', account.id)
+        ,deleted_at: null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(
-          rows => sb.from('accounts').upsert(rows),
+          rows => sb.from('accounts').upsert(rows).select('id,updated_at'),
           validAccounts,
-          payload
+          payload,
+          'id',
+          'accounts'
         );
         failedIds.push(...result.failedIds);
+        if (result.conflictIds.length) {
+          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
+          return { success: true, failedIds: [], conflictIds: result.conflictIds };
+        }
       }
       return failedIds.length
         ? { success: false, failedIds, error: new Error('Uma ou mais contas não foram sincronizadas.') }
@@ -1093,13 +1308,7 @@ const SupabaseAuth = {
         return this.reportCloudError('ID inválido ao excluir accounts', new Error('A exclusão contém um ID que não é UUID válido.'));
       }
       if (!validIds.length) return { success: true };
-      for (const batch of this.splitIntoBatches(validIds, 100)) {
-        const { error } = await sb.from('accounts').delete()
-          .in('id', batch)
-          .eq('user_id', sessionUserId);
-        if (error) return this.reportCloudError('Erro ao excluir accounts', error);
-      }
-      return { success: true };
+      return this.markCloudDeleted('accounts', 'id', validIds, 'accounts', sessionUserId);
     } catch (e) {
       return this.reportCloudError('Falha ao excluir contas na nuvem', e);
     }
@@ -1114,6 +1323,7 @@ const SupabaseAuth = {
         .from('credit_cards')
         .select('*')
         .eq('user_id', sessionUserId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to));
@@ -1170,14 +1380,22 @@ const SupabaseAuth = {
         custom_color: card.issuerBank === 'Outro' ? card.customColor || '#6366f1' : null,
         account_id: card.accountId || null,
         ...(card.createdAt ? { created_at: card.createdAt } : {})
+        ,client_edited_at: window.FinanceData?.getClientEditedAt('creditCards', card.id)
+        ,deleted_at: null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(
-          rows => sb.from('credit_cards').upsert(rows),
+          rows => sb.from('credit_cards').upsert(rows).select('id,updated_at'),
           validCards,
-          payload
+          payload,
+          'id',
+          'creditCards'
         );
         failedIds.push(...result.failedIds);
+        if (result.conflictIds.length) {
+          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
+          return { success: true, failedIds: [], conflictIds: result.conflictIds };
+        }
       }
       return failedIds.length
         ? { success: false, failedIds, error: new Error('Um ou mais cartões não foram sincronizados.') }
@@ -1198,13 +1416,7 @@ const SupabaseAuth = {
       if (validIds.length !== cardIds.length) {
         return this.reportCloudError('ID inválido ao excluir cartões', new Error('A exclusão contém um ID que não é UUID válido.'));
       }
-      for (const batch of this.splitIntoBatches(validIds, 100)) {
-        const { error } = await sb.from('credit_cards').delete()
-          .in('id', batch)
-          .eq('user_id', sessionUserId);
-        if (error) return this.reportCloudError('Erro ao excluir cartões', error);
-      }
-      return { success: true };
+      return this.markCloudDeleted('credit_cards', 'id', validIds, 'creditCards', sessionUserId);
     } catch (error) {
       return this.reportCloudError('Falha ao excluir cartões na nuvem', error);
     }
@@ -1219,6 +1431,7 @@ const SupabaseAuth = {
         .from('credit_card_purchases')
         .select('*')
         .eq('user_id', sessionUserId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to));
@@ -1281,14 +1494,22 @@ const SupabaseAuth = {
         paid_installments: purchase.paidInstallments,
         paid_dates: purchase.paidDates || {},
         ...(purchase.createdAt ? { created_at: purchase.createdAt } : {})
+        ,client_edited_at: window.FinanceData?.getClientEditedAt('creditCardPurchases', purchase.id)
+        ,deleted_at: null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(
-          rows => sb.from('credit_card_purchases').upsert(rows),
+          rows => sb.from('credit_card_purchases').upsert(rows).select('id,updated_at'),
           validPurchases,
-          payload
+          payload,
+          'id',
+          'creditCardPurchases'
         );
         failedIds.push(...result.failedIds);
+        if (result.conflictIds.length) {
+          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
+          return { success: true, failedIds: [], conflictIds: result.conflictIds };
+        }
       }
       return failedIds.length
         ? { success: false, failedIds, error: new Error('Uma ou mais compras no cartão não foram sincronizadas.') }
@@ -1309,13 +1530,7 @@ const SupabaseAuth = {
       if (validIds.length !== purchaseIds.length) {
         return this.reportCloudError('ID inválido ao excluir compras no cartão', new Error('A exclusão contém um ID que não é UUID válido.'));
       }
-      for (const batch of this.splitIntoBatches(validIds, 100)) {
-        const { error } = await sb.from('credit_card_purchases').delete()
-          .in('id', batch)
-          .eq('user_id', sessionUserId);
-        if (error) return this.reportCloudError('Erro ao excluir compras no cartão', error);
-      }
-      return { success: true };
+      return this.markCloudDeleted('credit_card_purchases', 'id', validIds, 'creditCardPurchases', sessionUserId);
     } catch (error) {
       return this.reportCloudError('Falha ao excluir compras no cartão', error);
     }
@@ -1329,15 +1544,16 @@ const SupabaseAuth = {
         return { success: false, error: new Error('Não há uma sessão autenticada correspondente.') };
       }
       const { data, error } = await this.client.from('profiles')
-        .select('id,name,avatar')
+        .select('id,name,avatar,updated_at')
         .eq('id', sessionUserId)
+        .is('deleted_at', null)
         .maybeSingle();
       if (error) {
         return this.reportCloudError('Falha ao buscar perfil', error);
       }
       return {
         success: true,
-        profile: data ? { id: data.id, name: data.name || '', avatar: data.avatar || null } : null
+        profile: data ? { id: data.id, name: data.name || '', avatar: data.avatar || null, updatedAt: data.updated_at } : null
       };
     } catch (error) {
       return this.reportCloudError('Falha ao buscar perfil', error);
@@ -1357,12 +1573,24 @@ const SupabaseAuth = {
           (typeof profile.avatar !== 'string' || profile.avatar.length > 400000))) {
         return this.reportCloudError('Perfil inválido ao sincronizar', new Error('Nome ou foto de perfil excede os limites permitidos.'));
       }
-      const { error } = await this.client.from('profiles').upsert({
+      const upsert = this.client.from('profiles').upsert({
         id: sessionUserId,
         name: profile.name.trim() || null,
-        avatar: profile.avatar || null
+        avatar: profile.avatar || null,
+        client_edited_at: window.FinanceData?.getClientEditedAt('profiles', sessionUserId),
+        deleted_at: null
       });
+      const { data, error } = typeof upsert.select === 'function'
+        ? await upsert.select('id,updated_at')
+        : await upsert;
       if (error) return this.reportCloudError('Erro ao salvar perfil', error);
+      if (Array.isArray(data) && !data.length) {
+        if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
+        return { success: true, conflictIds: [sessionUserId] };
+      }
+      if (data && data[0] && data[0].updated_at) {
+        window.FinanceData?.saveCloudSyncVersions('profiles', { [sessionUserId]: data[0].updated_at });
+      }
       return { success: true };
     } catch (error) {
       return this.reportCloudError('Falha ao salvar perfil na nuvem', error);
@@ -1378,6 +1606,7 @@ const SupabaseAuth = {
         .from('goals')
         .select('category,limit_amount')
         .eq('user_id', sessionUserId)
+        .is('deleted_at', null)
         .order('category', { ascending: true })
         .range(from, to));
       if (!data) return null;
@@ -1428,15 +1657,23 @@ const SupabaseAuth = {
       const payload = validGoals.map(goal => ({
         user_id: sessionUserId,
         category: goal.category,
-        limit_amount: Math.round(goal.limit * 100) / 100
+        limit_amount: Math.round(goal.limit * 100) / 100,
+        client_edited_at: window.FinanceData?.getClientEditedAt('goals', goal.category),
+        deleted_at: null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(
-          rows => sb.from('goals').upsert(rows, { onConflict: 'user_id,category' }),
+          rows => sb.from('goals').upsert(rows, { onConflict: 'user_id,category' }).select('category,updated_at'),
           validGoals,
-          payload
+          payload,
+          'category',
+          'goals'
         );
         failedIds.push(...result.failedIds);
+        if (result.conflictIds.length) {
+          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
+          return { success: true, failedIds: [], conflictIds: result.conflictIds };
+        }
       }
       return failedIds.length
         ? { success: false, failedIds, error: new Error('Uma ou mais metas não foram sincronizadas.') }
@@ -1457,11 +1694,7 @@ const SupabaseAuth = {
         typeof category === 'string' && category.trim().length > 0 && category.length <= 100
       ))];
       if (!validCategories.length) return { success: true };
-      const { error } = await sb.from('goals').delete()
-        .eq('user_id', sessionUserId)
-        .in('category', validCategories);
-      if (error) return this.reportCloudError('Erro ao excluir metas', error);
-      return { success: true };
+      return this.markCloudDeleted('goals', 'category', validCategories, 'goals', sessionUserId);
     } catch (e) {
       return this.reportCloudError('Falha ao excluir metas na nuvem', e);
     }
@@ -1476,6 +1709,7 @@ const SupabaseAuth = {
         .from('fixed_import_rules')
         .select('rules')
         .eq('user_id', sessionUserId)
+        .is('deleted_at', null)
         .maybeSingle();
       if (error) {
         console.warn('[Supabase] Falha ao buscar regras de importação:', error);
@@ -1504,11 +1738,24 @@ const SupabaseAuth = {
       )) {
         return this.reportCloudError('Regras de importação inválidas', new Error('Uma ou mais regras não são válidas.'));
       }
-      const { error } = await sb.from('fixed_import_rules').upsert({
+      if (!rules.length) {
+        return this.markCloudDeleted('fixed_import_rules', 'user_id', [sessionUserId],
+          'fixedImportRules', sessionUserId);
+      }
+      const { data, error } = await sb.from('fixed_import_rules').upsert({
         user_id: sessionUserId,
-        rules: [...new Set(rules.map(rule => rule.trim()))]
-      }, { onConflict: 'user_id' });
+        rules: [...new Set(rules.map(rule => rule.trim()))],
+        client_edited_at: window.FinanceData?.getClientEditedAt('fixedImportRules', sessionUserId),
+        deleted_at: null
+      }, { onConflict: 'user_id' }).select('user_id,updated_at');
       if (error) return this.reportCloudError('Erro ao salvar regras de importação', error);
+      if (Array.isArray(data) && !data.length) {
+        if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
+        return { success: true, conflictIds: [sessionUserId] };
+      }
+      if (data && data[0] && data[0].updated_at) {
+        window.FinanceData?.saveCloudSyncVersions('fixedImportRules', { [sessionUserId]: data[0].updated_at });
+      }
       return { success: true };
     } catch (error) {
       return this.reportCloudError('Falha ao salvar regras de importação na nuvem', error);

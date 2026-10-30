@@ -3560,6 +3560,73 @@ window.GastoProKeyboardPanels = {
  *  11. Render inicial do perfil e da interface.
  *  12. Registro do Service Worker (PWA).
  */
+window.GastoProSyncHelpers = {
+  createAutomaticSyncGate(intervalMs = 15000) {
+    let lastStartedAt = 0;
+    let inFlight = null;
+    return {
+      async run(now, action) {
+        if (inFlight) return inFlight;
+        if (lastStartedAt && now - lastStartedAt < intervalMs) return false;
+        lastStartedAt = now;
+        const pending = Promise.resolve().then(action);
+        inFlight = pending;
+        try {
+          return await pending;
+        } finally {
+          if (inFlight === pending) inFlight = null;
+        }
+      },
+      reset() {
+        lastStartedAt = 0;
+        inFlight = null;
+      }
+    };
+  },
+  isRecordBeingEdited(kind, key, documentRef = document) {
+    if (kind === 'profiles') {
+      const nameInput = documentRef.getElementById('profileNameInput');
+      return Boolean(nameInput && documentRef.activeElement === nameInput);
+    }
+    const forms = {
+      entries: ['editModal', 'editItemId'],
+      templates: ['editModal', 'editItemId'],
+      accounts: ['accountModal', 'accountId'],
+      creditCards: ['creditCardModal', 'creditCardId'],
+      goals: ['goalModal', 'goalCategorySelect']
+    };
+    const form = forms[kind];
+    if (!form) return false;
+    const modal = documentRef.getElementById(form[0]);
+    const field = documentRef.getElementById(form[1]);
+    return Boolean(modal && modal.classList.contains('active') && field && field.value === String(key));
+  },
+  deferOrApply(change, key, isEditing, apply, deferred, onDeferred) {
+    if (isEditing) {
+      deferred.set(key, change);
+      onDeferred();
+      return false;
+    }
+    apply(change);
+    return true;
+  },
+  bindLifecycleListeners(documentRef, windowRef, onReturn) {
+    const visibilityHandler = () => {
+      if (documentRef.visibilityState === 'visible') onReturn('visibilitychange');
+    };
+    const focusHandler = () => onReturn('focus');
+    const onlineHandler = () => onReturn('online');
+    documentRef.addEventListener('visibilitychange', visibilityHandler);
+    windowRef.addEventListener('focus', focusHandler);
+    windowRef.addEventListener('online', onlineHandler);
+    return () => {
+      documentRef.removeEventListener('visibilitychange', visibilityHandler);
+      windowRef.removeEventListener('focus', focusHandler);
+      windowRef.removeEventListener('online', onlineHandler);
+    };
+  }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   const backToTopBtn = document.getElementById('backToTopBtn');
   if (backToTopBtn) {
@@ -3804,17 +3871,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-  window.addEventListener('online', () => {
-    FinanceData.flushPendingSync().catch(error => {
-      console.error('[GastoPro] Falha ao retomar sincronização:', error);
-    });
-    if (localStorage.getItem('gastopro_last_uid')) {
-      initializeAuthenticatedView().catch(error => {
-        console.error('[GastoPro] Falha ao revalidar a sessão após reconexão:', error);
-      });
-    }
-  });
-
   // ── Navegação e ações delegadas ───────────────────────────────
   document.addEventListener('click', (e) => {
     if (!(e.target instanceof Element)) return;
@@ -5574,6 +5630,123 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Sincronização de Dados com a Nuvem (Supabase) ───────────
   const activeSyncs = new Map();
+  const deferredRealtimeChanges = new Map();
+  const AUTOMATIC_SYNC_INTERVAL_MS = 15000;
+  const automaticSyncGate = window.GastoProSyncHelpers.createAutomaticSyncGate(
+    AUTOMATIC_SYNC_INTERVAL_MS
+  );
+  let fullSyncDeferredForEditor = false;
+  let realtimeModalObserver = null;
+
+  function getRealtimeRecordKey(change, userId) {
+    if (change.kind === 'goals') return change.item && change.item.category;
+    if (change.kind === 'profiles' || change.kind === 'fixedImportRules') return userId;
+    return change.item && change.item.id;
+  }
+
+  function isRealtimeRecordBeingEdited(change, key) {
+    return window.GastoProSyncHelpers.isRecordBeingEdited(change.kind, key);
+  }
+
+  function hasOpenSyncEditor() {
+    return ['editModal', 'accountModal', 'creditCardModal', 'goalModal'].some(id => {
+      const modal = document.getElementById(id);
+      return modal && modal.classList.contains('active');
+    });
+  }
+
+  function applyRealtimeChange(change, userId, render = renderAll) {
+    const key = getRealtimeRecordKey(change, userId);
+    if (!key) return;
+    const version = change.version || change.deletedAt;
+    if (FinanceData.isCloudSyncRecordStale(change.kind, key, version)) return;
+    const deferredKey = `${change.kind}:${key}`;
+    window.GastoProSyncHelpers.deferOrApply(
+      { change, userId },
+      deferredKey,
+      isRealtimeRecordBeingEdited(change, key),
+      pending => {
+        const result = FinanceData.applyCloudSyncRecord(
+          pending.change.kind, pending.change.item, pending.change.version,
+          pending.change.deletedAt, pending.userId
+        );
+        if (result && result.applied) render();
+      },
+      deferredRealtimeChanges,
+      () => showToast('Um item foi atualizado em outro aparelho')
+    );
+  }
+
+  function flushDeferredRealtimeChanges(render = renderAll) {
+    deferredRealtimeChanges.forEach(({ change, userId }, key) => {
+      const recordKey = getRealtimeRecordKey(change, userId);
+      if (isRealtimeRecordBeingEdited(change, recordKey)) return;
+      deferredRealtimeChanges.delete(key);
+      applyRealtimeChange(change, userId, render);
+    });
+    if (fullSyncDeferredForEditor && !hasOpenSyncEditor()) {
+      fullSyncDeferredForEditor = false;
+      requestAutomaticSync('deferred-editor-close').catch(error => {
+        console.error('[GastoPro] Falha ao sincronizar após fechar o editor:', error);
+      });
+    }
+  }
+
+  function observeRealtimeEditModals() {
+    if (realtimeModalObserver || typeof MutationObserver !== 'function' || !document.body) return;
+    realtimeModalObserver = new MutationObserver(flushDeferredRealtimeChanges);
+    realtimeModalObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['class'],
+      subtree: true
+    });
+  }
+
+  function subscribeToUserRealtime(userId) {
+    observeRealtimeEditModals();
+    if (!window.SupabaseAuth || typeof window.SupabaseAuth.subscribeToSyncChanges !== 'function') return;
+    try {
+      window.SupabaseAuth.subscribeToSyncChanges(userId, change => {
+        if (localStorage.getItem('gastopro_last_uid') === userId) applyRealtimeChange(change, userId);
+      }, status => {
+        console.warn('[GastoPro] Realtime indisponível; a sincronização será retomada ao voltar ao app.', status);
+        window.SupabaseAuth.unsubscribeFromSyncChanges();
+      });
+    } catch (error) {
+      console.warn('[GastoPro] Realtime indisponível; a sincronização será retomada ao voltar ao app.', error);
+      window.SupabaseAuth.unsubscribeFromSyncChanges();
+    }
+  }
+
+  async function requestAutomaticSync(reason, syncAction = syncUserDataFromCloud, now = Date.now()) {
+    if (document.visibilityState === 'hidden' && reason !== 'online') return false;
+    const sessionUser = window.SupabaseAuth && await window.SupabaseAuth.getSessionUser();
+    if (!sessionUser || !sessionUser.id) return false;
+    if (reason === 'online') subscribeToUserRealtime(sessionUser.id);
+    if (hasOpenSyncEditor()) {
+      fullSyncDeferredForEditor = true;
+      return false;
+    }
+    if (activeSyncs.has(sessionUser.id)) return activeSyncs.get(sessionUser.id);
+    return automaticSyncGate.run(now, () => syncAction(sessionUser.id));
+  }
+
+  window.GastoProSyncLifecycle = {
+    requestAutomaticSync,
+    applyRealtimeChange,
+    flushDeferredRealtimeChanges,
+    subscribeToUserRealtime,
+    resetAutomaticSyncForTests() {
+      automaticSyncGate.reset();
+      fullSyncDeferredForEditor = false;
+    }
+  };
+
+  window.GastoProSyncHelpers.bindLifecycleListeners(document, window, reason => {
+    requestAutomaticSync(reason).catch(error => {
+      console.error('[GastoPro] Falha ao sincronizar ao retornar ao app:', error);
+    });
+  });
 
   async function syncUserDataFromCloud(userId) {
     if (!window.SupabaseAuth || !userId) return;
@@ -5657,6 +5830,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         renderAll();
+        subscribeToUserRealtime(userId);
         return true;
       } catch (e) {
         console.warn('[GastoPro] Aviso de sincronização na nuvem:', e);
@@ -5673,6 +5847,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function clearUserSessionData() {
+    if (window.SupabaseAuth && typeof window.SupabaseAuth.unsubscribeFromSyncChanges === 'function') {
+      window.SupabaseAuth.unsubscribeFromSyncChanges();
+    }
+    deferredRealtimeChanges.clear();
     resetAdminSession();
     try {
       FinanceData.clearUserData();

@@ -72,6 +72,7 @@ const STORAGE_CREDIT_CARD_PURCHASES = 'gastopro_credit_card_purchases_v1';
 const STORAGE_FIXED_IMPORT_RULES = 'gastopro_fixed_import_rules_v1';
 const STORAGE_LAST_UID = 'gastopro_last_uid';
 const STORAGE_PENDING_SYNC = 'gastopro_pending_sync_v1';
+const STORAGE_SYNC_METADATA = 'gastopro_sync_metadata_v1';
 const STORAGE_TUTORIAL_SEEN = 'gastopro_tutorial_seen';
 const STORAGE_ACCOUNT_SETUP_SEEN = 'gastopro_account_setup_seen';
 const MAX_ACCOUNT_BALANCE = 9999999999.99;
@@ -560,6 +561,47 @@ window.GastoProCreditCardHelpers = {
 
 const FinanceData = {
 
+  getSyncMetadata() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(STORAGE_SYNC_METADATA) || '{}');
+      return { records: {}, deleted: {}, clockOffsetMs: 0, ...stored };
+    } catch (error) {
+      return { records: {}, deleted: {}, clockOffsetMs: 0 };
+    }
+  },
+
+  saveSyncMetadata(metadata) {
+    localStorage.setItem(STORAGE_SYNC_METADATA, JSON.stringify(metadata));
+  },
+
+  saveCloudSyncVersions(kind, versions) {
+    const metadata = this.getSyncMetadata();
+    metadata.records[kind] ||= {};
+    Object.entries(versions || {}).forEach(([id, updatedAt]) => {
+      if (!updatedAt) return;
+      metadata.records[kind][id] = {
+        updatedAt,
+        editedAt: metadata.records[kind][id]?.editedAt || updatedAt
+      };
+    });
+    this.saveSyncMetadata(metadata);
+  },
+
+  isCloudSyncRecordStale(kind, key, version) {
+    const metadata = this.getSyncMetadata();
+    const knownVersion = metadata.records[kind]?.[key]?.updatedAt ||
+      metadata.deleted[kind]?.[key]?.updatedAt;
+    return Boolean(version && knownVersion && version < knownVersion);
+  },
+
+  getClientEditedAt(kind, id, deleted = false) {
+    const metadata = this.getSyncMetadata();
+    const edit = metadata[deleted ? 'deleted' : 'records']?.[kind]?.[id]?.editedAt;
+    const timestamp = Date.parse(edit || '');
+    return new Date((Number.isFinite(timestamp) ? timestamp : Date.now()) +
+      (Number(metadata.clockOffsetMs) || 0)).toISOString();
+  },
+
   clearUserData() {
     const keysToRemove = [];
     for (let index = 0; index < localStorage.length; index++) {
@@ -639,6 +681,9 @@ const FinanceData = {
 
   queueLocalChanges(kind, previousItems, nextItems) {
     const pending = this.getPendingSync();
+    const metadata = this.getSyncMetadata();
+    metadata.records[kind] ||= {};
+    metadata.deleted[kind] ||= {};
     const pendingIds = pending[kind];
     const deletedIds = pending[kind === 'entries' ? 'deletedEntries' :
       kind === 'templates' ? 'deletedTemplates' :
@@ -652,6 +697,12 @@ const FinanceData = {
       const previous = previousById.get(item.id);
       if (!previous || JSON.stringify(previous) !== JSON.stringify(item)) {
         if (!pendingIds.includes(item.id)) pendingIds.push(item.id);
+        const known = metadata.records[kind][item.id];
+        metadata.records[kind][item.id] = {
+          updatedAt: known ? known.updatedAt : null,
+          editedAt: new Date().toISOString()
+        };
+        delete metadata.deleted[kind][item.id];
         const deletedIndex = deletedIds.indexOf(item.id);
         if (deletedIndex !== -1) deletedIds.splice(deletedIndex, 1);
       }
@@ -660,16 +711,26 @@ const FinanceData = {
     previousItems.forEach(item => {
       if (isUuid(item.id) && !nextById.has(item.id) && !deletedIds.includes(item.id)) {
         deletedIds.push(item.id);
+        const known = metadata.records[kind][item.id];
+        metadata.deleted[kind][item.id] = {
+          updatedAt: known ? known.updatedAt : null,
+          editedAt: new Date().toISOString()
+        };
+        delete metadata.records[kind][item.id];
         const pendingIndex = pendingIds.indexOf(item.id);
         if (pendingIndex !== -1) pendingIds.splice(pendingIndex, 1);
       }
     });
 
     this.savePendingSync(pending);
+    this.saveSyncMetadata(metadata);
   },
 
   queueGoalChanges(previousGoals, nextGoals) {
     const pending = this.getPendingSync();
+    const metadata = this.getSyncMetadata();
+    metadata.records.goals ||= {};
+    metadata.deleted.goals ||= {};
     const previousByCategory = new Map(previousGoals.map(goal => [goal.category, goal]));
     const nextByCategory = new Map(nextGoals.map(goal => [goal.category, goal]));
 
@@ -677,6 +738,12 @@ const FinanceData = {
       const previous = previousByCategory.get(goal.category);
       if (!previous || Number(previous.limit) !== Number(goal.limit)) {
         if (!pending.goals.includes(goal.category)) pending.goals.push(goal.category);
+        const known = metadata.records.goals[goal.category];
+        metadata.records.goals[goal.category] = {
+          updatedAt: known ? known.updatedAt : null,
+          editedAt: new Date().toISOString()
+        };
+        delete metadata.deleted.goals[goal.category];
         const deletedIndex = pending.deletedGoals.indexOf(goal.category);
         if (deletedIndex !== -1) pending.deletedGoals.splice(deletedIndex, 1);
       }
@@ -685,12 +752,19 @@ const FinanceData = {
     previousGoals.forEach(goal => {
       if (!nextByCategory.has(goal.category) && !pending.deletedGoals.includes(goal.category)) {
         pending.deletedGoals.push(goal.category);
+        const known = metadata.records.goals[goal.category];
+        metadata.deleted.goals[goal.category] = {
+          updatedAt: known ? known.updatedAt : null,
+          editedAt: new Date().toISOString()
+        };
+        delete metadata.records.goals[goal.category];
         const pendingIndex = pending.goals.indexOf(goal.category);
         if (pendingIndex !== -1) pending.goals.splice(pendingIndex, 1);
       }
     });
 
     this.savePendingSync(pending);
+    this.saveSyncMetadata(metadata);
   },
 
   activateUser(userId) {
@@ -749,6 +823,122 @@ const FinanceData = {
     return this.flushPendingSync(userId);
   },
 
+  async reconcileCloudBeforeSync(userId) {
+    const auth = window.SupabaseAuth;
+    if (!auth || !auth.client || typeof auth.fetchCloudSyncState !== 'function' ||
+      (typeof auth.isSyncServerReady === 'function' && !auth.isSyncServerReady())) {
+      return { success: true, skipped: true };
+    }
+    const startedAt = Date.now();
+    const serverTime = await auth.getSyncServerTime();
+    const finishedAt = Date.now();
+    const serverTimeMs = Date.parse(serverTime || '');
+    if (!Number.isFinite(serverTimeMs)) {
+      return { success: false, error: new Error('Não foi possível medir o horário do servidor.') };
+    }
+    const syncMetadata = this.getSyncMetadata();
+    syncMetadata.clockOffsetMs = serverTimeMs - ((startedAt + finishedAt) / 2);
+    this.saveSyncMetadata(syncMetadata);
+
+    const [entries, templates, goals, accounts, rules, cards, purchases, profileResult, syncState] =
+      await Promise.all([
+        auth.fetchCloudEntries(userId),
+        auth.fetchCloudTemplates(userId),
+        auth.fetchCloudGoals(userId),
+        auth.fetchCloudAccounts(userId),
+        auth.fetchCloudFixedImportRules(userId),
+        auth.fetchCloudCreditCards(userId),
+        auth.fetchCloudCreditCardPurchases(userId),
+        auth.fetchCloudProfile(userId),
+        auth.fetchCloudSyncState(userId)
+      ]);
+    if (!profileResult || !profileResult.success || !Array.isArray(entries) || !Array.isArray(templates) || !Array.isArray(goals) ||
+      !Array.isArray(accounts) || !Array.isArray(rules) || !Array.isArray(cards) ||
+      !Array.isArray(purchases) || !syncState) {
+      return { success: false, error: new Error('A leitura da nuvem não foi concluída.') };
+    }
+    if (!this.mergeCloudData(userId, entries, templates, false, goals, accounts, rules,
+      cards, purchases, syncState.tombstones, syncState.versions)) {
+      return { success: false, error: new Error('Não foi possível reconciliar os dados da nuvem.') };
+    }
+    if (profileResult && profileResult.success && profileResult.profile) {
+      this.mergeCloudProfile(profileResult.profile);
+    } else if (profileResult && profileResult.success && !profileResult.profile) {
+      const metadata = this.getSyncMetadata();
+      if (metadata.records.profiles?.[userId]?.updatedAt) {
+        const pending = this.getPendingSync();
+        pending.profile = false;
+        this.savePendingSync(pending);
+        delete metadata.records.profiles[userId];
+        this.saveSyncMetadata(metadata);
+        this.saveProfile({ ...this.getProfile(), name: '', avatar: null });
+        if (typeof showToast === 'function') showToast('Um item foi atualizado em outro aparelho');
+      }
+    }
+    return { success: true };
+  },
+
+  applyCloudSyncRecord(kind, item, version, deletedAt, userId) {
+    if (!userId || localStorage.getItem(STORAGE_LAST_UID) !== userId) return false;
+    const key = kind === 'goals' ? item && item.category :
+      kind === 'profiles' || kind === 'fixedImportRules' ? userId : item && item.id;
+    if (!key) return false;
+    const metadata = this.getSyncMetadata();
+    const known = metadata.records[kind]?.[key];
+    if (this.isCloudSyncRecordStale(kind, key, version)) {
+      return { applied: false, stale: true, conflict: false };
+    }
+
+    if (kind === 'profiles') {
+      const pending = this.getPendingSync();
+      const localTime = Date.parse(known && known.editedAt || '');
+      const remoteTime = Date.parse(version || deletedAt || '');
+      const remoteChanged = Boolean(deletedAt || version && (!known || !known.updatedAt || version > known.updatedAt));
+      const conflict = Boolean(pending.profile && remoteChanged || deletedAt && known && known.updatedAt);
+      const localWins = pending.profile && Number.isFinite(localTime) && Number.isFinite(remoteTime) &&
+        localTime + (Number(metadata.clockOffsetMs) || 0) > remoteTime + 2000;
+      metadata.records.profiles ||= {};
+      if (pending.profile && !remoteChanged) return { applied: false, stale: false, conflict: false };
+      if (localWins) {
+        metadata.records.profiles[key] = { updatedAt: version || deletedAt, editedAt: known.editedAt };
+        this.saveSyncMetadata(metadata);
+      } else if (deletedAt) {
+        pending.profile = false;
+        this.savePendingSync(pending);
+        delete metadata.records.profiles[key];
+        this.saveSyncMetadata(metadata);
+        this.saveProfile({ ...this.getProfile(), name: '', avatar: null });
+      } else if (item) {
+        pending.profile = false;
+        this.savePendingSync(pending);
+        metadata.records.profiles[key] = { updatedAt: version, editedAt: version };
+        this.saveSyncMetadata(metadata);
+        this.saveProfile({
+          ...this.getProfile(),
+          name: item.name || '',
+          avatar: item.avatar || null
+        });
+      }
+      if (conflict && typeof showToast === 'function') showToast('Um item foi atualizado em outro aparelho');
+      return { applied: !localWins, stale: false, conflict };
+    }
+
+    const cloudEntries = kind === 'entries' ? (deletedAt ? [] : [item]) : null;
+    const cloudTemplates = kind === 'templates' ? (deletedAt ? [] : [item]) : null;
+    const cloudGoals = kind === 'goals' ? (deletedAt ? [] : [item]) : null;
+    const cloudAccounts = kind === 'accounts' ? (deletedAt ? [] : [item]) : null;
+    const cloudCreditCards = kind === 'creditCards' ? (deletedAt ? [] : [item]) : null;
+    const cloudCreditCardPurchases = kind === 'creditCardPurchases' ? (deletedAt ? [] : [item]) : null;
+    const cloudFixedImportRules = kind === 'fixedImportRules'
+      ? deletedAt ? [] : [...new Set(item.rules || [])]
+      : null;
+    const cloudVersions = { [kind]: { [key]: version } };
+    const cloudTombstones = deletedAt ? { [kind]: { [key]: version || deletedAt } } : {};
+    const conflict = this.reconcileSyncVersions(userId, cloudEntries, cloudTemplates, cloudGoals, cloudAccounts,
+      cloudCreditCards, cloudCreditCardPurchases, cloudTombstones, cloudVersions, cloudFixedImportRules);
+    return { applied: true, stale: false, conflict: Boolean(conflict) };
+  },
+
   async flushPendingSync(userId) {
     const profile = this.getProfile();
     const targetUserId = userId || (profile && profile.userId);
@@ -758,6 +948,9 @@ const FinanceData = {
       if (localStorage.getItem(STORAGE_LAST_UID) !== targetUserId) {
         return { success: false, error: new Error('O usuário local não corresponde à sessão atual.') };
       }
+
+      const reconciliation = await this.reconcileCloudBeforeSync(targetUserId);
+      if (!reconciliation.success) return reconciliation;
 
       const pending = this.getPendingSync();
       const fullSync = pending.full;
@@ -834,6 +1027,8 @@ const FinanceData = {
           ? result.failedIds
           : sentItems.map(item => item.id);
       };
+      const getConflictIds = result => result && Array.isArray(result.conflictIds)
+        ? result.conflictIds : [];
       const failedEntryIds = getFailedIds(results[0], entriesToSave);
       const failedTemplateIds = getFailedIds(results[1], templatesToSave);
       const failedGoalCategories = getFailedIds(
@@ -860,10 +1055,11 @@ const FinanceData = {
         failedEntryDeletes || failedTemplateDeletes || failedGoalDeletes || failedAccountDeletes ||
         failedCreditCardDeletes || failedCreditCardPurchaseDeletes ||
         failedProfile;
-      const removeSyncedIds = (kind, sentItems, currentItems, failedIds) => {
+      const removeSyncedIds = (kind, sentItems, currentItems, failedIds, conflictIds = []) => {
         const sentById = new Map(sentItems.map(item => [item.id, JSON.stringify(item)]));
+        const unresolvedIds = new Set([...failedIds, ...conflictIds]);
         latestPending[kind] = latestPending[kind].filter(id => {
-          if (failedIds.includes(id)) return true;
+          if (unresolvedIds.has(id)) return true;
           const current = currentItems.find(item => item.id === id);
           return current && sentById.get(id) !== JSON.stringify(current);
         });
@@ -871,17 +1067,17 @@ const FinanceData = {
           if (!latestPending[kind].includes(id)) latestPending[kind].push(id);
         });
       };
-      removeSyncedIds('entries', entriesToSave, this.getEntries(), failedEntryIds);
-      removeSyncedIds('templates', templatesToSave, this.getTemplates(), failedTemplateIds);
-      removeSyncedIds('accounts', accountsToSave, this.getAccounts(), failedAccountIds);
-      removeSyncedIds('creditCards', creditCardsToSave, this.getCreditCards(), failedCreditCardIds);
+      removeSyncedIds('entries', entriesToSave, this.getEntries(), failedEntryIds, getConflictIds(results[0]));
+      removeSyncedIds('templates', templatesToSave, this.getTemplates(), failedTemplateIds, getConflictIds(results[1]));
+      removeSyncedIds('accounts', accountsToSave, this.getAccounts(), failedAccountIds, getConflictIds(accountResult));
+      removeSyncedIds('creditCards', creditCardsToSave, this.getCreditCards(), failedCreditCardIds, getConflictIds(creditCardsResult));
       removeSyncedIds(
         'creditCardPurchases', creditCardPurchasesToSave,
-        this.getCreditCardPurchases(), failedCreditCardPurchaseIds
+        this.getCreditCardPurchases(), failedCreditCardPurchaseIds, getConflictIds(creditCardPurchasesResult)
       );
       const sentGoalsByCategory = new Map(goalsToSave.map(goal => [goal.category, JSON.stringify(goal)]));
       latestPending.goals = latestPending.goals.filter(category => {
-        if (failedGoalCategories.includes(category)) return true;
+        if (failedGoalCategories.includes(category) || getConflictIds(results[4]).includes(category)) return true;
         const current = this.getGoals().find(goal => goal.category === category);
         return current && sentGoalsByCategory.get(category) !== JSON.stringify(current);
       });
@@ -890,28 +1086,34 @@ const FinanceData = {
       });
 
       if (!failedEntryDeletes) {
-        latestPending.deletedEntries = latestPending.deletedEntries.filter(id => !pending.deletedEntries.includes(id));
+        latestPending.deletedEntries = latestPending.deletedEntries.filter(id =>
+          !pending.deletedEntries.includes(id) || getConflictIds(results[2]).includes(id));
       }
       if (!failedTemplateDeletes) {
-        latestPending.deletedTemplates = latestPending.deletedTemplates.filter(id => !pending.deletedTemplates.includes(id));
+        latestPending.deletedTemplates = latestPending.deletedTemplates.filter(id =>
+          !pending.deletedTemplates.includes(id) || getConflictIds(results[3]).includes(id));
       }
       if (!failedGoalDeletes) {
-        latestPending.deletedGoals = latestPending.deletedGoals.filter(category => !pending.deletedGoals.includes(category));
+        latestPending.deletedGoals = latestPending.deletedGoals.filter(category =>
+          !pending.deletedGoals.includes(category) || getConflictIds(results[5]).includes(category));
       }
       if (!failedAccountDeletes) {
-        latestPending.deletedAccounts = latestPending.deletedAccounts.filter(id => !pending.deletedAccounts.includes(id));
+        latestPending.deletedAccounts = latestPending.deletedAccounts.filter(id =>
+          !pending.deletedAccounts.includes(id) || getConflictIds(results[6]).includes(id));
       }
       if (!failedCreditCardDeletes) {
-        latestPending.deletedCreditCards = latestPending.deletedCreditCards.filter(id => !pending.deletedCreditCards.includes(id));
+        latestPending.deletedCreditCards = latestPending.deletedCreditCards.filter(id =>
+          !pending.deletedCreditCards.includes(id) || getConflictIds(results[7]).includes(id));
       }
       if (!failedCreditCardPurchaseDeletes) {
         latestPending.deletedCreditCardPurchases = latestPending.deletedCreditCardPurchases.filter(
-          id => !pending.deletedCreditCardPurchases.includes(id)
+          id => !pending.deletedCreditCardPurchases.includes(id) || getConflictIds(results[8]).includes(id)
         );
       }
-      if (pending.profile && !failedProfile) latestPending.profile = false;
+      if (pending.profile && !failedProfile && !getConflictIds(profileResult).length) latestPending.profile = false;
       if (failedProfile) latestPending.profile = true;
       if (pending.fixedImportRules && !failedFixedImportRules &&
+        !getConflictIds(fixedImportRulesResult).length &&
         JSON.stringify(fixedImportRules) === JSON.stringify(this.getFixedImportRules())) {
         latestPending.fixedImportRules = false;
       }
@@ -931,7 +1133,11 @@ const FinanceData = {
       this.savePendingSync(latestPending);
       if (hasFailures) {
         if (typeof showToast === 'function') {
-          showToast('Não foi possível sincronizar todos os dados; os itens pendentes continuam salvos neste aparelho');
+          const hasConflicts = [accountResult, creditCardsResult, creditCardPurchasesResult, ...results]
+            .some(result => getConflictIds(result).length > 0);
+          showToast(hasConflicts
+            ? 'Um item foi atualizado em outro aparelho'
+            : 'Não foi possível sincronizar todos os dados; os itens pendentes continuam salvos neste aparelho');
         }
         return (accountResult && !accountResult.success ? accountResult : null) ||
           (profileResult && !profileResult.success ? profileResult : null) ||
@@ -949,7 +1155,145 @@ const FinanceData = {
     return currentSync;
   },
 
-  mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded = false, cloudGoals = null, cloudAccounts = null, cloudFixedImportRules = null, cloudCreditCards = null, cloudCreditCardPurchases = null) {
+  reconcileSyncVersions(userId, cloudEntries, cloudTemplates, cloudGoals, cloudAccounts,
+    cloudCreditCards, cloudCreditCardPurchases, cloudTombstones = {}, cloudVersions = {},
+    cloudFixedImportRules = null) {
+    const pending = this.getPendingSync();
+    const metadata = this.getSyncMetadata();
+    const offset = Number(metadata.clockOffsetMs) || 0;
+    let conflictFound = false;
+    const newerThan = (editedAt, serverAt) => {
+      const localTime = Date.parse(editedAt || '');
+      const remoteTime = Date.parse(serverAt || '');
+      return Number.isFinite(localTime) && Number.isFinite(remoteTime) &&
+        localTime + offset > remoteTime + 2000;
+    };
+    const collections = [
+      ['entries', STORAGE_ENTRIES, this.getEntries(), cloudEntries, item => item.id, 'entries', 'deletedEntries'],
+      ['templates', STORAGE_TEMPLATES, this.getTemplates(), cloudTemplates, item => item.id, 'templates', 'deletedTemplates'],
+      ['accounts', STORAGE_ACCOUNTS, this.getAccounts(), cloudAccounts, item => item.id, 'accounts', 'deletedAccounts'],
+      ['creditCards', STORAGE_CREDIT_CARDS, this.getCreditCards(), cloudCreditCards, item => item.id, 'creditCards', 'deletedCreditCards'],
+      ['creditCardPurchases', STORAGE_CREDIT_CARD_PURCHASES, this.getCreditCardPurchases(), cloudCreditCardPurchases, item => item.id, 'creditCardPurchases', 'deletedCreditCardPurchases'],
+      ['goals', STORAGE_GOALS, this.getGoals(), cloudGoals, item => item.category, 'goals', 'deletedGoals']
+    ];
+    collections.forEach(([kind, storageKey, localItems, cloudItems, getKey, pendingKey, deletedKey]) => {
+      if (!Array.isArray(cloudItems)) return;
+      metadata.records[kind] ||= {};
+      metadata.deleted[kind] ||= {};
+      const remoteByKey = new Map(cloudItems.map(item => [getKey(item), item]));
+      const merged = new Map(remoteByKey);
+      const remoteVersions = cloudVersions[kind] || {};
+      const remoteTombstones = cloudTombstones[kind] || {};
+      localItems.forEach(item => {
+        const key = getKey(item);
+        const remote = remoteByKey.get(key);
+        const remoteVersion = remoteVersions[key];
+        const tombstoneVersion = remoteTombstones[key];
+        const knownVersion = metadata.records[kind][key]?.updatedAt;
+        const editedAt = metadata.records[kind][key]?.editedAt;
+        const isPending = pending.full || pending[pendingKey].includes(key);
+        if (remote) {
+          if (remoteVersion && knownVersion && remoteVersion < knownVersion) {
+            merged.set(key, item);
+            return;
+          }
+          const changedRemotely = remoteVersion && (!knownVersion || remoteVersion > knownVersion);
+          if (isPending && changedRemotely) {
+            conflictFound = true;
+            if (newerThan(editedAt, remoteVersion)) {
+              merged.set(key, item);
+              metadata.records[kind][key] = { updatedAt: remoteVersion, editedAt };
+            } else {
+              merged.set(key, remote);
+              pending[pendingKey] = pending[pendingKey].filter(value => value !== key);
+              metadata.records[kind][key] = { updatedAt: remoteVersion, editedAt: remoteVersion };
+            }
+          } else if (isPending) {
+            merged.set(key, item);
+            if (remoteVersion) metadata.records[kind][key] = {
+              updatedAt: remoteVersion, editedAt: editedAt || remoteVersion
+            };
+          } else {
+            merged.set(key, remote);
+            if (remoteVersion) metadata.records[kind][key] = {
+              updatedAt: remoteVersion, editedAt: remoteVersion
+            };
+          }
+          return;
+        }
+        if (tombstoneVersion && knownVersion && tombstoneVersion < knownVersion) {
+          merged.set(key, item);
+          return;
+        }
+        if (tombstoneVersion || knownVersion) {
+          conflictFound = true;
+          if (isPending && tombstoneVersion && newerThan(editedAt, tombstoneVersion)) {
+            merged.set(key, item);
+            metadata.records[kind][key] = { updatedAt: tombstoneVersion, editedAt };
+          } else {
+            merged.delete(key);
+            pending[pendingKey] = pending[pendingKey].filter(value => value !== key);
+            pending[deletedKey] = pending[deletedKey].filter(value => value !== key);
+            delete metadata.records[kind][key];
+            delete metadata.deleted[kind][key];
+          }
+        } else {
+          merged.set(key, item);
+        }
+      });
+      pending[deletedKey].forEach(key => {
+        const remote = remoteByKey.get(key);
+        const remoteVersion = remoteVersions[key];
+        const tombstoneVersion = remoteTombstones[key];
+        const edit = metadata.deleted[kind][key];
+        if (remote && edit && remoteVersion && edit.updatedAt && remoteVersion < edit.updatedAt) return;
+        if (remote && !newerThan(edit?.editedAt, remoteVersion)) {
+          pending[deletedKey] = pending[deletedKey].filter(value => value !== key);
+          delete metadata.deleted[kind][key];
+          merged.set(key, remote);
+          conflictFound = true;
+        } else if (!remote && (!tombstoneVersion || !newerThan(edit?.editedAt, tombstoneVersion))) {
+          pending[deletedKey] = pending[deletedKey].filter(value => value !== key);
+          delete metadata.deleted[kind][key];
+          conflictFound = true;
+        }
+      });
+      localStorage.setItem(storageKey, JSON.stringify([...merged.values()]));
+    });
+
+    const profileId = userId;
+    metadata.records.profiles ||= {};
+    metadata.deleted.profiles ||= {};
+
+    if (Array.isArray(cloudFixedImportRules)) {
+      metadata.records.fixedImportRules ||= {};
+      metadata.deleted.fixedImportRules ||= {};
+      const known = metadata.records.fixedImportRules[userId]?.updatedAt;
+      const editedAt = metadata.records.fixedImportRules[userId]?.editedAt;
+      const version = cloudVersions.fixedImportRules && cloudVersions.fixedImportRules[userId];
+      const tombstone = cloudTombstones.fixedImportRules && cloudTombstones.fixedImportRules[userId];
+      if (tombstone || known && !version || pending.fixedImportRules && version && (!known || version > known)) {
+        conflictFound = true;
+        if (pending.fixedImportRules &&
+          (version && newerThan(editedAt, version) || tombstone && newerThan(editedAt, tombstone))) {
+          metadata.records.fixedImportRules[userId] = { updatedAt: version || tombstone, editedAt };
+        } else {
+          pending.fixedImportRules = false;
+          localStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify(tombstone || known && !version ? [] : cloudFixedImportRules));
+          metadata.records.fixedImportRules[userId] = { updatedAt: version || tombstone || null, editedAt: version || tombstone || null };
+        }
+      } else if (!pending.fixedImportRules) {
+        localStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify(cloudFixedImportRules));
+        if (version) metadata.records.fixedImportRules[userId] = { updatedAt: version, editedAt: version };
+      }
+    }
+    this.savePendingSync(pending);
+    this.saveSyncMetadata(metadata);
+    if (conflictFound && typeof showToast === 'function') showToast('Um item foi atualizado em outro aparelho');
+    return conflictFound;
+  },
+
+  mergeCloudData(userId, cloudEntries, cloudTemplates, flushSucceeded = false, cloudGoals = null, cloudAccounts = null, cloudFixedImportRules = null, cloudCreditCards = null, cloudCreditCardPurchases = null, cloudTombstones = {}, cloudVersions = {}) {
     if (
       !userId ||
       localStorage.getItem(STORAGE_LAST_UID) !== userId ||
@@ -962,6 +1306,11 @@ const FinanceData = {
       (cloudFixedImportRules !== null && (!Array.isArray(cloudFixedImportRules) ||
         cloudFixedImportRules.some(rule => typeof rule !== 'string')))
     ) return false;
+
+    if (Object.keys(cloudVersions || {}).length || Object.keys(cloudTombstones || {}).length) {
+      this.reconcileSyncVersions(userId, cloudEntries, cloudTemplates, cloudGoals, cloudAccounts,
+        cloudCreditCards, cloudCreditCardPurchases, cloudTombstones, cloudVersions, cloudFixedImportRules);
+    }
 
     const pending = this.getPendingSync();
     const canRemoveCloudDeleted = flushSucceeded && !this.hasPendingSync();
@@ -1067,8 +1416,31 @@ const FinanceData = {
   mergeCloudProfile(cloudProfile) {
     if (!cloudProfile || typeof cloudProfile !== 'object') return this.getProfile();
     const pending = this.getPendingSync();
-    if (pending.profile) return this.getProfile();
     const profile = this.getProfile();
+    const metadata = this.getSyncMetadata();
+    const profileId = cloudProfile.id || profile.userId;
+    metadata.records.profiles ||= {};
+    const known = metadata.records.profiles[profileId];
+    if (pending.profile && cloudProfile.updatedAt && known && known.updatedAt &&
+      cloudProfile.updatedAt > known.updatedAt) {
+      const localTime = Date.parse(known.editedAt || '');
+      const remoteTime = Date.parse(cloudProfile.updatedAt);
+      if (Number.isFinite(localTime) && localTime + (Number(metadata.clockOffsetMs) || 0) > remoteTime + 2000) {
+        metadata.records.profiles[profileId] = { updatedAt: cloudProfile.updatedAt, editedAt: known.editedAt };
+        this.saveSyncMetadata(metadata);
+        if (typeof showToast === 'function') showToast('Um item foi atualizado em outro aparelho');
+        return profile;
+      }
+      pending.profile = false;
+      this.savePendingSync(pending);
+      if (typeof showToast === 'function') showToast('Um item foi atualizado em outro aparelho');
+    } else if (pending.profile) {
+      return profile;
+    }
+    if (cloudProfile.updatedAt) metadata.records.profiles[profileId] = {
+      updatedAt: cloudProfile.updatedAt, editedAt: cloudProfile.updatedAt
+    };
+    this.saveSyncMetadata(metadata);
     return this.saveProfile({
       ...profile,
       name: typeof cloudProfile.name === 'string' ? cloudProfile.name : profile.name,
@@ -1082,6 +1454,15 @@ const FinanceData = {
     const pending = this.getPendingSync();
     pending.profile = true;
     this.savePendingSync(pending);
+    const metadata = this.getSyncMetadata();
+    const profileId = this.getProfile().userId;
+    metadata.records.profiles ||= {};
+    const known = metadata.records.profiles[profileId];
+    metadata.records.profiles[profileId] = {
+      updatedAt: known ? known.updatedAt : null,
+      editedAt: new Date().toISOString()
+    };
+    this.saveSyncMetadata(metadata);
   },
 
   // ================================================================
@@ -1569,6 +1950,15 @@ const FinanceData = {
       const pending = this.getPendingSync();
       pending.fixedImportRules = true;
       this.savePendingSync(pending);
+      const metadata = this.getSyncMetadata();
+      const profileId = this.getProfile().userId;
+      metadata.records.fixedImportRules ||= {};
+      const known = metadata.records.fixedImportRules[profileId];
+      metadata.records.fixedImportRules[profileId] = {
+        updatedAt: known ? known.updatedAt : null,
+        editedAt: new Date().toISOString()
+      };
+      this.saveSyncMetadata(metadata);
       if (options.flush === false) return { success: true, queued: true };
       return await this.flushPendingSync(this.getProfile().userId);
     } catch (error) {
@@ -2103,7 +2493,8 @@ const FinanceData = {
         STORAGE_CREDIT_CARDS,
         STORAGE_CREDIT_CARD_PURCHASES,
         STORAGE_FIXED_IMPORT_RULES,
-        STORAGE_PENDING_SYNC
+        STORAGE_PENDING_SYNC,
+        STORAGE_SYNC_METADATA
       ].forEach(key => localStorage.removeItem(key));
       const currentProfile = this.getProfile();
       const profileResult = this.saveProfile({
@@ -2363,3 +2754,5 @@ const FinanceData = {
       .catch(error => console.error('[GastoPro] Erro ao sincronizar exclusão de meta:', error));
   }
 };
+
+window.FinanceData = FinanceData;

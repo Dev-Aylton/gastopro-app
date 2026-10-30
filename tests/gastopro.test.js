@@ -2369,11 +2369,11 @@ describe('Privacidade, payloads e autenticação', () => {
       );
       assertTrue(result.success);
       assertEqual(upsertTable, 'profiles');
-      assertEqual(upsertPayload, {
-        id: 'profile-user',
-        name: 'Nome',
-        avatar: 'data:image/jpeg;base64,abc'
-      });
+      assertEqual(upsertPayload.id, 'profile-user');
+      assertEqual(upsertPayload.name, 'Nome');
+      assertEqual(upsertPayload.avatar, 'data:image/jpeg;base64,abc');
+      assertEqual(upsertPayload.deleted_at, null);
+      assertTrue(typeof upsertPayload.client_edited_at === 'string');
     } finally {
       window.SupabaseAuth.client = previousClient;
     }
@@ -5049,6 +5049,323 @@ describe('FinanceData — exclusão durante sincronização', () => {
     assertEqual(FinanceData.getTemplates()[0].desc, 'Template atualizado');
   });
 
+  it('resolve edições simultâneas pelo horário local corrigido e mantém empate para o servidor', () => {
+    setupMockLocalStorage();
+    const userId = 'user-version-conflict';
+    const localWins = makeIncome({ id: crypto.randomUUID(), desc: 'Edição mais recente' });
+    const serverWins = makeIncome({ id: crypto.randomUUID(), desc: 'Edição local antiga' });
+    const knownVersion = '2026-10-29T10:00:00.000Z';
+    const remoteVersion = '2026-10-29T10:30:00.000Z';
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([localWins, serverWins]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_sync_metadata_v1', JSON.stringify({
+      clockOffsetMs: 3600000,
+      records: { entries: {
+        [localWins.id]: { updatedAt: knownVersion, editedAt: '2026-10-29T09:31:00.000Z' },
+        [serverWins.id]: { updatedAt: knownVersion, editedAt: '2026-10-29T09:30:00.000Z' }
+      } },
+      deleted: {}
+    }));
+    FinanceData.savePendingSync({
+      full: false, entries: [localWins.id, serverWins.id], templates: [],
+      deletedEntries: [], deletedTemplates: []
+    });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [
+      { ...localWins, desc: 'Servidor mais antigo' },
+      { ...serverWins, desc: 'Servidor mais recente' }
+    ], [], false, null, null, null, null, null,
+    { entries: {} }, { entries: { [localWins.id]: remoteVersion, [serverWins.id]: remoteVersion } }));
+
+    const entries = FinanceData.getEntries();
+    assertEqual(entries.find(item => item.id === localWins.id).desc, 'Edição mais recente');
+    assertEqual(entries.find(item => item.id === serverWins.id).desc, 'Servidor mais recente');
+    assertEqual(FinanceData.getPendingSync().entries, [localWins.id]);
+  });
+
+  it('remove edição concorrente com exclusão marcada ou já limpa', () => {
+    setupMockLocalStorage();
+    const userId = 'user-delete-conflict';
+    const marked = makeIncome({ id: crypto.randomUUID(), desc: 'Edição local marcada' });
+    const expired = makeIncome({ id: crypto.randomUUID(), desc: 'Edição local antiga' });
+    const knownVersion = '2026-10-29T10:00:00.000Z';
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([marked, expired]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_sync_metadata_v1', JSON.stringify({
+      clockOffsetMs: 0,
+      records: { entries: {
+        [marked.id]: { updatedAt: knownVersion, editedAt: '2026-10-29T10:01:00.000Z' },
+        [expired.id]: { updatedAt: knownVersion, editedAt: '2026-10-29T10:01:00.000Z' }
+      } },
+      deleted: {}
+    }));
+    FinanceData.savePendingSync({
+      full: false, entries: [marked.id, expired.id], templates: [], deletedEntries: [], deletedTemplates: []
+    });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [], [], false, null, null, null, null, null,
+      { entries: { [marked.id]: '2026-10-29T10:02:00.000Z' } }, { entries: {} }));
+    assertEqual(FinanceData.getEntries(), []);
+    assertEqual(FinanceData.getPendingSync().entries, []);
+  });
+
+  it('mantém criação offline nunca sincronizada para envio após voltar online', () => {
+    setupMockLocalStorage();
+    const userId = 'user-offline-new-record';
+    const created = makeIncome({ id: crypto.randomUUID(), desc: 'Criado offline' });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([created]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    FinanceData.savePendingSync({
+      full: false, entries: [created.id], templates: [], deletedEntries: [], deletedTemplates: []
+    });
+
+    assertTrue(FinanceData.mergeCloudData(userId, [], [], false, null, null, null, null, null,
+      { entries: {} }, { entries: {} }));
+    assertEqual(FinanceData.getEntries(), [created]);
+    assertEqual(FinanceData.getPendingSync().entries, [created.id]);
+  });
+
+  itAsync('mantém pendências no aparelho quando a reconciliação falha offline', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-sync-offline';
+    const created = makeIncome({ id: crypto.randomUUID() });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([created]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    FinanceData.savePendingSync({
+      full: false, entries: [created.id], templates: [], deletedEntries: [], deletedTemplates: []
+    });
+    const previousAuth = window.SupabaseAuth;
+    let sent = false;
+    window.SupabaseAuth = {
+      client: {},
+      isSyncServerReady: () => true,
+      getSyncServerTime: async () => null,
+      fetchCloudSyncState: async () => null,
+      saveCloudEntries: async () => { sent = true; return { success: true }; }
+    };
+    try {
+      assertFalse((await FinanceData.flushPendingSync(userId)).success);
+      assertFalse(sent);
+      assertEqual(FinanceData.getPendingSync().entries, [created.id]);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('sincroniza ao retornar ao app e respeita intervalo de 15 segundos', async () => {
+    const signals = [];
+    const removeListeners = window.GastoProSyncHelpers.bindLifecycleListeners(
+      document, window, reason => signals.push(reason)
+    );
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
+    removeListeners();
+    assertEqual(signals, ['visibilitychange', 'focus', 'online']);
+
+    let runs = 0;
+    let finishSync;
+    const gate = window.GastoProSyncHelpers.createAutomaticSyncGate();
+    const first = gate.run(1000, () => {
+      runs++;
+      return new Promise(resolve => { finishSync = resolve; });
+    });
+    await Promise.resolve();
+    const concurrent = gate.run(2000, async () => { runs++; return true; });
+    assertEqual(runs, 1);
+    finishSync(true);
+    assertTrue(await first);
+    assertTrue(await concurrent);
+    assertFalse(await gate.run(15999, async () => { runs++; return true; }));
+    assertTrue(await gate.run(16000, async () => { runs++; return true; }));
+    assertEqual(runs, 2);
+  });
+
+  itAsync('ignora evento Realtime mais antigo que a versão conhecida', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-realtime-stale';
+    const entry = makeIncome({ id: crypto.randomUUID(), desc: 'Versão atual' });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([entry]));
+    localStorage.setItem('gastopro_sync_metadata_v1', JSON.stringify({
+      clockOffsetMs: 0,
+      records: { entries: { [entry.id]: {
+        updatedAt: '2026-10-30T12:00:00.000Z', editedAt: '2026-10-30T12:00:00.000Z'
+      } } },
+      deleted: {}
+    }));
+    const result = FinanceData.applyCloudSyncRecord(
+      'entries', { ...entry, desc: 'Evento antigo' }, '2026-10-30T11:59:00.000Z', null, userId
+    );
+    assertTrue(result.stale);
+    assertEqual(FinanceData.getEntries()[0].desc, 'Versão atual');
+  });
+
+  itAsync('assina as oito tabelas em um canal com o filtro de proprietário correto', async () => {
+    const auth = window.SupabaseAuth;
+    const previousClient = auth.client;
+    const userId = 'user-realtime-channel';
+    let channelCount = 0;
+    let registrations = [];
+    const channel = {
+      on(event, filter, callback) {
+        registrations.push({ event, filter, callback });
+        return this;
+      },
+      subscribe(callback) {
+        callback('SUBSCRIBED');
+        return this;
+      }
+    };
+    auth.client = {
+      channel: name => {
+        assertEqual(name, `gastopro-sync-${userId}`);
+        channelCount++;
+        return channel;
+      },
+      removeChannel: async () => 'ok'
+    };
+    try {
+      assertTrue(auth.subscribeToSyncChanges(userId, () => {}, () => {}));
+      assertEqual(channelCount, 1);
+      assertEqual(registrations.length, 8);
+      assertTrue(registrations.every(item => item.event === 'postgres_changes'));
+      assertEqual(registrations.find(item => item.filter.table === 'profiles').filter.filter, `id=eq.${userId}`);
+      assertTrue(registrations.filter(item => item.filter.table !== 'profiles')
+        .every(item => item.filter.filter === `user_id=eq.${userId}`));
+      await auth.unsubscribeFromSyncChanges();
+    } finally {
+      await auth.unsubscribeFromSyncChanges();
+      auth.client = previousClient;
+    }
+  });
+
+  itAsync('aplica tombstone Realtime e remove o registro local', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-realtime-tombstone';
+    const entry = makeIncome({ id: crypto.randomUUID(), desc: 'Será excluído' });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([entry]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_sync_metadata_v1', JSON.stringify({
+      clockOffsetMs: 0,
+      records: { entries: { [entry.id]: {
+        updatedAt: '2026-10-30T12:00:00.000Z', editedAt: '2026-10-30T12:00:00.000Z'
+      } } },
+      deleted: {}
+    }));
+    const result = FinanceData.applyCloudSyncRecord(
+      'entries', entry, '2026-10-30T12:01:00.000Z', '2026-10-30T12:01:00.000Z', userId
+    );
+    assertEqual(FinanceData.getEntries(), []);
+    assertTrue(result.applied);
+  });
+
+  itAsync('adia mudança Realtime enquanto o mesmo lançamento está aberto para edição', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-realtime-editing';
+    const entry = makeIncome({ id: crypto.randomUUID(), desc: 'Valor na tela' });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([entry]));
+    localStorage.setItem('gastopro_templates_v4_oct', JSON.stringify([]));
+    localStorage.setItem('gastopro_sync_metadata_v1', JSON.stringify({
+      clockOffsetMs: 0,
+      records: { entries: { [entry.id]: {
+        updatedAt: '2026-10-30T12:00:00.000Z', editedAt: '2026-10-30T12:00:00.000Z'
+      } } },
+      deleted: {}
+    }));
+    const modal = document.createElement('div');
+    modal.id = 'editModal';
+    modal.className = 'modal-overlay active';
+    const field = document.createElement('input');
+    field.id = 'editItemId';
+    field.value = entry.id;
+    modal.appendChild(field);
+    document.body.appendChild(modal);
+    const deferred = new Map();
+    let applied = 0;
+    let notices = 0;
+    const change = {
+      kind: 'entries', item: { ...entry, desc: 'Alteração remota' },
+      version: '2026-10-30T12:01:00.000Z', deletedAt: null
+    };
+    const deferOrApply = () => window.GastoProSyncHelpers.deferOrApply(
+      { change, userId },
+      `entries:${entry.id}`,
+      window.GastoProSyncHelpers.isRecordBeingEdited('entries', entry.id),
+      pending => {
+        const result = FinanceData.applyCloudSyncRecord(
+          pending.change.kind, pending.change.item, pending.change.version,
+          pending.change.deletedAt, pending.userId
+        );
+        if (result.applied) applied++;
+      },
+      deferred,
+      () => { notices++; }
+    );
+    try {
+      assertFalse(deferOrApply());
+      assertEqual(FinanceData.getEntries()[0].desc, 'Valor na tela');
+      assertEqual(applied, 0);
+      assertEqual(notices, 1);
+      modal.classList.remove('active');
+      const [key, pending] = deferred.entries().next().value;
+      deferred.delete(key);
+      assertTrue(window.GastoProSyncHelpers.deferOrApply(
+        pending, key, window.GastoProSyncHelpers.isRecordBeingEdited('entries', entry.id),
+        changeToApply => {
+          const result = FinanceData.applyCloudSyncRecord(
+            changeToApply.change.kind, changeToApply.change.item, changeToApply.change.version,
+            changeToApply.change.deletedAt, changeToApply.userId
+          );
+          if (result.applied) applied++;
+        }, deferred, () => { notices++; }
+      ));
+      assertEqual(FinanceData.getEntries()[0].desc, 'Alteração remota');
+      assertEqual(applied, 1);
+    } finally {
+      modal.remove();
+    }
+  });
+
+  itAsync('mantém fallback de sync ao retornar após falha do Realtime', async () => {
+    const previousAuth = window.SupabaseAuth;
+    const previousClient = previousAuth.client;
+    const userId = 'user-realtime-fallback';
+    let failed = false;
+    let fallbackRuns = 0;
+    const channel = {
+      on() { return this; },
+      subscribe(callback) { callback('CHANNEL_ERROR'); return this; }
+    };
+    previousAuth.client = {
+      channel: () => channel,
+      removeChannel: async () => 'ok'
+    };
+    const gate = window.GastoProSyncHelpers.createAutomaticSyncGate();
+    try {
+      assertTrue(previousAuth.subscribeToSyncChanges(userId, () => {}, () => {
+        failed = true;
+        previousAuth.unsubscribeFromSyncChanges();
+      }));
+      assertTrue(failed);
+      await previousAuth.unsubscribeFromSyncChanges();
+      assertTrue(await gate.run(20000, async () => {
+        fallbackRuns++;
+        return true;
+      }));
+      assertEqual(fallbackRuns, 1);
+    } finally {
+      await previousAuth.unsubscribeFromSyncChanges();
+      previousAuth.client = previousClient;
+    }
+  });
+
   it('não recria meta por categoria com exclusão pendente durante o merge', () => {
     setupMockLocalStorage();
     const userId = 'user-goal-delete-merge';
@@ -5137,6 +5454,7 @@ describe('FinanceData — exclusão durante sincronização', () => {
 
     try {
       const firstFlush = FinanceData.flushPendingSync(userId);
+      await Promise.resolve();
       await Promise.resolve();
       assertTrue(typeof finishEntrySave === 'function', 'Upsert inicial deveria estar pendente');
 

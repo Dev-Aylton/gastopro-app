@@ -6,14 +6,14 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-265%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-330%20casos-10b981?style=for-the-badge)
 
 ---
 
 ## 🤖 Guia para IAs (leia antes de editar)
 
-1. O estado do projeto está no **Roadmap**: `[ ]` pendente, `[x]` implementado e ainda não testado, `[V]` testado e validado.
-2. Quem concluir um item (pessoa ou IA) deve marcá-lo `[x]` **antes de seguir para o próximo**; marque `[V]` depois que o teste for feito e der certo.
+1. O estado do projeto está no **Roadmap**: `[ ]` pendente e `[x]` implementado/testado.
+2. Quem concluir um item (pessoa ou IA) deve marcá-lo `[x]` **antes de seguir para o próximo**.
 3. Ao marcar, atualize no mesmo passo o Changelog e, se mudar a quantidade de testes, o total no README.
 4. Respeite as **Decisões de produto**: Pix entra como Gasto (pago); boleto, empréstimos, parcelamentos e contas parceladas entram como "a pagar" nos meses seguintes e só o usuário marca como pago; sem foto, print nem OCR.
 5. Não deduza informações nem o escopo da mudança: confirme com o Aylton antes de alterar.
@@ -167,9 +167,12 @@ financeiro-app/
 │       ├── 20261027_hardening.sql # Hardening aplicado e validado em 28/10/2026
 │       ├── 20261028_accounts.sql  # RM-025 parte A; aplicada em produção
 │       ├── 20261028_delete_my_account.sql # Exclusão de conta; aplicar manualmente no Supabase
-│       └── 20261029_feedback.sql # Canal de contato; aplicar manualmente no Supabase
+│       ├── 20261029_feedback.sql # Canal de contato; aplicar manualmente no Supabase
+│       ├── 20261031_admin_analytics.sql # Painel admin, eventos de uso e retenção de 12 meses
+│       ├── 20261101_sync_versioning.sql # Versões e tombstones; criada, ainda não aplicada
+│       └── 20261102_sync_realtime_publication.sql # Publicação Realtime; rodar antes do push
 ├── tests/
-│   ├── gastopro.test.js       # 265 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 330 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -208,9 +211,19 @@ O canal "Fale comigo" é uma consulta sob demanda entre a tela em `js/app.js` e 
 | `gastopro_profile_real_v2` | Perfil local: nome, e-mail, userId e avatar |
 | `gastopro_goals_v1` | Metas por categoria |
 | `gastopro_accounts_v1` | Contas bancárias PF/PJ |
+| `gastopro_credit_cards_v1` | Cartões de crédito |
+| `gastopro_credit_card_purchases_v1` | Compras e parcelas de cartões |
+| `gastopro_fixed_import_rules_v1` | Regras fixas de importação |
 | `gastopro_theme` | Preferência de aparência deste aparelho (`dark` ou `light`), não sincronizada nem incluída no backup |
 | `gastopro_last_uid` | UID da conta dona dos dados locais ativos |
 | `gastopro_pending_sync_v1` | Fila de sincronização pendente |
+| `gastopro_sync_metadata_v1` | Versão conhecida, hora de edição e diferença de relógio por registro |
+| `gastopro_notifications_v1` | Histórico local da central de avisos |
+| `gastopro_notification_preferences_v1` | Preferências locais dos cinco tipos de aviso |
+| `gastopro_usage_telemetry_enabled_v1` | Preferência local de opt-out da coleta de eventos |
+| `gastopro_last_view_v1` | Última tela principal por usuário |
+| `gastopro_tutorial_seen` | Estado local do tutorial |
+| `gastopro_account_setup_seen` | Estado local da configuração inicial de conta |
 
 ### Esquemas locais
 
@@ -259,9 +272,17 @@ Lançamentos e templates usam UUID v4; metas usam um ID local com prefixo `goal-
 
 ### Fila de sincronização
 
-O registro pendente contém `full`, `entries`, `templates`, `deletedEntries`, `deletedTemplates`, `goals`, `deletedGoals`, `accounts` e `deletedAccounts`. Entradas, templates e contas são identificados por ID; metas e exclusões de metas são identificadas pela categoria. Alterações são enfileiradas localmente e removidas da fila após sincronização bem-sucedida.
+O registro pendente contém alterações e exclusões de lançamentos, templates, metas, contas, cartões e compras, além do perfil e regras fixas. Os registros locais guardam a versão `updated_at` conhecida e o instante da edição. Antes de enviar pendências, o app lê a nuvem e compara os relógios; alterações com diferença de até dois segundos favorecem o servidor. Conflitos exibem “Um item foi atualizado em outro aparelho”.
 
 Metas são gravadas em `public.goals` por categoria, com upsert usando `onConflict: 'user_id,category'`; exclusões enfileiradas são enviadas pela fila pendente.
+
+### Sincronização entre aparelhos
+
+- **Etapa 1 — em andamento:** versão por registro, `updated_at` definido no servidor, tombstones `deleted_at` e limpeza após 90 dias. A migration `20261101_sync_versioning.sql` foi criada, mas ainda não aplicada. Após a poda, um registro com versão conhecida que sumiu da nuvem é tratado como excluído; só criações nunca sincronizadas são enviadas como novas.
+- **Etapa 2 — em andamento:** sync completa ao voltar ao app, focar a janela ou reconectar, no máximo uma por vez e com intervalo de 15 segundos; um canal Realtime assina as oito tabelas. Eventos antigos são ignorados, tombstones são aplicados, e alterações do registro em edição aguardam o fechamento do modal. Sem Realtime, permanece a sync ao retornar.
+- **Etapa 3 — pendente:** operações transacionais.
+- **Etapa 4 — pendente:** escopo a definir.
+- As migrations `20261101_sync_versioning.sql` e `20261102_sync_realtime_publication.sql` precisam ser aplicadas nessa ordem no Supabase antes do push. A segunda adiciona as tabelas à publicação `supabase_realtime` sem duplicar membros existentes.
 
 ### API de SupabaseAuth
 
@@ -357,6 +378,8 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | `deleteCloudAccounts(accountIds, userId)` | Exclui contas do usuário pelos IDs. |
 | `fetchCloudProfile(userId)` | Busca nome e foto na tabela `profiles`, indicando separadamente falhas e ausência de registro. |
 | `saveCloudProfile(profile, userId)` | Valida e sincroniza nome e foto na tabela `profiles`. |
+| `subscribeToSyncChanges(userId, onChange, onFailure)` | Usa um canal Realtime único para as oito tabelas, filtrando pelo campo dono; em `profiles`, usa `id`. |
+| `unsubscribeFromSyncChanges()` | Encerra o canal Realtime da sessão atual. |
 
 ---
 
@@ -383,9 +406,13 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
-As tabelas `entries`, `fixed_templates`, `goals`, `accounts` e `profiles` têm RLS ativo. `public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) foi aplicada em produção. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) também precisa ser aplicada manualmente. O app envia nome e avatar para `profiles` ao editar o perfil autenticado; alterações pendentes são mantidas para nova tentativa. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
+As oito tabelas sincronizadas são `entries`, `fixed_templates`, `profiles`, `goals`, `accounts`, `credit_cards`, `credit_card_purchases` e `fixed_import_rules`; todas são restritas ao dono por RLS. A migration [`supabase/migrations/20261101_sync_versioning.sql`](./supabase/migrations/20261101_sync_versioning.sql) adiciona versionamento e exclusão lógica, mas ainda não foi aplicada. A migration [`supabase/migrations/20261102_sync_realtime_publication.sql`](./supabase/migrations/20261102_sync_realtime_publication.sql) registra as tabelas na publicação `supabase_realtime` de forma idempotente; aplique-a depois da migration de versionamento e antes do push. Exclusão total de dados e exclusão de conta continuam físicas.
+
+`public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) foi aplicada em produção. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) também precisa ser aplicada manualmente. O app envia nome e avatar para `profiles` ao editar o perfil autenticado; alterações pendentes são mantidas para nova tentativa. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
 
 A migração [`supabase/migrations/20261029_feedback.sql`](./supabase/migrations/20261029_feedback.sql) cria `app_admins` e `feedback_messages`, as policies de RLS, `is_admin()` e o limite de cinco mensagens por usuário em 24 horas. Ela **ainda precisa ser aplicada manualmente** no SQL Editor do Supabase. O administrador pode ler mensagens e responder, mas não recebe acesso às tabelas financeiras nem a `profiles`; a lista de administradores é mantida diretamente pelo SQL Editor. Mensagens são obtidas sob demanda e não entram no localStorage, na fila financeira, no backup ou no Reset.
+
+A migration [`supabase/migrations/20261031_admin_analytics.sql`](./supabase/migrations/20261031_admin_analytics.sql) implementa `admin_analytics_summary()` com métricas agregadas, `usage_events` com lista permitida de eventos e limpeza automática após 12 meses via `pg_cron`. O usuário pode desativar a coleta no aparelho (`gastopro_usage_telemetry_enabled_v1`); eventos não incluem payload financeiro. O painel também usa `app_admins`/`is_admin()` e o canal `feedback_messages`.
 
 Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Consulte também [Executar, configurar e publicar](#-executar-configurar-e-publicar).
 
@@ -393,7 +420,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **265 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **330 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -444,6 +471,7 @@ Suite com **265 casos de teste** em JavaScript puro, sem frameworks. Os testes u
 | `FinanceData — inserção em lote para importação` | Inserção em lote e baixa de parcelas. |
 | `FinanceData — conversões de data local e tipo` | Datas, UUIDs e tipos de registros. |
 | `FinanceData — exclusão durante sincronização` | Concorrência de sincronização e exclusões. |
+| `Sincronização entre aparelhos — Realtime` | Lifecycle ao retornar, intervalo de 15 segundos, canal único, versões antigas, tombstones, edição aberta e fallback sem Realtime. |
 | `Relatório Financeiro — buildReportData` | Dados do relatório financeiro. |
 
 Para executar, abra `tests/test-runner.html` no Chrome ou Edge; os testes rodam automaticamente e os detalhes aparecem no Console (F12).
@@ -527,44 +555,53 @@ O SHA-512 de pdfjs-dist foi conferido antes da extração; o pacote foi publicad
 
 ## 🗺️ Roadmap
 
-Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado e validado. Veja as regras no [Guia para IAs](#-guia-para-ias-leia-antes-de-editar).
+Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia para IAs](#-guia-para-ias-leia-antes-de-editar).
 
 ### Itens
 
-- [V] **RM-001 — Acessibilidade na navegação e nos modais** / Descrição: melhorias de acessibilidade no bloco 5.1. / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-002 — Reconhecimento de parcelas na importação** / Descrição: reconhecer parcelas, criar dívida com parcelas anteriores baixadas ou dar baixa em dívida existente (bloco 6A). / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-003 — Importação de OFX e XML de nota fiscal** / Descrição: importar OFX e NF-e/NFC-e (bloco 6B). / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-004 — Importação de Pix e linhas digitáveis de boleto** / Descrição: importar Pix copia e cola e boletos (bloco 6D). / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-005 — Ajuda embutida no modal do importador** / Descrição: orientar sobre formatos, prévia, parcelas, duplicados e privacidade. / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-006 — Importação de PDF de extrato ou fatura** / Descrição: ler localmente PDFs com texto selecionável (bloco 6C). / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-007 — Metas e alertas de teto por categoria** / Descrição: seção no dashboard, cards, modal, edição e alertas em 80% e 100%. / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-008 — Relatório financeiro em PDF** / Descrição: relatório mensal, anual ou por intervalo com totais, categorias, dívidas, metas, diagnóstico e detalhamento opcional. / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-009 — Deduplicação na importação de extratos** / Descrição: desmarcar duplicatas existentes ou repetidas no arquivo, permitindo importação manual forçada. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-001 — Acessibilidade na navegação e nos modais** / Descrição: melhorias de acessibilidade no bloco 5.1. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-002 — Reconhecimento de parcelas na importação** / Descrição: reconhecer parcelas, criar dívida com parcelas anteriores baixadas ou dar baixa em dívida existente (bloco 6A). / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-003 — Importação de OFX e XML de nota fiscal** / Descrição: importar OFX e NF-e/NFC-e (bloco 6B). / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-004 — Importação de Pix e linhas digitáveis de boleto** / Descrição: importar Pix copia e cola e boletos (bloco 6D). / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-005 — Ajuda embutida no modal do importador** / Descrição: orientar sobre formatos, prévia, parcelas, duplicados e privacidade. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-006 — Importação de PDF de extrato ou fatura** / Descrição: ler localmente PDFs com texto selecionável (bloco 6C). / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-007 — Metas e alertas de teto por categoria** / Descrição: seção no dashboard, cards, modal, edição e alertas em 80% e 100%. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-008 — Relatório financeiro em PDF** / Descrição: relatório mensal, anual ou por intervalo com totais, categorias, dívidas, metas, diagnóstico e detalhamento opcional. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-009 — Deduplicação na importação de extratos** / Descrição: desmarcar duplicatas existentes ou repetidas no arquivo, permitindo importação manual forçada. / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-010 — Metas sincronizadas com a nuvem** / Descrição: sincronizar metas por categoria com `public.goals`, incluindo upserts e exclusões pendentes. / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-011 — Hardening do banco aplicado** / Descrição: aplicar a migração `supabase/migrations/20261027_hardening.sql` ao banco. / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-012 — Contas a pagar em CSV** / Descrição: aceitar colunas `tipo`, `mes_inicio`, `mes_fim`, `dia_venc` e `ativo`. / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-013 — Categoria no CSV** / Descrição: aceitar a coluna opcional `categoria`. / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-014 — Tipo OFX por TRNTYPE e descrição padrão** / Descrição: usar TRNTYPE conhecido, fallback de descrição vazia e aviso para OFX sem transações. / Critério de pronto: a definir. / Arquivos: a definir.
-- [V] **RM-015 — Reset sem apagar perfil** / Descrição: reset financeiro preserva identidade da conta e perfil. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-011 — Hardening do banco aplicado** / Descrição: aplicar a migração `supabase/migrations/20261027_hardening.sql` ao banco. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-012 — Contas a pagar em CSV** / Descrição: aceitar colunas `tipo`, `mes_inicio`, `mes_fim`, `dia_venc` e `ativo`. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-013 — Categoria no CSV** / Descrição: aceitar a coluna opcional `categoria`. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-014 — Tipo OFX por TRNTYPE e descrição padrão** / Descrição: usar TRNTYPE conhecido, fallback de descrição vazia e aviso para OFX sem transações. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-015 — Reset sem apagar perfil** / Descrição: reset financeiro preserva identidade da conta e perfil. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-016 — Simulador de Cenários Futuros (“E se...”)** / Descrição: simular pagamento extra de dívida e estimar quitação; projetar amortização com gráfico de linha; simular corte de categoria (por exemplo, reduzir Alimentação em 20%); comparar antes/depois em painel lateral. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-017 — Exportação de dados adicionais** / Descrição: exportar lançamentos em Excel/CSV filtrados por período e oferecer exportações adicionais em Excel/CSV. / Critério de pronto: a definir. / Arquivos: a definir.
-- [ ] **RM-018 — Notificações de alertas de gastos** / Descrição: Parte 1 (sem custo): central de notificações dentro do app, com histórico dos alertas de metas (80% e 100%). Parte 2 (somente se couber no plano gratuito): notificações push via Service Worker com o app fechado, enviadas por Edge Function do Supabase com agendamento; avaliar se o plano gratuito permite o agendamento. / Critério de pronto: a definir. / Arquivos: a definir.
+- [ ] **RM-018 — Notificações push (parte 2)** / Descrição: enviar notificações push com o app fechado via Service Worker e Edge Function agendada; reavaliar apenas se couber no plano gratuito. A central interna (parte 1) está implementada como Lote B1. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-019 — Offline-First aprimorado com IndexedDB** / Descrição: migrar de localStorage para IndexedDB para maior capacidade e performance; manter fila para operações offline e envio ao reconectar; exibir status de conectividade na UI. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-020 — Ampliar cobertura de testes automatizados** / Descrição: testes para o fluxo completo de quatro passos do Wizard. / Critério de pronto: a definir. / Arquivos: a definir.
 
 ### Descartado
 
 - Importação por foto de cupom (6E) — motivo: decisão do autor: o app não terá foto/OCR.
+- Plano Pro e pagamentos, Open Finance, Pix voluntário e propaganda — descartados; sem monetização ou conexões financeiras externas no escopo atual.
 
 ### Novas melhorias
 
-- [x] **RM-025 — Contas bancárias PF/PJ** / Descrição: partes A e B implementadas: cadastro e gerenciamento de contas, vínculos em ganhos e gastos, saldos consolidados/filtro no Dashboard, ajuste rápido, sincronização e backup. / Critério de pronto: testes automatizados aprovados; fluxos integrados pendentes de validação manual. / Arquivos: `index.html`, `js/app.js`, `css/style.css`.
-- [ ] **RM-026 — Cartões de crédito e limites** / Descrição: cadastro de cartão (nome, limite total, dia de fechamento, dia de vencimento, conta vinculada); compras parceladas de 1x a 24x com abatimento do limite disponível e parcelas projetadas nos meses futuros; barra de uso do limite e alerta em 80%. Antes de implementar, confirmar com o Aylton como isso convive com as parcelas e dívidas "a pagar" já existentes. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-025 — Contas PF/PJ, saldo inicial, filtro e ajuste rápido** / Descrição: cadastro de contas PF/PJ, saldo inicial e data-base, filtro no Dashboard e ajuste rápido do saldo; com sincronização e backup. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`.
+- [x] **RM-026 — Cartões, parcelas e limites** / Descrição: emissor, bandeira, cor personalizada, visual de carteira, compras parceladas até 24x, projeção das parcelas e alertas de limite. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`.
 - [x] **RM-027 — Mais palavras-chave na categorização** / Descrição: ampliar as regras de categoria automática do importador. / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-028 — Recuperação de conta e confirmação de e-mail** / Descrição: mensagens neutras e específicas para redefinição, espera visual entre pedidos, confirmação dupla no cadastro e orientação sem consulta a e-mails existentes. / Critério de pronto: testes automatizados aprovados e validação responsiva. / Arquivos: `index.html`, `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-029 — Importação de despesas futuras e restauração de tela** / Descrição: despesas futuras de CSV entram como a pagar; parcelas `N de M` são reconhecidas apenas no CSV; a última tela principal é restaurada com isolamento por usuário e verificação de Admin. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/importer.js`, `js/app.js`, `js/data.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-030 — Evitar gravações duplicadas ao salvar** / Descrição: trava reutilizável de salvamento com estado visual/acessível e espera de sincronização; modo local sem espera. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/app.js`, `tests/gastopro.test.js`.
 - [x] **RM-031 — Guia para obter extrato bancário** / Descrição: guia acessível de três passos com ilustrações genéricas, botão no importador e atalho em Primeiros passos. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/onboarding.js`, `js/app.js`, `css/style.css`, `assets/statement-guide-step-*.svg`, `sw.js`, `tests/gastopro.test.js`.
+- [ ] **RM-032 — Contraste WCAG AA em celular e gráficos** / Descrição: revisar contraste de textos, estados e gráficos em telas de celular. / Critério de pronto: a definir.
+- [ ] **RM-033 — Idioma pt/en (futuro, adiado)** / Descrição: adicionar localização para português e inglês em etapa futura.
+
+### Em dúvida
+
+- Mapeamento de colunas do CSV configurável pelo usuário.
+- Cache offline de fontes e ícones.
+- Pipeline CI/CD.
 
 ---
 
@@ -572,6 +609,13 @@ Legenda: `[ ]` pendente | `[x]` implementado, ainda não testado | `[V]` testado
 
 ### Planejamento (sem versão)
 
+- Lote A: destaque visual dos números financeiros e inteligência de categorização baseada em regras.
+- Lote B1: central de avisos com sino, cinco tipos de alerta e preferências armazenadas no aparelho.
+- “Meus dados”: exportação completa e exclusão definitiva de todos os dados; o menu do avatar também oferece “Atualizar Dados”.
+- Identidade visual: logo e ícones PWA/iOS atualizados em `assets/`.
+- Painel de administrador: `app_admins`/`is_admin()`, métricas agregadas via `admin_analytics_summary()`, feedback em `feedback_messages` e eventos permitidos em `usage_events`; telemetria tem opt-out local e retenção de 12 meses via `pg_cron` (`20261031_admin_analytics.sql`).
+- Coleta de uso: eventos mínimos de telas e importação são enviados somente com a preferência habilitada; sem payload financeiro.
+- Sincronização: Etapas 1 e 2 implementadas no código e aguardando aplicação das migrations `20261101_sync_versioning.sql` e `20261102_sync_realtime_publication.sql`; Etapas 3 e 4 permanecem pendentes.
 - RM-031: guia “Como pegar meu extrato” com três ilustrações genéricas, atalho no tutorial Primeiros passos e arquivos SVG adicionados ao cache sem alterar o CACHE_NAME; três testes adicionados.
 - Importação: possíveis duplicados (iguais a lançamentos já salvos) vêm desmarcados, com contagem; linhas repetidas dentro do mesmo arquivo continuam marcadas.
 - RM-030: ações de gravação usam trava compartilhada, estado “Salvando...”/“Ainda sincronizando” e aria-busy; importação bloqueia cancelamento e fechamento durante a gravação; modo local não aguarda sync; três testes adicionados.
