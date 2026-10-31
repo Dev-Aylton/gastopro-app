@@ -444,7 +444,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 12 | `20261102_sync_realtime_publication.sql` | Aplicada |
 | 13 | `20261103_sync_transactions.sql` | Pronta para aplicação no Supabase |
 
-`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **345 testes**.
+`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **349 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -664,7 +664,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - Sincronização: Etapas 1 e 2 concluídas (commit `9219da3`; migrations `20261101` e `20261102` aplicadas). Etapa 3 implementada com a migration `20261103_sync_transactions.sql`, fila offline idempotente, conflitos de versão/tombstone e limite de 500 linhas; migration pendente de aplicação no Supabase. Etapa 4 pendente.
 - RM-031: guia “Como pegar meu extrato” com três ilustrações genéricas, atalho no tutorial Primeiros passos e arquivos SVG adicionados ao cache sem alterar o CACHE_NAME; três testes adicionados.
 - Importação: possíveis duplicados (iguais a lançamentos já salvos) vêm desmarcados, com contagem; linhas repetidas dentro do mesmo arquivo continuam marcadas.
-- Importação — conferência de fixos: [x] recorrências são sugestões; o usuário decide se cada candidato é fixo e se está ativo, pode buscar gastos não sugeridos e revisa pagamentos de parcelas/empréstimos antes de confirmar.
+- Importação — conferência: [x] recorrências são sugestões decididas pelo usuário; pagamentos de empréstimos/parcelas seguem a data e os importados pagos ficam em uma lista de revisão por usuário, com aviso e ações para conferir ou alterar para pendente.
 - RM-030: ações de gravação usam trava compartilhada, estado “Salvando...”/“Ainda sincronizando” e aria-busy; importação bloqueia cancelamento e fechamento durante a gravação; modo local não aguarda sync; três testes adicionados.
 - Ajuste RM-029: logout remove `gastopro_last_view_v1`; o Reset financeiro continua preservando a última tela principal.
 - RM-029: CSV passa a sugerir a pagar para despesas futuras e parcelas futuras; nova etiqueta textual na prévia; detector CSV-only `N de M`; a última tela principal é restaurada por usuário, com Admin fechado até autorização; oito testes adicionados.

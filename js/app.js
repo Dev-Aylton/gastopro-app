@@ -387,18 +387,10 @@ function requiresImportPaymentReview(row, category = row && row.category) {
   ));
 }
 
-function findUnresolvedImportPayment(rows) {
-  return rows.find(row =>
-    row.selected && !row.invalid && requiresImportPaymentReview(row, row.category) &&
-    typeof row.paymentDecision !== 'boolean'
-  );
-}
-
-function getImportPaidValue(row, type, category, paymentDecision) {
-  if (requiresImportPaymentReview(row, category)) return paymentDecision === true;
+function getImportPaidValue(row) {
   const today = new Date();
   const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  return type !== 'variable_pending' && Boolean(row.date) && row.date < todayString;
+  return Boolean(row && row.date) && row.date < todayString;
 }
 
 function buildRecurringImportTemplate(candidate, rows, decision, currentMonth) {
@@ -500,7 +492,6 @@ window.GastoProImportHelpers = Object.freeze({
   getRecurringImportLineType,
   getImportPaidValue,
   requiresImportPaymentReview,
-  findUnresolvedImportPayment,
   getImportAccountId,
   normalizeFixedDescription,
   findFutureFixedDescriptionMatches,
@@ -1999,7 +1990,8 @@ const NOTIFICATION_TYPES = Object.freeze({
   insufficientBalance: 'Saldo insuficiente',
   anomaly: 'Gastos fora do padrão',
   cardLimit: 'Limite do cartão',
-  forecast: 'Previsão do fim do mês'
+  forecast: 'Previsão do fim do mês',
+  importReview: 'Pagamentos importados para conferir'
 });
 const NOTIFICATION_PRIORITY_RANK = Object.freeze({ critical: 3, attention: 2, info: 1 });
 const NOTIFICATION_PRIORITY_PRESENTATION = Object.freeze({
@@ -2074,7 +2066,13 @@ function getStoredNotifications() {
       typeof item.title === 'string' &&
       typeof item.message === 'string' &&
       typeof item.read === 'boolean' &&
-      typeof item.dismissed === 'boolean'
+      typeof item.dismissed === 'boolean' &&
+      (!item.destination || (
+        item.destination.screen === 'entries' &&
+        typeof item.destination.month === 'string' &&
+        Array.isArray(item.destination.ids) &&
+        item.destination.ids.every(id => typeof id === 'string')
+      ))
     );
   } catch (error) {
     console.warn('[GastoPro] Não foi possível ler os avisos salvos:', error);
@@ -2110,7 +2108,8 @@ function syncNotificationEvents(candidates) {
       message: candidate.message,
       createdAt: previous ? previous.createdAt : candidate.createdAt || new Date().toISOString(),
       read: previous ? previous.read : false,
-      dismissed: previous ? previous.dismissed : false
+      dismissed: previous ? previous.dismissed : false,
+      ...(candidate.destination ? { destination: candidate.destination } : {})
     });
   });
   return storeNotifications([...byEvent.values()]);
@@ -2166,6 +2165,117 @@ function clearNotificationPreferences() {
     return false;
   }
 }
+
+function getPaidImportReviewStorageKey(userId) {
+  const profile = FinanceData.getProfile();
+  const scopedUserId = userId || FinanceData.getActiveUserId() ||
+    (profile && profile.userId) || 'local';
+  return `gastopro_paid_import_review_v1:${scopedUserId}`;
+}
+
+function getPaidImportReviewIds(userId) {
+  const key = getPaidImportReviewStorageKey(userId);
+  try {
+    const stored = localStorage.getItem(key);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) throw new Error('Formato inválido para IDs de pagamentos a revisar.');
+    return [...new Set(parsed.filter(id => typeof id === 'string' && id.length > 0))];
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível ler os pagamentos importados para revisão:', error);
+    return [];
+  }
+}
+
+function savePaidImportReviewIds(ids, userId) {
+  const key = getPaidImportReviewStorageKey(userId);
+  const normalizedIds = [...new Set((Array.isArray(ids) ? ids : [])
+    .filter(id => typeof id === 'string' && id.length > 0))];
+  try {
+    localStorage.setItem(key, JSON.stringify(normalizedIds));
+    return normalizedIds;
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível salvar os pagamentos importados para revisão:', error);
+    throw error;
+  }
+}
+
+function addPaidImportReviewIds(ids, userId) {
+  return savePaidImportReviewIds([...getPaidImportReviewIds(userId), ...ids], userId);
+}
+
+function removePaidImportReviewId(id, userId) {
+  return savePaidImportReviewIds(
+    getPaidImportReviewIds(userId).filter(reviewId => reviewId !== id),
+    userId
+  );
+}
+
+function buildPaidImportReviewNotice(ids, entries, userId) {
+  const entriesById = new Map((Array.isArray(entries) ? entries : [])
+    .filter(entry => entry && typeof entry.id === 'string')
+    .map(entry => [entry.id, entry]));
+  const reviewIds = [...new Set(ids)]
+    .filter(id => {
+      const entry = entriesById.get(id);
+      return entry && entry.paid === true && requiresImportPaymentReview(entry, entry.category);
+    })
+    .sort();
+  if (!reviewIds.length) return null;
+
+  const months = reviewIds.map(id => {
+    const entry = entriesById.get(id);
+    return entry.month || String(entry.date || '').slice(0, 7);
+  }).filter(month => /^\d{4}-\d{2}$/.test(month)).sort();
+  const profile = FinanceData.getProfile();
+  const scopedUserId = userId || FinanceData.getActiveUserId() ||
+    (profile && profile.userId) || 'local';
+  return {
+    eventKey: `import-review:${scopedUserId}:${reviewIds.join(',')}`,
+    scope: 'all',
+    type: 'importReview',
+    priority: 'attention',
+    title: 'Conferência de importação',
+    message: `${reviewIds.length} itens importados como pagos precisam de conferência`,
+    destination: {
+      screen: 'entries',
+      month: months[0] || '',
+      ids: reviewIds
+    }
+  };
+}
+
+function syncPaidImportReviewNotification() {
+  const reviewIds = getPaidImportReviewIds();
+  const entries = FinanceData.getEntries();
+  const notice = buildPaidImportReviewNotice(reviewIds, entries);
+  const validIds = notice ? notice.destination.ids : [];
+  if (validIds.length !== reviewIds.length ||
+    validIds.some((id, index) => id !== reviewIds[index])) {
+    savePaidImportReviewIds(validIds);
+  }
+
+  const notifications = getStoredNotifications();
+  const filtered = notifications.filter(item =>
+    item.type !== 'importReview' || item.dismissed ||
+    Boolean(notice && item.eventKey === notice.eventKey)
+  );
+  if (filtered.length !== notifications.length) storeNotifications(filtered);
+  if (notice) syncNotificationEvents([notice]);
+  return notice;
+}
+
+window.GastoProImportReview = {
+  getStorageKey: getPaidImportReviewStorageKey,
+  getIds: getPaidImportReviewIds,
+  saveIds: savePaidImportReviewIds,
+  addIds: addPaidImportReviewIds,
+  removeId: removePaidImportReviewId,
+  buildNotice: buildPaidImportReviewNotice,
+  syncNotice: syncPaidImportReviewNotification,
+  markReviewed: markImportedPaidAsReviewed,
+  setPending: changeImportedPaidToPending
+};
 
 function renderNotificationCenter() {
   const trigger = document.getElementById('notificationsTrigger');
@@ -2452,6 +2562,8 @@ function renderFinancialInsights() {
   }
 
   try {
+    const importReviewNotice = syncPaidImportReviewNotification();
+    if (importReviewNotice) notificationEvents.push(importReviewNotice);
     syncNotificationEvents(notificationEvents);
   } catch (error) {
     showToast('Não foi possível atualizar a central de avisos neste aparelho.');
@@ -3249,6 +3361,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
   }
 
   const accountNames = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
+  const paidReviewIds = new Set(getPaidImportReviewIds());
   container.innerHTML = itemsToDisplay.map(item => {
     const isFixed = item.type === 'fixed';
     const typeLabel = item.isCardInstallment
@@ -3258,6 +3371,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
     const iconI = isFixed ? 'fa-solid fa-lock' : 'fa-solid fa-cart-shopping';
     const isInactive = isFixed && item.active === false;
     const accountName = accountNames.get(item.accountId);
+    const needsPaidReview = item.paid && paidReviewIds.has(item.id);
 
     return `
       <div class="manage-item-card ${item.paid ? 'is-paid' : ''} ${isInactive ? 'is-inactive-card' : ''}">
@@ -3274,6 +3388,15 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
               ${item.isCardInstallment
                 ? `<span class="tag-badge">${escapeHtml(item.cardName)} · ${item.installmentNumber}/${item.installmentCount}x</span>`
                 : ''}
+              ${needsPaidReview ? `
+                <span class="import-review-badge">Revisar</span>
+                <button type="button" class="notification-action" data-action="review-import-paid"
+                  data-id="${escapeHtml(item.id)}"
+                  aria-label="Marcar como conferido: ${escapeHtml(item.desc)}">Marcar como Conferido</button>
+                <button type="button" class="notification-action" data-action="pending-import-paid"
+                  data-id="${escapeHtml(item.id)}"
+                  aria-label="Alterar para pendente: ${escapeHtml(item.desc)}">Alterar para pendente</button>
+              ` : ''}
               ${isFixed ? `
                 <button class="badge-status-btn ${item.active ? 'status-active' : 'status-inactive'}" 
                         data-action="toggle-active" data-id="${escapeHtml(item.id)}"
@@ -3645,6 +3768,49 @@ window.togglePaidEntry = async function(id, kind = null, installmentNumber = nul
   }
   renderAll();
 };
+
+async function markImportedPaidAsReviewed(id) {
+  try {
+    removePaidImportReviewId(id);
+    syncPaidImportReviewNotification();
+    if (document.getElementById('currentMonthLabel')) renderAll();
+    showToast('Lançamento marcado como conferido.');
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível concluir a revisão do lançamento:', error);
+    showToast('Não foi possível salvar a revisão deste lançamento.');
+  }
+}
+
+async function changeImportedPaidToPending(id) {
+  const entries = FinanceData.getEntries();
+  const target = entries.find(entry => entry.id === id);
+  if (!target) {
+    console.warn('[GastoPro] Lançamento para revisão não encontrado:', id);
+    showToast('Este lançamento não está mais disponível.');
+    return;
+  }
+
+  const result = await FinanceData.saveEntries(
+    entries.map(entry => entry.id === id ? { ...entry, paid: false } : entry),
+    { flush: false }
+  );
+  if (!result.success) {
+    console.error('[GastoPro] Não foi possível alterar o lançamento para pendente:', result.error);
+    showToast('Não foi possível alterar este lançamento para pendente.');
+    return;
+  }
+
+  try {
+    removePaidImportReviewId(id);
+    syncPaidImportReviewNotification();
+    if (document.getElementById('currentMonthLabel')) renderAll();
+    showToast('Lançamento alterado para pendente.');
+  } catch (error) {
+    console.error('[GastoPro] O lançamento foi alterado, mas não foi possível atualizar a lista de revisão:', error);
+    if (document.getElementById('currentMonthLabel')) renderAll();
+    showToast('Lançamento pendente, mas a lista de revisão não pôde ser atualizada.');
+  }
+}
 
 /**
  * Inverte o status ativo/inativo de um template de gasto fixo.
@@ -4280,6 +4446,12 @@ document.addEventListener('DOMContentLoaded', () => {
           dismissNotification(actionElement.dataset.eventKey);
           renderNotificationCenter();
         }
+        break;
+      case 'review-import-paid':
+        if (id) markImportedPaidAsReviewed(id);
+        break;
+      case 'pending-import-paid':
+        if (id) changeImportedPaidToPending(id);
         break;
       case 'notifications-clear-all':
         clearAllNotifications();
@@ -7141,28 +7313,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const checkbox = importPreviewTbody.querySelector(`.import-row-check[data-row="${index}"]`);
       const categorySelect = importPreviewTbody.querySelector(`.import-cat-select[data-row="${index}"]`);
       const typeSelect = importPreviewTbody.querySelector(`.import-type-select[data-row="${index}"]`);
-      const paymentSelect = importPreviewTbody.querySelector(`.import-payment-select[data-row="${index}"]`);
       if (checkbox) row.selected = checkbox.checked;
       if (categorySelect) row.category = categorySelect.value;
       if (typeSelect) row.previewType = typeSelect.value;
-      if (paymentSelect) row.paymentDecision =
-        paymentSelect.value === '' ? null : paymentSelect.value === 'paid';
     });
   }
 
   function beginImportDecisionStep() {
     syncImportPreviewControls();
-    const unresolvedPayment = findUnresolvedImportPayment(_importParsedRows);
-    if (unresolvedPayment) {
-      showToast(`Revise o pagamento de "${unresolvedPayment.desc}" antes de continuar.`);
-      const index = _importParsedRows.indexOf(unresolvedPayment);
-      const paymentSelect = importPreviewTbody.querySelector(
-        `.import-payment-select[data-row="${index}"]`
-      );
-      if (paymentSelect) paymentSelect.focus();
-      return;
-    }
-
     importDecisionCandidates = collectRecurringImportCandidates(_importParsedRows);
     importCandidateDecisions = new Map(importDecisionCandidates.map(candidate =>
       [candidate.key, { type: null, active: null }]
@@ -7348,7 +7506,8 @@ document.addEventListener('DOMContentLoaded', () => {
         row.invalid ? '<span class="import-row-status invalid">Data inválida</span>' : '',
         row.duplicate ? '<span class="import-row-status duplicate">Parece já lançado</span>' : '',
         row.fixedByRule ? '<span class="import-row-status pending">Regra salva: Fixo</span>' : '',
-        row.pending ? '<span class="import-row-status pending">Sugestão: a pagar</span>' : ''
+        row.pending ? '<span class="import-row-status pending">Sugestão: a pagar</span>' : '',
+        `<span class="import-row-status pending import-review-status" ${needsPaymentReview ? '' : 'hidden'}>Revisar</span>`
       ].filter(Boolean).join(' ');
 
       // Gera opções do select de categoria
@@ -7369,18 +7528,6 @@ document.addEventListener('DOMContentLoaded', () => {
           ? `A pagar de ${row.startMonth.slice(5, 7)}/${row.startMonth.slice(0, 4)} até ${row.endMonth.slice(5, 7)}/${row.endMonth.slice(0, 4)}`
           : `A pagar a partir de ${row.startMonth.slice(5, 7)}/${row.startMonth.slice(0, 4)}`)}</small>`
         : '';
-      const paymentReviewDisplay = `
-        <div class="import-payment-review" ${needsPaymentReview ? '' : 'hidden'}>
-          <span class="import-row-status pending">Revisar pagamento</span>
-          <label for="import-payment-${i}">Pagamento</label>
-          <select class="import-payment-select" id="import-payment-${i}" data-row="${i}"
-            aria-label="Revisar pagamento de ${escapeHtml(row.desc)}">
-            <option value="" ${typeof row.paymentDecision !== 'boolean' ? 'selected' : ''}>Escolha</option>
-            <option value="paid" ${row.paymentDecision === true ? 'selected' : ''}>Paga</option>
-            <option value="pending" ${row.paymentDecision === false ? 'selected' : ''}>Pendente</option>
-          </select>
-        </div>`;
-
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="col-check">
@@ -7393,7 +7540,6 @@ document.addEventListener('DOMContentLoaded', () => {
           ${escapeHtml(row.desc)} ${rowStatus}
           ${installmentDisplay}
           ${paymentPeriodDisplay}
-          ${paymentReviewDisplay}
           ${row.invalidReason ? `<small class="import-row-reason">${escapeHtml(row.invalidReason)}</small>` : ''}
         </td>
         <td class="col-category">
@@ -7422,17 +7568,8 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       tr.querySelector('.import-cat-select').addEventListener('change', event => {
         row.category = event.target.value;
-        const paymentReview = tr.querySelector('.import-payment-review');
-        paymentReview.hidden = !requiresImportPaymentReview(row, row.category);
-        if (paymentReview.hidden) {
-          row.paymentDecision = null;
-          paymentReview.querySelector('.import-payment-select').value = '';
-        }
-      });
-      tr.querySelector('.import-payment-select').addEventListener('change', event => {
-        row.paymentDecision = event.target.value === ''
-          ? null
-          : event.target.value === 'paid';
+        const status = tr.querySelector('.import-review-status');
+        if (status) status.hidden = !requiresImportPaymentReview(row, row.category);
       });
       // Listener dinâmico: ao mudar tipo, atualiza cor do valor
       tr.querySelector('.import-type-select').addEventListener('change', (e) => {
@@ -7508,8 +7645,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ...row,
         category: previous.category,
         previewType: previous.previewType,
-        selectionTouched: previous.selectionTouched,
-        paymentDecision: previous.paymentDecision
+        selectionTouched: previous.selectionTouched
       };
       if (previous.selectionTouched) {
         updated.selected = previous.selected;
@@ -7663,13 +7799,13 @@ document.addEventListener('DOMContentLoaded', () => {
         launches.push(GastoProImporter.buildEntry(
           { ...row, category },
           'variable',
-          getImportPaidValue(row, type, category, row.paymentDecision)
+          getImportPaidValue(row)
         ));
         return;
       }
 
       if ((type === 'variable' || type === 'income') && row.installment && row.linkedTemplateId) {
-        if (row.paymentDecision === true) {
+        if (getImportPaidValue(row)) {
           payments.push({ id: row.linkedTemplateId, ym: row.date.substring(0, 7) });
         }
         return;
@@ -7681,11 +7817,9 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         if (installmentCheckbox && installmentCheckbox.checked) {
           const debt = GastoProImporter.buildInstallmentDebt(row, category);
-          if (typeof row.paymentDecision === 'boolean') {
-            const month = row.date.substring(0, 7);
-            if (row.paymentDecision) debt.paidMonths[month] = true;
-            else delete debt.paidMonths[month];
-          }
+          const month = row.date.substring(0, 7);
+          if (getImportPaidValue(row)) debt.paidMonths[month] = true;
+          else delete debt.paidMonths[month];
           debtItems.push(debt);
           return;
         }
@@ -7694,7 +7828,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const entry = GastoProImporter.buildEntry(
         { ...row, category },
         type,
-        getImportPaidValue(row, type, category, row.paymentDecision)
+        getImportPaidValue(row)
       );
 
       launches.push(entry);
@@ -7704,6 +7838,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (items.length > 0 || payments.length > 0) {
       try {
         const result = await FinanceData.importBatch(items, payments);
+        const persistedEntryIds = new Set(FinanceData.getEntries().map(entry => entry.id));
+        const reviewIds = result.items
+          .slice(debtItems.length)
+          .filter(item => item && item.paid === true &&
+            requiresImportPaymentReview(item, item.category) &&
+            persistedEntryIds.has(item.id))
+          .map(item => item.id);
+        if (reviewIds.length) {
+          try {
+            addPaidImportReviewIds(reviewIds);
+            syncPaidImportReviewNotification();
+            renderNotificationCenter();
+          } catch (error) {
+            console.error('[GastoPro] Os lançamentos foram importados, mas não foi possível registrar a revisão:', error);
+            showToast('Importação concluída, mas não foi possível salvar a lista de itens para conferência.');
+          }
+        }
         if (!result.success) {
           trackUsageEvent('import_save_error');
           showToast(result.syncResult

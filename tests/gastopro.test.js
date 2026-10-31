@@ -385,11 +385,15 @@ describe('FinanceData — Isolamento entre usuários', () => {
     localStorage.setItem('gastopro_theme', 'light');
     localStorage.setItem('gastopro_last_view_v1', JSON.stringify({ view: 'accounts', ownerId: null }));
     localStorage.setItem('sb-project-auth-token', 'session');
+    localStorage.setItem('gastopro_paid_import_review_v1:user-a', '["entry-review"]');
 
     FinanceData.clearUserData();
 
     const remainingKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
-    assertEqual(remainingKeys, ['gastopro_tutorial_seen', 'gastopro_theme', 'sb-project-auth-token']);
+    assertEqual(remainingKeys, [
+      'gastopro_tutorial_seen', 'gastopro_theme', 'sb-project-auth-token',
+      'gastopro_paid_import_review_v1:user-a'
+    ]);
     assertEqual(localStorage.getItem('gastopro_theme'), 'light');
     assertNull(localStorage.getItem('gastopro_last_view_v1'));
   });
@@ -3739,7 +3743,7 @@ describe('Central de avisos local', () => {
     setupMockLocalStorage();
     assertTrue(Object.values(notifications.getPreferences()).every(Boolean));
     assertEqual(Object.keys(notifications.TYPES), [
-      'dueSoon', 'insufficientBalance', 'anomaly', 'cardLimit', 'forecast'
+      'dueSoon', 'insufficientBalance', 'anomaly', 'cardLimit', 'forecast', 'importReview'
     ]);
     notifications.syncEvents([
       { eventKey: 'due-pf', scope: 'PF', type: 'dueSoon', title: 'Vencimento', message: 'Há um gasto próximo.' },
@@ -3851,6 +3855,76 @@ describe('Central de avisos local', () => {
     assertTrue(notifications.getItems()[0].dismissed);
   });
 
+  itAsync('cria aviso de revisão com prioridade, mês mais antigo e IDs no destino', async () => {
+    setupMockLocalStorage();
+    const firstId = crypto.randomUUID();
+    const secondId = crypto.randomUUID();
+    await FinanceData.saveEntries([
+      makeVariable({ id: firstId, desc: 'Curso parcela 3/12', date: '2026-11-05', month: '2026-11', paid: true }),
+      makeVariable({ id: secondId, desc: 'Empréstimo pessoal', category: 'Empréstimo', date: '2026-10-05', month: '2026-10', paid: true })
+    ], { flush: false });
+    const review = window.GastoProImportReview;
+    review.saveIds([firstId, secondId]);
+    const notice = review.syncNotice();
+    const stored = notifications.getItems().find(item => item.eventKey === notice.eventKey);
+    assertEqual(notice.type, 'importReview');
+    assertEqual(notifications.getPriority(notice), 'attention');
+    assertEqual(notice.message, '2 itens importados como pagos precisam de conferência');
+    assertEqual(stored.destination, {
+      screen: 'entries',
+      month: '2026-10',
+      ids: [firstId, secondId].sort()
+    });
+    assertEqual(review.getStorageKey('user-a'), 'gastopro_paid_import_review_v1:user-a');
+    assertTrue(review.getStorageKey('user-a') !== review.getStorageKey('user-b'));
+  });
+
+  itAsync('remove o aviso quando todos os lançamentos forem conferidos', async () => {
+    setupMockLocalStorage();
+    const id = crypto.randomUUID();
+    await FinanceData.saveEntries([
+      makeVariable({ id, desc: 'Compra parcela 3/12', date: '2026-10-05', month: '2026-10', paid: true })
+    ], { flush: false });
+    const review = window.GastoProImportReview;
+    review.saveIds([id]);
+    const notice = review.syncNotice();
+    assertNotNull(notice);
+    await review.markReviewed(id);
+    assertEqual(review.getIds(), []);
+    assertEqual(notifications.getVisible('all').filter(item => item.type === 'importReview'), []);
+  });
+
+  itAsync('mantém dispensado o aviso da mesma lista de IDs', async () => {
+    setupMockLocalStorage();
+    const id = crypto.randomUUID();
+    await FinanceData.saveEntries([
+      makeVariable({ id, desc: 'Compra parcela 3/12', date: '2026-10-05', month: '2026-10', paid: true })
+    ], { flush: false });
+    const review = window.GastoProImportReview;
+    review.saveIds([id]);
+    const notice = review.syncNotice();
+    notifications.dismiss(notice.eventKey);
+    const repeated = review.syncNotice();
+    assertEqual(repeated.eventKey, notice.eventKey);
+    assertEqual(notifications.getVisible('all').filter(item => item.type === 'importReview'), []);
+    assertTrue(notifications.getItems().find(item => item.eventKey === notice.eventKey).dismissed);
+  });
+
+  itAsync('altera para pendente e remove o ID da lista de revisão', async () => {
+    setupMockLocalStorage();
+    const id = crypto.randomUUID();
+    await FinanceData.saveEntries([
+      makeVariable({ id, desc: 'Compra parcela 3/12', date: '2026-10-05', month: '2026-10', paid: true })
+    ], { flush: false });
+    const review = window.GastoProImportReview;
+    review.saveIds([id]);
+    review.syncNotice();
+    await review.setPending(id);
+    assertFalse(FinanceData.getEntries().find(entry => entry.id === id).paid);
+    assertEqual(review.getIds(), []);
+    assertEqual(notifications.getVisible('all').filter(item => item.type === 'importReview'), []);
+  });
+
   it('limpar tudo dispensa avisos existentes e mantém o histórico contra repetição', () => {
     setupMockLocalStorage();
     const event = {
@@ -3867,7 +3941,7 @@ describe('Central de avisos local', () => {
     assertEqual(notifications.getUnreadCount('all'), 0);
   });
 
-  it('renderiza estado vazio e cinco opções acessíveis de configuração', () => {
+  it('renderiza estado vazio e seis opções acessíveis de configuração', () => {
     setupMockLocalStorage();
     const host = document.createElement('div');
     host.innerHTML = `
@@ -3880,7 +3954,7 @@ describe('Central de avisos local', () => {
     try {
       notifications.render();
       assertEqual(host.querySelector('#notificationsList').textContent.trim(), 'Nenhum aviso por enquanto.');
-      assertEqual(host.querySelectorAll('#notificationSettingsList input[type="checkbox"]').length, 5);
+      assertEqual(host.querySelectorAll('#notificationSettingsList input[type="checkbox"]').length, 6);
       assertTrue([...host.querySelectorAll('#notificationSettingsList input')].every(input => input.checked));
       assertTrue(host.querySelector('#notificationsUnreadCount').hidden);
     } finally {
@@ -4353,20 +4427,23 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     assertTrue(rows.every(row => row.type === 'variable' && row.selected));
   });
 
-  it('exige revisão de pagamento para parcelas e mantém o padrão pendente', () => {
-    const row = GastoProImporter.parseRawText(
-      `15/10/2026 FACULDADE X PARC 03/48 -500,00`
-    )[0];
+  it('mantém parcelamento e empréstimo pagos somente quando a data é anterior a hoje', () => {
     const helper = window.GastoProImportHelpers;
-    assertTrue(helper.requiresImportPaymentReview(row, row.category));
-    assertFalse(helper.getImportPaidValue(row, 'debt', row.category));
-    assertFalse(helper.getImportPaidValue(row, 'debt', row.category, false));
-    assertTrue(helper.getImportPaidValue(row, 'debt', row.category, true));
-    const selectedRow = { ...row, selected: true };
-    assertTrue(Boolean(helper.findUnresolvedImportPayment([selectedRow])));
-    assertNull(helper.findUnresolvedImportPayment([
-      { ...selectedRow, paymentDecision: false }
-    ]));
+    const now = new Date();
+    const formatDate = date =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const todayDate = formatDate(now);
+    const yesterdayDate = formatDate(yesterday);
+    const installment = { date: yesterdayDate, desc: 'Curso parcela 3/12', type: 'variable' };
+    const loan = { date: yesterdayDate, desc: 'Crédito pessoal', type: 'variable' };
+    assertTrue(helper.requiresImportPaymentReview(installment, 'Educação'));
+    assertTrue(helper.requiresImportPaymentReview(loan, 'Empréstimo'));
+    assertTrue(helper.getImportPaidValue(installment));
+    assertTrue(helper.getImportPaidValue(loan));
+    assertTrue(helper.getImportPaidValue({ ...installment, type: 'variable_pending' }));
+    assertFalse(helper.getImportPaidValue({ ...installment, date: todayDate }));
+    assertFalse(helper.getImportPaidValue({ ...loan, date: tomorrowString }));
   });
 
   it('marca como pagos os meses passados de fixo confirmado e deixa o atual pendente', () => {
@@ -4390,9 +4467,9 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
     const tomorrowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const helper = window.GastoProImportHelpers;
-    assertTrue(helper.getImportPaidValue({ date: formatDate(yesterday) }, 'variable'));
-    assertFalse(helper.getImportPaidValue({ date: formatDate(now) }, 'variable'));
-    assertFalse(helper.getImportPaidValue({ date: formatDate(tomorrowDate) }, 'variable'));
+    assertTrue(helper.getImportPaidValue({ date: formatDate(yesterday) }));
+    assertFalse(helper.getImportPaidValue({ date: formatDate(now) }));
+    assertFalse(helper.getImportPaidValue({ date: formatDate(tomorrowDate) }));
   });
 
   it('mantém parcela N de M como Dívida, fora do agrupamento recorrente', () => {

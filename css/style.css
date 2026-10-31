@@ -5530,16 +5530,26 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   cursor: pointer;
 }
 
-.import-payment-review {
-  margin-top: 0.5rem;
+.import-review-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid rgba(var(--theme-rgb-background-f59e0b), 0.35);
+  border-radius: 20px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
-.import-payment-review .import-row-status {
-  margin: 0 0 0.35rem;
-}
-
-.import-payment-select {
-  font-size: 0.78rem;
+.card-item-meta .notification-action {
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-main);
+  font-size: 0.7rem;
+  cursor: pointer;
 }
 
 /* Dica de formato */
