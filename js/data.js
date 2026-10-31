@@ -2894,7 +2894,7 @@ const FinanceData = {
       const metadata = this.getSyncMetadata();
       const remoteKinds = [
         ['entries', 'entries', 'deletedEntries'],
-        ['templates', 'templates', 'deletedTemplates'],
+        ['fixed_templates', 'templates', 'deletedTemplates'],
         ['accounts', 'accounts', 'deletedAccounts'],
         ['credit_cards', 'creditCards', 'deletedCreditCards'],
         ['credit_card_purchases', 'creditCardPurchases', 'deletedCreditCardPurchases'],

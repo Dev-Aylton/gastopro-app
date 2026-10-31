@@ -2410,6 +2410,159 @@ describe('Canal Fale comigo', () => {
 describe('FinanceData — clearAll()', () => {
   setupMockLocalStorage();
 
+  const emptyCloudResetRecords = () => ({
+    entries: [],
+    fixed_templates: [],
+    goals: [],
+    accounts: [],
+    credit_cards: [],
+    credit_card_purchases: [],
+    fixed_import_rules: []
+  });
+
+  async function captureResetQueue(records) {
+    setupMockLocalStorage();
+    const userId = 'user-cloud-only-queue';
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId }, { queueSync: false });
+    const previousAuth = window.SupabaseAuth;
+    const previousFlush = FinanceData.flushPendingSync;
+    let queuedAtFlush = null;
+    window.SupabaseAuth = {
+      fetchCloudResetData: async () => ({ success: true, records })
+    };
+    FinanceData.flushPendingSync = async () => {
+      queuedAtFlush = JSON.parse(JSON.stringify(FinanceData.getPendingSync()));
+      return { success: true };
+    };
+    try {
+      const result = await FinanceData.clearAll();
+      assertTrue(result.success);
+      assertTrue(queuedAtFlush, 'O reset deveria chegar à etapa de sincronização');
+      return queuedAtFlush;
+    } finally {
+      window.SupabaseAuth = previousAuth;
+      FinanceData.flushPendingSync = previousFlush;
+    }
+  }
+
+  itAsync('clearAll enfileira template que existe somente na nuvem', async () => {
+    const templateId = crypto.randomUUID();
+    const records = emptyCloudResetRecords();
+    records.fixed_templates = [{ id: templateId, updatedAt: '2026-10-01T10:00:00.000Z' }];
+    const pending = await captureResetQueue(records);
+    assertEqual(pending.deletedTemplates, [templateId]);
+  });
+
+  itAsync('clearAll enfileira meta que existe somente na nuvem', async () => {
+    const category = 'Meta remota';
+    const records = emptyCloudResetRecords();
+    records.goals = [{ id: category, updatedAt: '2026-10-01T10:00:00.000Z' }];
+    const pending = await captureResetQueue(records);
+    assertEqual(pending.deletedGoals, [category]);
+  });
+
+  itAsync('clearAll enfileira conta que existe somente na nuvem', async () => {
+    const accountId = crypto.randomUUID();
+    const records = emptyCloudResetRecords();
+    records.accounts = [{ id: accountId, updatedAt: '2026-10-01T10:00:00.000Z' }];
+    const pending = await captureResetQueue(records);
+    assertEqual(pending.deletedAccounts, [accountId]);
+  });
+
+  itAsync('clearAll enfileira cartão que existe somente na nuvem', async () => {
+    const cardId = crypto.randomUUID();
+    const records = emptyCloudResetRecords();
+    records.credit_cards = [{ id: cardId, updatedAt: '2026-10-01T10:00:00.000Z' }];
+    const pending = await captureResetQueue(records);
+    assertEqual(pending.deletedCreditCards, [cardId]);
+  });
+
+  itAsync('clearAll enfileira compra no cartão que existe somente na nuvem', async () => {
+    const purchaseId = crypto.randomUUID();
+    const records = emptyCloudResetRecords();
+    records.credit_card_purchases = [{ id: purchaseId, updatedAt: '2026-10-01T10:00:00.000Z' }];
+    const pending = await captureResetQueue(records);
+    assertEqual(pending.deletedCreditCardPurchases, [purchaseId]);
+  });
+
+  itAsync('clearAll mantém a pendência de regras quando existem somente na nuvem', async () => {
+    const records = emptyCloudResetRecords();
+    records.fixed_import_rules = [{ id: 'user-cloud-only-queue', updatedAt: '2026-10-01T10:00:00.000Z' }];
+    const pending = await captureResetQueue(records);
+    assertTrue(pending.fixedImportRules);
+  });
+
+  itAsync('um novo sync conclui somente a coleção que falhou no reset', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-reset-partial-retry';
+    const entryId = crypto.randomUUID();
+    const templateId = crypto.randomUUID();
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId }, { queueSync: false });
+    const records = emptyCloudResetRecords();
+    records.entries = [{ id: entryId, updatedAt: '2026-10-01T10:00:00.000Z' }];
+    records.fixed_templates = [{ id: templateId, updatedAt: '2026-10-01T10:00:00.000Z' }];
+
+    const previousAuth = window.SupabaseAuth;
+    const previousReconcile = FinanceData.reconcileCloudBeforeSync;
+    const previousFlushTransactions = FinanceData.flushTransactionalOperations;
+    const deleteEntryCalls = [];
+    const deleteTemplateCalls = [];
+    let templateAttempt = 0;
+    window.SupabaseAuth = {
+      fetchCloudResetData: async () => ({ success: true, records }),
+      saveCloudEntries: async () => ({ success: true }),
+      saveCloudTemplates: async () => ({ success: true }),
+      saveCloudGoals: async () => ({ success: true }),
+      saveCloudAccounts: async () => ({ success: true }),
+      saveCloudCreditCards: async () => ({ success: true }),
+      saveCloudCreditCardPurchases: async () => ({ success: true }),
+      saveCloudFixedImportRules: async () => ({ success: true }),
+      deleteCloudEntries: async ids => {
+        deleteEntryCalls.push([...ids]);
+        return { success: true };
+      },
+      deleteCloudTemplates: async ids => {
+        deleteTemplateCalls.push([...ids]);
+        templateAttempt++;
+        return templateAttempt === 1
+          ? { success: false, error: new Error('falha simulada') }
+          : { success: true };
+      },
+      deleteCloudGoals: async () => ({ success: true }),
+      deleteCloudAccounts: async () => ({ success: true }),
+      deleteCloudCreditCards: async () => ({ success: true }),
+      deleteCloudCreditCardPurchases: async () => ({ success: true })
+    };
+    FinanceData.reconcileCloudBeforeSync = async () => ({ success: true });
+    FinanceData.flushTransactionalOperations = async () => ({
+      success: true,
+      synced: { entries: [], templates: [], creditCards: [], creditCardPurchases: [] }
+    });
+    try {
+      const firstReset = await FinanceData.clearAll();
+      assertFalse(firstReset.success);
+      assertEqual(FinanceData.getEntries(), []);
+      assertEqual(FinanceData.getTemplates(), []);
+      assertEqual(FinanceData.getPendingSync().deletedEntries, []);
+      assertEqual(FinanceData.getPendingSync().deletedTemplates, [templateId]);
+      assertEqual(deleteEntryCalls, [[entryId]]);
+      assertEqual(deleteTemplateCalls, [[templateId]]);
+
+      const retry = await FinanceData.flushPendingSync(userId);
+      assertTrue(retry.success);
+      assertEqual(FinanceData.getPendingSync().deletedEntries, []);
+      assertEqual(FinanceData.getPendingSync().deletedTemplates, []);
+      assertEqual(deleteEntryCalls, [[entryId]]);
+      assertEqual(deleteTemplateCalls, [[templateId], [templateId]]);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+      FinanceData.reconcileCloudBeforeSync = previousReconcile;
+      FinanceData.flushTransactionalOperations = previousFlushTransactions;
+    }
+  });
+
   itAsync('clearAll exclui registros que existem somente na nuvem', async () => {
     setupMockLocalStorage();
     const userId = 'user-cloud-only-reset';
