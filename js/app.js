@@ -265,6 +265,7 @@ const MONTH_NAMES = [
 /** Títulos exibidos na topbar de acordo com a tela ativa. */
 const VIEW_TITLES = {
   dashboard: 'Dashboard & Saúde Financeira',
+  entries:   'Lançamentos',
   incomes:   'Gerenciador de Ganhos do Mês',
   expenses:  'Gerenciador de Gastos do Mês',
   cards:     'Cartões',
@@ -1708,12 +1709,12 @@ window.GastoProScrollTop = {
 // ================================================================
 
 /**
- * Alterna a tela visível do app (Dashboard, Ganhos ou Gastos).
+ * Alterna a tela visível do app.
  * Atualiza o estado, os botões da sidebar, o título da topbar
  * e fecha o menu lateral em dispositivos móveis.
  * Exposta globalmente (window) para ser chamada pela navegação delegada.
  *
- * @param {string} viewId - ID da tela: 'dashboard' | 'incomes' | 'expenses'.
+ * @param {string} viewId - ID definido em VIEW_TITLES.
  */
 window.switchToView = function(viewId) {
   // Ignora IDs de tela desconhecidos para evitar erros silenciosos
@@ -1784,7 +1785,7 @@ function updateMobileBottomNavigation() {
 
 function setMobileBottomSelectionForView(viewId) {
   if (viewId === 'dashboard') mobileBottomSelection = 'home';
-  else if (viewId === 'incomes' || viewId === 'expenses') mobileBottomSelection = 'entries';
+  else if (viewId === 'entries' || viewId === 'incomes' || viewId === 'expenses') mobileBottomSelection = 'entries';
   else if (viewId === 'cards') mobileBottomSelection = 'cards';
   else mobileBottomSelection = 'more';
   updateMobileBottomNavigation();
@@ -1794,7 +1795,7 @@ function navigateMobileBottomItem(destination) {
   if (destination === 'home') {
     window.switchToView('dashboard');
   } else if (destination === 'entries') {
-    window.switchToView('expenses');
+    window.switchToView('entries');
   } else if (destination === 'cards') {
     window.switchToView('cards');
   } else if (destination === 'goals') {
@@ -1811,6 +1812,78 @@ function navigateMobileBottomItem(destination) {
   }
   return true;
 }
+
+function setEntryFormType(type) {
+  if (!['expense', 'income'].includes(type)) return false;
+  const panels = {
+    expense: document.getElementById('expenseForm')?.closest('.panel-box'),
+    income: document.getElementById('incomeForm')?.closest('.panel-box')
+  };
+  if (!panels.expense || !panels.income) return false;
+
+  document.querySelectorAll('.entry-type-button[data-entry-type]').forEach(button => {
+    const selected = button.dataset.entryType === type;
+    button.classList.toggle('is-active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  Object.entries(panels).forEach(([formType, panel]) => {
+    panel.hidden = formType !== type;
+  });
+  return true;
+}
+
+function clearEntryFormFields(type) {
+  const fields = type === 'income'
+    ? ['incomeDesc', 'incomeAmount', 'incomeAccount']
+    : type === 'expense'
+      ? ['expenseDesc', 'expenseAmount', 'expenseAccount', 'expenseEndMonth']
+      : null;
+  if (!fields) return false;
+
+  fields.forEach(id => {
+    const field = document.getElementById(id);
+    if (field) field.value = '';
+  });
+  const date = document.getElementById(`${type}Date`);
+  if (date) date.value = getTodayString();
+  return true;
+}
+
+function completeEntrySave(type) {
+  if (!clearEntryFormFields(type)) return false;
+  showToast(type === 'income' ? 'Ganho salvo' : 'Gasto salvo');
+  return true;
+}
+
+function setupEntryComposer() {
+  const view = document.getElementById('view-entries');
+  if (!view) return;
+
+  const expenseForm = document.getElementById('expenseForm');
+  const incomeForm = document.getElementById('incomeForm');
+  const expenseSlot = document.getElementById('entryExpenseFormSlot');
+  const incomeSlot = document.getElementById('entryIncomeFormSlot');
+  const expensePanel = expenseForm?.closest('.panel-box');
+  const incomePanel = incomeForm?.closest('.panel-box');
+  if (!expensePanel || !incomePanel || !expenseSlot || !incomeSlot) {
+    throw new Error('A tela de lançamentos precisa dos dois formulários e seus espaços.');
+  }
+
+  expenseSlot.appendChild(expensePanel);
+  incomeSlot.appendChild(incomePanel);
+  view.querySelectorAll('.entry-type-button[data-entry-type]').forEach(button => {
+    button.addEventListener('click', () => setEntryFormType(button.dataset.entryType));
+  });
+  if (!setEntryFormType('expense')) {
+    throw new Error('Não foi possível iniciar o formulário de gasto.');
+  }
+}
+
+window.GastoProEntryComposer = Object.freeze({
+  setType: setEntryFormType,
+  clearForm: clearEntryFormFields,
+  completeSave: completeEntrySave
+});
 
 function scrollToGoalsDashboardPanel() {
   const panel = document.getElementById('goalsDashboardPanel');
@@ -4759,6 +4832,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateBackToTopVisibility();
   }
   setupResponsiveThemeToggle();
+  setupEntryComposer();
   document.addEventListener('gastopro:themechange', () => {
     if (document.getElementById('categoryChart')) renderAll();
   });
@@ -5660,15 +5734,11 @@ document.addEventListener('DOMContentLoaded', () => {
           date: dateVal
         });
 
-        document.getElementById('incomeDesc').value = '';
-        document.getElementById('incomeAmount').value = '';
-        document.getElementById('incomeDate').value = getTodayString();
-        document.getElementById('incomeAccount').value = '';
+        completeEntrySave('income');
         document.getElementById('incomeDesc').focus();
 
         renderAll();
-        const syncResult = await waitForAuthenticatedSave();
-        if (syncResult.success) showToast(`Ganho de ${formatCurrency(amount)} adicionado!`);
+        await waitForAuthenticatedSave();
       } catch (err) {
         console.error('Erro ao adicionar ganho:', err);
         alert('Ocorreu um erro ao salvar o ganho: ' + err.message);
@@ -5766,13 +5836,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(result.error && result.error.message || result.error || 'Não foi possível salvar a compra no cartão.');
             return;
           }
-          document.getElementById('expenseDesc').value = '';
-          document.getElementById('expenseAmount').value = '';
-          document.getElementById('expenseDate').value = getTodayString();
-          document.getElementById('expenseAccount').value = '';
-          if (document.getElementById('expenseEndMonth')) {
-            document.getElementById('expenseEndMonth').value = '';
-          }
+          completeEntrySave('expense');
           updateCreditCardPurchaseFields();
           checkDebtVisibility();
           document.getElementById('expenseDesc').focus();
@@ -5781,9 +5845,6 @@ document.addEventListener('DOMContentLoaded', () => {
             button.classList.toggle('active', button.getAttribute('data-filter') === 'all');
           });
           renderAll();
-          showToast(result.success
-            ? `Compra de ${formatCurrency(amount)} no cartão cadastrada.`
-            : 'Compra salva neste aparelho; a sincronização ficou pendente.');
           return;
         }
 
@@ -5800,11 +5861,7 @@ document.addEventListener('DOMContentLoaded', () => {
           endMonth: endMonthVal || null
         });
 
-        document.getElementById('expenseDesc').value = '';
-        document.getElementById('expenseAmount').value = '';
-        document.getElementById('expenseDate').value = getTodayString();
-        document.getElementById('expenseAccount').value = '';
-        if (document.getElementById('expenseEndMonth')) document.getElementById('expenseEndMonth').value = '';
+        completeEntrySave('expense');
         checkDebtVisibility();
         document.getElementById('expenseDesc').focus();
 
@@ -5814,16 +5871,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         renderAll();
-        const syncResult = await waitForAuthenticatedSave();
-        if (!syncResult.success) return;
-
-        let toastMsg = `Gasto de ${formatCurrency(amount)} cadastrado!`;
-        if (type === 'debt' || category === 'Empréstimo' || category === 'Parcelamento') {
-          toastMsg = `Parcelamento adicionado! Veja no Centro de Dívidas.`;
-        } else if (type === 'fixed') {
-          toastMsg = `Gasto fixo de ${formatCurrency(amount)} cadastrado!`;
-        }
-        showToast(toastMsg);
+        await waitForAuthenticatedSave();
       } catch (err) {
         console.error('Erro ao adicionar gasto:', err);
         alert('Ocorreu um erro ao salvar o gasto: ' + err.message);

@@ -86,12 +86,12 @@
             <button class="nav-item" data-view="incomes" id="navIncomes">
               <i class="fa-solid fa-hand-holding-dollar"></i>
               <span>Ganhos do Mês</span>
-              <span class="nav-badge text-success" id="sidebarIncomeCount" hidden></span>
+              <span class="nav-badge" id="sidebarIncomeCount" hidden></span>
             </button>
             <button class="nav-item" data-view="expenses" id="navExpenses">
               <i class="fa-solid fa-receipt"></i>
               <span>Gastos do Mês</span>
-              <span class="nav-badge text-danger" id="sidebarExpenseCount"></span>
+              <span class="nav-badge" id="sidebarExpenseCount"></span>
             </button>
             <button class="nav-item" data-view="cards" id="navCards">
               <i class="fa-solid fa-credit-card"></i>
@@ -273,6 +273,7 @@
           <section class="drawer-section drawer-profile-section">
             <h4 class="drawer-section-title">Perfil</h4>
             <div class="drawer-user-card">
+              <label class="profile-name-label" for="profileNameInput">Seu nome</label>
               <div class="drawer-avatar-wrapper" id="changeAvatarBtn" title="Clique para fazer upload da sua foto">
                 <div class="drawer-user-avatar">
                   <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" id="drawerAvatarImg" />
@@ -281,18 +282,17 @@
               </div>
               <input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp" style="display: none;" />
               <div class="drawer-user-info">
-                <label class="profile-name-label" for="profileNameInput">Seu nome</label>
                 <div class="profile-name-edit-row">
                   <input type="text" id="profileNameInput" class="profile-name-input" value="" placeholder="Escreva seu nome..." />
                   <button type="button" id="saveProfileNameBtn" class="btn-save-name" title="Salvar nome" aria-label="Salvar nome do perfil">
                     <i class="fa-solid fa-check" aria-hidden="true"></i><span>Salvar nome</span>
                   </button>
                 </div>
-                <p class="drawer-storage-status" id="drawerStorageStatus">
-                  <i class="fa-solid fa-cloud-arrow-up text-primary" aria-hidden="true"></i>
-                  <span id="accountStatusText">Modo Local (Não conectado)</span>
-                </p>
               </div>
+              <p class="drawer-storage-status" id="drawerStorageStatus">
+                <i class="fa-solid fa-cloud-arrow-up text-primary" aria-hidden="true"></i>
+                <span id="accountStatusText">Modo Local (Não conectado)</span>
+              </p>
             </div>
           </section>
 
@@ -666,8 +666,28 @@
 
 
         <!-- ====================================================
-             TELA 2: GANHOS DO MÊS (VER, INSERIR, ALTERAR, EXCLUIR)
+             TELA 2: GANHOS DO MÊS (VER, ALTERAR, EXCLUIR)
              ==================================================== -->
+        </section>
+
+        <section class="view-section entry-composer-view" id="view-entries">
+          <div class="view-header-card">
+            <div class="view-header-info">
+              <div class="view-icon-badge"><i class="fa-solid fa-plus"></i></div>
+              <div>
+                <h2>Lançamentos</h2>
+                <p>Escolha o tipo e preencha os dados do lançamento.</p>
+              </div>
+            </div>
+          </div>
+          <div class="entry-type-selector" role="group" aria-label="Tipo de lançamento">
+            <button type="button" class="entry-type-button" data-entry-type="expense"
+              aria-pressed="false">Gasto</button>
+            <button type="button" class="entry-type-button" data-entry-type="income"
+              aria-pressed="false">Ganho</button>
+          </div>
+          <div class="entry-form-slot" id="entryExpenseFormSlot"></div>
+          <div class="entry-form-slot" id="entryIncomeFormSlot"></div>
         </section>
 
         <section class="view-section" id="view-incomes">

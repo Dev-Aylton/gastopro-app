@@ -3772,6 +3772,95 @@ describe('Dashboard mobile', () => {
       window.switchToView = originalSwitch;
     }
   });
+
+  it('abre a tela única de Lançamentos pela navegação inferior', () => {
+    const originalSwitch = window.switchToView;
+    let destination = null;
+    window.switchToView = view => { destination = view; };
+    try {
+      assertTrue(helpers.navigate('entries'));
+      assertEqual(destination, 'entries');
+    } finally {
+      window.switchToView = originalSwitch;
+    }
+  });
+
+  it('alterna entre os formulários sem exibi-los juntos e sem duplicar IDs', () => {
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <button class="entry-type-button" data-entry-type="expense" aria-pressed="false"></button>
+      <button class="entry-type-button" data-entry-type="income" aria-pressed="false"></button>
+      <div class="panel-box"><form id="expenseForm"></form></div>
+      <div class="panel-box"><form id="incomeForm"></form></div>
+    `;
+    document.body.appendChild(fixture);
+    try {
+      assertTrue(window.GastoProEntryComposer.setType('expense'));
+      assertFalse(fixture.querySelector('#expenseForm').closest('.panel-box').hidden);
+      assertTrue(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+      assertEqual(fixture.querySelector('[data-entry-type="expense"]').getAttribute('aria-pressed'), 'true');
+
+      assertTrue(window.GastoProEntryComposer.setType('income'));
+      assertTrue(fixture.querySelector('#expenseForm').closest('.panel-box').hidden);
+      assertFalse(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+      assertEqual(fixture.querySelector('[data-entry-type="income"]').getAttribute('aria-pressed'), 'true');
+      ['expenseForm', 'incomeForm'].forEach(id => {
+        assertEqual(fixture.querySelectorAll(`[id="${id}"]`).length, 1, `${id} deve existir uma vez.`);
+      });
+    } finally {
+      fixture.remove();
+    }
+  });
+
+  it('mantém o tipo escolhido aberto após limpar os campos do formulário salvo', () => {
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <div id="toast"></div>
+      <button class="entry-type-button" data-entry-type="expense" aria-pressed="false"></button>
+      <button class="entry-type-button" data-entry-type="income" aria-pressed="false"></button>
+      <div class="panel-box"><form id="expenseForm">
+        <input id="expenseDesc" value="Conta de luz">
+        <input id="expenseAmount" value="120">
+        <input id="expenseDate" type="date">
+        <select id="expenseAccount"><option value="">Sem conta</option><option value="conta">Conta</option></select>
+        <input id="expenseEndMonth">
+      </form></div>
+      <div class="panel-box"><form id="incomeForm">
+        <input id="incomeDesc" value="Salário">
+        <input id="incomeAmount" value="3000">
+        <input id="incomeDate" type="date">
+        <select id="incomeAccount"><option value="">Sem conta</option><option value="conta">Conta</option></select>
+      </form></div>
+    `;
+    document.body.appendChild(fixture);
+    try {
+      ['expenseDesc', 'expenseAmount', 'expenseAccount', 'expenseEndMonth'].forEach(id => {
+        fixture.querySelector(`#${id}`).value = id === 'expenseAccount' ? 'conta' : 'preenchido';
+      });
+      assertTrue(window.GastoProEntryComposer.setType('expense'));
+      assertTrue(window.GastoProEntryComposer.completeSave('expense'));
+      assertEqual(fixture.querySelector('#toast').textContent.trim(), 'Gasto salvo');
+      assertEqual(fixture.querySelector('#expenseDesc').value, '');
+      assertEqual(fixture.querySelector('#expenseAmount').value, '');
+      assertEqual(fixture.querySelector('#expenseAccount').value, '');
+      assertFalse(fixture.querySelector('#expenseDate').value === '');
+      assertFalse(fixture.querySelector('#expenseForm').closest('.panel-box').hidden);
+
+      ['incomeDesc', 'incomeAmount', 'incomeAccount'].forEach(id => {
+        fixture.querySelector(`#${id}`).value = id === 'incomeAccount' ? 'conta' : 'preenchido';
+      });
+      assertTrue(window.GastoProEntryComposer.setType('income'));
+      assertTrue(window.GastoProEntryComposer.completeSave('income'));
+      assertEqual(fixture.querySelector('#toast').textContent.trim(), 'Ganho salvo');
+      assertEqual(fixture.querySelector('#incomeDesc').value, '');
+      assertEqual(fixture.querySelector('#incomeAmount').value, '');
+      assertEqual(fixture.querySelector('#incomeAccount').value, '');
+      assertFalse(fixture.querySelector('#incomeDate').value === '');
+      assertFalse(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+    } finally {
+      fixture.remove();
+    }
+  });
 });
 
 describe('Bloco 2 — backup JSON', () => {
@@ -7741,6 +7830,118 @@ describe('Layout responsivo e tipografia mobile', () => {
           .filter(element => parseFloat(frame.contentWindow.getComputedStyle(element).fontSize) < 16)
           .map(element => `${element.id}: ${frame.contentWindow.getComputedStyle(element).fontSize}`);
         assertEqual(below16, [], `${width}px: controles abaixo de 16px: ${below16.join(', ')}`);
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  itAsync('mantém avatares, botões e contadores legíveis nas larguras e temas previstos', async () => {
+    const frame = await getResponsiveFixtureFrame(320);
+    const frameDocument = frame.contentDocument;
+    const app = frameDocument.getElementById('fixtureApp');
+    app.innerHTML = `
+      <header class="topbar"><div class="topbar-right">
+        <button class="user-avatar-btn"><img class="user-avatar-sm" src="" alt="Avatar"></button>
+      </div></header>
+      <nav class="sidebar-nav"><button class="nav-item" id="counterNav">
+        <span>Ganhos do Mês</span><span class="nav-badge" id="neutralCounter">12</span>
+      </button></nav>
+      <div class="drawer-user-card">
+        <label class="profile-name-label" for="profileNameInput">Seu nome</label>
+        <div class="drawer-avatar-wrapper"><div class="drawer-user-avatar"><img src="" alt="Avatar"></div>
+          <span class="avatar-camera-badge"></span></div>
+        <div class="drawer-user-info"><div class="profile-name-edit-row">
+          <input id="profileNameInput" class="profile-name-input">
+          <button id="saveProfileNameBtn" class="btn-save-name">Salvar nome</button></div></div>
+        <p class="drawer-storage-status">Modo Local</p>
+      </div>
+      <section class="entry-type-selector">
+        <button class="entry-type-button">Gasto</button><button class="entry-type-button">Ganho</button>
+      </section>
+    `;
+
+    const parseRgb = color => {
+      if (color.startsWith('#')) {
+        const hex = color.slice(1);
+        const expanded = hex.length === 3 ? [...hex].map(channel => channel + channel).join('') : hex;
+        return [0, 2, 4].map(index => parseInt(expanded.slice(index, index + 2), 16)).map(channel => {
+          const normalized = channel / 255;
+          return normalized <= 0.04045
+            ? normalized / 12.92
+            : ((normalized + 0.055) / 1.055) ** 2.4;
+        });
+      }
+      const channels = color.match(/[\d.]+/g).slice(0, 3).map(Number);
+      return channels.map(channel => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+    };
+    const contrast = (foreground, background) => {
+      const fg = parseRgb(foreground);
+      const bg = parseRgb(background);
+      const luminance = rgb => rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+      const values = [luminance(fg), luminance(bg)].sort((a, b) => b - a);
+      return (values[0] + 0.05) / (values[1] + 0.05);
+    };
+
+    try {
+      for (const theme of ['dark', 'light']) {
+        frameDocument.documentElement.dataset.theme = theme;
+        frameDocument.body.dataset.theme = theme;
+        for (const [width, height] of [
+          [320, 844], [360, 844], [390, 844], [768, 1024],
+          [1024, 768], [1280, 800], [844, 390]
+        ]) {
+          await getResponsiveFixtureFrame(width, height);
+          const topAvatar = frameDocument.querySelector('.user-avatar-sm');
+          const drawerAvatar = frameDocument.querySelector('.drawer-user-avatar');
+          const topStyle = frame.contentWindow.getComputedStyle(topAvatar);
+          const drawerStyle = frame.contentWindow.getComputedStyle(
+            frameDocument.querySelector('.drawer-user-avatar img')
+          );
+          const topRect = topAvatar.getBoundingClientRect();
+          const drawerRect = drawerAvatar.getBoundingClientRect();
+          const prefix = `${theme} ${width}x${height}`;
+          assertTrue(topRect.width >= 40 && topRect.height >= 40, `${prefix}: avatar do cabeçalho`);
+          assertEqual(topStyle.objectFit, 'cover', `${prefix}: recorte do avatar do cabeçalho`);
+          assertTrue(drawerRect.width >= 72 && drawerRect.width <= 80, `${prefix}: largura do avatar do painel`);
+          assertTrue(drawerRect.height >= 72 && drawerRect.height <= 80, `${prefix}: altura do avatar do painel`);
+          assertEqual(drawerStyle.objectFit, 'cover', `${prefix}: recorte do avatar do painel`);
+
+          const wrapper = frameDocument.querySelector('.drawer-avatar-wrapper').getBoundingClientRect();
+          const camera = frameDocument.querySelector('.avatar-camera-badge').getBoundingClientRect();
+          const nameInput = frameDocument.getElementById('profileNameInput').getBoundingClientRect();
+          const editRow = frameDocument.querySelector('.profile-name-edit-row').getBoundingClientRect();
+          assertTrue(camera.right <= wrapper.right && camera.bottom <= wrapper.bottom, `${prefix}: câmera dentro do avatar`);
+          assertFalse(camera.right > nameInput.left && camera.left < nameInput.right &&
+            camera.bottom > nameInput.top && camera.top < nameInput.bottom, `${prefix}: câmera não cobre o nome`);
+          assertTrue(Math.abs(
+            drawerRect.top + drawerRect.height / 2 - editRow.top - editRow.height / 2
+          ) <= 1, `${prefix}: avatar centralizado com campo e botão`);
+
+          const buttons = [...frameDocument.querySelectorAll('.entry-type-button')];
+          assertEqual(buttons.length, 2, `${prefix}: dois tipos de lançamento`);
+          buttons.forEach(button => assertTrue(button.getBoundingClientRect().height >= 44, `${prefix}: botão ${button.textContent}`));
+
+          const badge = frameDocument.getElementById('neutralCounter');
+          const nav = frameDocument.getElementById('counterNav');
+          const inactiveBadge = frame.contentWindow.getComputedStyle(badge);
+          assertTrue(contrast(inactiveBadge.color, inactiveBadge.backgroundColor) >= 4.5,
+            `${prefix}: contraste do contador neutro`);
+          assertFalse(badge.classList.contains('text-success') || badge.classList.contains('text-danger'),
+            `${prefix}: contador sem cor financeira`);
+          nav.classList.add('active');
+          const activeBadge = frame.contentWindow.getComputedStyle(badge);
+          const primaryStrong = frame.contentWindow.getComputedStyle(frameDocument.documentElement)
+            .getPropertyValue('--primary-strong').trim();
+          assertTrue(contrast(activeBadge.color, primaryStrong) >= 4.5,
+            `${prefix}: contraste do contador na navegação ativa`);
+          nav.classList.remove('active');
+        }
       }
     } finally {
       removeResponsiveFixtureFrame();
