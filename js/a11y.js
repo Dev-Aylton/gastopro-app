@@ -13,7 +13,12 @@
   ].join(',');
 
   function getActiveModal() {
-    return [...document.querySelectorAll(`${modalSelector}.active`)].pop() || null;
+    const activeModals = [...document.querySelectorAll(`${modalSelector}.active`)];
+    activeModals.sort((first, second) =>
+      Number.parseInt(window.getComputedStyle(first).zIndex, 10) -
+      Number.parseInt(window.getComputedStyle(second).zIndex, 10)
+    );
+    return activeModals[activeModals.length - 1] || null;
   }
 
   function getDialog(overlay) {

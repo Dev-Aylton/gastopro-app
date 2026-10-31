@@ -26,13 +26,16 @@
   --dashboard-badge-critical-text: #fecaca;
   --dashboard-badge-critical-bg: #7f1d1d;
   --drawer-section-gap: 1.15rem;
-  --layer-sidebar-overlay: 390;
-  --layer-sidebar: 400;
-  --layer-profile-overlay: 410;
-  --layer-profile-drawer: 420;
-  --layer-notifications: 450;
+  --layer-mobile-bottom-nav: 300;
+  --layer-sidebar-overlay: 310;
+  --layer-sidebar: 320;
+  --layer-profile-overlay: 330;
+  --layer-profile-drawer: 340;
+  --layer-notifications: 400;
   --layer-modal: 500;
-  --layer-onboarding: 600;
+  --layer-confirmation: 600;
+  --layer-toast: 700;
+  --layer-onboarding: 500;
 
   --primary: #6366f1;
   --primary-hover: #4338ca;
@@ -3084,15 +3087,24 @@ button:active { transform: scale(0.98); }
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: all 0.25s ease;
+  transition: opacity 0.25s ease, visibility 0s linear 0.25s;
   padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
     max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+}
+
+#confirmModal {
+  z-index: var(--layer-confirmation);
+}
+
+.modal-overlay.onboarding-modal {
+  z-index: var(--layer-onboarding);
 }
 
 .modal-overlay.active {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+  transition: opacity 0.25s ease, visibility 0s;
 }
 
 .modal-content {
@@ -3243,7 +3255,7 @@ button:active { transform: scale(0.98); }
   transform: translateY(100px);
   opacity: 0;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 300;
+  z-index: var(--layer-toast);
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -7830,7 +7842,7 @@ input[type="month"] {
 
   .mobile-bottom-nav {
     position: fixed;
-    z-index: 300;
+    z-index: var(--layer-mobile-bottom-nav);
     right: 0;
     bottom: 0;
     left: 0;
@@ -7992,11 +8004,11 @@ input[type="month"] {
   .topbar .menu-toggle-btn,
   .topbar .notifications-trigger,
   .topbar .user-avatar-btn {
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
-    min-height: 40px;
-    flex: 0 0 40px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
   }
 
   .sidebar-top {
@@ -8053,5 +8065,72 @@ input[type="month"] {
   .sidebar-footer {
     gap: 0.25rem;
     padding-top: 0.4rem;
+  }
+}
+
+@media (max-width: 700px) {
+  .topbar {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    min-height: 64px;
+  }
+
+  .topbar-left {
+    min-width: 48px;
+  }
+
+  .topbar .menu-toggle-btn,
+  .topbar .notifications-trigger,
+  .topbar .user-avatar-btn {
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
+    min-height: 48px;
+    flex: 0 0 48px;
+  }
+
+  .topbar .menu-toggle-btn i,
+  .topbar .notifications-trigger i {
+    font-size: 22px;
+  }
+
+  .topbar .user-avatar-btn .user-avatar-sm {
+    width: 40px;
+    height: 40px;
+  }
+
+  .mobile-brand {
+    font-size: 1.15rem;
+    font-weight: 800;
+  }
+
+  .mobile-brand img {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
+  .topbar {
+    min-height: 56px;
+  }
+
+  .topbar-left {
+    flex-basis: 44px;
+    min-width: 44px;
+  }
+
+  .topbar .menu-toggle-btn,
+  .topbar .notifications-trigger,
+  .topbar .user-avatar-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
+  }
+
+  .topbar .menu-toggle-btn i,
+  .topbar .notifications-trigger i {
+    font-size: 22px;
   }
 }

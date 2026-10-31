@@ -6848,6 +6848,81 @@ describe('Exclusão de conta do usuário', () => {
     }
   });
 
+  it('mantém a escala global das camadas acima da barra inferior', () => {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const layer = name => Number(rootStyle.getPropertyValue(name));
+    assertTrue(layer('--layer-sidebar-overlay') > layer('--layer-mobile-bottom-nav'));
+    assertTrue(layer('--layer-sidebar') > layer('--layer-mobile-bottom-nav'));
+    assertTrue(layer('--layer-profile-drawer') > layer('--layer-mobile-bottom-nav'));
+    assertTrue(layer('--layer-notifications') > layer('--layer-profile-drawer'));
+    assertTrue(layer('--layer-modal') > layer('--layer-notifications'));
+    assertTrue(layer('--layer-confirmation') > layer('--layer-modal'));
+    assertTrue(layer('--layer-toast') > layer('--layer-confirmation'));
+    assertEqual(layer('--layer-onboarding'), layer('--layer-modal'));
+
+    const modalIds = [
+      'editModal', 'accountModal', 'creditCardModal', 'adjustAccountModal',
+      'confirmModal', 'deleteAccountModal', 'deleteAllMyDataModal',
+      'passwordRecoveryModal', 'reportModal', 'authModal', 'emailHelpModal',
+      'discardPendingModal', 'avatarCropModal', 'importModal', 'wizardModal',
+      'privacyPolicyModal', 'goalModal', 'accountOnboardingModal',
+      'onboardingModal', 'statementGuideModal'
+    ];
+    const modals = modalIds.map(id => {
+      const modal = document.createElement('div');
+      modal.id = id;
+      modal.className = `modal-overlay${id === 'onboardingModal' ? ' onboarding-modal' : ''}`;
+      document.body.appendChild(modal);
+      return modal;
+    });
+    try {
+      modals.forEach(modal => {
+        assertEqual(modal.parentElement, document.body, `${modal.id} deve ser elemento irmão no body`);
+        const expectedLayer = modal.id === 'confirmModal'
+          ? layer('--layer-confirmation')
+          : layer('--layer-modal');
+        assertEqual(Number(getComputedStyle(modal).zIndex), expectedLayer, `${modal.id} deve usar a camada correta`);
+      });
+    } finally {
+      modals.forEach(modal => modal.remove());
+    }
+  });
+
+  itAsync('move o foco para o modal e devolve ao acionador ao fechar', async () => {
+    const opener = document.createElement('button');
+    const modal = document.createElement('div');
+    const dialog = document.createElement('section');
+    const close = document.createElement('button');
+    opener.textContent = 'Abrir';
+    modal.className = 'modal-overlay';
+    dialog.setAttribute('role', 'dialog');
+    dialog.tabIndex = -1;
+    close.className = 'modal-close-btn';
+    close.textContent = 'Fechar';
+    close.addEventListener('click', () => modal.classList.remove('active'));
+    dialog.appendChild(close);
+    modal.appendChild(dialog);
+    document.body.append(opener, modal);
+    const waitForObserver = () => new Promise(resolve => setTimeout(resolve, 0));
+    try {
+      opener.focus();
+      modal.classList.add('active');
+      await waitForObserver();
+      assertTrue(modal.contains(document.activeElement), 'O foco deve entrar no modal aberto');
+      assertTrue(document.body.classList.contains('has-open-layer'), 'A rolagem do fundo deve ser bloqueada');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await waitForObserver();
+      assertFalse(modal.classList.contains('active'), 'Escape deve fechar o modal superior');
+      assertEqual(document.activeElement, opener, 'O foco deve retornar ao acionador');
+      assertFalse(document.body.classList.contains('has-open-layer'), 'Fechar o modal deve liberar a rolagem');
+    } finally {
+      modal.classList.remove('active');
+      opener.remove();
+      modal.remove();
+      document.body.classList.remove('has-open-layer');
+    }
+  });
+
   itAsync('limpa todos os dados e a sessão local após excluir a conta com sucesso', async () => {
     setupMockLocalStorage();
     window.GastoProOnboarding.markSeen();
