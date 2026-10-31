@@ -270,134 +270,90 @@
         </div>
 
         <div class="drawer-body">
-          <!-- Card de Identificação e Edição de Perfil -->
-          <div class="drawer-user-card">
-            <div class="drawer-avatar-wrapper" id="changeAvatarBtn" title="Clique para fazer upload da sua foto">
-              <div class="drawer-user-avatar">
-                <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" id="drawerAvatarImg" />
+          <section class="drawer-section drawer-profile-section">
+            <h4 class="drawer-section-title">Perfil</h4>
+            <div class="drawer-user-card">
+              <div class="drawer-avatar-wrapper" id="changeAvatarBtn" title="Clique para fazer upload da sua foto">
+                <div class="drawer-user-avatar">
+                  <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" id="drawerAvatarImg" />
+                </div>
+                <div class="avatar-camera-badge"><i class="fa-solid fa-camera"></i></div>
               </div>
-              <div class="avatar-camera-badge"><i class="fa-solid fa-camera"></i></div>
-            </div>
-            <input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp" style="display: none;" />
-
-            <div class="drawer-user-info">
-              <div class="profile-name-edit-row">
-                <input type="text" id="profileNameInput" class="profile-name-input" value="" placeholder="Escreva seu nome..." />
-                <button type="button" id="saveProfileNameBtn" class="btn-save-name" title="Salvar Nome" aria-label="Salvar nome do perfil">
-                  <i class="fa-solid fa-check"></i>
-                </button>
+              <input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp" style="display: none;" />
+              <div class="drawer-user-info">
+                <label class="profile-name-label" for="profileNameInput">Seu nome</label>
+                <div class="profile-name-edit-row">
+                  <input type="text" id="profileNameInput" class="profile-name-input" value="" placeholder="Escreva seu nome..." />
+                  <button type="button" id="saveProfileNameBtn" class="btn-save-name" title="Salvar nome" aria-label="Salvar nome do perfil">
+                    <i class="fa-solid fa-check" aria-hidden="true"></i><span>Salvar nome</span>
+                  </button>
+                </div>
+                <p class="drawer-storage-status" id="drawerStorageStatus">
+                  <i class="fa-solid fa-cloud-arrow-up text-primary" aria-hidden="true"></i>
+                  <span id="accountStatusText">Modo Local (Não conectado)</span>
+                </p>
               </div>
-
-              <p class="drawer-storage-status" id="drawerStorageStatus">
-                <i class="fa-solid fa-cloud-arrow-up text-primary"></i> <span id="accountStatusText">Modo Local (Não conectado)</span>
-              </p>
             </div>
-          </div>
+          </section>
 
-          <!-- Seção de Conta & Acesso Multi-usuário -->
-          <div class="drawer-section drawer-account-section">
-            <span class="drawer-section-title">Acesso & Sincronização</span>
+          <section class="drawer-section drawer-account-section">
+            <h4 class="drawer-section-title">Conta e sincronização</h4>
             <div id="accountGuestCard" class="account-card">
-              <p class="account-desc">Crie sua conta gratuita ou faça login para sincronizar seus dados em qualquer dispositivo.</p>
+              <p class="account-desc">Crie uma conta gratuita para sincronizar seus dados entre dispositivos.</p>
               <button type="button" id="openAuthModalBtn" class="btn-auth-trigger">
-                <i class="fa-solid fa-arrow-right-to-bracket"></i> Entrar ou Criar Conta
+                <i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i> Entrar ou Criar Conta
               </button>
             </div>
             <div id="accountLoggedCard" class="account-card" style="display: none;">
               <div class="logged-user-row">
-                <i class="fa-solid fa-circle-check text-success"></i>
+                <i class="fa-solid fa-circle-check text-success" aria-hidden="true"></i>
                 <div>
                   <strong id="loggedUserEmail">usuario@email.com</strong>
                   <small>Conectado via Nuvem</small>
                 </div>
               </div>
               <button type="button" id="logoutBtn" class="btn-auth-logout">
-                <i class="fa-solid fa-arrow-right-from-bracket"></i> Sair da Conta
+                <i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i> Sair da Conta
               </button>
             </div>
-            <button type="button" class="btn-auth-trigger contact-shortcut" data-action="open-contact">
-              <i class="fa-regular fa-comment-dots"></i> Fale comigo
-            </button>
-          </div>
-
-          <div class="drawer-section how-to-use-section">
-            <span class="drawer-section-title">Como usar</span>
-            <div class="how-to-use-topics" id="howToUseTopics"></div>
-            <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
+            <button type="button" id="refreshAppBtn" class="drawer-action-btn" title="Atualizar dados e sincronizar">
               <div class="action-icon bg-primary-soft">
-                <i class="fa-solid fa-play text-primary"></i>
+                <i class="fa-solid fa-arrows-rotate text-primary" id="refreshIcon" aria-hidden="true"></i>
               </div>
               <div class="action-text">
-                <strong>Ver tutorial de novo</strong>
-                <span>Rever as dicas de primeiro acesso</span>
+                <strong>Atualizar dados</strong>
+                <span>Sincronizar e atualizar esta tela</span>
               </div>
             </button>
-          </div>
+            <button id="drawerRefreshBtn" class="drawer-action-btn" title="Buscar nova versão do app" aria-label="Buscar nova versão do app">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-cloud-arrow-down text-primary" id="drawerRefreshIcon" aria-hidden="true"></i>
+              </div>
+              <div class="action-text">
+                <strong>Buscar nova versão do app</strong>
+                <span>Verificar atualizações do aplicativo</span>
+              </div>
+            </button>
+          </section>
 
-          <div class="drawer-section">
-            <span class="drawer-section-title">Meus dados</span>
+          <section class="drawer-section drawer-data-section">
+            <h4 class="drawer-section-title">Meus dados e backup</h4>
             <p class="user-data-description">
               A exportação inclui lançamentos, gastos fixos, metas, contas, cartões, compras no cartão,
               regras de Fixo e mensagens enviadas em Fale comigo.
             </p>
             <button id="exportBtn" class="drawer-action-btn" title="Exportar todos os meus dados">
               <div class="action-icon bg-primary-soft">
-                <i class="fa-solid fa-download text-primary"></i>
+                <i class="fa-solid fa-download text-primary" aria-hidden="true"></i>
               </div>
               <div class="action-text">
                 <strong>Exportar todos os meus dados</strong>
-                <span>Baixar uma cópia JSON para guardar neste aparelho</span>
+                <span>Baixar uma cópia JSON neste aparelho</span>
               </div>
             </button>
-            <button type="button" id="deleteAllMyDataBtn" class="drawer-action-btn user-data-delete-action">
-              <div class="action-icon bg-danger-soft">
-                <i class="fa-solid fa-trash-can text-danger"></i>
-              </div>
-              <div class="action-text">
-                <strong>Excluir todos os meus dados</strong>
-                <span>Apagar os dados deste aparelho e da nuvem sem excluir o login</span>
-              </div>
-            </button>
-          </div>
-
-          <div class="drawer-section">
-            <span class="drawer-section-title">Privacidade e uso</span>
-            <label class="usage-telemetry-setting" for="usageTelemetryEnabled">
-              <input type="checkbox" id="usageTelemetryEnabled" checked />
-              <span>
-                <strong>Compartilhar eventos anônimos de uso</strong>
-                <small>Ajuda a entender telas usadas, importações e erros. Não inclui textos nem dados financeiros.</small>
-              </span>
-            </label>
-          </div>
-
-          <!-- Seção de Ações de Dados -->
-          <div class="drawer-section">
-            <span class="drawer-section-title">Gerenciamento de Dados</span>
-
-            <button type="button" id="refreshAppBtn" class="drawer-action-btn" title="Atualizar Dados e Sincronizar">
-              <div class="action-icon bg-primary-soft">
-                <i class="fa-solid fa-arrows-rotate text-primary" id="refreshIcon"></i>
-              </div>
-              <div class="action-text">
-                <strong>Atualizar Dados</strong>
-                <span>Sincronizar com a nuvem e recarregar</span>
-              </div>
-            </button>
-
-            <button id="drawerRefreshBtn" class="drawer-action-btn" title="Buscar nova versão do app" aria-label="Buscar nova versão do app">
-              <div class="action-icon bg-primary-soft">
-                <i class="fa-solid fa-cloud-arrow-down text-primary" id="drawerRefreshIcon"></i>
-              </div>
-              <div class="action-text">
-                <strong>Buscar nova versão do app</strong>
-                <span>Verificar atualizações e reiniciar se houver uma versão nova</span>
-              </div>
-            </button>
-
             <button type="button" id="restoreBackupBtn" class="drawer-action-btn" title="Restaurar backup">
               <div class="action-icon bg-primary-soft">
-                <i class="fa-solid fa-upload text-primary"></i>
+                <i class="fa-solid fa-upload text-primary" aria-hidden="true"></i>
               </div>
               <div class="action-text">
                 <strong>Restaurar backup</strong>
@@ -405,51 +361,89 @@
               </div>
             </button>
             <input type="file" id="restoreBackupFile" accept=".json,application/json" hidden />
-
             <button type="button" id="openReportModalBtn" class="drawer-action-btn"
-              title="Baixar Relatório PDF" aria-haspopup="dialog" aria-controls="reportModal">
+              title="Baixar relatório PDF" aria-haspopup="dialog" aria-controls="reportModal">
               <div class="action-icon bg-primary-soft">
-                <i class="fa-solid fa-file-pdf text-primary"></i>
+                <i class="fa-solid fa-file-pdf text-primary" aria-hidden="true"></i>
               </div>
               <div class="action-text">
-                <strong>Baixar Relatório PDF</strong>
+                <strong>Baixar relatório PDF</strong>
                 <span>Gerar um relatório financeiro para impressão</span>
               </div>
             </button>
+          </section>
 
-            <p class="irreversible-actions-hint">
-              Reset e exclusão de conta ficam em '
-              <button type="button" class="drawer-inline-link" data-action="open-irreversible-actions">Ações irreversíveis</button>',
-              no final deste painel.
-            </p>
-          </div>
+          <section class="drawer-section drawer-privacy-section">
+            <h4 class="drawer-section-title">Privacidade e uso</h4>
+            <label class="usage-telemetry-setting" for="usageTelemetryEnabled">
+              <input type="checkbox" id="usageTelemetryEnabled" checked />
+              <span>
+                <strong>Compartilhar eventos anônimos de uso</strong>
+                <small>Ajuda a entender telas usadas, importações e erros. Não inclui textos nem dados financeiros.</small>
+              </span>
+            </label>
+            <div class="drawer-tip">
+              <i class="fa-solid fa-lock text-success" aria-hidden="true"></i>
+              <p>
+                Sem login, seus dados ficam no navegador. Com login, são sincronizados com o Supabase e protegidos por RLS.
+                <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Política de Privacidade (LGPD)</a>
+              </p>
+            </div>
+          </section>
 
-          <!-- Dica de Privacidade -->
-          <div class="drawer-tip">
-            <i class="fa-solid fa-lock text-success"></i>
-            <p>Sem login, seus dados ficam no navegador. Com login, são sincronizados com o Supabase e protegidos por RLS.
-              <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Política de Privacidade (LGPD)</a>
-            </p>
-          </div>
+          <section class="drawer-section drawer-help-section">
+            <h4 class="drawer-section-title">Ajuda</h4>
+            <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-play text-primary" aria-hidden="true"></i>
+              </div>
+              <div class="action-text">
+                <strong>Ver tutorial de novo</strong>
+                <span>Rever as dicas de primeiro acesso</span>
+              </div>
+            </button>
+            <button type="button" class="btn-auth-trigger contact-shortcut" data-action="open-contact">
+              <i class="fa-regular fa-comment-dots" aria-hidden="true"></i> Fale comigo
+            </button>
+            <div class="how-to-use-section">
+              <h5 class="drawer-section-title">Como usar</h5>
+              <div class="how-to-use-topics" id="howToUseTopics"></div>
+            </div>
+          </section>
 
           <details class="drawer-section irreversible-actions" id="irreversibleActions">
             <summary class="irreversible-actions-summary">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
               <span class="action-text">
-                <strong>Ações irreversíveis</strong>
-                <span>Reset e exclusão de conta ficam aqui</span>
+                <strong>Zona de perigo</strong>
+                <span>Ações irreversíveis. Faça um backup antes.</span>
               </span>
             </summary>
             <div class="irreversible-action">
-              <p>Apaga lançamentos, gastos fixos, metas e contas deste aparelho e, se logado, também os dados sincronizados na nuvem. Mantém sessão, nome e foto.</p>
-              <button id="clearDataBtn" class="irreversible-action-button" title="Zerar todos os lançamentos">
-                <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Reset
+              <div class="irreversible-action-copy">
+                <h5>Zerar dados financeiros</h5>
+                <p>Apaga lançamentos, fixos, contas, cartões, compras, metas e regras no aparelho e na nuvem. Preserva perfil, mensagens e login.</p>
+              </div>
+              <button type="button" id="clearDataBtn" class="irreversible-action-button">
+                <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Zerar dados financeiros
+              </button>
+            </div>
+            <div class="irreversible-action">
+              <div class="irreversible-action-copy">
+                <h5>Apagar meus dados (manter login)</h5>
+                <p>Apaga dados financeiros, perfil, mensagens e eventos no aparelho e na nuvem. Mantém sua conta de login.</p>
+              </div>
+              <button type="button" id="deleteAllMyDataBtn" class="irreversible-action-button">
+                <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Apagar meus dados
               </button>
             </div>
             <div class="irreversible-action irreversible-action-account" id="deleteAccountAction" hidden>
-              <p>Apaga a conta de login e todos os dados na nuvem e neste aparelho. Esta ação é irreversível.</p>
+              <div class="irreversible-action-copy">
+                <h5>Excluir conta definitivamente</h5>
+                <p>Remove a conta de login e todos os dados vinculados na nuvem e neste aparelho.</p>
+              </div>
               <button type="button" id="deleteAccountBtn" class="irreversible-action-button">
-                <i class="fa-solid fa-user-xmark" aria-hidden="true"></i> Excluir minha conta
+                <i class="fa-solid fa-user-xmark" aria-hidden="true"></i> Excluir conta definitivamente
               </button>
             </div>
           </details>
@@ -1320,6 +1314,10 @@
         <input type="checkbox" id="confirmRememberCheckbox">
         <span id="confirmRememberLabel"></span>
       </label>
+      <div class="form-group confirm-phrase-group" id="confirmPhraseGroup" hidden>
+        <label for="confirmPhraseInput" id="confirmPhraseLabel"></label>
+        <input type="text" id="confirmPhraseInput" autocomplete="off" spellcheck="false" />
+      </div>
       <div class="modal-actions confirm-actions">
         <button type="button" class="btn-secondary" id="confirmBackupBtn" hidden>Baixar backup JSON</button>
       </div>
@@ -1337,43 +1335,42 @@
         title="Fechar" aria-label="Fechar exclusão da conta">&times;</button>
       <h2 id="deleteAccountTitle">Excluir minha conta</h2>
       <p class="account-delete-warning">
-        Esta ação apagará permanentemente a conta e os dados da nuvem e deste aparelho. É irreversível.
-        Recomendamos exportar um backup JSON antes de continuar.
+        Remove definitivamente sua conta de login e todos os dados vinculados. Recomendamos exportar um backup JSON antes de continuar.
       </p>
       <button type="button" id="downloadBackupBeforeAccountDeletion" class="btn-secondary">
         <i class="fa-solid fa-download"></i> Baixar backup JSON
       </button>
       <div class="form-group auth-field">
-        <label for="deleteAccountConfirmation">Digite EXCLUIR para confirmar</label>
+        <label for="deleteAccountConfirmation">Digite EXCLUIR CONTA para confirmar</label>
         <input type="text" id="deleteAccountConfirmation" autocomplete="off" spellcheck="false" />
       </div>
 
-      <div class="modal-overlay" id="deleteAllMyDataModal" aria-hidden="true">
-        <section class="modal-content modal-auth-content" role="dialog" aria-modal="true"
-          aria-labelledby="deleteAllMyDataTitle" tabindex="-1">
-          <button type="button" class="modal-close-btn auth-close-btn" id="closeDeleteAllMyDataModalBtn"
-            title="Fechar" aria-label="Fechar exclusão dos dados">&times;</button>
-          <h2 id="deleteAllMyDataTitle">Excluir todos os meus dados</h2>
-          <p class="account-delete-warning">
-            Serão apagados permanentemente lançamentos, templates, metas, contas, cartões, compras,
-            regras de Fixo e mensagens de feedback deste aparelho e da nuvem. O login será mantido.
-            Não há como desfazer esta ação.
-          </p>
-          <div class="form-group auth-field">
-            <label for="deleteAllMyDataConfirmation">Digite EXCLUIR para confirmar</label>
-            <input type="text" id="deleteAllMyDataConfirmation" autocomplete="off" spellcheck="false" />
-          </div>
-          <p id="deleteAllMyDataError" class="account-delete-error" role="alert" hidden></p>
-          <div class="modal-actions">
-            <button type="button" id="cancelDeleteAllMyDataBtn" class="btn-secondary" data-modal-cancel>Cancelar</button>
-            <button type="button" id="confirmDeleteAllMyDataBtn" class="btn-danger" disabled>Excluir todos os dados</button>
-          </div>
-        </section>
-      </div>
       <p id="deleteAccountError" class="account-delete-error" role="alert" hidden></p>
       <div class="modal-actions">
         <button type="button" id="cancelDeleteAccountBtn" class="btn-secondary" data-modal-cancel>Cancelar</button>
-        <button type="button" id="confirmDeleteAccountBtn" class="btn-danger" disabled>Excluir conta</button>
+        <button type="button" id="confirmDeleteAccountBtn" class="btn-danger" disabled>Excluir conta definitivamente</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-overlay" id="deleteAllMyDataModal" aria-hidden="true">
+    <section class="modal-content modal-auth-content" role="dialog" aria-modal="true"
+      aria-labelledby="deleteAllMyDataTitle" tabindex="-1">
+      <button type="button" class="modal-close-btn auth-close-btn" id="closeDeleteAllMyDataModalBtn"
+        title="Fechar" aria-label="Fechar exclusão dos dados">&times;</button>
+      <h2 id="deleteAllMyDataTitle">Apagar meus dados (manter login)</h2>
+      <p class="account-delete-warning">
+        Serão apagados dados financeiros, perfil, mensagens e eventos deste aparelho e da nuvem. O login será mantido.
+        Não há como desfazer esta ação.
+      </p>
+      <div class="form-group auth-field">
+        <label for="deleteAllMyDataConfirmation">Digite APAGAR DADOS para confirmar</label>
+        <input type="text" id="deleteAllMyDataConfirmation" autocomplete="off" spellcheck="false" />
+      </div>
+      <p id="deleteAllMyDataError" class="account-delete-error" role="alert" hidden></p>
+      <div class="modal-actions">
+        <button type="button" id="cancelDeleteAllMyDataBtn" class="btn-secondary" data-modal-cancel>Cancelar</button>
+        <button type="button" id="confirmDeleteAllMyDataBtn" class="btn-danger" disabled>Apagar meus dados</button>
       </div>
     </section>
   </div>

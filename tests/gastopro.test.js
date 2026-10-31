@@ -2513,7 +2513,7 @@ describe('FinanceData — clearAll()', () => {
 });
 
 describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
-  itAsync('exige EXCLUIR antes de apagar cartões, regras ou outros dados', async () => {
+  itAsync('exige APAGAR DADOS antes de apagar cartões, regras ou outros dados', async () => {
     setupMockLocalStorage();
     const card = { id: crypto.randomUUID(), name: 'Cartão preservado', totalLimit: 1000 };
     localStorage.setItem('gastopro_credit_cards_v1', JSON.stringify([card]));
@@ -2572,7 +2572,7 @@ describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
       }
     };
     try {
-      const result = await FinanceData.deleteAllUserData('EXCLUIR');
+      const result = await FinanceData.deleteAllUserData('APAGAR DADOS');
       assertTrue(result.success);
       assertEqual(deletedForUser, [userId]);
       assertEqual(FinanceData.getEntries(), []);
@@ -2606,7 +2606,7 @@ describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
       deleteAllMyData: async () => ({ success: false, error: 'Falha de rede.' })
     };
     try {
-      const result = await FinanceData.deleteAllUserData('EXCLUIR');
+      const result = await FinanceData.deleteAllUserData('APAGAR DADOS');
       assertFalse(result.success);
       assertEqual(result.error, 'Falha de rede.');
       assertEqual(FinanceData.getCreditCards(), [card]);
@@ -3848,6 +3848,65 @@ describe('Utilitários — escapeHtml()', () => {
 });
 
 describe('Acessibilidade dos modais', () => {
+  itAsync('mantém o modal de apagar dados independente e devolve o foco ao fechar', async () => {
+    const trigger = document.createElement('button');
+    trigger.id = 'deleteAllMyDataModalTestTrigger';
+    const accountModal = document.createElement('div');
+    accountModal.id = 'deleteAccountModalTest';
+    accountModal.className = 'modal-overlay';
+    const dataModal = document.createElement('div');
+    dataModal.id = 'deleteAllMyDataModalTest';
+    dataModal.className = 'modal-overlay';
+    dataModal.innerHTML = `
+      <section role="dialog" aria-modal="true" tabindex="-1">
+        <button type="button" class="modal-close-btn">Fechar</button>
+        <input aria-label="Confirmação">
+        <button type="button" data-modal-cancel>Cancelar</button>
+      </section>`;
+    document.body.append(trigger, accountModal, dataModal);
+    const input = dataModal.querySelector('input');
+    const close = dataModal.querySelector('.modal-close-btn');
+    trigger.addEventListener('click', () => {
+      dataModal.classList.add('active');
+      dataModal.setAttribute('aria-hidden', 'false');
+      setTimeout(() => input.focus(), 0);
+    });
+    close.addEventListener('click', () => {
+      dataModal.classList.remove('active');
+      dataModal.setAttribute('aria-hidden', 'true');
+    });
+    dataModal.addEventListener('click', event => {
+      if (event.target === dataModal) close.click();
+    });
+    const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+    try {
+      assertTrue(accountModal.parentElement === dataModal.parentElement,
+        'Os modais devem ser elementos irmãos, não aninhados');
+      trigger.focus();
+      trigger.click();
+      await tick();
+      assertTrue(dataModal.classList.contains('active'), 'O modal deve abrir');
+      assertEqual(document.activeElement, input, 'O campo de confirmação recebe foco');
+      dataModal.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true
+      }));
+      await tick();
+      assertFalse(dataModal.classList.contains('active'), 'Escape deve fechar o modal');
+      assertEqual(document.activeElement, trigger, 'Escape devolve o foco ao acionador');
+
+      trigger.click();
+      await tick();
+      dataModal.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await tick();
+      assertFalse(dataModal.classList.contains('active'), 'Clique fora deve fechar o modal');
+      assertEqual(document.activeElement, trigger, 'Fechar devolve o foco ao acionador');
+    } finally {
+      trigger.remove();
+      accountModal.remove();
+      dataModal.remove();
+    }
+  });
+
   itAsync('foca o modal, prende Tab, fecha com Esc e devolve o foco', async () => {
     const previousFocus = document.createElement('button');
     previousFocus.id = 'a11yTestPreviousFocus';
@@ -6736,14 +6795,57 @@ describe('Exclusão de conta do usuário', () => {
     }
   });
 
-  it('só aceita o texto exato EXCLUIR', () => {
-    assertTrue(window.GastoProAccountDeletion.isConfirmationValid('EXCLUIR'));
-    assertFalse(window.GastoProAccountDeletion.isConfirmationValid('excluir'));
-    assertFalse(window.GastoProAccountDeletion.isConfirmationValid(' EXCLUIR'));
-    assertFalse(window.GastoProAccountDeletion.isConfirmationValid('EXCLUIR '));
-    assertTrue(window.GastoProUserData.isDeletionConfirmationValid('EXCLUIR'));
-    assertFalse(window.GastoProUserData.isDeletionConfirmationValid('excluir'));
-    assertFalse(window.GastoProUserData.isDeletionConfirmationValid(' EXCLUIR'));
+  it('valida as frases das três ações ignorando caixa e espaços nas pontas', () => {
+    assertTrue(window.GastoProDeletionConfirmation.isValid(' zerar ', 'ZERAR'));
+    assertTrue(window.GastoProUserData.isDeletionConfirmationValid('  apagar dados '));
+    assertTrue(window.GastoProAccountDeletion.isConfirmationValid(' excluir conta '));
+    assertFalse(window.GastoProDeletionConfirmation.isValid('ZERAR DADOS', 'ZERAR'));
+    assertFalse(window.GastoProUserData.isDeletionConfirmationValid('APAGAR'));
+    assertFalse(window.GastoProAccountDeletion.isConfirmationValid('EXCLUIR'));
+  });
+
+  it('mantém os botões de confirmação desabilitados até a frase correta', () => {
+    const checks = [
+      { phrase: 'ZERAR', isValid: value => window.GastoProDeletionConfirmation.isValid(value, 'ZERAR') },
+      { phrase: 'APAGAR DADOS', isValid: value => window.GastoProUserData.isDeletionConfirmationValid(value) },
+      { phrase: 'EXCLUIR CONTA', isValid: value => window.GastoProAccountDeletion.isConfirmationValid(value) }
+    ];
+    checks.forEach(({ phrase, isValid }) => {
+      const input = document.createElement('input');
+      const button = document.createElement('button');
+      document.body.append(input, button);
+      try {
+        window.GastoProDeletionConfirmation.bind(input, button, phrase);
+        assertTrue(button.disabled, `${phrase}: iniciar desabilitado`);
+        input.value = ` ${phrase.toLowerCase()} `;
+        input.dispatchEvent(new Event('input'));
+        assertFalse(button.disabled, `${phrase}: aceitar caixa diferente e espaços nas pontas`);
+        input.value = `${phrase} inválida`;
+        input.dispatchEvent(new Event('input'));
+        assertTrue(button.disabled, `${phrase}: desabilitar para texto incorreto`);
+        assertTrue(isValid(` ${phrase.toLowerCase()} `));
+      } finally {
+        input.remove();
+        button.remove();
+      }
+    });
+  });
+
+  it('mantém gaveta acima da navegação inferior e sem quebra forçada de palavras', () => {
+    const drawerLayer = Number(getComputedStyle(document.documentElement)
+      .getPropertyValue('--layer-profile-drawer'));
+    assertTrue(drawerLayer > 300, 'A gaveta deve ficar acima da barra inferior (z-index 300)');
+    const drawer = document.createElement('aside');
+    drawer.className = 'profile-drawer';
+    document.body.appendChild(drawer);
+    try {
+      const style = getComputedStyle(drawer);
+      assertEqual(style.overflowWrap, 'normal');
+      assertEqual(style.wordBreak, 'normal');
+      assertEqual(style.hyphens, 'none');
+    } finally {
+      drawer.remove();
+    }
   });
 
   itAsync('limpa todos os dados e a sessão local após excluir a conta com sucesso', async () => {

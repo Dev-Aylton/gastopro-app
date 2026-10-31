@@ -3283,7 +3283,7 @@ window.GastoProReportHelpers = {
 
 window.GastoProAccountDeletion = {
   isConfirmationValid(value) {
-    return value === 'EXCLUIR';
+    return window.GastoProDeletionConfirmation.isValid(value, 'EXCLUIR CONTA');
   },
 
   async deleteAccountAndClearPendingSync(auth, financeData) {
@@ -3318,7 +3318,27 @@ window.GastoProAccountDeletion = {
 
 window.GastoProUserData = {
   isDeletionConfirmationValid(value) {
-    return value === 'EXCLUIR';
+    return window.GastoProDeletionConfirmation.isValid(value, 'APAGAR DADOS');
+  }
+};
+
+window.GastoProDeletionConfirmation = {
+  normalize(value) {
+    return String(value ?? '').trim().toUpperCase();
+  },
+
+  isValid(value, expected) {
+    return this.normalize(value) === this.normalize(expected);
+  },
+
+  bind(input, button, expected, onInput) {
+    const update = () => {
+      button.disabled = !this.isValid(input.value, expected);
+      if (onInput) onInput();
+    };
+    input.addEventListener('input', update);
+    update();
+    return update;
   }
 };
 
@@ -4183,7 +4203,8 @@ function deleteAccount(id) {
  */
 function showConfirm({
   title, message, iconClass, okLabel, okBtnClass, onConfirm,
-  onBackup, secondaryLabel, onSecondary, keepOpenOnConfirm = false, rememberLabel
+  onBackup, secondaryLabel, onSecondary, keepOpenOnConfirm = false, rememberLabel,
+  confirmationPhrase
 }) {
   const modal = document.getElementById('confirmModal');
   const iconEl = document.getElementById('confirmIcon');
@@ -4196,11 +4217,21 @@ function showConfirm({
   const rememberOption = document.getElementById('confirmRememberOption');
   const rememberCheckbox = document.getElementById('confirmRememberCheckbox');
   const rememberText = document.getElementById('confirmRememberLabel');
+  const phraseGroup = document.getElementById('confirmPhraseGroup');
+  const phraseInput = document.getElementById('confirmPhraseInput');
+  const phraseLabel = document.getElementById('confirmPhraseLabel');
 
   iconEl.className = iconClass || 'fa-solid fa-triangle-exclamation';
   iconWrapper.className = 'confirm-icon-wrapper confirm-icon-danger';
   titleEl.textContent = title || 'Tem certeza?';
   msgEl.textContent = message || 'Esta ação não pode ser desfeita.';
+  if (phraseGroup && phraseInput && phraseLabel) {
+    phraseGroup.hidden = !confirmationPhrase;
+    phraseInput.value = '';
+    phraseLabel.textContent = confirmationPhrase
+      ? `Digite ${confirmationPhrase} para confirmar`
+      : '';
+  }
   if (rememberOption && rememberCheckbox && rememberText) {
     rememberOption.hidden = !rememberLabel;
     rememberCheckbox.checked = false;
@@ -4221,11 +4252,21 @@ function showConfirm({
 
   newOk.textContent = okLabel || 'Confirmar';
   newOk.className = okBtnClass || 'btn-danger';
+  newOk.disabled = Boolean(confirmationPhrase);
 
   newOk.addEventListener('click', async () => {
+    if (confirmationPhrase &&
+      !window.GastoProDeletionConfirmation.isValid(phraseInput.value, confirmationPhrase)) return;
     if (!keepOpenOnConfirm) modal.classList.remove('active');
     await onConfirm(newOk, Boolean(rememberCheckbox && rememberCheckbox.checked));
   });
+  if (confirmationPhrase && phraseInput) {
+    phraseInput.addEventListener('input', () => {
+      newOk.disabled = !window.GastoProDeletionConfirmation.isValid(
+        phraseInput.value, confirmationPhrase
+      );
+    });
+  }
   newCancel.addEventListener('click', () => {
     modal.classList.remove('active');
   });
@@ -6098,12 +6139,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const profile = FinanceData.getProfile();
     const hasCloudAccount = Boolean(profile.userId && profile.email);
     showConfirm({
-      title:    'Zerar todos os dados?',
+      title:    'Zerar dados financeiros?',
       message:  hasCloudAccount
-        ? 'Todos os lançamentos e metas serão apagados deste aparelho e da nuvem. Isso também apaga seus dados sincronizados na nuvem. Baixe um backup antes, se desejar.'
-        : 'Todos os lançamentos e metas serão apagados somente deste aparelho. Baixe um backup antes, se desejar.',
+        ? 'Lançamentos, fixos, contas, cartões, compras, metas e regras serão removidos deste aparelho e da nuvem. Perfil, mensagens e login serão preservados.'
+        : 'Lançamentos, fixos, contas, cartões, compras, metas e regras serão removidos deste aparelho. Perfil e mensagens serão preservados.',
       iconClass:'fa-solid fa-trash-can',
-      okLabel:  'Sim, zerar tudo',
+      okLabel:  'Zerar dados financeiros',
+      confirmationPhrase: 'ZERAR',
       onBackup: () => {
         FinanceData.exportJSON();
         showToast('Backup JSON exportado.');
@@ -6114,10 +6156,10 @@ document.addEventListener('DOMContentLoaded', () => {
         renderUserProfile();
         renderAll();
         if (!result.success) {
-          showToast('Reset local concluído; a exclusão na nuvem ficou pendente.');
+          showToast('Alguns dados não foram apagados na nuvem. As exclusões locais ficaram pendentes de sincronização. Tente novamente.');
           return;
         }
-        showToast('Todos os dados foram resetados com sucesso!');
+        showToast('Dados financeiros zerados.');
       }
     });
   });
@@ -7155,7 +7197,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (confirmDeleteAccountBtn) {
       confirmDeleteAccountBtn.disabled = true;
-      confirmDeleteAccountBtn.textContent = 'Excluir conta';
+      confirmDeleteAccountBtn.textContent = 'Excluir conta definitivamente';
     }
     if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = false;
     if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = false;
@@ -7172,8 +7214,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  let deleteAllMyDataFocusTimeout = null;
+
   function closeDeleteAllMyDataModal() {
     if (!deleteAllMyDataModal) return;
+    if (deleteAllMyDataFocusTimeout !== null) {
+      clearTimeout(deleteAllMyDataFocusTimeout);
+      deleteAllMyDataFocusTimeout = null;
+    }
     deleteAllMyDataModal.classList.remove('active');
     deleteAllMyDataModal.setAttribute('aria-hidden', 'true');
   }
@@ -7186,17 +7234,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function openDeleteAllMyDataModal() {
     if (!deleteAllMyDataModal) return;
+    if (deleteAllMyDataBtn) deleteAllMyDataBtn.focus();
     deleteAllMyDataConfirmation.value = '';
     deleteAllMyDataConfirmation.disabled = false;
     deleteAllMyDataError.textContent = '';
     deleteAllMyDataError.hidden = true;
     confirmDeleteAllMyDataBtn.disabled = true;
-    confirmDeleteAllMyDataBtn.textContent = 'Excluir todos os dados';
+    confirmDeleteAllMyDataBtn.textContent = 'Apagar meus dados';
     closeDeleteAllMyDataModalBtn.disabled = false;
     cancelDeleteAllMyDataBtn.disabled = false;
     deleteAllMyDataModal.classList.add('active');
     deleteAllMyDataModal.setAttribute('aria-hidden', 'false');
-    setTimeout(() => deleteAllMyDataConfirmation.focus(), 0);
+    deleteAllMyDataFocusTimeout = setTimeout(() => {
+      deleteAllMyDataFocusTimeout = null;
+      if (deleteAllMyDataModal.classList.contains('active')) {
+        deleteAllMyDataConfirmation.focus();
+      }
+    }, 300);
   }
 
   if (deleteAllMyDataBtn) {
@@ -7214,12 +7268,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   if (deleteAllMyDataConfirmation && confirmDeleteAllMyDataBtn) {
-    deleteAllMyDataConfirmation.addEventListener('input', () => {
-      confirmDeleteAllMyDataBtn.disabled =
-        !window.GastoProUserData.isDeletionConfirmationValid(deleteAllMyDataConfirmation.value);
+    window.GastoProDeletionConfirmation.bind(
+      deleteAllMyDataConfirmation,
+      confirmDeleteAllMyDataBtn,
+      'APAGAR DADOS',
+      () => {
       deleteAllMyDataError.textContent = '';
       deleteAllMyDataError.hidden = true;
-    });
+      }
+    );
 
     confirmDeleteAllMyDataBtn.addEventListener('click', async () => {
       if (!window.GastoProUserData.isDeletionConfirmationValid(
@@ -7234,26 +7291,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const result = await FinanceData.deleteAllUserData(deleteAllMyDataConfirmation.value);
         if (!result.success) {
           showDeleteAllMyDataError(result.error && result.error.message || result.error ||
-            'Não foi possível excluir todos os dados.');
+            'Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.');
           deleteAllMyDataConfirmation.disabled = false;
           closeDeleteAllMyDataModalBtn.disabled = false;
           cancelDeleteAllMyDataBtn.disabled = false;
-          confirmDeleteAllMyDataBtn.disabled = !window.GastoProUserData.isDeletionConfirmationValid(
-            deleteAllMyDataConfirmation.value
-          );
-          confirmDeleteAllMyDataBtn.textContent = 'Excluir todos os dados';
+          confirmDeleteAllMyDataBtn.disabled = !window.GastoProUserData.isDeletionConfirmationValid(deleteAllMyDataConfirmation.value);
+          confirmDeleteAllMyDataBtn.textContent = 'Apagar meus dados';
           return;
         }
       } catch (error) {
         console.error('[GastoPro] Falha ao excluir todos os dados:', error);
-        showDeleteAllMyDataError('Não foi possível excluir os dados. Verifique a conexão e tente novamente.');
+        showDeleteAllMyDataError('Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.');
         deleteAllMyDataConfirmation.disabled = false;
         closeDeleteAllMyDataModalBtn.disabled = false;
         cancelDeleteAllMyDataBtn.disabled = false;
-        confirmDeleteAllMyDataBtn.disabled = !window.GastoProUserData.isDeletionConfirmationValid(
-          deleteAllMyDataConfirmation.value
-        );
-        confirmDeleteAllMyDataBtn.textContent = 'Excluir todos os dados';
+        confirmDeleteAllMyDataBtn.disabled = !window.GastoProUserData.isDeletionConfirmationValid(deleteAllMyDataConfirmation.value);
+        confirmDeleteAllMyDataBtn.textContent = 'Apagar meus dados';
         return;
       }
 
@@ -7268,15 +7321,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (deleteAccountConfirmation && confirmDeleteAccountBtn) {
-    deleteAccountConfirmation.addEventListener('input', () => {
-      confirmDeleteAccountBtn.disabled = !window.GastoProAccountDeletion.isConfirmationValid(
-        deleteAccountConfirmation.value
-      );
+    window.GastoProDeletionConfirmation.bind(
+      deleteAccountConfirmation,
+      confirmDeleteAccountBtn,
+      'EXCLUIR CONTA',
+      () => {
       if (deleteAccountError) {
         deleteAccountError.textContent = '';
         deleteAccountError.hidden = true;
       }
-    });
+      }
+    );
 
     confirmDeleteAccountBtn.addEventListener('click', async () => {
       if (!window.GastoProAccountDeletion.isConfirmationValid(deleteAccountConfirmation.value)) return;
@@ -7296,27 +7351,23 @@ document.addEventListener('DOMContentLoaded', () => {
           showDeleteAccountError(
             result && result.error && result.error.message
               ? result.error.message
-              : 'Não foi possível excluir a conta. Tente novamente.'
+              : 'Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.'
           );
           if (deleteAccountConfirmation) deleteAccountConfirmation.disabled = false;
           if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = false;
           if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = false;
-          confirmDeleteAccountBtn.disabled = !window.GastoProAccountDeletion.isConfirmationValid(
-            deleteAccountConfirmation.value
-          );
-          confirmDeleteAccountBtn.textContent = 'Excluir conta';
+          confirmDeleteAccountBtn.disabled = !window.GastoProAccountDeletion.isConfirmationValid(deleteAccountConfirmation.value);
+          confirmDeleteAccountBtn.textContent = 'Excluir conta definitivamente';
           return;
         }
       } catch (error) {
         console.error('[GastoPro] Falha ao concluir a exclusão da conta:', error);
-        showDeleteAccountError('Não foi possível concluir a exclusão da conta. Verifique a conexão e tente novamente.');
+        showDeleteAccountError('Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.');
         if (deleteAccountConfirmation) deleteAccountConfirmation.disabled = false;
         if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = false;
         if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = false;
-        confirmDeleteAccountBtn.disabled = !window.GastoProAccountDeletion.isConfirmationValid(
-          deleteAccountConfirmation.value
-        );
-        confirmDeleteAccountBtn.textContent = 'Excluir conta';
+        confirmDeleteAccountBtn.disabled = !window.GastoProAccountDeletion.isConfirmationValid(deleteAccountConfirmation.value);
+        confirmDeleteAccountBtn.textContent = 'Excluir conta definitivamente';
         return;
       }
 

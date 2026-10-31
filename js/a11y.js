@@ -74,23 +74,33 @@
     }
   }
 
+  function syncBackgroundScroll() {
+    const hasOpenLayer = Boolean(document.querySelector(
+      '.profile-drawer.open, .sidebar.open, #notificationsPanel:not([hidden]), .modal-overlay.active'
+    ));
+    document.body.classList.toggle('has-open-layer', hasOpenLayer);
+  }
+
   const observer = new MutationObserver(records => {
     records.forEach(record => {
       const overlay = record.target;
+      if (!overlay.matches || !overlay.matches(modalSelector)) return;
       const wasActive = record.oldValue ? record.oldValue.split(/\s+/).includes('active') : false;
       const isActive = overlay.classList.contains('active');
       if (!wasActive && isActive) activateModal(overlay);
       if (wasActive && !isActive) deactivateModal(overlay);
     });
+    syncBackgroundScroll();
   });
 
   observer.observe(document.documentElement, {
     subtree: true,
     attributes: true,
-    attributeFilter: ['class'],
+    attributeFilter: ['class', 'hidden'],
     attributeOldValue: true
   });
   document.addEventListener('keydown', handleModalKeydown);
 
   document.querySelectorAll(`${modalSelector}.active`).forEach(activateModal);
+  syncBackgroundScroll();
 })();

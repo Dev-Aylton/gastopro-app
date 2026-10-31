@@ -2788,8 +2788,8 @@ const FinanceData = {
   // ================================================================
 
   async deleteAllUserData(confirmation) {
-    if (confirmation !== 'EXCLUIR') {
-      return { success: false, error: 'Digite EXCLUIR para confirmar a exclusão.' };
+    if (String(confirmation ?? '').trim().toUpperCase() !== 'APAGAR DADOS') {
+      return { success: false, error: 'Digite APAGAR DADOS para confirmar a exclusão.' };
     }
 
     const profile = this.getProfile();
@@ -2797,7 +2797,7 @@ const FinanceData = {
     if (userId) {
       if (!window.SupabaseAuth ||
         typeof window.SupabaseAuth.deleteAllMyData !== 'function') {
-        return { success: false, error: 'A exclusão dos dados na nuvem está indisponível. Seus dados locais foram mantidos.' };
+        return { success: false, error: 'Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.' };
       }
       const cloudResult = await window.SupabaseAuth.deleteAllMyData(userId);
       if (!cloudResult || !cloudResult.success) {
@@ -2805,7 +2805,7 @@ const FinanceData = {
           success: false,
           error: cloudResult && cloudResult.error
             ? cloudResult.error
-            : 'Não foi possível excluir os dados na nuvem. Seus dados locais foram mantidos.'
+            : 'Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.'
         };
       }
     }
