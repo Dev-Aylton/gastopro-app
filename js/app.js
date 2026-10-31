@@ -599,10 +599,24 @@ window.GastoProViewHelpers = {
 };
 
 function scrollToViewTop(viewId) {
-  window.scrollTo({
-    top: 0,
-    behavior: 'auto'
+  window.requestAnimationFrame(() => {
+    const focusedElement = document.activeElement;
+    if (focusedElement instanceof HTMLElement && focusedElement.closest('.view-section')) {
+      focusedElement.blur();
+    }
+    scrollWindowWithAutoBehavior({
+      top: 0,
+      behavior: 'auto'
+    });
   });
+}
+
+function scrollWindowWithAutoBehavior(options) {
+  const rootStyle = document.documentElement.style;
+  const previousBehavior = rootStyle.scrollBehavior;
+  rootStyle.scrollBehavior = 'auto';
+  window.scrollTo(options);
+  rootStyle.scrollBehavior = previousBehavior;
 }
 
 function resetInitialViewPosition() {
@@ -610,7 +624,7 @@ function resetInitialViewPosition() {
   if (focusedElement instanceof HTMLElement && focusedElement !== document.body) {
     focusedElement.blur();
   }
-  window.scrollTo({ top: 0, behavior: 'auto' });
+  scrollWindowWithAutoBehavior({ top: 0, behavior: 'auto' });
 }
 
 if ('scrollRestoration' in window.history) {
@@ -869,6 +883,20 @@ function getPendingBalanceNotice(selectedMonth, actualMonth, balance, pendingOut
   return null;
 }
 
+function getPendingBalanceNoticeMessage(notice) {
+  if (!notice) return null;
+  if (notice.type === 'critical') return 'Seu saldo já está negativo.';
+  if (notice.type !== 'attention') return null;
+  return `Atenção: se você pagar tudo que está pendente neste mês, seu saldo ficará em ${formatCurrency(-notice.shortfall)}.`;
+}
+
+function getFixedPaidStatus(fixed, isMobile) {
+  const items = Array.isArray(fixed) ? fixed : [];
+  if (!items.length) return 'Nenhuma conta no mês';
+  const paidCount = items.filter(item => item && item.paid).length;
+  return `${paidCount} de ${items.length} ${isMobile ? 'fixos pagos' : 'contas pagas'}`;
+}
+
 function getBalanceTone(value) {
   return getFinancialAmountPresentation(value).className;
 }
@@ -882,6 +910,8 @@ function getMobileNotificationSummary(count) {
 window.GastoProMobileHomeHelpers = {
   getDashboardHighlightValues,
   getPendingBalanceNotice,
+  getPendingBalanceNoticeMessage,
+  getFixedPaidStatus,
   getBalanceTone,
   getNotificationSummary: getMobileNotificationSummary,
   navigate: navigateMobileBottomItem
@@ -1684,6 +1714,7 @@ function navigateMobileBottomItem(destination) {
     window.switchToView('dashboard');
     mobileBottomSelection = 'goals';
     updateMobileBottomNavigation();
+    window.requestAnimationFrame(scrollToGoalsDashboardPanel);
   } else if (destination === 'more') {
     mobileBottomSelection = 'more';
     updateMobileBottomNavigation();
@@ -1691,6 +1722,37 @@ function navigateMobileBottomItem(destination) {
   } else {
     return false;
   }
+  return true;
+}
+
+function scrollToGoalsDashboardPanel() {
+  const panel = document.getElementById('goalsDashboardPanel');
+  if (!panel) return false;
+
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  const panelRect = panel.getBoundingClientRect();
+  const topbar = document.querySelector('.topbar');
+  const topbarStyle = topbar ? window.getComputedStyle(topbar) : null;
+  const topbarRect = topbar ? topbar.getBoundingClientRect() : null;
+  const topbarOffset = topbarStyle && ['fixed', 'sticky'].includes(topbarStyle.position)
+    ? Math.max(0, Math.min(viewportHeight, topbarRect.bottom))
+    : 0;
+  const bottomNav = document.getElementById('mobileBottomNav');
+  const bottomNavStyle = bottomNav ? window.getComputedStyle(bottomNav) : null;
+  const bottomNavRect = bottomNav ? bottomNav.getBoundingClientRect() : null;
+  const bottomNavOffset = bottomNavStyle && bottomNavStyle.display !== 'none' &&
+    bottomNavStyle.position === 'fixed' && bottomNavRect.bottom >= viewportHeight - 1
+    ? Math.max(0, viewportHeight - bottomNavRect.top)
+    : 0;
+  const visibleHeight = Math.max(0, viewportHeight - topbarOffset - bottomNavOffset);
+  const panelOffset = topbarOffset + (panelRect.height <= visibleHeight
+    ? Math.max(8, (visibleHeight - panelRect.height) / 2)
+    : 8);
+
+  scrollWindowWithAutoBehavior({
+    top: Math.max(0, panelRect.top + window.scrollY - panelOffset),
+    behavior: 'auto'
+  });
   return true;
 }
 
@@ -1987,9 +2049,7 @@ function renderDashboardBalanceWarning(balance) {
       ? 'fa-circle-exclamation'
       : 'fa-triangle-exclamation'}`;
   }
-  message.textContent = notice.type === 'critical'
-    ? 'Seu saldo já está negativo.'
-    : `Atenção: se você pagar tudo que está pendente neste mês, seu saldo ficará em ${formatCurrency(-notice.shortfall)}.`;
+  message.textContent = getPendingBalanceNoticeMessage(notice);
 }
 
 function getCreditCardEmptyStateMarkup() {
@@ -3100,6 +3160,10 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
 
   // --- KPI: Gastos Fixos ---
   setFinancialAmount(document.getElementById('totalFixedDisplay'), -totalFixed, { signed: true });
+  document.getElementById('fixedPaidStatus').textContent = getFixedPaidStatus(
+    fixed,
+    window.matchMedia('(max-width: 700px)').matches
+  );
 
   // --- KPI: Gastos Variáveis ---
   setFinancialAmount(document.getElementById('totalVariableDisplay'), -totalVariable, { signed: true });

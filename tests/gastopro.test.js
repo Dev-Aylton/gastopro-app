@@ -3104,6 +3104,60 @@ describe('Dashboard mobile', () => {
     assertEqual(items[0].paid, undefined);
   });
 
+  itAsync('cria dados reais e mostra aviso somente no mês atual para despesa, fixo e parcela em aberto', async () => {
+    setupMockLocalStorage();
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const today = `${currentMonth}-${String(now.getDate()).padStart(2, '0')}`;
+    const previousDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const previousMonth = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, '0')}`;
+    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nextMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+
+    FinanceData.add(makeVariable({
+      month: currentMonth, date: today, amount: 25, paid: false
+    }));
+    FinanceData.add(makeIncome({
+      month: currentMonth, date: today, amount: 900, paid: false
+    }));
+    FinanceData.add(makeFixed({
+      month: currentMonth, startMonth: currentMonth, date: `${currentMonth}-05`,
+      amount: 35, paidMonths: {}
+    }));
+
+    const cardResult = await FinanceData.addCreditCard({
+      name: 'Cartão para teste de projeção', totalLimit: 1000, closingDay: 31, dueDay: 10
+    });
+    assertTrue(cardResult.success);
+    const purchaseResult = await FinanceData.addCreditCardPurchase({
+      cardId: cardResult.card.id, desc: 'Parcela pendente de teste', amount: 60,
+      category: 'Compras', purchaseDate: `${previousMonth}-01`, installmentCount: 1
+    });
+    assertTrue(purchaseResult.success);
+
+    const currentItems = FinanceData.getByMonth(currentMonth);
+    assertTrue(currentItems.some(item => item.isCardInstallment && !item.paid));
+    const pending = FinanceData.calculatePendingOutflows(
+      currentItems, 'all', FinanceData.getAccounts()
+    );
+    assertEqual(pending, 120);
+    const currentNotice = helpers.getPendingBalanceNotice(currentMonth, currentMonth, 50, pending);
+    assertEqual(
+      helpers.getPendingBalanceNoticeMessage(currentNotice),
+      `Atenção: se você pagar tudo que está pendente neste mês, seu saldo ficará em ${formatCurrency(-70)}.`
+    );
+
+    [previousMonth, nextMonth].forEach(month => {
+      const monthPending = FinanceData.calculatePendingOutflows(
+        FinanceData.getByMonth(month), 'all', FinanceData.getAccounts()
+      );
+      assertNull(helpers.getPendingBalanceNotice(month, currentMonth, 50, monthPending));
+      assertNull(helpers.getPendingBalanceNoticeMessage(
+        helpers.getPendingBalanceNotice(month, currentMonth, 50, monthPending)
+      ));
+    });
+  });
+
   it('avisa somente no mês atual quando o saldo é negativo ou insuficiente', () => {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -3166,6 +3220,86 @@ describe('Dashboard mobile', () => {
     assertEqual(descriptionRule.style.getPropertyValue('overflow-wrap'), 'normal');
     assertEqual(descriptionRule.style.getPropertyValue('word-break'), 'normal');
     assertEqual(descriptionRule.style.getPropertyValue('hyphens'), 'none');
+  });
+
+  it('gera a legenda de fixos adequada para desktop e celular', () => {
+    const fixed = [{ paid: true }, { paid: false }, { paid: true }];
+    assertEqual(helpers.getFixedPaidStatus(fixed, false), '2 de 3 contas pagas');
+    assertEqual(helpers.getFixedPaidStatus(fixed, true), '2 de 3 fixos pagos');
+    assertEqual(helpers.getFixedPaidStatus([], false), 'Nenhuma conta no mês');
+    assertEqual(helpers.getFixedPaidStatus([], true), 'Nenhuma conta no mês');
+  });
+
+  it('rola até Metas somente nessa navegação e respeita cabeçalho e barra inferior', () => {
+    const originalSwitch = window.switchToView;
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    const originalScrollTo = window.scrollTo;
+    const destinations = [];
+    const scrolls = [];
+    const initialScrollY = window.scrollY;
+    const topbar = document.createElement('header');
+    topbar.className = 'topbar';
+    topbar.style.position = 'sticky';
+    topbar.getBoundingClientRect = () => ({
+      top: 0, bottom: 80, height: 80, left: 0, right: 0, width: 0
+    });
+    const bottomNav = document.createElement('nav');
+    bottomNav.id = 'mobileBottomNav';
+    bottomNav.style.position = 'fixed';
+    bottomNav.style.display = 'flex';
+    bottomNav.getBoundingClientRect = () => ({
+      top: window.innerHeight - 60, bottom: window.innerHeight,
+      height: 60, left: 0, right: 0, width: 0
+    });
+    const goalsButton = document.createElement('button');
+    goalsButton.className = 'mobile-bottom-nav-item';
+    goalsButton.dataset.destination = 'goals';
+    bottomNav.appendChild(goalsButton);
+    const homeButton = document.createElement('button');
+    homeButton.className = 'mobile-bottom-nav-item';
+    homeButton.dataset.destination = 'home';
+    bottomNav.appendChild(homeButton);
+    const goalsPanel = document.createElement('section');
+    goalsPanel.id = 'goalsDashboardPanel';
+    goalsPanel.getBoundingClientRect = () => ({
+      top: 900, bottom: 1040, height: 140, left: 0, right: 0, width: 0
+    });
+    document.body.append(topbar, bottomNav, goalsPanel);
+
+    window.switchToView = view => {
+      destinations.push(view);
+      window.GastoProViewHelpers.scrollToTop(view);
+    };
+    window.requestAnimationFrame = callback => { callback(); return 1; };
+    window.scrollTo = options => scrolls.push(options);
+    try {
+      assertTrue(helpers.navigate('goals'));
+      assertEqual(destinations, ['dashboard']);
+      const availableHeight = window.innerHeight - 80 - 60;
+      const panelOffset = 80 + Math.max(8, (availableHeight - 140) / 2);
+      assertEqual(scrolls, [
+        { top: 0, behavior: 'auto' },
+        { top: Math.max(0, 900 + initialScrollY - panelOffset), behavior: 'auto' }
+      ]);
+
+      destinations.length = 0;
+      scrolls.length = 0;
+      assertTrue(helpers.navigate('home'));
+      assertEqual(destinations, ['dashboard']);
+      assertEqual(scrolls, [{ top: 0, behavior: 'auto' }]);
+      destinations.length = 0;
+      scrolls.length = 0;
+      assertTrue(helpers.navigate('cards'));
+      assertEqual(destinations, ['cards']);
+      assertEqual(scrolls, [{ top: 0, behavior: 'auto' }]);
+    } finally {
+      window.switchToView = originalSwitch;
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+      window.scrollTo = originalScrollTo;
+      topbar.remove();
+      bottomNav.remove();
+      goalsPanel.remove();
+    }
   });
 
   it('leva o botão Cartões da navegação inferior à tela de cartões', () => {
