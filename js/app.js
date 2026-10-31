@@ -31,6 +31,7 @@
 let returnToImportAfterAccountModal = false;
 let importAccountCreatedId = null;
 let accountOnboardingDataReady = false;
+let mobileBottomSelection = 'home';
 
 window.GastoProSessionHelpers = {
   shouldClearLocalData(status, hasLocalUserId, hasPendingSync = false) {
@@ -834,6 +835,25 @@ function getAccountBalanceForFilter(balances, filter, accounts = null, getBalanc
   return accounts === null || accounts.length ? Number(balances.total) || 0 : 0;
 }
 
+function getDashboardHighlightValues(balances, filter, accounts, getBalance, monthlyResult) {
+  return {
+    currentBalance: getAccountBalanceForFilter(balances, filter, accounts, getBalance),
+    monthlyResult: Number(monthlyResult) || 0
+  };
+}
+
+function getMobileNotificationSummary(count) {
+  const total = Math.max(0, Math.floor(Number(count) || 0));
+  if (!total) return 'Sem avisos';
+  return `${total} ${total === 1 ? 'aviso' : 'avisos'} · ver todos`;
+}
+
+window.GastoProMobileHomeHelpers = {
+  getDashboardHighlightValues,
+  getNotificationSummary: getMobileNotificationSummary,
+  navigate: navigateMobileBottomItem
+};
+
 function buildAccountBalanceFilterOptions(accounts) {
   return [
     { value: 'all', label: 'Todas as contas' },
@@ -1549,6 +1569,7 @@ window.switchToView = function(viewId) {
   // Ignora IDs de tela desconhecidos para evitar erros silenciosos
   if (!VIEW_TITLES[viewId]) return;
   state.currentView = viewId;
+  setMobileBottomSelectionForView(viewId);
   const screenEventNames = {
     dashboard: 'screen_dashboard',
     incomes: 'screen_incomes',
@@ -1601,6 +1622,50 @@ window.switchToView = function(viewId) {
     adminViewState.loading = false;
   }
 };
+
+function updateMobileBottomNavigation() {
+  document.querySelectorAll('.mobile-bottom-nav-item[data-destination]').forEach(button => {
+    const active = button.dataset.destination === mobileBottomSelection;
+    button.classList.toggle('is-active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+}
+
+function setMobileBottomSelectionForView(viewId) {
+  if (viewId === 'dashboard') mobileBottomSelection = 'home';
+  else if (viewId === 'incomes' || viewId === 'expenses') mobileBottomSelection = 'entries';
+  else if (viewId === 'cards') mobileBottomSelection = 'cards';
+  else mobileBottomSelection = 'more';
+  updateMobileBottomNavigation();
+}
+
+function navigateMobileBottomItem(destination) {
+  if (destination === 'home') {
+    window.switchToView('dashboard');
+  } else if (destination === 'entries') {
+    window.switchToView('expenses');
+  } else if (destination === 'cards') {
+    window.switchToView('cards');
+  } else if (destination === 'goals') {
+    window.switchToView('dashboard');
+    mobileBottomSelection = 'goals';
+    updateMobileBottomNavigation();
+    window.requestAnimationFrame(() => {
+      document.getElementById('goalsDashboardPanel')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    });
+  } else if (destination === 'more') {
+    mobileBottomSelection = 'more';
+    updateMobileBottomNavigation();
+    document.getElementById('menuToggleBtn')?.click();
+  } else {
+    return false;
+  }
+  return true;
+}
 
 // ================================================================
 // 5. ORQUESTRADOR CENTRAL DE RENDERIZAÇÃO
@@ -1658,6 +1723,15 @@ function renderAll() {
   if (topbarMonthlyResult) {
     setFinancialAmount(topbarMonthlyResult, balance, { signed: true });
   }
+  const highlights = getDashboardHighlightValues(
+    FinanceData.getAccountBalances(),
+    state.accountBalanceFilter,
+    FinanceData.getAccounts(),
+    accountId => FinanceData.getAccountBalance(accountId),
+    balance
+  );
+  setFinancialAmount(document.getElementById('dashboardCurrentBalance'), highlights.currentBalance, { signed: true });
+  setFinancialAmount(document.getElementById('dashboardMonthlyResult'), highlights.monthlyResult, { signed: true });
 
   // Delega para cada tela sua renderização específica
   renderDashboardView(incomes, activeFixed, variables, totalIncome, totalFixed, totalVariable, balance, ym);
@@ -1831,6 +1905,7 @@ function renderAccountBalancesPanel() {
   );
   const filterLabel = getAccountBalanceFilterLabel(accounts, state.accountBalanceFilter);
   setFinancialAmount(display, amount, { signed: true });
+  setFinancialAmount(document.getElementById('dashboardCurrentBalance'), amount, { signed: true });
   if (label) label.textContent = filterLabel;
   if (empty) {
     empty.hidden = accounts.length > 0;
@@ -2522,10 +2597,12 @@ function renderNotificationCenter() {
   const unreadLabel = document.getElementById('notificationsUnreadLabel');
   const list = document.getElementById('notificationsList');
   const settings = document.getElementById('notificationSettingsList');
+  const mobileSummary = document.getElementById('financialInsightsMobileSummary');
   if (!trigger || !count || !unreadLabel || !list || !settings) return;
 
   const scope = state.accountBalanceFilter;
   const visible = getVisibleNotifications(scope);
+  if (mobileSummary) mobileSummary.textContent = getMobileNotificationSummary(visible.length);
   const unreadItems = visible.filter(item => !item.read);
   const unread = unreadItems.length;
   const highestPriority = unreadItems.length ? getNotificationPriority(unreadItems[0]) : 'none';
@@ -2968,11 +3045,6 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
   // --- KPI: Gastos Variáveis ---
   setFinancialAmount(document.getElementById('totalVariableDisplay'), -totalVariable, { signed: true });
 
-  // --- KPI: Saldo / Sobra (cor muda conforme positivo ou negativo) ---
-  const balanceCard = document.getElementById('balanceDisplay');
-  setFinancialAmount(balanceCard, balance, { signed: true });
-  balanceCard.classList.remove('text-success', 'text-danger');
-
   // --- Cálculo das porcentagens para a regra 50/30/20 ---
   // Evita divisão por zero quando não há renda cadastrada
   let pctFixed = 0, pctVar = 0, pctSave = 0;
@@ -2985,20 +3057,6 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
 
   document.getElementById('fixedPercentage').textContent    = `${pctFixed}% da renda`;
   document.getElementById('variablePercentage').textContent = `${pctVar}% da renda`;
-
-  // --- Previsão de sobra diária do mês selecionado ---
-  const dailyBudget = getDailyBudgetInfo(balance, state.currentYear, state.currentMonth, new Date());
-  if (dailyBudget.status === 'past') {
-    document.getElementById('dailyBudgetDisplay').textContent = dailyBudget.message;
-  } else if (balance > 0) {
-    document.getElementById('dailyBudgetDisplay').textContent =
-      `Sobra média de ${formatCurrency(dailyBudget.dailyAmount)}/dia nos ${dailyBudget.days} dias restantes`;
-  } else {
-    document.getElementById('dailyBudgetDisplay').textContent =
-      balance < 0
-        ? `Atenção: déficit de ${formatCurrency(Math.abs(balance))} no mês`
-        : 'Sem sobra no momento';
-  }
 
   // --- Sub-componentes do Dashboard ---
   renderHealthDiagnostic(totalIncome, balance, pctFixed, pctVar, pctSave);
@@ -3079,7 +3137,6 @@ function renderHealthDiagnostic(income, balance, pctFixed, pctVar, pctSave) {
   const icon = document.getElementById('healthStatusIcon');
   const title = document.getElementById('healthTitle');
   const desc = document.getElementById('healthDescription');
-  const badge = document.getElementById('healthBadge');
   const diagnostic = getHealthDiagnostic(income, balance, pctFixed, pctVar, pctSave);
 
   document.getElementById('lblPctFixed').textContent = `${pctFixed}%`;
@@ -3089,8 +3146,6 @@ function renderHealthDiagnostic(income, balance, pctFixed, pctVar, pctSave) {
   document.getElementById('barVariable').style.width = `${Math.min(100, pctVar)}%`;
   document.getElementById('barSavings').style.width = `${Math.min(100, pctSave)}%`;
 
-  badge.className = diagnostic.badgeClass;
-  badge.textContent = diagnostic.badge;
   icon.innerHTML = `<i class="fa-solid ${diagnostic.icon}"></i>`;
   icon.style.background = diagnostic.iconBackground;
   icon.style.color = diagnostic.iconColor;
@@ -4778,6 +4833,9 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'open-credit-cards':
         openCreditCardsView();
         break;
+      case 'mobile-nav':
+        navigateMobileBottomItem(actionElement.dataset.destination);
+        break;
       case 'edit-credit-card':
         openCreditCardModal(id);
         break;
@@ -4836,11 +4894,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const notificationsPanel = document.getElementById('notificationsPanel');
   const notificationsTrigger = document.getElementById('notificationsTrigger');
+  const financialInsightsMobileStrip = document.getElementById('financialInsightsMobileStrip');
   const closeNotificationsBtn = document.getElementById('closeNotificationsBtn');
   const closeNotifications = () => {
     if (notificationsPanel) notificationsPanel.hidden = true;
     if (notificationsTrigger) notificationsTrigger.setAttribute('aria-expanded', 'false');
   };
+  if (financialInsightsMobileStrip && notificationsTrigger) {
+    financialInsightsMobileStrip.addEventListener('click', () => notificationsTrigger.click());
+  }
   if (closeNotificationsBtn) closeNotificationsBtn.addEventListener('click', closeNotifications);
   if (notificationsPanel) {
     notificationsPanel.addEventListener('change', event => {
@@ -4860,7 +4922,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!(event.target instanceof Element) ||
         notificationsPanel.hidden ||
         notificationsPanel.contains(event.target) ||
-        (notificationsTrigger && notificationsTrigger.contains(event.target))) return;
+        (notificationsTrigger && notificationsTrigger.contains(event.target)) ||
+        (financialInsightsMobileStrip && financialInsightsMobileStrip.contains(event.target))) return;
       closeNotifications();
     });
     document.addEventListener('keydown', event => {

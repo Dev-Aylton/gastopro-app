@@ -141,6 +141,11 @@
           <h1 class="view-title" id="currentViewTitle">Dashboard Geral</h1>
         </div>
 
+        <button type="button" class="mobile-brand" data-goto="dashboard" aria-label="GastoPro — início">
+          <img src="assets/logo-symbol.png" alt="" />
+          <span>GastoPro</span>
+        </button>
+
         <!-- Seletor de Mês com Mini Calendário Popover -->
         <div class="month-selector-bar" id="monthSelectorBar">
           <button id="prevMonthBtn" class="btn-icon" title="Mês anterior" aria-label="Mês anterior">
@@ -211,6 +216,29 @@
           </button>
         </div>
       </header>
+
+      <nav class="mobile-bottom-nav" id="mobileBottomNav" aria-label="Navegação principal">
+        <button type="button" class="mobile-bottom-nav-item is-active" data-action="mobile-nav"
+          data-destination="home" aria-label="Início" aria-current="page">
+          <i class="fa-solid fa-house" aria-hidden="true"></i><span>Início</span>
+        </button>
+        <button type="button" class="mobile-bottom-nav-item" data-action="mobile-nav"
+          data-destination="entries" aria-label="Lançamentos">
+          <i class="fa-solid fa-list" aria-hidden="true"></i><span>Lançamentos</span>
+        </button>
+        <button type="button" class="mobile-bottom-nav-item" data-action="mobile-nav"
+          data-destination="cards" aria-label="Cartões">
+          <i class="fa-solid fa-credit-card" aria-hidden="true"></i><span>Cartões</span>
+        </button>
+        <button type="button" class="mobile-bottom-nav-item" data-action="mobile-nav"
+          data-destination="goals" aria-label="Metas">
+          <i class="fa-solid fa-bullseye" aria-hidden="true"></i><span>Metas</span>
+        </button>
+        <button type="button" class="mobile-bottom-nav-item" data-action="mobile-nav"
+          data-destination="more" aria-label="Mais opções">
+          <i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span>Mais</span>
+        </button>
+      </nav>
 
       <section class="notifications-panel" id="notificationsPanel" aria-label="Central de avisos" hidden>
         <div class="notifications-panel-header">
@@ -436,6 +464,17 @@
              ==================================================== -->
         <section class="view-section active" id="view-dashboard">
 
+          <section class="dashboard-highlight-card" aria-label="Destaque financeiro do mês">
+            <div class="dashboard-highlight-value">
+              <span>Saldo atual</span>
+              <strong class="financial-amount financial-amount--neutral" id="dashboardCurrentBalance">R$ 0,00</strong>
+            </div>
+            <div class="dashboard-highlight-value">
+              <span>Resultado do mês</span>
+              <strong class="financial-amount financial-amount--neutral" id="dashboardMonthlyResult">R$ 0,00</strong>
+            </div>
+          </section>
+
           <!-- KPIs do Mês -->
           <div class="kpi-grid">
             <!-- Total Recebido -->
@@ -468,18 +507,14 @@
               <span class="kpi-caption">Alimentação, lazer, compras</span>
             </div>
 
-            <!-- Saldo Livre / Sobra -->
-            <div class="kpi-card balance-card highlight-card">
-              <div class="kpi-header">
-                <span class="kpi-title"><i class="fa-solid fa-piggy-bank"></i> Saldo / Sobra</span>
-                <span class="badge" id="healthBadge">Excelente</span>
-              </div>
-              <div class="kpi-value financial-amount financial-amount--neutral" id="balanceDisplay">R$ 0,00</div>
-              <span class="kpi-caption" id="dailyBudgetDisplay">Disponível para poupar</span>
-            </div>
           </div>
 
           <section class="panel-box financial-insights-panel" id="financialInsightsPanel" aria-label="Alertas e resumo financeiro">
+            <button type="button" class="financial-insights-mobile-strip" id="financialInsightsMobileStrip"
+              aria-label="Abrir a lista de avisos" aria-controls="notificationsPanel">
+              <span id="financialInsightsMobileSummary">Sem avisos</span>
+              <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+            </button>
             <div class="panel-header">
               <div class="panel-title-group">
                 <div class="panel-icon bg-green-soft"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i></div>
@@ -562,7 +597,7 @@
           </div>
 
           <!-- Metas por Categoria -->
-          <div class="panel-box goals-panel">
+          <div class="panel-box goals-panel" id="goalsDashboardPanel">
             <div class="panel-header">
               <div class="panel-title-group">
                 <div class="panel-icon bg-orange-soft"><i class="fa-solid fa-bullseye"></i></div>

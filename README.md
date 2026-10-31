@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-365%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-368%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -193,7 +193,7 @@ financeiro-app/
 │       ├── 20261103_sync_transactions.sql # Etapa 3; aplicada no Supabase
 │       └── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 365 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 368 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -658,12 +658,13 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - [x] **RM-029 — Importação de despesas futuras e restauração de tela** / Descrição: despesas futuras de CSV entram como a pagar; parcelas `N de M` são reconhecidas apenas no CSV; a última tela principal é restaurada com isolamento por usuário e verificação de Admin. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/importer.js`, `js/app.js`, `js/data.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-030 — Evitar gravações duplicadas ao salvar** / Descrição: trava reutilizável de salvamento com estado visual/acessível e espera de sincronização; modo local sem espera. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/app.js`, `tests/gastopro.test.js`.
 - [x] **RM-031 — Guia para obter extrato bancário** / Descrição: guia acessível de três passos com ilustrações genéricas, botão no importador e atalho em Primeiros passos. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/onboarding.js`, `js/app.js`, `css/style.css`, `assets/statement-guide-step-*.svg`, `sw.js`, `tests/gastopro.test.js`.
-- [ ] **RM-032 — Contraste WCAG AA em celular e gráficos** / Descrição: revisar contraste de textos, estados e gráficos em telas de celular. / Critério de pronto: a definir.
+- [x] **RM-032 — Contraste WCAG AA em celular e gráficos** / Descrição: contraste mínimo AA nas áreas mobile alteradas, avisos e textos sobre fundos coloridos nos temas claro e escuro. / Critério de pronto: testes automatizados aprovados.
 - [ ] **RM-033 — Idioma pt/en (futuro, adiado)** / Descrição: adicionar localização para português e inglês em etapa futura.
-- [x] **RM-034 — Contraste WCAG AA nos avisos** / Descrição: cores de Crítico, Atenção e Info com contraste AA nos temas claro e escuro, exclusivamente na central de avisos. A revisão geral em celulares e gráficos segue pendente no RM-032.
+- [x] **RM-034 — Contraste WCAG AA nos avisos** / Descrição: cores de Crítico, Atenção e Info com contraste AA nos temas claro e escuro, exclusivamente na central de avisos. O contraste nas áreas mobile alteradas foi concluído no RM-032; gráficos não foram alterados neste lote.
 - [x] **RM-035 — Navegação contextual e preservação de tela** / Descrição: avisos levam à tela, mês e item relacionados; dispensas persistem pela situação; atualizações preservam a navegação e o dashboard abre no topo. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-036 — Carteira de cartões e limite calculado** / Descrição: aba Cartões, limite usado pelas parcelas em aberto, gasto anterior opcional sincronizado, atalho do dashboard e estado vazio. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-037 — Forma de pagamento e status automático** / Descrição: seleção rápida acessível, preferência por usuário, status inicial por forma/data, compra no crédito sem débito imediato e migração de gasto anterior para o cartão. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/supabase.js`, `css/style.css`, `supabase/schema.sql`, `supabase/migrations/20261104_payment_method.sql`, `tests/gastopro.test.js`.
+- [x] **RM-038 — Home mobile e navegação inferior** / Descrição: cabeçalho com logo, seletor compacto, valores financeiros, faixa de avisos, grade de cartões-resumo e navegação fixa acessível. / Critério de pronto: testes automatizados aprovados.
 
 ### Em dúvida
 
@@ -677,6 +678,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 
 ### Planejamento (sem versão)
 
+- [x] Home no celular: cabeçalho centralizado com logo existente, chip de mês, destaque financeiro, faixa de avisos, resumo dos cartões, barra inferior e contraste nos dois temas. Três testes novos; suíte com 368 aprovados.
 - [x] RM-037 — seleção e sincronização da forma de pagamento, status automático por forma/data, compra no crédito sem débito imediato e migração de gasto anterior para o cartão. Oito testes adicionados; suíte com 365 aprovados. Migration `20261104_payment_method.sql` aplicada e conferida no Supabase.
 - [x] RM-036 — carteira de cartões com limite usado calculado das parcelas em aberto, gasto anterior opcional sincronizado no cartão, próximo vencimento e atalho compacto no dashboard. Quatro testes adicionados; suíte com 357 aprovados.
 - [x] RM-035 — sino navega ao item e o destaca, dispensa de avisos persiste por situação e atualização preserva tela/mês/rolagem. Dashboard inicia no topo. Quatro testes adicionados; suíte com 353 aprovados.

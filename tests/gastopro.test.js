@@ -3055,6 +3055,45 @@ describe('Bloco 2 — dívida, orçamento, diagnóstico e categorias', () => {
   });
 });
 
+describe('Dashboard mobile', () => {
+  const helpers = window.GastoProMobileHomeHelpers;
+
+  it('resume a quantidade de avisos na faixa compacta', () => {
+    assertEqual(helpers.getNotificationSummary(0), 'Sem avisos');
+    assertEqual(helpers.getNotificationSummary(1), '1 aviso · ver todos');
+    assertEqual(helpers.getNotificationSummary(4), '4 avisos · ver todos');
+  });
+
+  it('usa o saldo filtrado das contas e o resultado mensal existente no destaque', () => {
+    assertEqual(helpers.getDashboardHighlightValues(
+      { total: 1300, PF: 900, PJ: 400 },
+      'PF',
+      [{ id: 'pj-1', type: 'PJ' }],
+      () => 0,
+      275
+    ), { currentBalance: 900, monthlyResult: 275 });
+    assertEqual(helpers.getDashboardHighlightValues(
+      { total: 1300, PF: 900, PJ: 400 },
+      'account:pj-1',
+      [{ id: 'pj-1', type: 'PJ' }],
+      () => 425,
+      -80
+    ), { currentBalance: 425, monthlyResult: -80 });
+  });
+
+  it('leva o botão Cartões da navegação inferior à tela de cartões', () => {
+    const originalSwitch = window.switchToView;
+    let destination = null;
+    window.switchToView = view => { destination = view; };
+    try {
+      assertTrue(helpers.navigate('cards'));
+      assertEqual(destination, 'cards');
+    } finally {
+      window.switchToView = originalSwitch;
+    }
+  });
+});
+
 describe('Bloco 2 — backup JSON', () => {
   const validateBackup = overrides => GastoProBackupHelpers.validate(JSON.stringify({
     version: '4.0',
