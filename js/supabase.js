@@ -445,7 +445,15 @@ const SupabaseAuth = {
       }, payload => {
         if (payload.eventType === 'DELETE' || !payload.new) return;
         const change = this.normalizeSyncRealtimeRecord(table, payload.new);
-        if (change) onChange({ ...change, eventType: payload.eventType });
+        if (!change) return;
+        const key = change.kind === 'goals' ? change.item.category :
+          change.kind === 'profiles' || change.kind === 'fixedImportRules'
+            ? userId
+            : change.item.id;
+        if (window.FinanceData?.isOwnCloudSyncChange(
+          change.kind, key, change.version, change.clientEditedAt, change.deletedAt
+        )) return;
+        onChange({ ...change, eventType: payload.eventType });
       });
     });
     this.syncRealtimeUserId = userId;
@@ -477,7 +485,11 @@ const SupabaseAuth = {
   },
 
   normalizeSyncRealtimeRecord(table, row) {
-    const base = { version: row.updated_at, deletedAt: row.deleted_at || null };
+    const base = {
+      version: row.updated_at,
+      clientEditedAt: row.client_edited_at || null,
+      deletedAt: row.deleted_at || null
+    };
     switch (table) {
       case 'entries':
         return { ...base, kind: 'entries', item: mapEntryFromCloud(row) };
@@ -1179,7 +1191,6 @@ const SupabaseAuth = {
         );
         failedIds.push(...result.failedIds);
         if (result.conflictIds.length) {
-          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
           return { success: true, failedIds: [], conflictIds: result.conflictIds };
         }
       }
@@ -1370,7 +1381,6 @@ const SupabaseAuth = {
         );
         failedIds.push(...result.failedIds);
         if (result.conflictIds.length) {
-          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
           return { success: true, failedIds: [], conflictIds: result.conflictIds };
         }
       }
@@ -1488,7 +1498,6 @@ const SupabaseAuth = {
         );
         failedIds.push(...result.failedIds);
         if (result.conflictIds.length) {
-          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
           return { success: true, failedIds: [], conflictIds: result.conflictIds };
         }
       }
@@ -1576,7 +1585,6 @@ const SupabaseAuth = {
         );
         failedIds.push(...result.failedIds);
         if (result.conflictIds.length) {
-          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
           return { success: true, failedIds: [], conflictIds: result.conflictIds };
         }
       }
@@ -1690,7 +1698,6 @@ const SupabaseAuth = {
         );
         failedIds.push(...result.failedIds);
         if (result.conflictIds.length) {
-          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
           return { success: true, failedIds: [], conflictIds: result.conflictIds };
         }
       }
@@ -1768,7 +1775,6 @@ const SupabaseAuth = {
         : await upsert;
       if (error) return this.reportCloudError('Erro ao salvar perfil', error);
       if (Array.isArray(data) && !data.length) {
-        if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
         return { success: true, conflictIds: [sessionUserId] };
       }
       if (data && data[0] && data[0].updated_at) {
@@ -1854,7 +1860,6 @@ const SupabaseAuth = {
         );
         failedIds.push(...result.failedIds);
         if (result.conflictIds.length) {
-          if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
           return { success: true, failedIds: [], conflictIds: result.conflictIds };
         }
       }
@@ -1933,7 +1938,6 @@ const SupabaseAuth = {
       }, { onConflict: 'user_id' }).select('user_id,updated_at');
       if (error) return this.reportCloudError('Erro ao salvar regras de importação', error);
       if (Array.isArray(data) && !data.length) {
-        if (typeof window.showToast === 'function') window.showToast('Um item foi atualizado em outro aparelho');
         return { success: true, conflictIds: [sessionUserId] };
       }
       if (data && data[0] && data[0].updated_at) {

@@ -4685,6 +4685,11 @@ window.GastoProSyncHelpers = {
     const field = documentRef.getElementById(form[1]);
     return Boolean(modal && modal.classList.contains('active') && field && field.value === String(key));
   },
+  isRemoteRecordDifferent(current, incoming, deletedAt) {
+    if (deletedAt) return current !== null && current !== undefined &&
+      (!Array.isArray(current) || current.length > 0);
+    return JSON.stringify(current) !== JSON.stringify(incoming);
+  },
   deferOrApply(change, key, isEditing, apply, deferred, onDeferred) {
     if (isEditing) {
       deferred.set(key, change);
@@ -6818,6 +6823,26 @@ document.addEventListener('DOMContentLoaded', () => {
     return change.item && change.item.id;
   }
 
+  function getCurrentRealtimeRecord(change, userId) {
+    const getters = {
+      entries: () => FinanceData.getEntries(),
+      templates: () => FinanceData.getTemplates(),
+      accounts: () => FinanceData.getAccounts(),
+      creditCards: () => FinanceData.getCreditCards(),
+      creditCardPurchases: () => FinanceData.getCreditCardPurchases(),
+      goals: () => FinanceData.getGoals()
+    };
+    if (change.kind === 'profiles') {
+      const profile = FinanceData.getProfile();
+      return { id: userId, name: profile.name || '', avatar: profile.avatar || null };
+    }
+    if (change.kind === 'fixedImportRules') return FinanceData.getFixedImportRules();
+    const items = getters[change.kind]();
+    const key = change.kind === 'goals' ? change.item.category : change.item.id;
+    const getKey = change.kind === 'goals' ? item => item.category : item => item.id;
+    return items.find(item => getKey(item) === key) || null;
+  }
+
   function isRealtimeRecordBeingEdited(change, key) {
     return window.GastoProSyncHelpers.isRecordBeingEdited(change.kind, key);
   }
@@ -6832,8 +6857,16 @@ document.addEventListener('DOMContentLoaded', () => {
   function applyRealtimeChange(change, userId, render = renderAll) {
     const key = getRealtimeRecordKey(change, userId);
     if (!key) return;
+    if (FinanceData.isOwnCloudSyncChange(
+      change.kind, key, change.version, change.clientEditedAt, change.deletedAt
+    )) return;
     const version = change.version || change.deletedAt;
     if (FinanceData.isCloudSyncRecordStale(change.kind, key, version)) return;
+    const current = getCurrentRealtimeRecord(change, userId);
+    const incoming = change.kind === 'fixedImportRules'
+      ? change.deletedAt ? [] : change.item.rules
+      : change.item;
+    if (!window.GastoProSyncHelpers.isRemoteRecordDifferent(current, incoming, change.deletedAt)) return;
     const deferredKey = `${change.kind}:${key}`;
     window.GastoProSyncHelpers.deferOrApply(
       { change, userId },

@@ -6935,6 +6935,111 @@ describe('FinanceData — exclusão durante sincronização', () => {
     }
   });
 
+  itAsync('ignora evento Realtime correspondente à versão gravada neste aparelho', async () => {
+    setupMockLocalStorage();
+    const auth = window.SupabaseAuth;
+    const previousClient = auth.client;
+    const userId = 'user-realtime-own-echo';
+    const entryId = crypto.randomUUID();
+    const version = '2026-10-30T12:01:00.000Z';
+    localStorage.setItem('gastopro_sync_metadata_v1', JSON.stringify({
+      clockOffsetMs: 0,
+      records: { entries: { [entryId]: { updatedAt: version, editedAt: version } } },
+      deleted: {}
+    }));
+    const registrations = [];
+    let received = 0;
+    const channel = {
+      on(event, filter, callback) {
+        registrations.push({ filter, callback });
+        return this;
+      },
+      subscribe() { return this; }
+    };
+    auth.client = {
+      channel: () => channel,
+      removeChannel: async () => 'ok'
+    };
+    try {
+      assertTrue(auth.subscribeToSyncChanges(userId, () => { received++; }, () => {}));
+      const entriesChange = registrations.find(item => item.filter.table === 'entries');
+      entriesChange.callback({
+        eventType: 'UPDATE',
+        new: {
+          id: entryId, user_id: userId, description: 'Salário', amount: 1000,
+          category: 'Salário', type: 'income', date: '2026-10-30', paid: true,
+          is_debt: false, active: true, updated_at: version, client_edited_at: version
+        }
+      });
+      assertEqual(received, 0);
+    } finally {
+      await auth.unsubscribeFromSyncChanges();
+      auth.client = previousClient;
+    }
+  });
+
+  it('não trata tombstone de registro inexistente como conflito', () => {
+    setupMockLocalStorage();
+    const userId = 'user-sync-unknown-tombstone';
+    localStorage.setItem('gastopro_last_uid', userId);
+    let notices = 0;
+    const previousToast = window.showToast;
+    window.showToast = () => { notices++; };
+    try {
+      const conflict = FinanceData.reconcileSyncVersions(
+        userId, [], [], [], [], [], [],
+        { entries: { missingEntry: '2026-10-30T12:00:00.000Z' } },
+        { entries: { missingEntry: '2026-10-30T12:00:00.000Z' } }
+      );
+      const rulesConflict = FinanceData.reconcileSyncVersions(
+        userId, [], [], [], [], [], [],
+        { fixedImportRules: { [userId]: '2026-10-30T12:00:00.000Z' } },
+        { fixedImportRules: { [userId]: '2026-10-30T12:00:00.000Z' } },
+        []
+      );
+      assertFalse(conflict);
+      assertFalse(rulesConflict);
+      assertEqual(notices, 0);
+    } finally {
+      window.showToast = previousToast;
+    }
+  });
+
+  it('só sinaliza mudança remota diferente enquanto o registro está em edição', () => {
+    const current = { id: 'entry-editing', desc: 'Valor local', amount: 10 };
+    const remote = { ...current, desc: 'Valor remoto' };
+    const same = { ...current };
+    const modal = document.createElement('div');
+    modal.id = 'editModal';
+    modal.className = 'modal-overlay active';
+    const field = document.createElement('input');
+    field.id = 'editItemId';
+    field.value = current.id;
+    modal.appendChild(field);
+    document.body.appendChild(modal);
+    const deferred = new Map();
+    let notices = 0;
+    const notifyForChange = incoming => {
+      if (!window.GastoProSyncHelpers.isRemoteRecordDifferent(current, incoming, null)) return;
+      window.GastoProSyncHelpers.deferOrApply(
+        { item: incoming },
+        `entries:${current.id}`,
+        window.GastoProSyncHelpers.isRecordBeingEdited('entries', current.id),
+        () => {},
+        deferred,
+        () => { notices++; }
+      );
+    };
+    try {
+      notifyForChange(remote);
+      notifyForChange(same);
+      assertEqual(notices, 1);
+      assertEqual(deferred.size, 1);
+    } finally {
+      modal.remove();
+    }
+  });
+
   itAsync('aplica tombstone Realtime e remove o registro local', async () => {
     setupMockLocalStorage();
     const userId = 'user-realtime-tombstone';

@@ -644,6 +644,19 @@ const FinanceData = {
     return Boolean(version && knownVersion && version < knownVersion);
   },
 
+  isOwnCloudSyncChange(kind, key, version, clientEditedAt, deletedAt) {
+    const metadata = this.getSyncMetadata();
+    const record = deletedAt
+      ? metadata.deleted[kind]?.[key]
+      : metadata.records[kind]?.[key];
+    if (version && record?.updatedAt === version) return true;
+    const editedAt = Date.parse(record?.editedAt || '');
+    const clientTime = Date.parse(clientEditedAt || '');
+    const offset = Number(metadata.clockOffsetMs) || 0;
+    return Number.isFinite(editedAt) && Number.isFinite(clientTime) &&
+      clientTime === editedAt + offset;
+  },
+
   getClientEditedAt(kind, id, deleted = false) {
     const metadata = this.getSyncMetadata();
     const edit = metadata[deleted ? 'deleted' : 'records']?.[kind]?.[id]?.editedAt;
@@ -927,7 +940,6 @@ const FinanceData = {
         delete metadata.records.profiles[userId];
         this.saveSyncMetadata(metadata);
         this.saveProfile({ ...this.getProfile(), name: '', avatar: null });
-        if (typeof showToast === 'function') showToast('Um item foi atualizado em outro aparelho');
       }
     }
     return { success: true };
@@ -974,7 +986,6 @@ const FinanceData = {
           avatar: item.avatar || null
         });
       }
-      if (conflict && typeof showToast === 'function') showToast('Um item foi atualizado em outro aparelho');
       return { applied: !localWins, stale: false, conflict };
     }
 
@@ -1192,11 +1203,7 @@ const FinanceData = {
       this.savePendingSync(latestPending);
       if (hasFailures) {
         if (typeof showToast === 'function') {
-          const hasConflicts = [accountResult, creditCardsResult, creditCardPurchasesResult, ...results]
-            .some(result => getConflictIds(result).length > 0);
-          showToast(hasConflicts
-            ? 'Um item foi atualizado em outro aparelho'
-            : 'Não foi possível sincronizar todos os dados; os itens pendentes continuam salvos neste aparelho');
+          showToast('Não foi possível sincronizar todos os dados; os itens pendentes continuam salvos neste aparelho');
         }
         return (accountResult && !accountResult.success ? accountResult : null) ||
           (profileResult && !profileResult.success ? profileResult : null) ||
@@ -1246,9 +1253,6 @@ const FinanceData = {
           operation.accountId, operation.clientEditedAt, userId
         );
         if (!result || !result.success) {
-          if (result && result.conflicts && result.conflicts.length && typeof showToast === 'function') {
-            showToast('Um item foi atualizado em outro aparelho');
-          }
           return {
             success: false,
             error: result && result.error || new Error('A exclusão transacional da conta falhou.'),
@@ -1286,9 +1290,6 @@ const FinanceData = {
         }
         const result = await auth.importFinancialBatch(entries, templates, operation.payments, userId);
         if (!result || !result.success) {
-          if (result && result.conflicts && result.conflicts.length && typeof showToast === 'function') {
-            showToast('Um item foi atualizado em outro aparelho');
-          }
           return {
             success: false,
             error: result && result.error || new Error('A importação transacional falhou.'),
@@ -1426,7 +1427,12 @@ const FinanceData = {
       const editedAt = metadata.records.fixedImportRules[userId]?.editedAt;
       const version = cloudVersions.fixedImportRules && cloudVersions.fixedImportRules[userId];
       const tombstone = cloudTombstones.fixedImportRules && cloudTombstones.fixedImportRules[userId];
-      if (tombstone || known && !version || pending.fixedImportRules && version && (!known || version > known)) {
+      const hasLocalRules = this.getFixedImportRules().length > 0;
+      const hasPendingRules = pending.fixedImportRules;
+      const tombstoneConflict = tombstone && (hasLocalRules || hasPendingRules);
+      const missingRemoteVersion = known && !version && (hasLocalRules || hasPendingRules);
+      if (tombstoneConflict || missingRemoteVersion ||
+        pending.fixedImportRules && version && (!known || version > known)) {
         conflictFound = true;
         if (pending.fixedImportRules &&
           (version && newerThan(editedAt, version) || tombstone && newerThan(editedAt, tombstone))) {
@@ -1440,10 +1446,12 @@ const FinanceData = {
         localStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify(cloudFixedImportRules));
         if (version) metadata.records.fixedImportRules[userId] = { updatedAt: version, editedAt: version };
       }
+      if (tombstone && !hasLocalRules && !hasPendingRules) {
+        metadata.records.fixedImportRules[userId] = { updatedAt: tombstone, editedAt: tombstone };
+      }
     }
     this.savePendingSync(pending);
     this.saveSyncMetadata(metadata);
-    if (conflictFound && typeof showToast === 'function') showToast('Um item foi atualizado em outro aparelho');
     return conflictFound;
   },
 
@@ -1582,12 +1590,10 @@ const FinanceData = {
       if (Number.isFinite(localTime) && localTime + (Number(metadata.clockOffsetMs) || 0) > remoteTime + 2000) {
         metadata.records.profiles[profileId] = { updatedAt: cloudProfile.updatedAt, editedAt: known.editedAt };
         this.saveSyncMetadata(metadata);
-        if (typeof showToast === 'function') showToast('Um item foi atualizado em outro aparelho');
         return profile;
       }
       pending.profile = false;
       this.savePendingSync(pending);
-      if (typeof showToast === 'function') showToast('Um item foi atualizado em outro aparelho');
     } else if (pending.profile) {
       return profile;
     }
