@@ -5423,6 +5423,11 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   background: var(--success-hover);
 }
 
+.btn-import-confirm:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .btn-import-cancel {
   padding: 0.65rem 1rem;
   border: 1px solid var(--border);
@@ -5438,6 +5443,103 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 .btn-import-cancel:hover {
   color: var(--text-main);
   border-color: var(--text-muted);
+}
+
+.import-fixed-decision-section,
+.import-final-confirm-section {
+  margin-top: 0.75rem;
+  animation: fadeInUp 0.3s ease;
+}
+
+.import-fixed-search {
+  margin: 1rem 0;
+}
+
+.import-fixed-search > label,
+.import-payment-review label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.import-fixed-search-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.import-fixed-search-controls input,
+.import-payment-select {
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-main);
+}
+
+.import-fixed-candidate-list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 1rem 0;
+}
+
+.import-fixed-candidate {
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+
+.import-fixed-candidate h5 {
+  margin: 0;
+  color: var(--text-main);
+}
+
+.import-fixed-candidate p {
+  margin: 0.35rem 0 0.65rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.import-fixed-candidate fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.import-fixed-candidate legend {
+  margin-bottom: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.import-fixed-candidate fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.import-payment-review {
+  margin-top: 0.5rem;
+}
+
+.import-payment-review .import-row-status {
+  margin: 0 0 0.35rem;
+}
+
+.import-payment-select {
+  font-size: 0.78rem;
 }
 
 /* Dica de formato */

@@ -1685,7 +1685,7 @@
         </div>
         <p class="import-help-note" id="importDuplicateSelectionNote" aria-live="polite" hidden></p>
 
-        <p class="import-help-note">Confira a categoria e o tipo de cada linha. Nada é gravado até você confirmar a importação.</p>
+        <p class="import-help-note">Confira a categoria e o tipo de cada linha. Sugestões de gastos fixos não alteram os lançamentos sem sua decisão.</p>
 
         <!-- Tabela de preview -->
         <div class="import-preview-table-wrapper">
@@ -1711,10 +1711,42 @@
         <div class="import-actions">
           <button type="button" class="btn-import-cancel" id="cancelImportBtn">Cancelar</button>
           <button type="button" class="btn-import-confirm" id="confirmImportBtn">
-            <i class="fa-solid fa-check"></i> Importar Selecionados
+            Revisar fixos e pagamentos
           </button>
         </div>
       </div>
+
+      <section class="import-fixed-decision-section" id="importFixedDecisionSection" aria-labelledby="importFixedDecisionTitle" hidden>
+        <div class="preview-header">
+          <h4 id="importFixedDecisionTitle" tabindex="-1">Conferir candidatos a gasto fixo</h4>
+        </div>
+        <p class="import-help-note">Cada sugestão começa sem decisão. Escolha se é fixa; se for, informe se está ativa ou inativa.</p>
+        <form class="import-fixed-search" id="importFixedSearchForm">
+          <label for="importFixedSearchInput">Buscar outro gasto fixo nas linhas importadas</label>
+          <div class="import-fixed-search-controls">
+            <input id="importFixedSearchInput" type="search" autocomplete="off" />
+            <button type="submit" class="btn-secondary">Buscar</button>
+          </div>
+          <p class="import-help-note" id="importFixedSearchStatus" aria-live="polite"></p>
+        </form>
+        <div class="import-fixed-candidate-list" id="importFixedCandidateList" aria-live="polite"></div>
+        <div class="import-actions">
+          <button type="button" class="btn-import-cancel" id="backToImportPreviewBtn">Voltar à conferência</button>
+          <button type="button" class="btn-import-confirm" id="continueImportDecisionBtn" disabled>
+            Continuar
+          </button>
+        </div>
+      </section>
+
+      <section class="import-final-confirm-section" id="importFinalConfirmSection" hidden>
+        <p class="import-help-note">As decisões foram conferidas. Nada é gravado até confirmar a importação.</p>
+        <div class="import-actions">
+          <button type="button" class="btn-import-cancel" id="backToImportDecisionBtn">Voltar</button>
+          <button type="button" class="btn-import-confirm" id="finalConfirmImportBtn">
+            <i class="fa-solid fa-check"></i> Importar Selecionados
+          </button>
+        </div>
+      </section>
 
     </div>
   </div>

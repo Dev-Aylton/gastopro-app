@@ -4227,22 +4227,16 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     assertEqual(window.GastoProImportHelpers.getImportPreviewType(future), 'variable_pending');
   });
 
-  it('agrupa descrição recorrente limpa com valor igual e limita o template ao último mês', () => {
+  it('sugere descrição recorrente limpa sem converter linhas em gasto fixo', () => {
     const rows = prepareRecurringRows(
       `Data;Descrição;Valor\n${firstRecurringDate};Curso Exemplo (111) - c/ desconto;-150,00\n${secondRecurringDate};Curso Exemplo;-150,00`
     );
-    const first = rows[0];
-    const covered = rows[1];
     assertEqual(window.GastoProImportHelpers.cleanRecurringImportDescription(
       'Curso Exemplo (111) - c/ desconto'
     ), 'curso exemplo');
-    assertEqual(first.type, 'fixed');
-    assertEqual(window.GastoProImportHelpers.getImportPreviewType(first), 'fixed');
-    assertTrue(first.selected);
-    assertEqual(first.startMonth, firstRecurringMonth);
-    assertEqual(first.endMonth, secondRecurringMonth);
-    assertTrue(covered.recurringCovered);
-    assertFalse(covered.selected);
+    assertTrue(rows.every(row => row.type === 'variable' && row.selected));
+    assertTrue(rows.every(row => row.recurringCandidate));
+    assertTrue(rows.every(row => !row.recurringPrimary && !row.recurringCovered));
   });
 
   it('não agrupa descrições parecidas com conteúdo diferente', () => {
@@ -4263,14 +4257,142 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     assertEqual(window.GastoProImportHelpers.getImportPreviewType(row), 'variable_pending');
   });
 
-  it('não agrupa descrição recorrente quando o valor muda entre meses', () => {
+  it('sugere descrição recorrente mesmo quando o valor muda entre meses', () => {
     const rows = prepareRecurringRows(
       `Data;Descrição;Valor\n${firstRecurringDate};Curso Variável Exemplo;-150,00\n${secondRecurringDate};Curso Variável Exemplo;-150,00\n${GastoProImporter.shiftMonth(currentMonth, 3)}-05;Curso Variável Exemplo;-160,00`
     );
-    assertTrue(rows.every(row => !row.recurringPrimary && !row.recurringCovered && row.selected));
-    assertTrue(rows.every(row =>
-      window.GastoProImportHelpers.getImportPreviewType(row) === 'variable_pending'
-    ));
+    assertTrue(rows.every(row => row.recurringCandidate && row.selected));
+    assertTrue(rows.every(row => row.type === 'variable'));
+  });
+
+  it('bloqueia continuar enquanto candidatos não tiverem decisão e estado ativo', () => {
+    const candidates = [{ key: 'internet' }, { key: 'academia' }];
+    const decisions = new Map([
+      ['internet', { type: 'fixed', active: null }],
+      ['academia', { type: null, active: null }]
+    ]);
+    const canContinue = window.GastoProImportHelpers.areRecurringImportCandidatesResolved;
+    assertFalse(canContinue(candidates, decisions));
+    decisions.set('internet', { type: 'fixed', active: true });
+    decisions.set('academia', { type: 'variable', active: null });
+    assertTrue(canContinue(candidates, decisions));
+  });
+
+  it('busca e adiciona à decisão uma linha importada não sugerida', () => {
+    const rows = GastoProImporter.markDuplicates(
+      GastoProImporter.parseCSV(`Data;Descrição;Valor\n${tomorrowString};Moto Táxi;-18,00`),
+      []
+    );
+    const matches = window.GastoProImportHelpers.findRecurringImportCandidates('MOTO TAXI', rows);
+    const list = window.GastoProImportHelpers.mergeRecurringImportCandidates([], matches);
+    assertEqual(list.added.length, 1);
+    assertEqual(list.candidates[0].description, 'Moto Táxi');
+    assertEqual(rows[0].type, 'variable');
+  });
+
+  itAsync('cria fixo confirmado sem fim e projeta nos meses seguintes', async () => {
+    setupMockLocalStorage();
+    const rows = prepareRecurringRows(
+      `Data;Descrição;Valor\n${currentMonth}-05;Internet Exemplo;-120,00\n${GastoProImporter.shiftMonth(currentMonth, 1)}-05;Internet Exemplo;-125,00`
+    );
+    const helper = window.GastoProImportHelpers;
+    const candidate = helper.collectRecurringImportCandidates(rows)[0];
+    const template = helper.buildRecurringImportTemplate(
+      candidate, rows, { type: 'fixed', active: true }, currentMonth
+    );
+    const result = await FinanceData.importBatch([{ ...template, type: 'fixed' }]);
+    assertTrue(result.success);
+    const futureMonth = GastoProImporter.shiftMonth(template.startMonth, 2);
+    const projected = FinanceData.getByMonth(futureMonth).find(item =>
+      item.desc === 'Internet Exemplo'
+    );
+    assertTrue(Boolean(projected));
+    assertNull(FinanceData.getTemplates().find(item =>
+      item.desc === 'Internet Exemplo'
+    ).endMonth);
+  });
+
+  itAsync('preserva fixo inativo sem incluí-lo nos itens ativos do mês', async () => {
+    setupMockLocalStorage();
+    const monthAfter = GastoProImporter.shiftMonth(currentMonth, 1);
+    const result = await FinanceData.importBatch([{
+      type: 'fixed',
+      desc: 'Academia Inativa',
+      amount: 80,
+      category: 'Saúde',
+      date: `${currentMonth}-05`,
+      startMonth: currentMonth,
+      endMonth: null,
+      active: false
+    }]);
+    assertTrue(result.success);
+    const projected = FinanceData.getByMonth(monthAfter).find(item =>
+      item.desc === 'Academia Inativa'
+    );
+    assertEqual(projected.active, false);
+    assertFalse(FinanceData.getByMonth(monthAfter).filter(item =>
+      item.active !== false
+    ).some(item => item.desc === 'Academia Inativa'));
+  });
+
+  it('mantém Moto Táxi variável quando a pessoa decide que não é fixo', () => {
+    const firstPastMonth = GastoProImporter.shiftMonth(currentMonth, -2);
+    const secondPastMonth = GastoProImporter.shiftMonth(currentMonth, -1);
+    const rows = prepareRecurringRows(
+      `Data;Descrição;Valor\n${firstPastMonth}-05;Moto Táxi;-18,00\n${secondPastMonth}-05;Moto Táxi;-20,00`
+    );
+    const helper = window.GastoProImportHelpers;
+    const candidate = helper.collectRecurringImportCandidates(rows)[0];
+    const template = helper.buildRecurringImportTemplate(
+      candidate, rows, { type: 'variable', active: null }, currentMonth
+    );
+    assertNull(template);
+    assertEqual(helper.getRecurringImportLineType(
+      rows[0], { type: 'variable' }, 'fixed'
+    ), 'variable');
+    assertTrue(rows.every(row => row.type === 'variable' && row.selected));
+  });
+
+  it('exige revisão de pagamento para parcelas e mantém o padrão pendente', () => {
+    const row = GastoProImporter.parseRawText(
+      `15/10/2026 FACULDADE X PARC 03/48 -500,00`
+    )[0];
+    const helper = window.GastoProImportHelpers;
+    assertTrue(helper.requiresImportPaymentReview(row, row.category));
+    assertFalse(helper.getImportPaidValue(row, 'debt', row.category));
+    assertFalse(helper.getImportPaidValue(row, 'debt', row.category, false));
+    assertTrue(helper.getImportPaidValue(row, 'debt', row.category, true));
+    const selectedRow = { ...row, selected: true };
+    assertTrue(Boolean(helper.findUnresolvedImportPayment([selectedRow])));
+    assertNull(helper.findUnresolvedImportPayment([
+      { ...selectedRow, paymentDecision: false }
+    ]));
+  });
+
+  it('marca como pagos os meses passados de fixo confirmado e deixa o atual pendente', () => {
+    const previousMonth = GastoProImporter.shiftMonth(currentMonth, -1);
+    const rows = prepareRecurringRows(
+      `Data;Descrição;Valor\n${previousMonth}-05;Água Exemplo;-60,00\n${currentMonth}-05;Água Exemplo;-65,00`
+    );
+    const helper = window.GastoProImportHelpers;
+    const candidate = helper.collectRecurringImportCandidates(rows)[0];
+    const template = helper.buildRecurringImportTemplate(
+      candidate, rows, { type: 'fixed', active: true }, currentMonth
+    );
+    assertEqual(template.paidMonths[previousMonth], true);
+    assertFalse(Object.prototype.hasOwnProperty.call(template.paidMonths, currentMonth));
+  });
+
+  it('considera pagos somente lançamentos anteriores a hoje', () => {
+    const now = new Date();
+    const formatDate = date =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const tomorrowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const helper = window.GastoProImportHelpers;
+    assertTrue(helper.getImportPaidValue({ date: formatDate(yesterday) }, 'variable'));
+    assertFalse(helper.getImportPaidValue({ date: formatDate(now) }, 'variable'));
+    assertFalse(helper.getImportPaidValue({ date: formatDate(tomorrowDate) }, 'variable'));
   });
 
   it('mantém parcela N de M como Dívida, fora do agrupamento recorrente', () => {
@@ -6018,6 +6140,7 @@ async function printTestReport() {
   // Expõe resultado para o test-runner.html poder exibir na tela
   window.GastoProTestResults = TestResults;
   window.GastoProTestResults.total = total;
+  window.dispatchEvent(new Event('gastopro:tests-complete'));
 }
 
 // Executa o relatório automaticamente ao final do carregamento

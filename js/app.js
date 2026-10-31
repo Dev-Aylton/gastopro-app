@@ -279,7 +279,7 @@ function isFutureImportDate(date) {
   if (!date) return false;
   const today = new Date();
   const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  return date > todayString;
+  return date >= todayString;
 }
 
 function cleanRecurringImportDescription(description) {
@@ -297,54 +297,143 @@ function cleanRecurringImportDescription(description) {
     .trim();
 }
 
-function markRecurringImportRows(rows) {
+function collectRecurringImportCandidates(rows, minimumMonths = 2) {
   const grouped = new Map();
-  rows.forEach((row, index) => {
-    if (row.invalid || row.type !== 'variable' || row.installment || !row.date) return;
+  (Array.isArray(rows) ? rows : []).forEach((row, index) => {
+    if (row.invalid || row.duplicate || row.type !== 'variable' || row.installment || !row.date) return;
     const description = cleanRecurringImportDescription(row.desc);
-    const amount = Number(row.amount);
-    if (!description || !Number.isFinite(amount)) return;
+    if (!description) return;
     if (!grouped.has(description)) grouped.set(description, []);
-    grouped.get(description).push({ row, index, month: row.date.substring(0, 7), amount: Math.round(amount * 100) });
+    grouped.get(description).push({ row, index, month: row.date.substring(0, 7) });
   });
 
-  const recurring = new Map();
-  grouped.forEach(group => {
-    if (new Set(group.map(item => item.amount)).size !== 1) return;
+  return [...grouped.entries()].flatMap(([key, group]) => {
     const months = [...new Set(group.map(item => item.month))].sort();
-    if (months.length < 2) return;
-    const ordered = [...group].sort((a, b) => a.row.date.localeCompare(b.row.date) || a.index - b.index);
-    recurring.set(ordered[0].index, { startMonth: months[0], endMonth: months[months.length - 1] });
-    ordered.slice(1).forEach(item => recurring.set(item.index, { covered: true }));
+    if (months.length < minimumMonths) return [];
+    return [{
+      key,
+      description: group[0].row.desc,
+      indexes: group.map(item => item.index),
+      months,
+      startMonth: months[0],
+      lastMonth: months[months.length - 1]
+    }];
   });
+}
 
-  return rows.map((row, index) => {
-    const recurrence = recurring.get(index);
-    if (!recurrence) return row;
-    if (recurrence.covered) {
-      return { ...row, recurringCovered: true, selected: false };
-    }
-    return {
-      ...row,
-      type: 'fixed',
-      recurringPrimary: true,
-      startMonth: recurrence.startMonth,
-      endMonth: recurrence.endMonth
-    };
+function markRecurringImportRows(rows) {
+  const candidates = collectRecurringImportCandidates(rows);
+  const candidateByIndex = new Map();
+  candidates.forEach(candidate => candidate.indexes.forEach(index =>
+    candidateByIndex.set(index, candidate.key)
+  ));
+  return rows.map((row, index) => candidateByIndex.has(index)
+    ? { ...row, recurringCandidate: true, recurringCandidateKey: candidateByIndex.get(index) }
+    : { ...row, recurringCandidate: false, recurringCandidateKey: null }
+  );
+}
+
+function findRecurringImportCandidates(search, rows) {
+  const query = cleanRecurringImportDescription(search);
+  if (!query) return [];
+  return collectRecurringImportCandidates(rows, 1).filter(candidate =>
+    cleanRecurringImportDescription(candidate.description).includes(query)
+  );
+}
+
+function areRecurringImportCandidatesResolved(candidates, decisions) {
+  return candidates.every(candidate => {
+    const decision = decisions.get(candidate.key);
+    return decision && (decision.type === 'variable' ||
+      decision.type === 'fixed' && typeof decision.active === 'boolean');
   });
+}
+
+function mergeRecurringImportCandidates(existing, matches) {
+  const candidates = [...existing];
+  const keys = new Set(candidates.map(candidate => candidate.key));
+  const added = matches.filter(candidate => {
+    if (keys.has(candidate.key)) return false;
+    keys.add(candidate.key);
+    candidates.push(candidate);
+    return true;
+  });
+  return { candidates, added };
 }
 
 function getImportPreviewType(row) {
   if (row.installment) return 'debt';
-  if (row.recurringPrimary) return 'fixed';
   if (row.pending || (row.type !== 'income' && isFutureImportDate(row.date))) {
     return 'variable_pending';
   }
   return ['income', 'fixed', 'debt'].includes(row.type) ? row.type : 'variable';
 }
 
-function getImportPaidValue(row, type) {
-  return type !== 'variable_pending' && !isFutureImportDate(row.date);
+function getRecurringImportLineType(row, decision, selectedType) {
+  if (!decision || decision.type !== 'variable' || selectedType === 'variable_pending') {
+    return selectedType;
+  }
+  return getImportPreviewType({ ...row, type: 'variable', previewType: null });
+}
+
+function requiresImportPaymentReview(row, category = row && row.category) {
+  const normalizedCategory = String(category || '').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  return Boolean(row && (
+    row.type === 'debt' || row.previewType === 'debt' ||
+    normalizedCategory === 'emprestimo' ||
+    normalizedCategory === 'parcelamento' ||
+    /\b\d{1,3}\s*(?:\/|de)\s*\d{1,3}\b/i.test(row.desc || '')
+  ));
+}
+
+function findUnresolvedImportPayment(rows) {
+  return rows.find(row =>
+    row.selected && !row.invalid && requiresImportPaymentReview(row, row.category) &&
+    typeof row.paymentDecision !== 'boolean'
+  );
+}
+
+function getImportPaidValue(row, type, category, paymentDecision) {
+  if (requiresImportPaymentReview(row, category)) return paymentDecision === true;
+  const today = new Date();
+  const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return type !== 'variable_pending' && Boolean(row.date) && row.date < todayString;
+}
+
+function buildRecurringImportTemplate(candidate, rows, decision, currentMonth) {
+  if (!candidate || !decision || decision.type !== 'fixed' ||
+    typeof decision.active !== 'boolean') return null;
+  const selectedRows = candidate.indexes
+    .map(index => ({ row: rows[index], index }))
+    .filter(item => item.row && item.row.selected)
+    .sort((left, right) => left.row.date.localeCompare(right.row.date) || left.index - right.index);
+  if (!selectedRows.length) return null;
+
+  const startMonth = selectedRows[0].row.date.slice(0, 7);
+  const lastMonth = selectedRows[selectedRows.length - 1].row.date.slice(0, 7);
+  const templateSource = selectedRows[selectedRows.length - 1].row;
+  const paidMonths = {};
+  for (let month = startMonth; month <= lastMonth; month = GastoProImporter.shiftMonth(month, 1)) {
+    if (month < currentMonth) paidMonths[month] = true;
+  }
+  const finiteEndMonth = selectedRows.map(item => item.row.endMonth)
+    .filter(month => /^\d{4}-\d{2}$/.test(month || ''))
+    .sort()
+    .pop() || null;
+
+  return {
+    ...templateSource,
+    type: 'fixed',
+    isDebt: Boolean(finiteEndMonth ||
+      ['Empréstimo', 'Parcelamento'].includes(templateSource.category)),
+    active: decision.active,
+    month: startMonth,
+    startMonth,
+    endMonth: finiteEndMonth,
+    date: `${startMonth}-${templateSource.date.slice(8, 10)}`,
+    paidMonths
+  };
 }
 
 function getImportAccountId(accountId, accounts) {
@@ -402,8 +491,16 @@ function applyFixedImportRules(rows, rules) {
 window.GastoProImportHelpers = Object.freeze({
   cleanRecurringImportDescription,
   markRecurringImportRows,
+  collectRecurringImportCandidates,
+  findRecurringImportCandidates,
+  areRecurringImportCandidatesResolved,
+  mergeRecurringImportCandidates,
+  buildRecurringImportTemplate,
   getImportPreviewType,
+  getRecurringImportLineType,
   getImportPaidValue,
+  requiresImportPaymentReview,
+  findUnresolvedImportPayment,
   getImportAccountId,
   normalizeFixedDescription,
   findFutureFixedDescriptionMatches,
@@ -6942,7 +7039,164 @@ document.addEventListener('DOMContentLoaded', () => {
   const importSelectAll     = document.getElementById('importSelectAll');
   const importDuplicateSelectionNote = document.getElementById('importDuplicateSelectionNote');
   const confirmImportBtn    = document.getElementById('confirmImportBtn');
+  const importFixedDecisionSection = document.getElementById('importFixedDecisionSection');
+  const importFixedCandidateList = document.getElementById('importFixedCandidateList');
+  const importFixedSearchForm = document.getElementById('importFixedSearchForm');
+  const importFixedSearchInput = document.getElementById('importFixedSearchInput');
+  const importFixedSearchStatus = document.getElementById('importFixedSearchStatus');
+  const continueImportDecisionBtn = document.getElementById('continueImportDecisionBtn');
+  const importFinalConfirmSection = document.getElementById('importFinalConfirmSection');
+  const backToImportPreviewBtn = document.getElementById('backToImportPreviewBtn');
+  const backToImportDecisionBtn = document.getElementById('backToImportDecisionBtn');
+  const finalConfirmImportBtn = document.getElementById('finalConfirmImportBtn');
   let importSaving = false;
+  let importDecisionCandidates = [];
+  let importCandidateDecisions = new Map();
+
+  function showImportDecisionStep(step) {
+    if (importPreviewSection) importPreviewSection.classList.toggle('visible', step === 'preview');
+    if (importFixedDecisionSection) importFixedDecisionSection.hidden = step !== 'decisions';
+    if (importFinalConfirmSection) importFinalConfirmSection.hidden = step !== 'confirm';
+  }
+
+  function resetImportDecisionFlow() {
+    importDecisionCandidates = [];
+    importCandidateDecisions = new Map();
+    showImportDecisionStep('preview');
+    if (importFixedCandidateList) importFixedCandidateList.innerHTML = '';
+    if (importFixedSearchInput) importFixedSearchInput.value = '';
+    if (importFixedSearchStatus) importFixedSearchStatus.textContent = '';
+    if (continueImportDecisionBtn) continueImportDecisionBtn.disabled = true;
+  }
+
+  function renderImportDecisionCandidates() {
+    if (!importFixedCandidateList) return;
+    importFixedCandidateList.innerHTML = importDecisionCandidates.map((candidate, index) => {
+      const decision = importCandidateDecisions.get(candidate.key) || { type: null, active: null };
+      const months = candidate.months.join(', ');
+      return `
+        <article class="import-fixed-candidate">
+          <h5>${escapeHtml(candidate.description)}</h5>
+          <p>${escapeHtml(`${candidate.indexes.length} linha(s) · ${months}`)}</p>
+          <fieldset>
+            <legend>Este gasto é fixo?</legend>
+            <label><input type="radio" name="import-candidate-${index}" value="fixed"
+              data-candidate-choice="${index}" ${decision.type === 'fixed' ? 'checked' : ''} /> É fixo</label>
+            <label><input type="radio" name="import-candidate-${index}" value="variable"
+              data-candidate-choice="${index}" ${decision.type === 'variable' ? 'checked' : ''} /> Não é fixo</label>
+          </fieldset>
+          <fieldset class="import-fixed-active-choice" ${decision.type === 'fixed' ? '' : 'hidden'}>
+            <legend>Estado do gasto fixo</legend>
+            <label><input type="radio" name="import-candidate-active-${index}" value="true"
+              data-candidate-active="${index}" ${decision.active === true ? 'checked' : ''} /> Ativo</label>
+            <label><input type="radio" name="import-candidate-active-${index}" value="false"
+              data-candidate-active="${index}" ${decision.active === false ? 'checked' : ''} /> Inativo</label>
+          </fieldset>
+        </article>`;
+    }).join('') || '<p class="import-help-note">Nenhum candidato sugerido. Use a busca para adicionar um gasto fixo.</p>';
+
+    importFixedCandidateList.querySelectorAll('[data-candidate-choice]').forEach(input => {
+      input.addEventListener('change', event => {
+        const index = Number(event.target.dataset.candidateChoice);
+        const candidate = importDecisionCandidates[index];
+        const previous = importCandidateDecisions.get(candidate.key) || {};
+        const decision = event.target.value === 'fixed'
+          ? { type: 'fixed', active: previous.type === 'fixed' ? previous.active : null }
+          : { type: 'variable', active: null };
+        importCandidateDecisions.set(candidate.key, decision);
+        const card = event.target.closest('.import-fixed-candidate');
+        const activeChoice = card.querySelector('.import-fixed-active-choice');
+        activeChoice.hidden = decision.type !== 'fixed';
+        if (decision.type !== 'fixed') {
+          activeChoice.querySelectorAll('input').forEach(radio => { radio.checked = false; });
+        }
+        updateImportDecisionContinueButton();
+      });
+    });
+    importFixedCandidateList.querySelectorAll('[data-candidate-active]').forEach(input => {
+      input.addEventListener('change', event => {
+        const index = Number(event.target.dataset.candidateActive);
+        const candidate = importDecisionCandidates[index];
+        const decision = importCandidateDecisions.get(candidate.key);
+        if (decision) {
+          decision.active = event.target.value === 'true';
+          updateImportDecisionContinueButton();
+        }
+      });
+    });
+    updateImportDecisionContinueButton();
+  }
+
+  function updateImportDecisionContinueButton() {
+    if (!continueImportDecisionBtn) return;
+    continueImportDecisionBtn.disabled = !areRecurringImportCandidatesResolved(
+      importDecisionCandidates,
+      importCandidateDecisions
+    );
+  }
+
+  function syncImportPreviewControls() {
+    if (!importPreviewTbody) return;
+    _importParsedRows.forEach((row, index) => {
+      const checkbox = importPreviewTbody.querySelector(`.import-row-check[data-row="${index}"]`);
+      const categorySelect = importPreviewTbody.querySelector(`.import-cat-select[data-row="${index}"]`);
+      const typeSelect = importPreviewTbody.querySelector(`.import-type-select[data-row="${index}"]`);
+      const paymentSelect = importPreviewTbody.querySelector(`.import-payment-select[data-row="${index}"]`);
+      if (checkbox) row.selected = checkbox.checked;
+      if (categorySelect) row.category = categorySelect.value;
+      if (typeSelect) row.previewType = typeSelect.value;
+      if (paymentSelect) row.paymentDecision =
+        paymentSelect.value === '' ? null : paymentSelect.value === 'paid';
+    });
+  }
+
+  function beginImportDecisionStep() {
+    syncImportPreviewControls();
+    const unresolvedPayment = findUnresolvedImportPayment(_importParsedRows);
+    if (unresolvedPayment) {
+      showToast(`Revise o pagamento de "${unresolvedPayment.desc}" antes de continuar.`);
+      const index = _importParsedRows.indexOf(unresolvedPayment);
+      const paymentSelect = importPreviewTbody.querySelector(
+        `.import-payment-select[data-row="${index}"]`
+      );
+      if (paymentSelect) paymentSelect.focus();
+      return;
+    }
+
+    importDecisionCandidates = collectRecurringImportCandidates(_importParsedRows);
+    importCandidateDecisions = new Map(importDecisionCandidates.map(candidate =>
+      [candidate.key, { type: null, active: null }]
+    ));
+    renderImportDecisionCandidates();
+    showImportDecisionStep('decisions');
+    const heading = document.getElementById('importFixedDecisionTitle');
+    if (heading) heading.focus();
+  }
+
+  function searchImportFixedCandidate(event) {
+    event.preventDefault();
+    const matches = findRecurringImportCandidates(
+      importFixedSearchInput ? importFixedSearchInput.value : '',
+      _importParsedRows
+    );
+    const merged = mergeRecurringImportCandidates(importDecisionCandidates, matches);
+    importDecisionCandidates = merged.candidates;
+    merged.added.forEach(candidate => {
+      importCandidateDecisions.set(candidate.key, { type: null, active: null });
+    });
+    if (importFixedSearchStatus) {
+      importFixedSearchStatus.textContent = merged.added.length
+        ? `${merged.added.length} candidato(s) adicionado(s) à lista.`
+        : matches.length
+          ? 'Os itens encontrados já estão na lista.'
+          : 'Nenhuma linha importada corresponde à busca.';
+    }
+    renderImportDecisionCandidates();
+    if (merged.added.length && importFixedCandidateList) {
+      const firstChoice = importFixedCandidateList.querySelector('[data-candidate-choice]');
+      if (firstChoice) firstChoice.focus();
+    }
+  }
 
   /** Abre o modal de importação e reseta o estado. */
   function openImportModal() {
@@ -6977,6 +7231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (importRawTextarea) importRawTextarea.value = '';
     // Esconde preview
     if (importPreviewSection) importPreviewSection.classList.remove('visible');
+    resetImportDecisionFlow();
     if (importPreviewTbody)   importPreviewTbody.innerHTML = '';
     if (previewCountBadge)    previewCountBadge.textContent = '0 itens';
     if (importSelectAll)      importSelectAll.checked = true;
@@ -7044,8 +7299,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (importTabTextBtn) importTabTextBtn.classList.toggle('active', !isCsv);
     if (importCsvPanel)   importCsvPanel.classList.toggle('active', isCsv);
     if (importTextPanel)  importTextPanel.classList.toggle('active', !isCsv);
-    // Esconde preview ao trocar de aba
-    if (importPreviewSection) importPreviewSection.classList.remove('visible');
+    resetImportDecisionFlow();
   }
 
   /**
@@ -7089,15 +7343,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const dateDisplay = row.date
         ? row.date.split('-').reverse().join('/')
         : 'Data inválida';
+      const needsPaymentReview = requiresImportPaymentReview(row, row.category);
       const rowStatus = [
         row.invalid ? '<span class="import-row-status invalid">Data inválida</span>' : '',
         row.duplicate ? '<span class="import-row-status duplicate">Parece já lançado</span>' : '',
         row.fixedByRule ? '<span class="import-row-status pending">Regra salva: Fixo</span>' : '',
-        row.pending && !row.recurringPrimary ? '<span class="import-row-status pending">Sugestão: a pagar</span>' : ''
+        row.pending ? '<span class="import-row-status pending">Sugestão: a pagar</span>' : ''
       ].filter(Boolean).join(' ');
-      const recurringCoveredNote = row.recurringCovered
-        ? '<span class="import-row-status recurring-covered">já coberto pela recorrência</span>'
-        : '';
 
       // Gera opções do select de categoria
       const catOptions = allCats.map(c =>
@@ -7117,6 +7369,17 @@ document.addEventListener('DOMContentLoaded', () => {
           ? `A pagar de ${row.startMonth.slice(5, 7)}/${row.startMonth.slice(0, 4)} até ${row.endMonth.slice(5, 7)}/${row.endMonth.slice(0, 4)}`
           : `A pagar a partir de ${row.startMonth.slice(5, 7)}/${row.startMonth.slice(0, 4)}`)}</small>`
         : '';
+      const paymentReviewDisplay = `
+        <div class="import-payment-review" ${needsPaymentReview ? '' : 'hidden'}>
+          <span class="import-row-status pending">Revisar pagamento</span>
+          <label for="import-payment-${i}">Pagamento</label>
+          <select class="import-payment-select" id="import-payment-${i}" data-row="${i}"
+            aria-label="Revisar pagamento de ${escapeHtml(row.desc)}">
+            <option value="" ${typeof row.paymentDecision !== 'boolean' ? 'selected' : ''}>Escolha</option>
+            <option value="paid" ${row.paymentDecision === true ? 'selected' : ''}>Paga</option>
+            <option value="pending" ${row.paymentDecision === false ? 'selected' : ''}>Pendente</option>
+          </select>
+        </div>`;
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -7127,9 +7390,10 @@ document.addEventListener('DOMContentLoaded', () => {
         </td>
         <td class="col-date">${escapeHtml(dateDisplay)}</td>
         <td class="col-desc" title="${escapeHtml(row.desc)}">
-          ${recurringCoveredNote} ${escapeHtml(row.desc)} ${rowStatus}
+          ${escapeHtml(row.desc)} ${rowStatus}
           ${installmentDisplay}
           ${paymentPeriodDisplay}
+          ${paymentReviewDisplay}
           ${row.invalidReason ? `<small class="import-row-reason">${escapeHtml(row.invalidReason)}</small>` : ''}
         </td>
         <td class="col-category">
@@ -7158,6 +7422,17 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       tr.querySelector('.import-cat-select').addEventListener('change', event => {
         row.category = event.target.value;
+        const paymentReview = tr.querySelector('.import-payment-review');
+        paymentReview.hidden = !requiresImportPaymentReview(row, row.category);
+        if (paymentReview.hidden) {
+          row.paymentDecision = null;
+          paymentReview.querySelector('.import-payment-select').value = '';
+        }
+      });
+      tr.querySelector('.import-payment-select').addEventListener('change', event => {
+        row.paymentDecision = event.target.value === ''
+          ? null
+          : event.target.value === 'paid';
       });
       // Listener dinâmico: ao mudar tipo, atualiza cor do valor
       tr.querySelector('.import-type-select').addEventListener('change', (e) => {
@@ -7190,6 +7465,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function prepareImportRows(rows) {
+    resetImportDecisionFlow();
     const previousRows = _importParsedRows;
     previousRows.forEach((row, index) => {
       const checkbox = importPreviewTbody &&
@@ -7232,14 +7508,15 @@ document.addEventListener('DOMContentLoaded', () => {
         ...row,
         category: previous.category,
         previewType: previous.previewType,
-        selectionTouched: previous.selectionTouched
+        selectionTouched: previous.selectionTouched,
+        paymentDecision: previous.paymentDecision
       };
       if (previous.selectionTouched) {
         updated.selected = previous.selected;
       } else if (row.duplicate) {
         updated.selected = false;
       } else if (previous.duplicate) {
-        updated.selected = !row.invalid && !row.recurringCovered;
+        updated.selected = !row.invalid;
       } else {
         updated.selected = previous.selected;
       }
@@ -7314,6 +7591,7 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   async function handleConfirmImport() {
     if (!importPreviewTbody || _importParsedRows.length === 0) return;
+    syncImportPreviewControls();
     const accountId = window.GastoProImportHelpers.getImportAccountId(
       importTargetAccount ? importTargetAccount.value : '',
       FinanceData.getAccounts()
@@ -7336,12 +7614,45 @@ document.addEventListener('DOMContentLoaded', () => {
     const debtItems = [];
     const launches = [];
     const payments = [];
+    const candidateByIndex = new Map();
+    importDecisionCandidates.forEach(candidate => candidate.indexes.forEach(index =>
+      candidateByIndex.set(index, candidate)
+    ));
+    const processedFixedCandidates = new Set();
+    const now = new Date();
+    const currentMonth = getYearMonthString(now.getFullYear(), now.getMonth() + 1);
     checkboxes.forEach((cb, i) => {
-      if (!cb.checked || _importParsedRows[i].invalid) return;
+      const sourceRow = _importParsedRows[i];
+      if (sourceRow.invalid) return;
+      const candidate = candidateByIndex.get(i);
+      const candidateDecision = candidate && importCandidateDecisions.get(candidate.key);
+      if (candidateDecision && candidateDecision.type === 'fixed') {
+        if (processedFixedCandidates.has(candidate.key)) return;
+        processedFixedCandidates.add(candidate.key);
+        const fixed = buildRecurringImportTemplate(
+          candidate, _importParsedRows, candidateDecision, currentMonth
+        );
+        if (!fixed) return;
+        const category = fixed.category;
+        const templateType = fixed.isDebt ? 'debt' : 'fixed';
+        const builtTemplate = GastoProImporter.buildEntry(
+          { ...fixed, accountId, category },
+          templateType
+        );
+        debtItems.push({
+          ...builtTemplate,
+          isDebt: fixed.isDebt,
+          active: fixed.active,
+          paidMonths: fixed.paidMonths
+        });
+        return;
+      }
+      if (!cb.checked) return;
 
-      const row      = { ..._importParsedRows[i], accountId };
-      const category = catSelects[i]  ? catSelects[i].value  : row.category;
-      const type     = typeSelects[i] ? typeSelects[i].value : 'variable';
+      const row      = { ...sourceRow, accountId };
+      const category = catSelects[i] ? catSelects[i].value : row.category;
+      const selectedType = typeSelects[i] ? typeSelects[i].value : 'variable';
+      const type = getRecurringImportLineType(row, candidateDecision, selectedType);
 
       if (type === 'fixed' || type === 'debt') {
         debtItems.push(GastoProImporter.buildEntry({ ...row, category }, type));
@@ -7349,12 +7660,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (type === 'variable_pending') {
-        launches.push(GastoProImporter.buildEntry({ ...row, category }, 'variable', false));
+        launches.push(GastoProImporter.buildEntry(
+          { ...row, category },
+          'variable',
+          getImportPaidValue(row, type, category, row.paymentDecision)
+        ));
         return;
       }
 
       if ((type === 'variable' || type === 'income') && row.installment && row.linkedTemplateId) {
-        payments.push({ id: row.linkedTemplateId, ym: row.date.substring(0, 7) });
+        if (row.paymentDecision === true) {
+          payments.push({ id: row.linkedTemplateId, ym: row.date.substring(0, 7) });
+        }
         return;
       }
 
@@ -7363,7 +7680,13 @@ document.addEventListener('DOMContentLoaded', () => {
           `.import-installment-check[data-row="${i}"]`
         );
         if (installmentCheckbox && installmentCheckbox.checked) {
-          debtItems.push(GastoProImporter.buildInstallmentDebt(row, category));
+          const debt = GastoProImporter.buildInstallmentDebt(row, category);
+          if (typeof row.paymentDecision === 'boolean') {
+            const month = row.date.substring(0, 7);
+            if (row.paymentDecision) debt.paidMonths[month] = true;
+            else delete debt.paidMonths[month];
+          }
+          debtItems.push(debt);
           return;
         }
       }
@@ -7371,7 +7694,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const entry = GastoProImporter.buildEntry(
         { ...row, category },
         type,
-        getImportPaidValue(row, type)
+        getImportPaidValue(row, type, category, row.paymentDecision)
       );
 
       launches.push(entry);
@@ -7527,12 +7850,32 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
 
+  if (importFixedSearchForm) {
+    importFixedSearchForm.addEventListener('submit', searchImportFixedCandidate);
+  }
+  if (confirmImportBtn) {
+    confirmImportBtn.addEventListener('click', beginImportDecisionStep);
+  }
+  if (backToImportPreviewBtn) {
+    backToImportPreviewBtn.addEventListener('click', () => showImportDecisionStep('preview'));
+  }
+  if (continueImportDecisionBtn) {
+    continueImportDecisionBtn.addEventListener('click', () => {
+      if (continueImportDecisionBtn.disabled) return;
+      showImportDecisionStep('confirm');
+      if (finalConfirmImportBtn) finalConfirmImportBtn.focus();
+    });
+  }
+  if (backToImportDecisionBtn) {
+    backToImportDecisionBtn.addEventListener('click', () => showImportDecisionStep('decisions'));
+  }
+
   // Confirmar importação
-  if (confirmImportBtn) confirmImportBtn.addEventListener('click', async () => {
+  if (finalConfirmImportBtn) finalConfirmImportBtn.addEventListener('click', async () => {
     if (importSaving) return;
     const previousCancelDisabled = cancelImportBtn.disabled;
     const previousCloseDisabled = closeImportModalBtn.disabled;
-    await withSaving(confirmImportBtn, async () => {
+    await withSaving(finalConfirmImportBtn, async () => {
       importSaving = true;
       cancelImportBtn.disabled = true;
       closeImportModalBtn.disabled = true;
