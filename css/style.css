@@ -3332,6 +3332,9 @@ button:active { transform: scale(0.98); }
   position: fixed;
   bottom: calc(8rem + env(safe-area-inset-bottom));
   right: calc(2rem + env(safe-area-inset-right));
+  left: calc(270px + max(1rem, env(safe-area-inset-left)));
+  width: auto;
+  max-width: 36rem;
   background: var(--theme-background-1e293b);
   border: 1px solid var(--border);
   color: var(--theme-text-ffffff);
@@ -7402,12 +7405,14 @@ textarea:focus-visible,
   }
 }
 
-.toast {
-  left: max(1rem, env(safe-area-inset-left));
-  right: max(1rem, env(safe-area-inset-right));
-  bottom: calc(68px + 46px + 2rem + env(safe-area-inset-bottom));
-  width: auto;
-  max-width: none;
+@media (max-width: 900px) {
+  .toast {
+    left: max(1rem, env(safe-area-inset-left));
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: calc(68px + 46px + 2rem + env(safe-area-inset-bottom));
+    width: auto;
+    max-width: none;
+  }
 }
 
 button,

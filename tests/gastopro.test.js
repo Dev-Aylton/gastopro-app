@@ -3519,6 +3519,8 @@ describe('Dashboard mobile', () => {
   it('formata a versão exibida a partir do nome do cache do service worker', () => {
     assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.7'), 'v4.7');
     assertNull(window.GastoProAppVersion.formatCacheName('other-v4.7'));
+    assertEqual(window.GastoProAppVersion.getDisplayedVersion(null), 'v…');
+    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.7'), 'v4.7');
   });
 
   it('usa o saldo filtrado das contas e o resultado mensal existente no destaque', () => {
@@ -4893,6 +4895,58 @@ describe('Central de avisos local', () => {
     notifications.dismiss(octoberKey);
     notifications.syncEvents([event('2026-11')]);
     assertEqual(notifications.getVisible('all').map(item => item.eventKey), [novemberKey]);
+  });
+
+  it('mostra nível novo de limite após dispensar alerta de 80%', () => {
+    setupMockLocalStorage();
+    const notifications = window.GastoProNotificationCenter;
+    const getEventKey = window.GastoProMobileHomeHelpers.getNotificationEventKey;
+    const warningKey = getEventKey('cardLimit', 'card-1', '2026-10', 'warning');
+    const fullKey = getEventKey('cardLimit', 'card-1', '2026-10', 'full');
+    const event = (eventKey, message, priority) => ({
+      eventKey, scope: 'all', type: 'cardLimit', title: 'Limite de cartão',
+      message, priority
+    });
+    notifications.syncEvents([event(warningKey, '80% em uso.', 'attention')]);
+    notifications.dismiss(warningKey);
+    notifications.syncEvents([event(fullKey, '100% em uso.', 'critical')]);
+    assertEqual(notifications.getVisible('all').map(item => item.eventKey), [fullKey]);
+  });
+
+  it('mostra previsão negativa depois de dispensar previsão positiva', () => {
+    setupMockLocalStorage();
+    const notifications = window.GastoProNotificationCenter;
+    const getEventKey = window.GastoProMobileHomeHelpers.getNotificationEventKey;
+    const positiveKey = getEventKey('forecast', 'positive', '2026-10');
+    const negativeKey = getEventKey('forecast', 'negative', '2026-10');
+    const event = eventKey => ({
+      eventKey, scope: 'all', type: 'forecast', title: 'Previsão mensal',
+      message: 'Previsão do saldo.'
+    });
+    notifications.syncEvents([event(positiveKey)]);
+    notifications.dismiss(positiveKey);
+    notifications.syncEvents([event(negativeKey)]);
+    assertEqual(notifications.getVisible('all').map(item => item.eventKey), [negativeKey]);
+  });
+
+  it('mostra insuficiência de gravidade maior após dispensar nível menor', () => {
+    setupMockLocalStorage();
+    const notifications = window.GastoProNotificationCenter;
+    const getEventKey = window.GastoProMobileHomeHelpers.getNotificationEventKey;
+    const oneUncoveredKey = getEventKey(
+      'insufficientBalance', 'entry-1', '2026-10', 'uncovered-1'
+    );
+    const twoUncoveredKey = getEventKey(
+      'insufficientBalance', 'entry-1', '2026-10', 'uncovered-2'
+    );
+    const event = eventKey => ({
+      eventKey, scope: 'all', type: 'insufficientBalance',
+      title: 'Saldo insuficiente', message: 'Vencimentos descobertos.'
+    });
+    notifications.syncEvents([event(oneUncoveredKey)]);
+    notifications.dismiss(oneUncoveredKey);
+    notifications.syncEvents([event(twoUncoveredKey)]);
+    assertEqual(notifications.getVisible('all').map(item => item.eventKey), [twoUncoveredKey]);
   });
 
   it('mantém a dispensa na mesma situação e cria aviso quando a situação muda', () => {

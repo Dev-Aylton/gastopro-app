@@ -989,8 +989,8 @@ function getMobileNotificationSummary(count) {
   return `${total} ${total === 1 ? 'aviso' : 'avisos'} · ver todos`;
 }
 
-function getStableNotificationEventKey(type, itemId, month) {
-  return `${type}:${itemId}:${month}`;
+function getStableNotificationEventKey(type, itemId, month, level = '') {
+  return [type, itemId, month, level].filter(Boolean).join(':');
 }
 
 window.GastoProMobileHomeHelpers = {
@@ -2405,6 +2405,27 @@ function calculateUpcomingDueWarning(currentBalance, pendingItems, today, horizo
   };
 }
 
+function countUncoveredDueExpenses(currentBalance, dueItems) {
+  const groupedByDate = new Map();
+  dueItems.forEach(item => {
+    if (!groupedByDate.has(item.date)) groupedByDate.set(item.date, []);
+    groupedByDate.get(item.date).push(item);
+  });
+  let runningBalance = Number(currentBalance) || 0;
+  let uncoveredCount = 0;
+  [...groupedByDate.entries()].sort(([left], [right]) => left.localeCompare(right))
+    .forEach(([, items]) => {
+      items.filter(item => item.type === 'income').forEach(item => {
+        runningBalance += Number(item.amount) || 0;
+      });
+      items.filter(item => item.type !== 'income').forEach(item => {
+        runningBalance -= Number(item.amount) || 0;
+        if (runningBalance < 0) uncoveredCount++;
+      });
+    });
+  return uncoveredCount;
+}
+
 function getLatestOverdueTemplateItems(templates, today) {
   const todayDate = new Date(`${today}T00:00:00Z`);
   if (Number.isNaN(todayDate.getTime())) return [];
@@ -2944,6 +2965,7 @@ window.GastoProFinancialInsights = {
   calculateCategoryAnomalies,
   calculateMonthEndForecast,
   calculateUpcomingDueWarning,
+  countUncoveredDueExpenses,
   buildMonthlySummary: buildMonthlyFinancialSummary,
   filterByAccount: filterFinancialItemsByAccount
 };
@@ -3069,8 +3091,18 @@ function renderFinancialInsights() {
         : calculateUpcomingDueWarning(balance, balanceMovements, today);
       const shortage = balanceDue ? balanceDue.insufficientAmount : 0;
       if (shortage > 0) {
+        const upcomingDueIncome = balanceMovements.filter(item =>
+          item.type === 'income' && item.paid !== true && item.active !== false &&
+          item.date >= today && item.date <= dueHorizon
+        );
+        const uncoveredDueCount = countUncoveredDueExpenses(
+          balance, [...dueByDate.values(), ...upcomingDueIncome]
+        );
         notificationEvents.push({
-          eventKey: getStableNotificationEventKey('insufficientBalance', dueEventId, actualMonth),
+          eventKey: getStableNotificationEventKey(
+            'insufficientBalance', dueEventId, actualMonth,
+            `uncovered-${Math.max(1, uncoveredDueCount)}`
+          ),
           scope: filter,
           type: 'insufficientBalance',
           priority: 'critical',
@@ -3096,7 +3128,9 @@ function renderFinancialInsights() {
     }
     if (forecast) {
       notificationEvents.push({
-        eventKey: getStableNotificationEventKey('forecast', 'monthly', actualMonth),
+        eventKey: getStableNotificationEventKey(
+          'forecast', forecast.amount < 0 ? 'negative' : 'positive', actualMonth
+        ),
         scope: filter,
         type: 'forecast',
         priority: 'info',
@@ -3167,7 +3201,7 @@ function renderFinancialInsights() {
       );
       if (usage.alert === 'normal') return;
       notificationEvents.push({
-        eventKey: getStableNotificationEventKey('cardLimit', card.id, actualMonth),
+        eventKey: getStableNotificationEventKey('cardLimit', card.id, actualMonth, usage.alert),
         scope: filter,
         type: 'cardLimit',
         priority: usage.alert === 'full' ? 'critical' : 'attention',
@@ -4682,6 +4716,10 @@ function formatServiceWorkerCacheVersion(cacheName) {
   return `v${cacheName.slice('gastopro-v'.length)}`;
 }
 
+function getDisplayedAppVersion(cacheName) {
+  return formatServiceWorkerCacheVersion(cacheName) || 'v…';
+}
+
 function updateDisplayedAppVersion() {
   const badge = document.querySelector('.badge-version');
   if (!badge || !('serviceWorker' in navigator) || typeof MessageChannel !== 'function') return;
@@ -4693,8 +4731,7 @@ function updateDisplayedAppVersion() {
     const timeout = setTimeout(() => channel.port1.close(), 5000);
     channel.port1.onmessage = event => {
       clearTimeout(timeout);
-      const version = formatServiceWorkerCacheVersion(event.data && event.data.cacheName);
-      if (version) badge.textContent = version;
+      badge.textContent = getDisplayedAppVersion(event.data && event.data.cacheName);
       channel.port1.close();
     };
     worker.postMessage({ type: 'GASTOPRO_GET_CACHE_NAME' }, [channel.port2]);
@@ -4703,7 +4740,10 @@ function updateDisplayedAppVersion() {
   });
 }
 
-window.GastoProAppVersion = { formatCacheName: formatServiceWorkerCacheVersion };
+window.GastoProAppVersion = {
+  formatCacheName: formatServiceWorkerCacheVersion,
+  getDisplayedVersion: getDisplayedAppVersion
+};
 
 document.addEventListener('DOMContentLoaded', () => {
   const backToTopBtn = document.getElementById('backToTopBtn');
