@@ -20,6 +20,7 @@ declare
   v_conflicts jsonb := '[]'::jsonb;
   v_entry_versions jsonb;
   v_template_versions jsonb;
+  v_touched uuid[] := '{}'::uuid[];
 begin
   if v_user_id is null then
     raise exception 'Authentication required';
@@ -131,6 +132,7 @@ begin
             account_id = nullif(v_item->>'account_id', '')::uuid,
             client_edited_at = v_client_edited_at
           where id = v_template.id and user_id = v_user_id;
+          v_touched := v_touched || (v_item->>'id')::uuid;
         end if;
       else
         insert into public.fixed_templates (
@@ -145,6 +147,7 @@ begin
           coalesce(v_item->'paid_months', '{}'::jsonb),
           nullif(v_item->>'account_id', '')::uuid, v_client_edited_at
         );
+        v_touched := v_touched || (v_item->>'id')::uuid;
       end if;
     end loop;
 
@@ -164,6 +167,11 @@ begin
         ));
       elsif v_template.paid_months->>v_month = 'true' then
         null;
+      elsif v_template.id = any(v_touched) then
+        update public.fixed_templates set
+          paid_months = coalesce(paid_months, '{}'::jsonb) || jsonb_build_object(v_month, true),
+          client_edited_at = pg_catalog.clock_timestamp()
+        where id = v_template.id and user_id = v_user_id;
       elsif v_client_edited_at <= v_template.updated_at then
         v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object(
           'kind', 'payments', 'id', v_template.id, 'ym', v_month
@@ -173,6 +181,7 @@ begin
           paid_months = coalesce(paid_months, '{}'::jsonb) || jsonb_build_object(v_month, true),
           client_edited_at = v_client_edited_at
         where id = v_template.id and user_id = v_user_id;
+        v_touched := v_touched || v_template.id;
       end if;
     end loop;
 
