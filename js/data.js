@@ -2884,6 +2884,15 @@ const FinanceData = {
     await this.saveCreditCards([], { flush: false });
     this.saveGoals([]);
     await this.saveFixedImportRules([], { flush: false });
+    if (window.GastoProInsightDismissal) {
+      window.GastoProInsightDismissal.clear();
+    } else {
+      try {
+        localStorage.removeItem('gastopro_dismissed_insights_v1');
+      } catch (error) {
+        console.warn('[GastoPro] Não foi possível limpar insights dispensados:', error);
+      }
+    }
     localStorage.removeItem(STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT);
     const ownerId = profile.userId || this.getActiveUserId();
     if (ownerId) {

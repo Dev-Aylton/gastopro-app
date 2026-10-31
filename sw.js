@@ -75,6 +75,12 @@ self.addEventListener('activate', event => {
   })());
 });
 
+self.addEventListener('message', event => {
+  if (!event.data || event.data.type !== 'GASTOPRO_GET_CACHE_NAME') return;
+  const port = event.ports && event.ports[0];
+  if (port) port.postMessage({ cacheName: CACHE_NAME });
+});
+
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 

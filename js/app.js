@@ -142,6 +142,49 @@ function readAvatarDimensions(file) {
 
 /** Data real do sistema, usada para inicializar o estado. */
 const _initDate = new Date();
+const DISMISSED_INSIGHTS_KEY = 'gastopro_dismissed_insights_v1';
+
+function loadDismissedInsights() {
+  try {
+    const stored = localStorage.getItem(DISMISSED_INSIGHTS_KEY);
+    if (!stored) return new Set();
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed) || parsed.some(key => typeof key !== 'string')) {
+      throw new Error('Formato inválido para insights dispensados.');
+    }
+    return new Set(parsed);
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível ler insights dispensados:', error);
+    return new Set();
+  }
+}
+
+function saveDismissedInsights() {
+  try {
+    localStorage.setItem(DISMISSED_INSIGHTS_KEY, JSON.stringify([...state.dismissedInsights]));
+    return true;
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível salvar insights dispensados:', error);
+    return false;
+  }
+}
+
+function clearDismissedInsights() {
+  state.dismissedInsights.clear();
+  try {
+    localStorage.removeItem(DISMISSED_INSIGHTS_KEY);
+    return true;
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível limpar insights dispensados:', error);
+    return false;
+  }
+}
+
+function dismissInsight(key) {
+  if (typeof key !== 'string' || !key) return false;
+  state.dismissedInsights.add(key);
+  return saveDismissedInsights();
+}
 
 /**
  * @type {Object} state
@@ -155,8 +198,19 @@ const state = {
   currentMonth: _initDate.getMonth() + 1, // Mês selecionado 1–12 (inicializa com mês atual)
   expenseFilter: 'all',                   // Filtro de gastos: 'all' | 'fixed' | 'variable'
   accountBalanceFilter: 'all',
-  dismissedInsights: new Set(),
+  dismissedInsights: loadDismissedInsights(),
   chartInstance: null                     // Instância ativa do Chart.js (para destruir antes de recriar)
+};
+
+window.GastoProInsightDismissal = {
+  KEY: DISMISSED_INSIGHTS_KEY,
+  restore() {
+    state.dismissedInsights = loadDismissedInsights();
+    return new Set(state.dismissedInsights);
+  },
+  dismiss: dismissInsight,
+  isDismissed: key => state.dismissedInsights.has(key),
+  clear: clearDismissedInsights
 };
 
 const feedbackViewState = {
@@ -935,6 +989,10 @@ function getMobileNotificationSummary(count) {
   return `${total} ${total === 1 ? 'aviso' : 'avisos'} · ver todos`;
 }
 
+function getStableNotificationEventKey(type, itemId, month) {
+  return `${type}:${itemId}:${month}`;
+}
+
 window.GastoProMobileHomeHelpers = {
   getDashboardHighlightValues,
   getPendingBalanceNotice,
@@ -942,6 +1000,7 @@ window.GastoProMobileHomeHelpers = {
   getFixedPaidStatus,
   getBalanceTone,
   getNotificationSummary: getMobileNotificationSummary,
+  getNotificationEventKey: getStableNotificationEventKey,
   navigate: navigateMobileBottomItem
 };
 
@@ -2677,7 +2736,7 @@ function removePaidImportReviewId(id, userId) {
   );
 }
 
-function buildPaidImportReviewNotice(ids, entries, userId) {
+function buildPaidImportReviewNotice(ids, entries) {
   const entriesById = new Map((Array.isArray(entries) ? entries : [])
     .filter(entry => entry && typeof entry.id === 'string')
     .map(entry => [entry.id, entry]));
@@ -2693,11 +2752,10 @@ function buildPaidImportReviewNotice(ids, entries, userId) {
     const entry = entriesById.get(id);
     return entry.month || String(entry.date || '').slice(0, 7);
   }).filter(month => /^\d{4}-\d{2}$/.test(month)).sort();
-  const profile = FinanceData.getProfile();
-  const scopedUserId = userId || FinanceData.getActiveUserId() ||
-    (profile && profile.userId) || 'local';
+  const primaryEntry = entriesById.get(reviewIds[0]);
+  const eventMonth = primaryEntry.month || String(primaryEntry.date || '').slice(0, 7) || 'unknown';
   return {
-    eventKey: `import-review:${scopedUserId}:${reviewIds.join(',')}`,
+    eventKey: getStableNotificationEventKey('importReview', reviewIds[0], eventMonth),
     scope: 'all',
     type: 'importReview',
     priority: 'attention',
@@ -2754,9 +2812,9 @@ function renderNotificationCenter() {
 
   const scope = state.accountBalanceFilter;
   const visible = getVisibleNotifications(scope);
-  if (mobileSummary) mobileSummary.textContent = getMobileNotificationSummary(visible.length);
   const unreadItems = visible.filter(item => !item.read);
   const unread = unreadItems.length;
+  if (mobileSummary) mobileSummary.textContent = getMobileNotificationSummary(unread);
   const highestPriority = unreadItems.length ? getNotificationPriority(unreadItems[0]) : 'none';
   count.textContent = unread > 99 ? '99+' : String(unread);
   count.hidden = unread === 0;
@@ -2973,8 +3031,9 @@ function renderFinancialInsights() {
       dueByDate.set(`${item.id || item.desc}:${item.date}`, item);
     });
     const dueEventItems = [...dueByDate.values()];
-    const dueEventKey = dueEventItems.map(item => `${item.id || item.desc}:${item.date}`)
-      .sort().join(',');
+    const dueEventId = dueEventItems.map(item => item.id)
+      .filter(id => typeof id === 'string' && id)
+      .sort()[0] || 'monthly';
     const dueDestinationMonth = dueEventItems
       .map(item => item.month || String(item.date || '').slice(0, 7))
       .filter(month => /^\d{4}-(0[1-9]|1[0-2])$/.test(month))
@@ -2988,7 +3047,7 @@ function renderFinancialInsights() {
       const upcomingCount = dueEventItems.filter(item => item.date > today).length;
       const critical = overdueCount > 0 || dueTodayCount > 0;
       notificationEvents.push({
-        eventKey: `dueSoon:${actualMonth}:${filter}:${dueEventKey}`,
+        eventKey: getStableNotificationEventKey('dueSoon', dueEventId, actualMonth),
         scope: filter,
         type: 'dueSoon',
         priority: critical ? 'critical' : 'attention',
@@ -3011,7 +3070,7 @@ function renderFinancialInsights() {
       const shortage = balanceDue ? balanceDue.insufficientAmount : 0;
       if (shortage > 0) {
         notificationEvents.push({
-          eventKey: `insufficientBalance:${actualMonth}:${filter}:${dueEventKey}:${Math.round(shortage * 100)}`,
+          eventKey: getStableNotificationEventKey('insufficientBalance', dueEventId, actualMonth),
           scope: filter,
           type: 'insufficientBalance',
           priority: 'critical',
@@ -3037,7 +3096,7 @@ function renderFinancialInsights() {
     }
     if (forecast) {
       notificationEvents.push({
-        eventKey: `forecast:${actualMonth}:${filter}:${Math.round(forecast.amount * 100)}:${balanceMovements.map(item => item.id).filter(Boolean).sort().join(',')}`,
+        eventKey: getStableNotificationEventKey('forecast', 'monthly', actualMonth),
         scope: filter,
         type: 'forecast',
         priority: 'info',
@@ -3067,7 +3126,9 @@ function renderFinancialInsights() {
     const key = `anomaly:${alertScope}:${item.id || index}`;
     if (selectedMonth === actualMonth) {
       notificationEvents.push({
-        eventKey: `anomaly:${actualMonth}:${filter}:${item.id || index}:${Math.round(Number(item.amount) * 100)}:${Math.round(average * 100)}`,
+        eventKey: getStableNotificationEventKey(
+          'anomaly', item.id || `category-${item.category || index}`, actualMonth
+        ),
         scope: filter,
         type: 'anomaly',
         priority: 'attention',
@@ -3106,7 +3167,7 @@ function renderFinancialInsights() {
       );
       if (usage.alert === 'normal') return;
       notificationEvents.push({
-        eventKey: `cardLimit:${actualMonth}:${filter}:${card.id}:${usage.alert}:${Math.round(usage.percent)}`,
+        eventKey: getStableNotificationEventKey('cardLimit', card.id, actualMonth),
         scope: filter,
         type: 'cardLimit',
         priority: usage.alert === 'full' ? 'critical' : 'attention',
@@ -4616,6 +4677,34 @@ window.GastoProSyncHelpers = {
   }
 };
 
+function formatServiceWorkerCacheVersion(cacheName) {
+  if (typeof cacheName !== 'string' || !/^gastopro-v\d+(?:\.\d+)*$/.test(cacheName)) return null;
+  return `v${cacheName.slice('gastopro-v'.length)}`;
+}
+
+function updateDisplayedAppVersion() {
+  const badge = document.querySelector('.badge-version');
+  if (!badge || !('serviceWorker' in navigator) || typeof MessageChannel !== 'function') return;
+
+  navigator.serviceWorker.ready.then(registration => {
+    const worker = registration.active || navigator.serviceWorker.controller;
+    if (!worker) return;
+    const channel = new MessageChannel();
+    const timeout = setTimeout(() => channel.port1.close(), 5000);
+    channel.port1.onmessage = event => {
+      clearTimeout(timeout);
+      const version = formatServiceWorkerCacheVersion(event.data && event.data.cacheName);
+      if (version) badge.textContent = version;
+      channel.port1.close();
+    };
+    worker.postMessage({ type: 'GASTOPRO_GET_CACHE_NAME' }, [channel.port2]);
+  }).catch(error => {
+    console.info('[GastoPro] Não foi possível consultar a versão do app:', error);
+  });
+}
+
+window.GastoProAppVersion = { formatCacheName: formatServiceWorkerCacheVersion };
+
 document.addEventListener('DOMContentLoaded', () => {
   const backToTopBtn = document.getElementById('backToTopBtn');
   if (backToTopBtn) {
@@ -5047,7 +5136,7 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       case 'dismiss-insight':
         if (actionElement.dataset.insightKey) {
-          state.dismissedInsights.add(actionElement.dataset.insightKey);
+          dismissInsight(actionElement.dataset.insightKey);
           renderFinancialInsights();
         }
         break;
@@ -9485,6 +9574,7 @@ document.addEventListener('DOMContentLoaded', () => {
     navigator.serviceWorker.register('sw.js').catch(err => {
       console.info('[GastoPro] Service Worker não registrado (normal em file://):', err.message);
     });
+    updateDisplayedAppVersion();
   }
 
   // ── 13. Metas por Categoria — Event Listeners ─────────────────

@@ -3486,6 +3486,41 @@ describe('Dashboard mobile', () => {
     assertEqual(helpers.getNotificationSummary(4), '4 avisos · ver todos');
   });
 
+  it('conta na faixa somente avisos não lidos', () => {
+    setupMockLocalStorage();
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <button id="notificationsTrigger"></button>
+      <span id="notificationsUnreadCount"></span>
+      <p id="notificationsUnreadLabel"></p>
+      <span id="financialInsightsMobileSummary"></span>
+      <div id="notificationsList"></div>
+      <div id="notificationSettingsList"></div>`;
+    document.body.appendChild(host);
+    const notifications = window.GastoProNotificationCenter;
+    notifications.syncEvents([{
+      eventKey: 'dueSoon:entry-1:2026-10',
+      scope: 'all',
+      type: 'dueSoon',
+      title: 'Vencimento próximo',
+      message: 'Há uma conta para pagar.'
+    }]);
+    try {
+      notifications.render();
+      assertEqual(host.querySelector('#financialInsightsMobileSummary').textContent, '1 aviso · ver todos');
+      notifications.markRead('dueSoon:entry-1:2026-10');
+      notifications.render();
+      assertEqual(host.querySelector('#financialInsightsMobileSummary').textContent, 'Sem avisos');
+    } finally {
+      host.remove();
+    }
+  });
+
+  it('formata a versão exibida a partir do nome do cache do service worker', () => {
+    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.7'), 'v4.7');
+    assertNull(window.GastoProAppVersion.formatCacheName('other-v4.7'));
+  });
+
   it('usa o saldo filtrado das contas e o resultado mensal existente no destaque', () => {
     assertEqual(helpers.getDashboardHighlightValues(
       { total: 1300, PF: 900, PJ: 400 },
@@ -4812,6 +4847,54 @@ describe('Central de avisos local', () => {
     assertTrue(notifications.getItems()[0].dismissed);
   });
 
+  it('mantém a dispensa do insight depois de restaurar o estado salvo', () => {
+    setupMockLocalStorage();
+    const dismissal = window.GastoProInsightDismissal;
+    dismissal.restore();
+    const key = 'forecast:dashboard:2026-10';
+    assertTrue(dismissal.dismiss(key));
+    assertNotNull(localStorage.getItem(dismissal.KEY));
+    const restored = dismissal.restore();
+    assertTrue(restored.has(key));
+    assertTrue(dismissal.isDismissed(key));
+  });
+
+  it('não recria aviso dispensado quando o valor muda no mesmo item e mês', () => {
+    setupMockLocalStorage();
+    const notifications = window.GastoProNotificationCenter;
+    const getEventKey = window.GastoProMobileHomeHelpers.getNotificationEventKey;
+    const eventKey = getEventKey('cardLimit', 'card-1', '2026-10');
+    notifications.syncEvents([{
+      eventKey, scope: 'all', type: 'cardLimit', title: 'Limite quase cheio',
+      message: '80% em uso.', amount: 80
+    }]);
+    notifications.dismiss(eventKey);
+    notifications.syncEvents([{
+      eventKey: getEventKey('cardLimit', 'card-1', '2026-10'),
+      scope: 'all', type: 'cardLimit', title: 'Limite quase cheio',
+      message: '91% em uso.', amount: 91
+    }]);
+    assertEqual(notifications.getVisible('all'), []);
+    assertTrue(notifications.getItems()[0].dismissed);
+  });
+
+  it('cria aviso novo quando o mesmo evento pertence a outro mês', () => {
+    setupMockLocalStorage();
+    const notifications = window.GastoProNotificationCenter;
+    const getEventKey = window.GastoProMobileHomeHelpers.getNotificationEventKey;
+    const octoberKey = getEventKey('cardLimit', 'card-1', '2026-10');
+    const novemberKey = getEventKey('cardLimit', 'card-1', '2026-11');
+    const event = month => ({
+      eventKey: getEventKey('cardLimit', 'card-1', month),
+      scope: 'all', type: 'cardLimit', title: 'Limite quase cheio',
+      message: 'Confira o limite.'
+    });
+    notifications.syncEvents([event('2026-10')]);
+    notifications.dismiss(octoberKey);
+    notifications.syncEvents([event('2026-11')]);
+    assertEqual(notifications.getVisible('all').map(item => item.eventKey), [novemberKey]);
+  });
+
   it('mantém a dispensa na mesma situação e cria aviso quando a situação muda', () => {
     setupMockLocalStorage();
     const sameSituation = {
@@ -5007,6 +5090,10 @@ describe('Central de avisos local', () => {
     setupMockLocalStorage();
     notifications.savePreferences({ cardLimit: false });
     window.GastoProUsageTelemetry.setEnabled(false);
+    const insightDismissal = window.GastoProInsightDismissal;
+    const dismissedInsightKey = 'forecast:monthly:2026-10';
+    insightDismissal.restore();
+    insightDismissal.dismiss(dismissedInsightKey);
     notifications.syncEvents([{
       eventKey: 'card-event',
       scope: 'all',
@@ -5018,6 +5105,8 @@ describe('Central de avisos local', () => {
     assertTrue(resetResult.success);
     assertFalse(notifications.getPreferences().cardLimit);
     assertFalse(window.GastoProUsageTelemetry.getEnabled());
+    assertNull(localStorage.getItem(insightDismissal.KEY));
+    assertFalse(insightDismissal.isDismissed(dismissedInsightKey));
     FinanceData.clearUserData();
     assertFalse(notifications.getPreferences().cardLimit);
     assertFalse(window.GastoProUsageTelemetry.getEnabled());
