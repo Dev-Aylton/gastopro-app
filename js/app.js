@@ -225,9 +225,43 @@ const APP_RELOAD_STATE_KEY = 'gastopro_app_reload_state_v1';
 const USAGE_TELEMETRY_PREFERENCE_KEY = 'gastopro_usage_telemetry_enabled_v1';
 const PAYMENT_METHOD_PREFERENCE_KEY = 'gastopro_payment_method_preference_v1';
 const PAYMENT_METHOD_OPTIONS = Object.freeze({
-  expense: Object.freeze(['pix', 'debit', 'cash', 'credit_card', 'boleto', 'other']),
-  income: Object.freeze(['pix', 'transfer', 'cash', 'other'])
+  expense: Object.freeze([
+    Object.freeze({ value: 'pix', label: 'Pix' }),
+    Object.freeze({ value: 'debit', label: 'Débito' }),
+    Object.freeze({ value: 'cash', label: 'Dinheiro' }),
+    Object.freeze({ value: 'credit_card', label: 'Cartão de crédito' }),
+    Object.freeze({ value: 'boleto', label: 'Boleto' }),
+    Object.freeze({ value: 'transfer', label: 'Transferência' }),
+    Object.freeze({ value: 'other', label: 'Outro' })
+  ]),
+  income: Object.freeze([
+    Object.freeze({ value: 'pix', label: 'Pix' }),
+    Object.freeze({ value: 'transfer', label: 'Transferência' }),
+    Object.freeze({ value: 'cash', label: 'Dinheiro' }),
+    Object.freeze({ value: 'other', label: 'Outro' })
+  ])
 });
+
+function populatePaymentMethodSelect(select, kind, includeUnspecified = false) {
+  if (!select || !PAYMENT_METHOD_OPTIONS[kind]) return;
+  const previousValue = select.value;
+  select.replaceChildren();
+  if (includeUnspecified) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Não informado';
+    select.appendChild(option);
+  }
+  PAYMENT_METHOD_OPTIONS[kind].forEach(method => {
+    const option = document.createElement('option');
+    option.value = method.value;
+    option.textContent = method.label;
+    select.appendChild(option);
+  });
+  if ([...select.options].some(option => option.value === previousValue)) {
+    select.value = previousValue;
+  }
+}
 
 function isPaidByPaymentMethod(paymentMethod, date, today = getLocalDateString()) {
   return ['pix', 'debit', 'cash', 'transfer'].includes(paymentMethod) &&
@@ -236,16 +270,9 @@ function isPaidByPaymentMethod(paymentMethod, date, today = getLocalDateString()
 }
 
 function getPaymentMethodLabel(paymentMethod) {
-  const labels = {
-    pix: 'Pix',
-    debit: 'Débito',
-    cash: 'Dinheiro',
-    credit_card: 'Cartão de crédito',
-    boleto: 'Boleto',
-    transfer: 'Transferência',
-    other: 'Outro'
-  };
-  return labels[paymentMethod] || 'Não informado';
+  const method = Object.values(PAYMENT_METHOD_OPTIONS).flat()
+    .find(option => option.value === paymentMethod);
+  return method ? method.label : 'Não informado';
 }
 
 function getPaymentMethodPreferenceKey(kind) {
@@ -257,7 +284,7 @@ function getPaymentMethodPreferenceKey(kind) {
 function getPaymentMethodPreference(kind) {
   try {
     const stored = localStorage.getItem(getPaymentMethodPreferenceKey(kind));
-    return PAYMENT_METHOD_OPTIONS[kind].includes(stored)
+    return PAYMENT_METHOD_OPTIONS[kind].some(option => option.value === stored)
       ? stored
       : kind === 'expense' ? 'cash' : 'pix';
   } catch (error) {
@@ -267,7 +294,7 @@ function getPaymentMethodPreference(kind) {
 }
 
 function savePaymentMethodPreference(kind, paymentMethod) {
-  if (!PAYMENT_METHOD_OPTIONS[kind].includes(paymentMethod)) {
+  if (!PAYMENT_METHOD_OPTIONS[kind].some(option => option.value === paymentMethod)) {
     throw new TypeError('A forma de pagamento não é válida para este lançamento.');
   }
   try {
@@ -281,7 +308,8 @@ function savePaymentMethodPreference(kind, paymentMethod) {
 window.GastoProPaymentHelpers = {
   isPaidByPaymentMethod,
   getLabel: getPaymentMethodLabel,
-  getOptions: kind => PAYMENT_METHOD_OPTIONS[kind] || [],
+  getOptions: kind => (PAYMENT_METHOD_OPTIONS[kind] || []).map(option => option.value),
+  populateSelect: populatePaymentMethodSelect,
   getPreference: getPaymentMethodPreference,
   savePreference: savePaymentMethodPreference
 };
@@ -1909,6 +1937,8 @@ function updateCreditCardPurchaseFields() {
       : 'Cadastre um cartão na aba Cartões para usar esta opção.';
   }
 }
+
+window.GastoProPaymentHelpers.updateCreditCardPurchaseFields = updateCreditCardPurchaseFields;
 
 function updateAccountSelects() {
   const accounts = FinanceData.getAccounts();
@@ -3815,7 +3845,7 @@ function renderIncomesView(incomes, totalIncome) {
   container.innerHTML = incomes.map(item => {
     const accountName = accountNames.get(item.accountId);
     return `
-    <div class="manage-item-card">
+    <div class="manage-item-card transaction-item-card">
       <div class="card-item-left">
         <div class="card-type-icon bg-green-soft">
           <i class="fa-solid fa-arrow-down"></i>
@@ -3825,12 +3855,14 @@ function renderIncomesView(incomes, totalIncome) {
           <div class="card-item-meta">
             <span class="tag-badge">${escapeHtml(item.category || 'Renda')}</span>
             ${accountName ? `<span class="tag-badge">${escapeHtml(accountName)}</span>` : ''}
-            <span><i class="fa-regular fa-calendar"></i> ${escapeHtml(formatDate(item.date))}</span>
+            <span class="tag-badge">${escapeHtml(getPaymentMethodLabel(item.paymentMethod))}</span>
           </div>
+          <time class="card-item-date" datetime="${escapeHtml(item.date || '')}">${escapeHtml(formatDate(item.date))}</time>
         </div>
       </div>
 
       <div class="card-item-right">
+        <span class="tag-badge transaction-status-chip">${item.paid ? 'Pago' : 'Pendente'}</span>
         <div class="card-item-amount text-success financial-amount financial-amount--positive">+ ${formatCurrency(item.amount)}</div>
         <div class="card-item-actions">
           <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Ganho" aria-label="Editar ganho ${escapeHtml(item.desc)}">
@@ -3908,7 +3940,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
     const needsPaidReview = item.paid && paidReviewIds.has(item.id);
 
     return `
-      <div class="manage-item-card ${item.paid ? 'is-paid' : ''} ${isInactive ? 'is-inactive-card' : ''}"
+      <div class="manage-item-card transaction-item-card ${item.paid ? 'is-paid' : ''} ${isInactive ? 'is-inactive-card' : ''}"
         data-entry-id="${escapeHtml(item.id)}">
         <div class="card-item-left">
           <div class="card-type-icon ${iconClass}">
@@ -3920,31 +3952,26 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
               <span class="tag-badge">${escapeHtml(item.category || typeLabel)}</span>
               ${accountName ? `<span class="tag-badge">${escapeHtml(accountName)}</span>` : ''}
               <span class="tag-badge">${typeLabel}</span>
+              <span class="tag-badge">${escapeHtml(getPaymentMethodLabel(item.paymentMethod))}</span>
               ${item.isCardInstallment
                 ? `<span class="tag-badge">${escapeHtml(item.cardName)} · ${item.installmentNumber}/${item.installmentCount}x</span>`
                 : ''}
               ${needsPaidReview ? `
                 <span class="import-review-badge">Revisar</span>
-                <button type="button" class="notification-action" data-action="review-import-paid"
-                  data-id="${escapeHtml(item.id)}"
-                  aria-label="Marcar como conferido: ${escapeHtml(item.desc)}">Marcar como Conferido</button>
-                <button type="button" class="notification-action" data-action="pending-import-paid"
-                  data-id="${escapeHtml(item.id)}"
-                  aria-label="Alterar para pendente: ${escapeHtml(item.desc)}">Alterar para pendente</button>
               ` : ''}
-              ${isFixed ? `
-                <button class="badge-status-btn ${item.active ? 'status-active' : 'status-inactive'}" 
-                        data-action="toggle-active" data-id="${escapeHtml(item.id)}"
-                        title="Clique para ${item.active ? 'pausar nos meses seguintes' : 'reativar nos meses seguintes'}">
-                  <i class="fa-solid ${item.active ? 'fa-circle-check' : 'fa-circle-pause'}"></i> ${item.active ? 'Ativo' : 'Inativo'}
-                </button>
-              ` : ''}
-              <span><i class="fa-regular fa-calendar"></i> ${escapeHtml(formatDate(item.date))}</span>
             </div>
+            <time class="card-item-date" datetime="${escapeHtml(item.date || '')}">${escapeHtml(formatDate(item.date))}</time>
           </div>
         </div>
 
         <div class="card-item-right">
+          ${isFixed ? `
+            <button class="badge-status-btn ${item.active ? 'status-active' : 'status-inactive'}"
+                    data-action="toggle-active" data-id="${escapeHtml(item.id)}"
+                    title="Clique para ${item.active ? 'pausar nos meses seguintes' : 'reativar nos meses seguintes'}">
+              <i class="fa-solid ${item.active ? 'fa-circle-check' : 'fa-circle-pause'}"></i> ${item.active ? 'Ativo' : 'Inativo'}
+            </button>
+          ` : ''}
           <!-- Checkbox de Pago (específico para o mês atual) -->
           <label class="checkbox-paid-label" title="${item.paid ? 'Marcar como pendente neste mês' : 'Dar baixa como pago neste mês'}">
             <input type="checkbox" ${item.paid ? 'checked' : ''} data-action="toggle-paid" data-id="${escapeHtml(item.id)}" ${item.isCardInstallment
@@ -3956,6 +3983,15 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
           <div class="card-item-amount financial-amount financial-amount--negative ${isInactive ? 'text-muted' : ''}">
             − ${formatCurrency(item.amount)}
           </div>
+
+          ${needsPaidReview ? `
+            <div class="card-item-review-actions">
+              <button type="button" class="notification-action" data-action="review-import-paid"
+                data-id="${escapeHtml(item.id)}" aria-label="Marcar como conferido: ${escapeHtml(item.desc)}">Conferir</button>
+              <button type="button" class="notification-action" data-action="pending-import-paid"
+                data-id="${escapeHtml(item.id)}" aria-label="Alterar para pendente: ${escapeHtml(item.desc)}">Pendente</button>
+            </div>
+          ` : ''}
 
           ${item.isCardInstallment ? '' : `
             <div class="card-item-actions">
@@ -4021,7 +4057,10 @@ window.openEditModal = function(id) {
 
   document.getElementById('editDate').value = item.date || getTodayString();
   const editPaymentMethod = document.getElementById('editPaymentMethod');
-  if (editPaymentMethod) editPaymentMethod.value = item.paymentMethod || '';
+  if (editPaymentMethod) {
+    populatePaymentMethodSelect(editPaymentMethod, item.type === 'income' ? 'income' : 'expense', true);
+    editPaymentMethod.value = item.paymentMethod || '';
+  }
   const editAccount = document.getElementById('editAccount');
   if (editAccount) editAccount.value = item.accountId || '';
 
@@ -4616,13 +4655,9 @@ document.addEventListener('DOMContentLoaded', () => {
   );
 
   function setPaymentMethodSelection(kind, paymentMethod, remember = true) {
-    const input = document.getElementById(`${kind}PaymentMethod`);
-    const group = document.querySelector(`[data-payment-method-group="${kind}"]`);
-    if (!input || !group || !PAYMENT_METHOD_OPTIONS[kind].includes(paymentMethod)) return;
-    input.value = paymentMethod;
-    group.querySelectorAll('[data-payment-method]').forEach(button => {
-      button.setAttribute('aria-pressed', String(button.dataset.paymentMethod === paymentMethod));
-    });
+    const select = document.getElementById(`${kind}PaymentMethod`);
+    if (!select || !PAYMENT_METHOD_OPTIONS[kind].some(option => option.value === paymentMethod)) return;
+    select.value = paymentMethod;
     if (remember) {
       try {
         savePaymentMethodPreference(kind, paymentMethod);
@@ -5533,26 +5568,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (expenseTypeSelect) expenseTypeSelect.addEventListener('change', checkDebtVisibility);
   if (expenseCatSelect) expenseCatSelect.addEventListener('change', checkDebtVisibility);
   ['income', 'expense'].forEach(kind => {
-    const group = document.querySelector(`[data-payment-method-group="${kind}"]`);
-    if (!group) return;
+    const select = document.getElementById(`${kind}PaymentMethod`);
+    if (!select) return;
+    populatePaymentMethodSelect(select, kind);
     setPaymentMethodSelection(kind, getPaymentMethodPreference(kind), false);
-    group.addEventListener('click', event => {
-      const button = event.target.closest('[data-payment-method]');
-      if (button && group.contains(button)) {
-        setPaymentMethodSelection(kind, button.dataset.paymentMethod);
-      }
-    });
-    group.addEventListener('keydown', event => {
-      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-      const buttons = [...group.querySelectorAll('[data-payment-method]')];
-      const currentIndex = buttons.indexOf(document.activeElement);
-      if (currentIndex < 0) return;
-      event.preventDefault();
-      const direction = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1;
-      const next = buttons[(currentIndex + direction + buttons.length) % buttons.length];
-      next.focus();
-      setPaymentMethodSelection(kind, next.dataset.paymentMethod);
-    });
+    select.addEventListener('change', () => setPaymentMethodSelection(kind, select.value));
   });
   const creditCardSelect = document.getElementById('expenseCreditCard');
   if (creditCardSelect) {
@@ -6026,6 +6046,10 @@ document.addEventListener('DOMContentLoaded', () => {
     editTypeSelect.addEventListener('change', () => {
       const val = editTypeSelect.value;
       const isFixed = val === 'fixed' || val === 'debt';
+      const paymentMethodSelect = document.getElementById('editPaymentMethod');
+      if (paymentMethodSelect) {
+        populatePaymentMethodSelect(paymentMethodSelect, val === 'income' ? 'income' : 'expense', true);
+      }
       const statusGroup = document.getElementById('editStatusGroup');
       const endMonthGroup = document.getElementById('editEndMonthGroup');
       if (statusGroup) statusGroup.style.display = isFixed ? 'block' : 'none';

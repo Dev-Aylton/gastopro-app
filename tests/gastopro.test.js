@@ -949,7 +949,7 @@ describe('FinanceData — Contas Bancárias', () => {
     const account = await FinanceData.addAccount({
       name: 'Conta de pagamentos', type: 'PF', initialBalance: 100, balanceDate: today
     });
-    for (const paymentMethod of ['pix', 'debit', 'cash']) {
+    for (const paymentMethod of ['pix', 'debit', 'cash', 'transfer']) {
       FinanceData.add({
         type: 'variable', desc: `Gasto ${paymentMethod}`, amount: 10, category: 'Outros',
         date: today, accountId: account.account.id, paymentMethod,
@@ -957,8 +957,8 @@ describe('FinanceData — Contas Bancárias', () => {
       });
     }
     assertTrue(FinanceData.getEntries().every(entry => entry.paid));
-    assertEqual(FinanceData.getEntries().map(entry => entry.paymentMethod), ['pix', 'debit', 'cash']);
-    assertEqual(FinanceData.getAccountBalance(account.account.id), 70);
+    assertEqual(FinanceData.getEntries().map(entry => entry.paymentMethod), ['pix', 'debit', 'cash', 'transfer']);
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 60);
   });
 
   itAsync('boleto e pagamentos com data futura entram pendentes', async () => {
@@ -6988,7 +6988,7 @@ describe('Exclusão de conta do usuário', () => {
 
 let responsiveFixtureFrame = null;
 
-async function getResponsiveFixtureFrame(width) {
+async function getResponsiveFixtureFrame(width, height = 844) {
   if (!responsiveFixtureFrame) {
     const frame = document.createElement('iframe');
     frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:320px;height:844px;border:0;';
@@ -7004,6 +7004,7 @@ async function getResponsiveFixtureFrame(width) {
   }
 
   responsiveFixtureFrame.style.width = `${width}px`;
+  responsiveFixtureFrame.style.height = `${height}px`;
   await new Promise(resolve => setTimeout(resolve, 25));
   return responsiveFixtureFrame;
 }
@@ -7231,6 +7232,226 @@ describe('Layout responsivo e tipografia mobile', () => {
       assertNull(localStorage.getItem(`${legacyKey}:${userId}`));
     } finally {
       window.SupabaseAuth = previousAuth;
+    }
+  });
+});
+
+// ================================================================
+// RELATÓRIO FINAL
+describe('Cartões de lançamentos e notificações responsivos', () => {
+  itAsync('mantém chips e datas dos lançamentos inteiros dentro do cartão', async () => {
+    const frame = await getResponsiveFixtureFrame(320, 800);
+    const frameDocument = frame.contentDocument;
+    frameDocument.getElementById('fixtureApp').innerHTML = `
+      <aside class="sidebar"></aside>
+      <div class="main-content"><main class="views-wrapper"><section class="view-section active">
+        <article class="manage-item-card transaction-item-card">
+          <div class="card-item-left"><div class="card-type-icon"></div>
+            <div class="card-item-info"><div class="card-item-title">Corrida de mototáxi para entrega de documentos</div>
+              <div class="card-item-meta"><span class="tag-badge">Transporte</span><span class="tag-badge">Banco Bradesco</span><span class="tag-badge">Gasto Variável</span><span class="tag-badge">Transferência</span></div>
+              <time class="card-item-date">31/10/2026</time>
+            </div>
+          </div>
+          <div class="card-item-right"><label class="checkbox-paid-label">Pago</label><span class="card-item-amount">− R$ 9.999,99</span><div class="card-item-actions"><button>Editar</button></div></div>
+        </article>
+      </section></main></div>
+    `;
+    const screenSizes = [[320, 800], [360, 800], [390, 844], [768, 900], [1024, 900], [1280, 900], [844, 390]];
+
+    try {
+      for (const themeName of ['dark', 'light']) {
+        for (const [width, height] of screenSizes) {
+          await getResponsiveFixtureFrame(width, height);
+          frameDocument.documentElement.dataset.theme = themeName;
+          frameDocument.body.dataset.theme = themeName;
+          const card = frameDocument.querySelector('.transaction-item-card');
+          assertTrue(card.scrollWidth <= card.clientWidth, `${width}px ${themeName}: cartão sem overflow`);
+          [...card.querySelectorAll('.tag-badge')].forEach(chip => {
+            assertTrue(chip.scrollWidth <= chip.clientWidth, `${width}px ${themeName}: chip ${chip.textContent} inteiro`);
+            assertEqual(frame.contentWindow.getComputedStyle(chip).whiteSpace, 'nowrap');
+            assertEqual(frame.contentWindow.getComputedStyle(chip).overflowWrap, 'normal');
+          });
+          const date = card.querySelector('.card-item-date');
+          assertEqual(frame.contentWindow.getComputedStyle(date).whiteSpace, 'nowrap');
+          assertTrue(date.scrollWidth <= date.clientWidth, `${width}px ${themeName}: data inteira`);
+          assertTrue(frameDocument.documentElement.scrollWidth <= frameDocument.documentElement.clientWidth,
+            `${width}px ${themeName}: sem rolagem horizontal`);
+        }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  itAsync('posiciona toast sem cobrir a navegação mobile ou o rodapé do menu desktop', async () => {
+    const frame = await getResponsiveFixtureFrame(390, 844);
+    const frameDocument = frame.contentDocument;
+    frameDocument.getElementById('fixtureApp').innerHTML = `
+      <aside class="sidebar"><div class="sidebar-footer" id="menuFooter">Rodapé do menu</div></aside>
+      <div class="main-content"><main class="views-wrapper"><footer class="app-footer"><div class="footer-security-badge"><i></i><span>Sem login, os dados ficam no dispositivo. Com login, também são sincronizados com a nuvem.</span></div></footer></main></div>
+      <nav class="mobile-bottom-nav"><button class="mobile-bottom-nav-item">Início</button></nav>
+      <div class="toast show"><span>Um item foi atualizado em outro aparelho</span></div>
+      <button class="back-to-top-btn is-visible">Topo</button>
+    `;
+
+    try {
+      for (const themeName of ['dark', 'light']) {
+        for (const [width, height] of [[390, 844], [1280, 900]]) {
+          await getResponsiveFixtureFrame(width, height);
+          frameDocument.documentElement.dataset.theme = themeName;
+          frameDocument.body.dataset.theme = themeName;
+          const toast = frameDocument.querySelector('.toast');
+          toast.style.transition = 'none';
+          toast.style.transform = 'translateY(0)';
+          const rect = element => element.getBoundingClientRect();
+          const intersects = (first, second) => first.left < second.right && first.right > second.left &&
+            first.top < second.bottom && first.bottom > second.top;
+          const toastRect = rect(toast);
+          const nav = frameDocument.querySelector('.mobile-bottom-nav');
+          const menuFooter = frameDocument.querySelector('#menuFooter');
+          const badgeText = frameDocument.querySelector('.footer-security-badge span');
+          if (width <= 600) {
+            assertFalse(intersects(toastRect, rect(nav)), `${themeName}: toast não cobre a barra inferior`);
+          } else {
+            assertFalse(intersects(toastRect, rect(menuFooter)), `${themeName}: toast não cobre o rodapé do menu`);
+          }
+          assertTrue(badgeText.scrollWidth <= badgeText.clientWidth, `${themeName}: texto do rodapé inteiro`);
+          assertTrue(frameDocument.documentElement.scrollWidth <= frameDocument.documentElement.clientWidth,
+            `${width}px ${themeName}: sem rolagem horizontal`);
+          assertEqual(getComputedStyle(toast).zIndex, '700');
+        }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+});
+
+// ================================================================
+// RELATÓRIO FINAL
+describe('Home unificada e formas de pagamento', () => {
+  itAsync('usa uma lista central de pagamento e preserva pago, pendente e crédito', async () => {
+    setupMockLocalStorage();
+    const helpers = window.GastoProPaymentHelpers;
+    const expenseOptions = ['pix', 'debit', 'cash', 'credit_card', 'boleto', 'transfer', 'other'];
+    const incomeOptions = ['pix', 'transfer', 'cash', 'other'];
+    assertEqual(helpers.getOptions('expense'), expenseOptions);
+    assertEqual(helpers.getOptions('income'), incomeOptions);
+
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <select id="incomePaymentMethod"></select>
+      <select id="expensePaymentMethod"></select>
+      <select id="editPaymentMethod"></select>
+      <select id="expenseType"><option value="variable">Variável</option></select>
+      <div id="expenseCreditFields" hidden></div>
+      <div id="expenseAccountGroup"></div>
+      <select id="expenseCreditCard"></select>
+      <select id="expenseInstallments"></select>
+    `;
+    document.body.appendChild(fixture);
+    try {
+      const incomeSelect = fixture.querySelector('#incomePaymentMethod');
+      const expenseSelect = fixture.querySelector('#expensePaymentMethod');
+      const editSelect = fixture.querySelector('#editPaymentMethod');
+      helpers.populateSelect(incomeSelect, 'income');
+      helpers.populateSelect(expenseSelect, 'expense');
+      helpers.populateSelect(editSelect, 'income', true);
+      assertEqual([...incomeSelect.options].map(option => option.value), incomeOptions);
+      assertEqual([...expenseSelect.options].map(option => option.value), expenseOptions);
+      assertEqual([...editSelect.options].map(option => option.value), ['', ...incomeOptions]);
+      helpers.populateSelect(editSelect, 'expense', true);
+      assertEqual([...editSelect.options].map(option => option.value), ['', ...expenseOptions]);
+
+      const date = '2026-10-31';
+      ['pix', 'debit', 'cash', 'transfer'].forEach(method =>
+        assertTrue(helpers.isPaidByPaymentMethod(method, date, date), `${method} deve entrar pago`)
+      );
+      ['boleto', 'credit_card'].forEach(method =>
+        assertFalse(helpers.isPaidByPaymentMethod(method, date, date), `${method} não deve debitar a conta`)
+      );
+
+      expenseSelect.value = 'credit_card';
+      helpers.updateCreditCardPurchaseFields();
+      assertFalse(fixture.querySelector('#expenseCreditFields').hidden);
+      assertTrue(fixture.querySelector('#expenseAccountGroup').hidden);
+      assertTrue(fixture.querySelector('#expenseCreditCard').required);
+      expenseSelect.value = 'pix';
+      helpers.updateCreditCardPurchaseFields();
+      assertTrue(fixture.querySelector('#expenseCreditFields').hidden);
+      assertFalse(fixture.querySelector('#expenseAccountGroup').hidden);
+    } finally {
+      fixture.remove();
+    }
+  });
+
+  itAsync('mantém saldo, avisos e quatro KPIs em uma home responsiva nos dois temas', async () => {
+    const frame = await getResponsiveFixtureFrame(320, 800);
+    const frameDocument = frame.contentDocument;
+    frameDocument.getElementById('fixtureApp').innerHTML = `
+      <aside class="sidebar"></aside>
+      <div class="main-content">
+        <header class="topbar">
+          <div class="topbar-left"><button class="menu-toggle-btn">Menu</button></div>
+          <button class="mobile-brand">GastoPro</button>
+          <div class="topbar-right"><div class="topbar-summary">Saldo duplicado</div></div>
+        </header>
+        <main class="views-wrapper">
+          <section class="view-section active" id="view-dashboard">
+            <section class="dashboard-highlight-card">
+              <div class="dashboard-highlight-value">
+                <span>Saldo atual</span><strong>R$ 1.234,56</strong>
+                <span class="dashboard-highlight-description">Disponível nas contas</span>
+              </div>
+              <div class="dashboard-balance-warning"><i></i><span>Projeção do mês atual</span></div>
+            </section>
+            <section class="panel-box financial-insights-panel">
+              <button class="financial-insights-mobile-strip"><span>4 avisos</span><i></i></button>
+              <div class="panel-header">Alertas</div><div class="financial-insights-grid"></div>
+            </section>
+            <div class="kpi-grid">
+              <div class="kpi-card result-card"><span class="kpi-title"><i></i><span>Resultado</span></span><span class="kpi-value">R$ 1,00</span></div>
+              <div class="kpi-card"><span class="kpi-title"><i></i><span>Recebido</span></span><span class="kpi-value">R$ 2,00</span></div>
+              <div class="kpi-card"><span class="kpi-title"><i></i><span>Fixos</span></span><span class="kpi-value">R$ 3,00</span></div>
+              <div class="kpi-card"><span class="kpi-title"><i></i><span>Variáveis</span></span><span class="kpi-value">R$ 4,00</span></div>
+            </div>
+          </section>
+        </main>
+      </div>
+    `;
+    const screenSizes = [[320, 800], [360, 800], [390, 844], [768, 900], [1024, 900], [1280, 900], [844, 390]];
+
+    try {
+      for (const themeName of ['dark', 'light']) {
+        for (const [width, height] of screenSizes) {
+          await getResponsiveFixtureFrame(width, height);
+          frameDocument.documentElement.dataset.theme = themeName;
+          frameDocument.body.dataset.theme = themeName;
+          const dashboard = frameDocument.querySelector('#view-dashboard');
+          const highlight = dashboard.querySelector('.dashboard-highlight-card');
+          const strip = dashboard.querySelector('.financial-insights-mobile-strip');
+          const grid = dashboard.querySelector('.kpi-grid');
+          const cards = [...grid.querySelectorAll('.kpi-card')];
+          const visible = element => getComputedStyle(element).display !== 'none' && element.getBoundingClientRect().width > 0;
+          const titles = cards.map(card => [...card.querySelectorAll('.kpi-title span')]
+            .filter(visible).map(title => title.textContent.trim()));
+          const columns = getComputedStyle(grid).gridTemplateColumns.split(/\s+/).length;
+          assertTrue(visible(highlight), `${width}x${height} ${themeName}: saldo visível`);
+          assertTrue(visible(strip), `${width}x${height} ${themeName}: faixa de avisos visível`);
+          assertEqual(cards.filter(visible).length, 4, `${width}x${height} ${themeName}: quatro KPIs`);
+          assertEqual(titles, [['Resultado'], ['Recebido'], ['Fixos'], ['Variáveis']]);
+          assertEqual(getComputedStyle(frameDocument.querySelector('.topbar-summary')).display, 'none');
+          assertEqual(columns, width >= 1024 ? 4 : 2, `${width}px: número de colunas`);
+          assertTrue(frameDocument.documentElement.scrollWidth <= frameDocument.documentElement.clientWidth,
+            `${width}x${height} ${themeName}: sem rolagem horizontal`);
+          cards.forEach(card => {
+            const title = card.querySelector('.kpi-title');
+            assertTrue(title.scrollWidth <= title.clientWidth, `${width}px: rótulo ${title.textContent.trim()} inteiro`);
+          });
+        }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
     }
   });
 });

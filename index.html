@@ -477,8 +477,7 @@
               <div class="kpi-header">
                 <span class="kpi-title">
                   <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
-                  <span class="kpi-title-desktop">Resultado do mês</span>
-                  <span class="kpi-title-mobile">Resultado</span>
+                  <span>Resultado</span>
                 </span>
               </div>
               <div class="kpi-value financial-amount financial-amount--neutral" id="dashboardMonthlyResult">R$ 0,00</div>
@@ -491,8 +490,7 @@
               <div class="kpi-header">
                 <span class="kpi-title">
                   <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
-                  <span class="kpi-title-desktop">Total Recebido</span>
-                  <span class="kpi-title-mobile">Recebido</span>
+                  <span>Recebido</span>
                 </span>
               </div>
               <div class="kpi-value text-success financial-amount financial-amount--positive" id="totalIncomeDisplay">R$ 0,00</div>
@@ -506,8 +504,7 @@
               <div class="kpi-header">
                 <span class="kpi-title">
                   <i class="fa-solid fa-house-lock" aria-hidden="true"></i>
-                  <span class="kpi-title-desktop">Gastos Fixos</span>
-                  <span class="kpi-title-mobile">Fixos</span>
+                  <span>Fixos</span>
                 </span>
               </div>
               <div class="kpi-value text-warning financial-amount financial-amount--neutral" id="totalFixedDisplay">R$ 0,00</div>
@@ -521,8 +518,7 @@
               <div class="kpi-header">
                 <span class="kpi-title">
                   <i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>
-                  <span class="kpi-title-desktop">Gastos Variáveis</span>
-                  <span class="kpi-title-mobile">Variáveis</span>
+                  <span>Variáveis</span>
                 </span>
               </div>
               <div class="kpi-value text-danger financial-amount financial-amount--negative" id="totalVariableDisplay">R$ 0,00</div>
@@ -734,15 +730,8 @@
               </div>
 
               <div class="payment-method-field">
-                <span class="form-label" id="incomePaymentMethodLabel">Forma de pagamento</span>
-                <input type="hidden" id="incomePaymentMethod" />
-                <div class="payment-method-options" role="group" aria-labelledby="incomePaymentMethodLabel"
-                  data-payment-method-group="income">
-                  <button type="button" class="payment-method-chip" data-payment-method="pix">Pix</button>
-                  <button type="button" class="payment-method-chip" data-payment-method="transfer">Transferência</button>
-                  <button type="button" class="payment-method-chip" data-payment-method="cash">Dinheiro</button>
-                  <button type="button" class="payment-method-chip" data-payment-method="other">Outro</button>
-                </div>
+                <label for="incomePaymentMethod">Forma de pagamento</label>
+                <select id="incomePaymentMethod" class="payment-method-select"></select>
               </div>
 
               <div>
@@ -851,17 +840,8 @@
               </div>
 
               <div class="payment-method-field">
-                <span class="form-label" id="expensePaymentMethodLabel">Forma de pagamento</span>
-                <input type="hidden" id="expensePaymentMethod" />
-                <div class="payment-method-options" role="group" aria-labelledby="expensePaymentMethodLabel"
-                  data-payment-method-group="expense">
-                  <button type="button" class="payment-method-chip" data-payment-method="pix">Pix</button>
-                  <button type="button" class="payment-method-chip" data-payment-method="debit">Débito</button>
-                  <button type="button" class="payment-method-chip" data-payment-method="cash">Dinheiro</button>
-                  <button type="button" class="payment-method-chip" data-payment-method="credit_card">Cartão de crédito</button>
-                  <button type="button" class="payment-method-chip" data-payment-method="boleto">Boleto</button>
-                  <button type="button" class="payment-method-chip" data-payment-method="other">Outro</button>
-                </div>
+                <label for="expensePaymentMethod">Forma de pagamento</label>
+                <select id="expensePaymentMethod" class="payment-method-select"></select>
               </div>
 
               <div id="expenseCreditFields" hidden>
@@ -1121,16 +1101,7 @@
 
         <div class="form-group" id="editPaymentMethodGroup">
           <label for="editPaymentMethod">Forma de pagamento</label>
-          <select id="editPaymentMethod">
-            <option value="">Não informado</option>
-            <option value="pix">Pix</option>
-            <option value="debit">Débito</option>
-            <option value="cash">Dinheiro</option>
-            <option value="credit_card">Cartão de crédito</option>
-            <option value="boleto">Boleto</option>
-            <option value="transfer">Transferência</option>
-            <option value="other">Outro</option>
-          </select>
+          <select id="editPaymentMethod" class="payment-method-select"></select>
         </div>
 
         <div class="form-group" id="editEndMonthGroup">
