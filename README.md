@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-334%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-337%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -175,9 +175,10 @@ financeiro-app/
 │       ├── 20261029_feedback.sql # Canal de contato; aplicada no Supabase
 │       ├── 20261031_admin_analytics.sql # Painel admin, eventos de uso e retenção de 12 meses; aplicada
 │       ├── 20261101_sync_versioning.sql # Etapa 1 da sincronização; aplicada no Supabase
-│       └── 20261102_sync_realtime_publication.sql # Etapa 2 Realtime; aplicada no Supabase
+│       ├── 20261102_sync_realtime_publication.sql # Etapa 2 Realtime; aplicada no Supabase
+│       └── 20261103_sync_transactions.sql # Etapa 3; pronta para aplicação no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 334 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 337 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -285,7 +286,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 
 - **Etapa 1 — [x]:** versão por registro, `updated_at` definido no servidor, tombstones `deleted_at` e limpeza após 90 dias. Migration aplicada no Supabase. Commit `9219da3`. Após a poda, registro com versão conhecida ausente é tratado como excluído; só criações nunca sincronizadas são enviadas como novas.
 - **Etapa 2 — [x]:** sync completa ao voltar ao app, focar a janela ou reconectar, serializada e com intervalo de 15 segundos; um canal Realtime assina as oito tabelas. Eventos antigos são ignorados, tombstones são aplicados, e alterações do registro em edição aguardam o fechamento do modal. Migration de publicação aplicada no Supabase.
-- **Etapa 3 — não iniciada:** operações transacionais para parcelas, apagar conta e importação em lote, com semântica tudo-ou-nada, idempotência e integração à fila offline. Ainda não há migration desta etapa.
+- **Etapa 3 — [x]:** compra parcelada permanece uma única linha com ID estável, sem RPC. Os RPCs `delete_account_transactional` e `import_financial_batch` fazem, respectivamente, o desvínculo de lançamentos/templates/cartões/compras com exclusão lógica da conta e a importação atômica de lançamentos/templates/baixas. As operações ficam na fila offline com IDs e versões estáveis para retry; respeitam versões/tombstones e devolvem conflitos. O lote transacional aceita até 500 linhas de payload; acima disso, a importação inteira é recusada com aviso. Migration pronta para aplicação no Supabase.
 - **Etapa 4 — [ ]:** reset e exclusões seguros, tela de aviso e testes finais.
 
 ### Pendências de validação manual
@@ -441,8 +442,9 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 10 | `20261031_admin_analytics.sql` | Aplicada |
 | 11 | `20261101_sync_versioning.sql` | Aplicada |
 | 12 | `20261102_sync_realtime_publication.sql` | Aplicada |
+| 13 | `20261103_sync_transactions.sql` | Pronta para aplicação no Supabase |
 
-`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **334 testes**.
+`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **337 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -462,7 +464,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **334 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **337 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -659,7 +661,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - Identidade visual: logo e ícones PWA/iOS atualizados em `assets/`.
 - Painel de administrador: `app_admins`/`is_admin()`, métricas agregadas via `admin_analytics_summary()`, feedback em `feedback_messages` e eventos permitidos em `usage_events`; telemetria tem opt-out local e retenção de 12 meses via `pg_cron` (`20261031_admin_analytics.sql`).
 - Coleta de uso: eventos mínimos de telas e importação são enviados somente com a preferência habilitada; sem payload financeiro.
-- Sincronização: Etapas 1 e 2 concluídas (commit `9219da3`; migrations `20261101` e `20261102` aplicadas). Etapa 3 não iniciada; Etapa 4 pendente.
+- Sincronização: Etapas 1 e 2 concluídas (commit `9219da3`; migrations `20261101` e `20261102` aplicadas). Etapa 3 implementada com a migration `20261103_sync_transactions.sql`, fila offline idempotente, conflitos de versão/tombstone e limite de 500 linhas; migration pendente de aplicação no Supabase. Etapa 4 pendente.
 - RM-031: guia “Como pegar meu extrato” com três ilustrações genéricas, atalho no tutorial Primeiros passos e arquivos SVG adicionados ao cache sem alterar o CACHE_NAME; três testes adicionados.
 - Importação: possíveis duplicados (iguais a lançamentos já salvos) vêm desmarcados, com contagem; linhas repetidas dentro do mesmo arquivo continuam marcadas.
 - RM-030: ações de gravação usam trava compartilhada, estado “Salvando...”/“Ainda sincronizando” e aria-busy; importação bloqueia cancelamento e fechamento durante a gravação; modo local não aguarda sync; três testes adicionados.

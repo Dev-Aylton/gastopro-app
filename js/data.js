@@ -1156,105 +1156,105 @@ const FinanceData = {
       return { success: true };
     };
 
-    async flushTransactionalOperations(userId) {
-      const auth = window.SupabaseAuth;
-      const synced = { entries: [], templates: [], accounts: [], creditCards: [], creditCardPurchases: [] };
-      let pending = this.getPendingSync();
-      const operations = [...pending.transactionalOperations];
-      const getters = {
-        entries: () => this.getEntries(),
-        templates: () => this.getTemplates(),
-        creditCards: () => this.getCreditCards(),
-        creditCardPurchases: () => this.getCreditCardPurchases()
-      };
-      const clearSyncedIds = (kind, snapshots) => {
-        const byId = new Map(snapshots.map(item => [item.id, item]));
-        const currentItems = getters[kind]();
-        pending[kind] = pending[kind].filter(id => {
-          if (!byId.has(id)) return true;
-          const current = currentItems.find(item => item.id === id);
-          if (!current || JSON.stringify(current) !== JSON.stringify(byId.get(id))) return true;
-          synced[kind].push(id);
-          return false;
-        });
-      };
-
-      for (const operation of operations) {
-        if (operation.type === 'deleteAccount') {
-          if (typeof auth.deleteAccountTransactional !== 'function') {
-            return { success: false, error: new Error('Exclusão transacional de conta não disponível.'), synced };
-          }
-          const result = await auth.deleteAccountTransactional(
-            operation.accountId, operation.clientEditedAt, userId
-          );
-          if (!result || !result.success) {
-            if (result && result.conflicts && result.conflicts.length && typeof showToast === 'function') {
-              showToast('Um item foi atualizado em outro aparelho');
-            }
-            return {
-              success: false,
-              error: result && result.error || new Error('A exclusão transacional da conta falhou.'),
-              conflicts: result && result.conflicts || [],
-              synced
-            };
-          }
-
-          pending = this.getPendingSync();
-          pending.transactionalOperations = pending.transactionalOperations.filter(item =>
-            item.operationId !== operation.operationId
-          );
-          Object.keys(operation.linked || {}).forEach(kind => clearSyncedIds(kind, operation.linked[kind]));
-          pending.accounts = pending.accounts.filter(id => id !== operation.accountId);
-          pending.deletedAccounts = pending.deletedAccounts.filter(id => id !== operation.accountId);
-          this.savePendingSync(pending);
-          continue;
-        }
-
-        if (operation.type === 'import') {
-          if (typeof auth.importFinancialBatch !== 'function') {
-            return { success: false, error: new Error('Importação transacional não disponível.'), synced };
-          }
-          const currentEntries = this.getEntries();
-          const currentTemplates = this.getTemplates();
-          const entries = operation.entries.map(item => currentEntries.find(current => current.id === item.id));
-          const templates = operation.templates.map(item => currentTemplates.find(current => current.id === item.id));
-          if (entries.some(item => !item) || templates.some(item => !item)) {
-            return {
-              success: false,
-              error: new Error('O lote de importação mudou localmente; a transação foi mantida na fila.'),
-              conflicts: [],
-              synced
-            };
-          }
-          const result = await auth.importFinancialBatch(entries, templates, operation.payments, userId);
-          if (!result || !result.success) {
-            if (result && result.conflicts && result.conflicts.length && typeof showToast === 'function') {
-              showToast('Um item foi atualizado em outro aparelho');
-            }
-            return {
-              success: false,
-              error: result && result.error || new Error('A importação transacional falhou.'),
-              conflicts: result && result.conflicts || [],
-              synced
-            };
-          }
-
-          pending = this.getPendingSync();
-          pending.transactionalOperations = pending.transactionalOperations.filter(item =>
-            item.operationId !== operation.operationId
-          );
-          clearSyncedIds('entries', entries);
-          clearSyncedIds('templates', templates);
-          this.savePendingSync(pending);
-        }
-      }
-      return { success: true, synced };
-    },
-
     const previousSync = this._pendingSyncPromise || Promise.resolve();
     const currentSync = previousSync.then(flush, flush);
     this._pendingSyncPromise = currentSync.catch(() => undefined);
     return currentSync;
+  },
+
+  async flushTransactionalOperations(userId) {
+    const auth = window.SupabaseAuth;
+    const synced = { entries: [], templates: [], accounts: [], creditCards: [], creditCardPurchases: [] };
+    let pending = this.getPendingSync();
+    const operations = [...pending.transactionalOperations];
+    const getters = {
+      entries: () => this.getEntries(),
+      templates: () => this.getTemplates(),
+      creditCards: () => this.getCreditCards(),
+      creditCardPurchases: () => this.getCreditCardPurchases()
+    };
+    const clearSyncedIds = (kind, snapshots) => {
+      const byId = new Map(snapshots.map(item => [item.id, item]));
+      const currentItems = getters[kind]();
+      pending[kind] = pending[kind].filter(id => {
+        if (!byId.has(id)) return true;
+        const current = currentItems.find(item => item.id === id);
+        if (!current || JSON.stringify(current) !== JSON.stringify(byId.get(id))) return true;
+        synced[kind].push(id);
+        return false;
+      });
+    };
+
+    for (const operation of operations) {
+      if (operation.type === 'deleteAccount') {
+        if (typeof auth.deleteAccountTransactional !== 'function') {
+          return { success: false, error: new Error('Exclusão transacional de conta não disponível.'), synced };
+        }
+        const result = await auth.deleteAccountTransactional(
+          operation.accountId, operation.clientEditedAt, userId
+        );
+        if (!result || !result.success) {
+          if (result && result.conflicts && result.conflicts.length && typeof showToast === 'function') {
+            showToast('Um item foi atualizado em outro aparelho');
+          }
+          return {
+            success: false,
+            error: result && result.error || new Error('A exclusão transacional da conta falhou.'),
+            conflicts: result && result.conflicts || [],
+            synced
+          };
+        }
+
+        pending = this.getPendingSync();
+        pending.transactionalOperations = pending.transactionalOperations.filter(item =>
+          item.operationId !== operation.operationId
+        );
+        Object.keys(operation.linked || {}).forEach(kind => clearSyncedIds(kind, operation.linked[kind]));
+        pending.accounts = pending.accounts.filter(id => id !== operation.accountId);
+        pending.deletedAccounts = pending.deletedAccounts.filter(id => id !== operation.accountId);
+        this.savePendingSync(pending);
+        continue;
+      }
+
+      if (operation.type === 'import') {
+        if (typeof auth.importFinancialBatch !== 'function') {
+          return { success: false, error: new Error('Importação transacional não disponível.'), synced };
+        }
+        const currentEntries = this.getEntries();
+        const currentTemplates = this.getTemplates();
+        const entries = operation.entries.map(item => currentEntries.find(current => current.id === item.id));
+        const templates = operation.templates.map(item => currentTemplates.find(current => current.id === item.id));
+        if (entries.some(item => !item) || templates.some(item => !item)) {
+          return {
+            success: false,
+            error: new Error('O lote de importação mudou localmente; a transação foi mantida na fila.'),
+            conflicts: [],
+            synced
+          };
+        }
+        const result = await auth.importFinancialBatch(entries, templates, operation.payments, userId);
+        if (!result || !result.success) {
+          if (result && result.conflicts && result.conflicts.length && typeof showToast === 'function') {
+            showToast('Um item foi atualizado em outro aparelho');
+          }
+          return {
+            success: false,
+            error: result && result.error || new Error('A importação transacional falhou.'),
+            conflicts: result && result.conflicts || [],
+            synced
+          };
+        }
+
+        pending = this.getPendingSync();
+        pending.transactionalOperations = pending.transactionalOperations.filter(item =>
+          item.operationId !== operation.operationId
+        );
+        clearSyncedIds('entries', entries);
+        clearSyncedIds('templates', templates);
+        this.savePendingSync(pending);
+      }
+    }
+    return { success: true, synced };
   },
 
   reconcileSyncVersions(userId, cloudEntries, cloudTemplates, cloudGoals, cloudAccounts,
@@ -2420,6 +2420,14 @@ const FinanceData = {
       ))
     );
     const batchTemplates = [...newTemplates, ...changedExistingTemplates];
+    if (newEntries.length + batchTemplates.length + normalizedPayments.length >
+      MAX_TRANSACTIONAL_IMPORT_ROWS) {
+      return {
+        success: false,
+        items: [],
+        error: `A importação excede o limite de ${MAX_TRANSACTIONAL_IMPORT_ROWS} linhas por transação. Reduza a seleção e tente novamente.`
+      };
+    }
     const operation = {
       operationId: crypto.randomUUID(),
       entries: newEntries,

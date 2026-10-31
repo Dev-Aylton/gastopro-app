@@ -766,6 +766,17 @@ describe('FinanceData — Contas Bancárias', () => {
     assertTrue(result.error.includes('500 linhas'));
     assertEqual(FinanceData.getEntries(), []);
     assertEqual(FinanceData.getPendingSync().transactionalOperations, []);
+
+    const templates = Array.from({ length: 251 }, () => ({
+      ...makeFixed({ id: crypto.randomUUID() }), paidMonths: {}
+    }));
+    await FinanceData.saveTemplates(templates, { flush: false });
+    const payments = templates.map(template => ({ id: template.id, ym: '2026-10' }));
+    const paymentResult = await FinanceData.importBatch([], payments);
+    assertFalse(paymentResult.success);
+    assertTrue(paymentResult.error.includes('500 linhas'));
+    assertEqual(FinanceData.getTemplates().length, templates.length);
+    assertEqual(FinanceData.getPendingSync().transactionalOperations, []);
   });
 
   itAsync('distribui parcelas antes e depois do fechamento, em 1x e até 24x', async () => {
@@ -5687,6 +5698,7 @@ describe('FinanceData — exclusão durante sincronização', () => {
 
     try {
       const firstFlush = FinanceData.flushPendingSync(userId);
+      await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
       assertTrue(typeof finishEntrySave === 'function', 'Upsert inicial deveria estar pendente');
