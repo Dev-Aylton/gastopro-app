@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-389%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-395%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -193,7 +193,7 @@ financeiro-app/
 │       ├── 20261103_sync_transactions.sql # Etapa 3; aplicada no Supabase
 │       └── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 389 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 395 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -463,7 +463,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 13 | `20261103_sync_transactions.sql` | Aplicada e conferida no Supabase |
 | 14 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
 
-`CACHE_NAME` atual: `gastopro-v4.6`. Suíte atual: **365 testes**.
+`CACHE_NAME` atual: `gastopro-v4.6`. Suíte atual: **395 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -483,7 +483,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **365 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **395 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -685,6 +685,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 
 ### Planejamento (sem versão)
 
+- Correção do reset: IDs remotos vivos de todas as coleções financeiras são buscados antes da limpeza local; exclusões descartadas pelo trigger são confirmadas e repetidas com versão posterior. Seis testes adicionados; suíte com 395 aprovados.
 - [x] RM-044 — Home unificada em desktop/mobile, resumo duplicado oculto, selects de pagamento alimentados por uma lista central, cartões de lançamentos reorganizados e avisos/reposicionamento do rodapé ajustados. Quatro testes adicionados; suíte com 389 aprovados.
 - [x] RM-043 — Corrigido zoom automático iOS em controles, cartões de aviso em coluna, nome em largura total, cabeçalho mobile e barra inferior; limpeza da chave legada em `clearAll` e `deleteAllUserData`. Cinco testes adicionados; suíte com 385 aprovados.
 - [x] Home no celular: cabeçalho centralizado com logo existente, chip de mês, destaque financeiro, faixa de avisos, resumo dos cartões, barra inferior e contraste nos dois temas. Três testes novos; suíte com 368 aprovados.

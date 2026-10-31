@@ -2410,7 +2410,262 @@ describe('Canal Fale comigo', () => {
 describe('FinanceData — clearAll()', () => {
   setupMockLocalStorage();
 
+  itAsync('clearAll exclui registros que existem somente na nuvem', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-cloud-only-reset';
+    const remoteEntryId = crypto.randomUUID();
+    const sharedEntryId = crypto.randomUUID();
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId }, { queueSync: false });
+    await FinanceData.saveEntries([makeIncome({ id: sharedEntryId })], { flush: false });
+    const deletedIds = [];
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      fetchCloudResetData: async () => ({
+        success: true,
+        records: {
+          entries: [
+            { id: sharedEntryId, updatedAt: '2026-10-01T10:00:00.000Z' },
+            { id: remoteEntryId, updatedAt: '2026-10-01T10:00:00.000Z' }
+          ],
+          fixed_templates: [], goals: [], accounts: [], credit_cards: [],
+          credit_card_purchases: [], fixed_import_rules: []
+        }
+      }),
+      saveCloudEntries: async () => ({ success: true }),
+      saveCloudTemplates: async () => ({ success: true }),
+      saveCloudGoals: async () => ({ success: true }),
+      saveCloudAccounts: async () => ({ success: true }),
+      saveCloudCreditCards: async () => ({ success: true }),
+      saveCloudCreditCardPurchases: async () => ({ success: true }),
+      saveCloudFixedImportRules: async () => ({ success: true }),
+      deleteCloudEntries: async ids => { deletedIds.push(...ids); return { success: true }; },
+      deleteCloudTemplates: async () => ({ success: true }),
+      deleteCloudGoals: async () => ({ success: true }),
+      deleteCloudAccounts: async () => ({ success: true }),
+      deleteCloudCreditCards: async () => ({ success: true }),
+      deleteCloudCreditCardPurchases: async () => ({ success: true })
+    };
+    try {
+      const result = await FinanceData.clearAll();
+      assertTrue(result.success);
+      assertEqual(new Set(deletedIds).size, deletedIds.length);
+      assertEqual(deletedIds, [sharedEntryId, remoteEntryId]);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('a busca de reset pagina mais de 1000 IDs remotos', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const previousGetUserId = window.SupabaseAuth.getAuthenticatedUserId;
+    const ranges = [];
+    window.SupabaseAuth.getAuthenticatedUserId = async userId => userId;
+    window.SupabaseAuth.client = {
+      from(table) {
+        let range = null;
+        const query = {
+          select() { return this; },
+          eq() { return this; },
+          is() { return this; },
+          order() { return this; },
+          range(from, to) { range = [from, to]; ranges.push([table, from, to]); return this; },
+          then(resolve, reject) {
+            const rows = table === 'entries' && range[0] === 0
+              ? Array.from({ length: 1000 }, (_, index) => ({ id: `entry-${index}`, updated_at: null }))
+              : table === 'entries' && range[0] === 1000
+                ? [{ id: 'entry-1000', updated_at: null }]
+                : [];
+            return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+          }
+        };
+        return query;
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.fetchCloudResetData('reset-user');
+      assertTrue(result.success);
+      assertEqual(result.records.entries.length, 1001);
+      assertEqual(ranges.filter(([table]) => table === 'entries'), [
+        ['entries', 0, 999], ['entries', 1000, 1999]
+      ]);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+      window.SupabaseAuth.getAuthenticatedUserId = previousGetUserId;
+    }
+  });
+
+  itAsync('markCloudDeleted repete uma atualização descartada com versão posterior', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const entryId = crypto.randomUUID();
+    const updates = [];
+    let updateCount = 0;
+    window.SupabaseAuth.client = {
+      from() {
+        let operation = null;
+        const query = {
+          update(payload) { operation = 'update'; updates.push(payload); return this; },
+          select() { if (!operation) operation = 'select'; return this; },
+          eq() { return this; },
+          maybeSingle() {
+            return Promise.resolve({
+              data: { id: entryId, deleted_at: null, updated_at: '2026-10-30T12:00:00.000Z' },
+              error: null
+            });
+          },
+          then(resolve, reject) {
+            updateCount++;
+            const data = updateCount === 1 ? [] : [{ id: entryId }];
+            return Promise.resolve({ data, error: null }).then(resolve, reject);
+          }
+        };
+        return query;
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.markCloudDeleted(
+        'entries', 'id', [entryId], 'entries', 'reset-user'
+      );
+      assertTrue(result.success);
+      assertEqual(updates.length, 2);
+      assertTrue(Date.parse(updates[1].client_edited_at) >
+        Date.parse('2026-10-30T12:00:00.000Z'));
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('markCloudDeleted aceita retorno vazio quando a linha já está excluída', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const entryId = crypto.randomUUID();
+    window.SupabaseAuth.client = {
+      from() {
+        let operation = null;
+        return {
+          update() { operation = 'update'; return this; },
+          select() { if (!operation) operation = 'select'; return this; },
+          eq() { return this; },
+          maybeSingle() {
+            return Promise.resolve({
+              data: { id: entryId, deleted_at: '2026-10-30T12:00:00.000Z', updated_at: '2026-10-30T12:00:00.000Z' },
+              error: null
+            });
+          },
+          then(resolve, reject) {
+            return Promise.resolve({ data: [], error: null }).then(resolve, reject);
+          }
+        };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.markCloudDeleted(
+        'entries', 'id', [entryId], 'entries', 'reset-user'
+      );
+      assertTrue(result.success);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('clearAll mantém a pendência quando o retry da exclusão remota falha', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-reset-delete-failure';
+    const entryId = crypto.randomUUID();
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId }, { queueSync: false });
+    const previousAuth = window.SupabaseAuth;
+    const previousClient = window.SupabaseAuth.client;
+    const previousFetchSyncState = window.SupabaseAuth.fetchCloudSyncState;
+    let updateCount = 0;
+    const client = {
+      from() {
+        let operation = null;
+        return {
+          update() { operation = 'update'; return this; },
+          select() { if (!operation) operation = 'select'; return this; },
+          eq() { return this; },
+          maybeSingle() {
+            return Promise.resolve({
+              data: { id: entryId, deleted_at: null, updated_at: '2026-10-30T12:00:00.000Z' },
+              error: null
+            });
+          },
+          then(resolve, reject) {
+            updateCount++;
+            return Promise.resolve({ data: [], error: null }).then(resolve, reject);
+          }
+        };
+      }
+    };
+    window.SupabaseAuth = {
+      client,
+      reportCloudError: previousAuth.reportCloudError,
+      fetchCloudSyncState: undefined,
+      fetchCloudResetData: async () => ({
+        success: true,
+        records: {
+          entries: [{ id: entryId, updatedAt: '2026-10-01T10:00:00.000Z' }],
+          fixed_templates: [], goals: [], accounts: [], credit_cards: [],
+          credit_card_purchases: [], fixed_import_rules: []
+        }
+      }),
+      getClientEditedAt: FinanceData.getClientEditedAt.bind(FinanceData),
+      getSyncMetadata: FinanceData.getSyncMetadata.bind(FinanceData),
+      markCloudDeleted: previousAuth.markCloudDeleted,
+      deleteCloudEntries: async (ids, targetUserId) =>
+        previousAuth.markCloudDeleted.call(window.SupabaseAuth, 'entries', 'id', ids, 'entries', targetUserId),
+      saveCloudEntries: async () => ({ success: true }),
+      saveCloudTemplates: async () => ({ success: true }),
+      saveCloudGoals: async () => ({ success: true }),
+      saveCloudAccounts: async () => ({ success: true }),
+      saveCloudCreditCards: async () => ({ success: true }),
+      saveCloudCreditCardPurchases: async () => ({ success: true }),
+      saveCloudFixedImportRules: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true }),
+      deleteCloudGoals: async () => ({ success: true }),
+      deleteCloudAccounts: async () => ({ success: true }),
+      deleteCloudCreditCards: async () => ({ success: true }),
+      deleteCloudCreditCardPurchases: async () => ({ success: true })
+    };
+    try {
+      const result = await FinanceData.clearAll();
+      assertFalse(result.success);
+      assertEqual(updateCount, 2);
+      assertEqual(FinanceData.getPendingSync().deletedEntries, [entryId]);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+      window.SupabaseAuth.client = previousClient;
+      window.SupabaseAuth.fetchCloudSyncState = previousFetchSyncState;
+    }
+  });
+
+  itAsync('aborta o reset e avisa quando não consegue buscar os registros remotos', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-reset-fetch-failure';
+    const entry = makeIncome({ id: crypto.randomUUID() });
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId }, { queueSync: false });
+    await FinanceData.saveEntries([entry], { flush: false });
+    const previousAuth = window.SupabaseAuth;
+    const previousToast = window.showToast;
+    const messages = [];
+    window.SupabaseAuth = {
+      fetchCloudResetData: async () => ({ success: false, error: new Error('offline') })
+    };
+    window.showToast = message => messages.push(message);
+    try {
+      const result = await FinanceData.clearAll();
+      assertFalse(result.success);
+      assertEqual(FinanceData.getEntries(), [entry]);
+      assertTrue(messages.some(message => message.includes('Seus dados continuam salvos')));
+    } finally {
+      window.SupabaseAuth = previousAuth;
+      window.showToast = previousToast;
+    }
+  });
+
   itAsync('deve apagar todos os lançamentos e templates', async () => {
+    setupMockLocalStorage();
     FinanceData.add(makeIncome());
     FinanceData.add(makeFixed({ month: '2026-01', date: '2026-01-01' }));
     FinanceData.add(makeVariable());
@@ -2441,6 +2696,13 @@ describe('FinanceData — clearAll()', () => {
     const deletedAccounts = [];
     const previousAuth = window.SupabaseAuth;
     window.SupabaseAuth = {
+      fetchCloudResetData: async () => ({
+        success: true,
+        records: {
+          entries: [], fixed_templates: [], goals: [], accounts: [], credit_cards: [],
+          credit_card_purchases: [], fixed_import_rules: []
+        }
+      }),
       saveCloudEntries: async () => ({ success: true }),
       saveCloudTemplates: async () => ({ success: true }),
       saveCloudAccounts: async () => ({ success: true }),
@@ -2487,6 +2749,13 @@ describe('FinanceData — clearAll()', () => {
     const savedAccounts = [];
     const previousAuth = window.SupabaseAuth;
     window.SupabaseAuth = {
+      fetchCloudResetData: async () => ({
+        success: true,
+        records: {
+          entries: [], fixed_templates: [], goals: [], accounts: [], credit_cards: [],
+          credit_card_purchases: [], fixed_import_rules: []
+        }
+      }),
       saveCloudEntries: async () => ({ success: true }),
       saveCloudTemplates: async () => ({ success: true }),
       saveCloudAccounts: async accounts => { savedAccounts.push(...accounts); return { success: true }; },
@@ -6540,6 +6809,13 @@ describe('FinanceData — exclusão durante sincronização', () => {
     ]));
     const previousAuth = window.SupabaseAuth;
     window.SupabaseAuth = {
+      fetchCloudResetData: async () => ({
+        success: true,
+        records: {
+          entries: [], fixed_templates: [], goals: [], accounts: [], credit_cards: [],
+          credit_card_purchases: [], fixed_import_rules: []
+        }
+      }),
       saveCloudEntries: async () => ({ success: true }),
       saveCloudTemplates: async () => ({ success: true }),
       deleteCloudEntries: async () => ({ success: true }),

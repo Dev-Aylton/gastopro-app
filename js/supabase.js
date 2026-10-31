@@ -534,6 +534,50 @@ const SupabaseAuth = {
     }
   },
 
+  async fetchCloudResetData(userId) {
+    if (!this.client) {
+      return { success: false, error: new Error('Cliente Supabase não inicializado.') };
+    }
+    try {
+      const sessionUserId = await this.getAuthenticatedUserId(userId);
+      if (!sessionUserId) {
+        return { success: false, error: new Error('Não há uma sessão autenticada correspondente.') };
+      }
+
+      const definitions = [
+        ['entries', 'id', 'user_id'],
+        ['fixed_templates', 'id', 'user_id'],
+        ['goals', 'category', 'user_id'],
+        ['accounts', 'id', 'user_id'],
+        ['credit_cards', 'id', 'user_id'],
+        ['credit_card_purchases', 'id', 'user_id'],
+        ['fixed_import_rules', 'user_id', 'user_id']
+      ];
+      const records = {};
+      for (const [table, keyColumn, ownerColumn] of definitions) {
+        const rows = await this.fetchAllPages((from, to) => this.client.from(table)
+          .select(`${keyColumn},updated_at`)
+          .eq(ownerColumn, sessionUserId)
+          .is('deleted_at', null)
+          .order(keyColumn, { ascending: true })
+          .range(from, to));
+        if (!rows) {
+          return {
+            success: false,
+            error: new Error('Não foi possível buscar todos os dados da nuvem para zerar os dados financeiros.')
+          };
+        }
+        records[table] = rows.map(row => ({
+          id: row[keyColumn],
+          updatedAt: row.updated_at || null
+        }));
+      }
+      return { success: true, records };
+    } catch (error) {
+      return { success: false, error };
+    }
+  },
+
   async getSyncServerTime() {
     if (!this.client) return null;
     try {
@@ -1185,19 +1229,52 @@ const SupabaseAuth = {
   },
 
   async markCloudDeleted(table, keyColumn, ids, kind, sessionUserId) {
-    const conflictIds = [];
     for (const id of ids) {
-      const { data, error } = await sb.from(table).update({
+      const client = this.client;
+      if (!client) {
+        return this.reportCloudError(`Cliente não inicializado ao excluir ${table}`, new Error('Cliente Supabase não inicializado.'));
+      }
+      const makePayload = clientEditedAt => ({
         deleted_at: new Date().toISOString(),
-        client_edited_at: window.FinanceData?.getClientEditedAt(kind, id, true)
-      }).eq('user_id', sessionUserId).eq(keyColumn, id).select(keyColumn);
-      if (error) return this.reportCloudError(`Erro ao excluir ${table}`, error);
-      if (Array.isArray(data) && !data.length) conflictIds.push(id);
+        client_edited_at: clientEditedAt
+      });
+      const update = async payload => client.from(table).update(payload)
+        .eq('user_id', sessionUserId).eq(keyColumn, id)
+        .select(`${keyColumn},deleted_at,updated_at`);
+      const readRecord = async () => client.from(table)
+        .select(`${keyColumn},deleted_at,updated_at`)
+        .eq('user_id', sessionUserId).eq(keyColumn, id)
+        .maybeSingle();
+
+      let result = await update(makePayload(window.FinanceData?.getClientEditedAt(kind, id, true)));
+      if (result.error) return this.reportCloudError(`Erro ao excluir ${table}`, result.error);
+      if (Array.isArray(result.data) && result.data.length) continue;
+
+      let remote = await readRecord();
+      if (remote.error) return this.reportCloudError(`Erro ao confirmar exclusão de ${table}`, remote.error);
+      if (remote.data && remote.data.deleted_at) continue;
+      if (!remote.data) {
+        return this.reportCloudError(`Erro ao confirmar exclusão de ${table}`,
+          new Error(`O registro ${id} não foi encontrado após tentar excluí-lo.`));
+      }
+
+      const remoteUpdatedAt = Date.parse(remote.data.updated_at || '');
+      const clockOffset = Number(window.FinanceData?.getSyncMetadata?.().clockOffsetMs) || 0;
+      const retryTimestamp = Math.max(
+        Date.now() + clockOffset,
+        Number.isFinite(remoteUpdatedAt) ? remoteUpdatedAt + 2000 : 0
+      );
+      result = await update(makePayload(new Date(retryTimestamp).toISOString()));
+      if (result.error) return this.reportCloudError(`Erro ao repetir exclusão de ${table}`, result.error);
+      if (Array.isArray(result.data) && result.data.length) continue;
+
+      remote = await readRecord();
+      if (remote.error) return this.reportCloudError(`Erro ao confirmar exclusão de ${table}`, remote.error);
+      if (remote.data && remote.data.deleted_at) continue;
+      return this.reportCloudError(`Erro ao excluir ${table}`,
+        new Error(`A nuvem não confirmou a exclusão do registro ${id}.`));
     }
-    if (conflictIds.length && typeof window.showToast === 'function') {
-      window.showToast('Um item foi atualizado em outro aparelho');
-    }
-    return { success: true, conflictIds };
+    return { success: true, conflictIds: [] };
   },
 
   /**

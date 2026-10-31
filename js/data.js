@@ -2853,6 +2853,30 @@ const FinanceData = {
    */
   async clearAll() {
     const profile = this.getProfile();
+    const userId = profile.userId || this.getActiveUserId();
+    let remoteResetRecords = null;
+    if (userId) {
+      const auth = window.SupabaseAuth;
+      const remoteResult = auth && typeof auth.fetchCloudResetData === 'function'
+        ? await auth.fetchCloudResetData(userId)
+        : { success: false, error: new Error('A consulta da nuvem não está disponível.') };
+      const requiredTables = [
+        'entries', 'fixed_templates', 'goals', 'accounts', 'credit_cards',
+        'credit_card_purchases', 'fixed_import_rules'
+      ];
+      if (!remoteResult || !remoteResult.success || !remoteResult.records ||
+        requiredTables.some(table => !Array.isArray(remoteResult.records[table]))) {
+        const error = remoteResult && remoteResult.error
+          ? remoteResult.error
+          : new Error('Não foi possível buscar os dados da nuvem. Seus dados não foram alterados.');
+        if (typeof showToast === 'function') {
+          showToast('Não foi possível consultar a nuvem. Seus dados continuam salvos neste aparelho.');
+        }
+        return { success: false, error };
+      }
+      remoteResetRecords = remoteResult.records;
+    }
+
     await this.saveEntries([], { flush: false });
     await this.saveTemplates([], { flush: false });
     await this.saveAccounts([], { flush: false });
@@ -2865,7 +2889,44 @@ const FinanceData = {
     if (ownerId) {
       localStorage.removeItem(`${STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT}:${ownerId}`);
     }
-    return this.flushPendingSync(profile.userId);
+    if (remoteResetRecords) {
+      const pending = this.getPendingSync();
+      const metadata = this.getSyncMetadata();
+      const remoteKinds = [
+        ['entries', 'entries', 'deletedEntries'],
+        ['templates', 'templates', 'deletedTemplates'],
+        ['accounts', 'accounts', 'deletedAccounts'],
+        ['credit_cards', 'creditCards', 'deletedCreditCards'],
+        ['credit_card_purchases', 'creditCardPurchases', 'deletedCreditCardPurchases'],
+        ['goals', 'goals', 'deletedGoals']
+      ];
+      remoteKinds.forEach(([table, kind, pendingKey]) => {
+        metadata.deleted[kind] ||= {};
+        const rows = remoteResetRecords[table] || [];
+        rows.forEach(row => {
+          const id = row.id;
+          if (!id) return;
+          if (!pending[pendingKey].includes(id)) pending[pendingKey].push(id);
+          const current = metadata.deleted[kind][id];
+          const remoteUpdatedAt = Date.parse(row.updatedAt || '');
+          const clockOffset = Number(metadata.clockOffsetMs) || 0;
+          const editedAt = Math.max(
+            Date.now(),
+            Number.isFinite(remoteUpdatedAt) ? remoteUpdatedAt + 5000 - clockOffset : 0
+          );
+          metadata.deleted[kind][id] = {
+            updatedAt: current && current.updatedAt || row.updatedAt || null,
+            editedAt: new Date(editedAt).toISOString()
+          };
+        });
+      });
+      if (!(remoteResetRecords.fixed_import_rules || []).length) {
+        pending.fixedImportRules = false;
+      }
+      this.savePendingSync(pending);
+      this.saveSyncMetadata(metadata);
+    }
+    return this.flushPendingSync(userId);
   },
 
   // ================================================================
