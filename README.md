@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-337%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-353%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -87,8 +87,9 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 - Alertas visuais nos limiares exatos de 80% e 100%, com seção no dashboard, cards e modal de criação/edição.
 
 ### 🔔 Central de avisos
-- Cinco tipos locais, com prioridade dinâmica: saldo insuficiente e vencimento hoje/atrasado Crítico; cartão em 100% Crítico e desde 80% Atenção; vencimento próximo e gasto atípico Atenção; previsão do fim do mês Info.
+- Seis tipos locais, com prioridade dinâmica: saldo insuficiente e vencimento hoje/atrasado Crítico; cartão em 100% Crítico e desde 80% Atenção; vencimento próximo e gasto atípico Atenção; previsão do fim do mês Info; pagamentos importados para conferir Atenção.
 - Avisos mostram cor, ícone e rótulo textual; a lista prioriza gravidade e depois recência, e o sino/contador acompanham o aviso não lido mais grave.
+- Tocar no conteúdo navega para a tela, mês e item relacionado e destaca o destino; dispensas persistem para a mesma situação. Atualizações preservam tela, mês e rolagem, e o dashboard abre no topo.
 - “Resumo mensal” não é um tipo separado na central; a previsão do fim do mês é o tipo mais próximo e fica como Info.
 
 ### 🔐 Autenticação, perfil e backups
@@ -178,7 +179,7 @@ financeiro-app/
 │       ├── 20261102_sync_realtime_publication.sql # Etapa 2 Realtime; aplicada no Supabase
 │       └── 20261103_sync_transactions.sql # Etapa 3; pronta para aplicação no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 337 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 353 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -444,7 +445,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 12 | `20261102_sync_realtime_publication.sql` | Aplicada |
 | 13 | `20261103_sync_transactions.sql` | Pronta para aplicação no Supabase |
 
-`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **349 testes**.
+`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **353 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -464,7 +465,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **337 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **353 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -641,6 +642,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - [ ] **RM-032 — Contraste WCAG AA em celular e gráficos** / Descrição: revisar contraste de textos, estados e gráficos em telas de celular. / Critério de pronto: a definir.
 - [ ] **RM-033 — Idioma pt/en (futuro, adiado)** / Descrição: adicionar localização para português e inglês em etapa futura.
 - [x] **RM-034 — Contraste WCAG AA nos avisos** / Descrição: cores de Crítico, Atenção e Info com contraste AA nos temas claro e escuro, exclusivamente na central de avisos. A revisão geral em celulares e gráficos segue pendente no RM-032.
+- [x] **RM-035 — Navegação contextual e preservação de tela** / Descrição: avisos levam à tela, mês e item relacionados; dispensas persistem pela situação; atualizações preservam a navegação e o dashboard abre no topo. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
 
 ### Em dúvida
 
@@ -654,6 +656,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 
 ### Planejamento (sem versão)
 
+- [x] RM-035 — sino navega ao item e o destaca, dispensa de avisos persiste por situação e atualização preserva tela/mês/rolagem. Dashboard inicia no topo. Quatro testes adicionados; suíte com 353 aprovados.
 - Central de avisos: níveis Crítico/Atenção/Info, escalada para vencimentos e cartão, ordenação por prioridade/recência, sino com prioridade não lida e cores AA para os temas claro/escuro; preferências existentes preservadas. Quatro testes adicionados.
 - Lote A: destaque visual dos números financeiros e inteligência de categorização baseada em regras.
 - Lote B1: central de avisos com sino, cinco tipos de alerta e preferências armazenadas no aparelho.

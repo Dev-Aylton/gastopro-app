@@ -219,6 +219,7 @@ const VIEW_TITLES = {
 
 const LAST_VIEW_STORAGE_KEY = 'gastopro_last_view_v1';
 const PERSISTED_VIEW_IDS = Object.freeze(Object.keys(VIEW_TITLES));
+const APP_RELOAD_STATE_KEY = 'gastopro_app_reload_state_v1';
 const USAGE_TELEMETRY_PREFERENCE_KEY = 'gastopro_usage_telemetry_enabled_v1';
 
 function isUsageTelemetryEnabled() {
@@ -528,8 +529,16 @@ window.GastoProViewHelpers = {
     }
     if (storedView.view === 'admin' && isAdmin !== true) return 'dashboard';
     return storedView.view;
-  }
+  },
+  scrollToTop: scrollToViewTop
 };
+
+function scrollToViewTop(viewId) {
+  window.scrollTo({
+    top: 0,
+    behavior: viewId === 'dashboard' ? 'auto' : 'smooth'
+  });
+}
 
 function readStoredMainView() {
   try {
@@ -552,6 +561,109 @@ function persistMainView(viewId) {
     console.warn('[GastoPro] Não foi possível salvar a última tela:', error);
   }
 }
+
+function readAppReloadState() {
+  try {
+    const stored = sessionStorage.getItem(APP_RELOAD_STATE_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    if (!parsed || !PERSISTED_VIEW_IDS.includes(parsed.view) ||
+      !Number.isInteger(parsed.year) || parsed.year < 1 ||
+      !Number.isInteger(parsed.month) || parsed.month < 1 || parsed.month > 12 ||
+      !Number.isFinite(parsed.scrollX) || parsed.scrollX < 0 ||
+      !Number.isFinite(parsed.scrollY) || parsed.scrollY < 0 ||
+      (parsed.ownerId !== null && typeof parsed.ownerId !== 'string')) {
+      throw new Error('Formato inválido para o estado de navegação salvo.');
+    }
+    return parsed;
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível restaurar a navegação após atualização:', error);
+    return null;
+  }
+}
+
+const appReloadState = readAppReloadState();
+if (appReloadState) {
+  state.currentYear = appReloadState.year;
+  state.currentMonth = appReloadState.month;
+}
+
+function saveAppReloadState() {
+  try {
+    sessionStorage.setItem(APP_RELOAD_STATE_KEY, JSON.stringify({
+      view: state.currentView,
+      year: state.currentYear,
+      month: state.currentMonth,
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      ownerId: FinanceData.getActiveUserId() || null
+    }));
+    return true;
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível salvar a navegação antes da atualização:', error);
+    return false;
+  }
+}
+
+function clearAppReloadState() {
+  try {
+    sessionStorage.removeItem(APP_RELOAD_STATE_KEY);
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível limpar o estado temporário de navegação:', error);
+  }
+}
+
+function captureAppViewState() {
+  return {
+    view: state.currentView,
+    year: state.currentYear,
+    month: state.currentMonth,
+    scrollX: window.scrollX || 0,
+    scrollY: window.scrollY || 0
+  };
+}
+
+function applyAppViewState(snapshot) {
+  if (!snapshot || !VIEW_TITLES[snapshot.view] ||
+    !Number.isInteger(snapshot.year) || snapshot.year < 1 ||
+    !Number.isInteger(snapshot.month) || snapshot.month < 1 || snapshot.month > 12) return false;
+  state.currentView = snapshot.view;
+  state.currentYear = snapshot.year;
+  state.currentMonth = snapshot.month;
+  return true;
+}
+
+function restoreAppViewState(snapshot) {
+  const previousView = state.currentView;
+  if (!applyAppViewState(snapshot)) return false;
+  if (previousView !== snapshot.view) {
+    window.switchToView(snapshot.view);
+  } else {
+    renderAll();
+  }
+  window.requestAnimationFrame(() => {
+    window.scrollTo({
+      left: Number(snapshot.scrollX) || 0,
+      top: Number(snapshot.scrollY) || 0,
+      behavior: 'auto'
+    });
+  });
+  return true;
+}
+
+window.GastoProReloadState = {
+  key: APP_RELOAD_STATE_KEY,
+  capture: captureAppViewState,
+  apply: applyAppViewState,
+  getCurrent: () => ({
+    view: state.currentView,
+    year: state.currentYear,
+    month: state.currentMonth
+  }),
+  restore: restoreAppViewState,
+  save: saveAppReloadState,
+  clear: clearAppReloadState
+};
 
 // ================================================================
 // 3. UTILITÁRIOS
@@ -1400,8 +1512,7 @@ window.switchToView = function(viewId) {
   const targetSection = document.getElementById(`view-${viewId}`);
   if (targetSection) {
     targetSection.classList.add('active');
-    // Rola para o topo com animação suave ao trocar de tela
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToViewTop(viewId);
   }
 
   // Em mobile, fecha o menu lateral após selecionar uma tela
@@ -1700,7 +1811,8 @@ function renderCreditCardsPanel() {
     const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(card, purchases);
     const presentation = getCreditCardUsagePresentation(usage.alert);
     return `
-    <article class="manage-item-card credit-card-item ${presentation.className}">
+    <article class="manage-item-card credit-card-item ${presentation.className}"
+      data-card-id="${escapeHtml(card.id)}">
       <div class="card-item-left">
         <div class="card-item-info">
           ${renderCreditCardVisual(card, true)}
@@ -2068,8 +2180,9 @@ function getStoredNotifications() {
       typeof item.read === 'boolean' &&
       typeof item.dismissed === 'boolean' &&
       (!item.destination || (
-        item.destination.screen === 'entries' &&
+        typeof item.destination.screen === 'string' &&
         typeof item.destination.month === 'string' &&
+        (!item.destination.target || typeof item.destination.target === 'string') &&
         Array.isArray(item.destination.ids) &&
         item.destination.ids.every(id => typeof id === 'string')
       ))
@@ -2307,14 +2420,16 @@ function renderNotificationCenter() {
       const presentation = getNotificationPriorityPresentation(item);
       return `
       <article class="notification-item ${item.read ? '' : 'is-unread'}" data-priority="${priority}">
-        <div class="notification-item-content">
+        <button type="button" class="notification-item-content notification-item-navigation"
+          data-action="notification-navigate" data-event-key="${escapeHtml(item.eventKey)}"
+          aria-label="Abrir ${escapeHtml(item.title)}: ${escapeHtml(item.message)}">
           <div class="notification-priority">
             <i class="fa-solid ${presentation.icon}" aria-hidden="true"></i>
             <span>${presentation.label}</span>
           </div>
           <h3>${escapeHtml(item.title)}</h3>
           <p>${escapeHtml(item.message)}</p>
-        </div>
+        </button>
         <div class="notification-item-actions">
           ${item.read ? '' : `<button type="button" class="notification-action" data-action="notification-mark-read" data-event-key="${escapeHtml(item.eventKey)}">Marcar como lido</button>`}
           <button type="button" class="notification-action" data-action="notification-dismiss" data-event-key="${escapeHtml(item.eventKey)}">Dispensar</button>
@@ -2349,9 +2464,64 @@ window.GastoProNotificationCenter = {
   markRead: markNotificationAsRead,
   dismiss: dismissNotification,
   clearAll: clearAllNotifications,
+  navigate: navigateToNotification,
   clearPreferences: clearNotificationPreferences,
   render: renderNotificationCenter
 };
+
+let notificationHighlightTimeout;
+
+function navigateToNotification(eventKey) {
+  const notice = getStoredNotifications().find(item =>
+    item.eventKey === eventKey && !item.dismissed
+  );
+  if (!notice || !notice.destination) return false;
+  const destination = notice.destination;
+  const viewId = destination.screen === 'entries' ? 'expenses' : destination.screen;
+  if (!VIEW_TITLES[viewId]) return false;
+
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(destination.month || '')) {
+    const [year, month] = destination.month.split('-').map(Number);
+    state.currentYear = year;
+    state.currentMonth = month;
+  }
+  markNotificationAsRead(eventKey);
+  const notificationsPanel = document.getElementById('notificationsPanel');
+  const notificationsTrigger = document.getElementById('notificationsTrigger');
+  if (notificationsPanel) notificationsPanel.hidden = true;
+  if (notificationsTrigger) notificationsTrigger.setAttribute('aria-expanded', 'false');
+  window.switchToView(viewId);
+
+  window.requestAnimationFrame(() => {
+    const targets = [];
+    if (destination.target) {
+      const target = document.getElementById(destination.target);
+      if (target) targets.push(target);
+    } else {
+      const selector = destination.screen === 'cards'
+        ? '[data-card-id]'
+        : '[data-entry-id]';
+      document.querySelectorAll(selector).forEach(element => {
+        const id = destination.screen === 'cards'
+          ? element.getAttribute('data-card-id')
+          : element.getAttribute('data-entry-id');
+        if (destination.ids.includes(id)) targets.push(element);
+      });
+    }
+    if (notificationHighlightTimeout) clearTimeout(notificationHighlightTimeout);
+    targets.forEach(target => target.classList.add('notification-destination-highlight'));
+    if (targets.length) {
+      targets[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (!targets[0].hasAttribute('tabindex')) targets[0].setAttribute('tabindex', '-1');
+      targets[0].focus({ preventScroll: true });
+    }
+    notificationHighlightTimeout = setTimeout(() => {
+      targets.forEach(target => target.classList.remove('notification-destination-highlight'));
+    }, 4000);
+  });
+  renderNotificationCenter();
+  return true;
+}
 
 window.GastoProFinancialInsights = {
   getAmountPresentation: getFinancialAmountPresentation,
@@ -2450,6 +2620,13 @@ function renderFinancialInsights() {
     const dueEventItems = [...dueByDate.values()];
     const dueEventKey = dueEventItems.map(item => `${item.id || item.desc}:${item.date}`)
       .sort().join(',');
+    const dueDestinationMonth = dueEventItems
+      .map(item => item.month || String(item.date || '').slice(0, 7))
+      .filter(month => /^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+      .sort()[0] || actualMonth;
+    const dueDestinationIds = dueEventItems
+      .map(item => item.id)
+      .filter(id => typeof id === 'string');
     if (dueEventItems.length) {
       const overdueCount = dueEventItems.filter(item => item.date < today).length;
       const dueTodayCount = dueEventItems.filter(item => item.date === today).length;
@@ -2463,7 +2640,12 @@ function renderFinancialInsights() {
         title: overdueCount ? 'Vencimento atrasado' : dueTodayCount ? 'Vencimento hoje' : 'Vencimento próximo',
         message: critical
           ? `${overdueCount} vencido${overdueCount === 1 ? '' : 's'}; ${dueTodayCount} para hoje; ${upcomingCount} nos próximos dias.`
-          : `Você tem ${upcomingCount} gasto${upcomingCount === 1 ? '' : 's'} para pagar nos próximos 7 dias.`
+          : `Você tem ${upcomingCount} gasto${upcomingCount === 1 ? '' : 's'} para pagar nos próximos 7 dias.`,
+        destination: {
+          screen: 'entries',
+          month: dueDestinationMonth,
+          ids: dueDestinationIds
+        }
       });
     }
     if (due) {
@@ -2474,12 +2656,17 @@ function renderFinancialInsights() {
       const shortage = balanceDue ? balanceDue.insufficientAmount : 0;
       if (shortage > 0) {
         notificationEvents.push({
-          eventKey: `insufficientBalance:${actualMonth}:${filter}:${dueEventKey}`,
+          eventKey: `insufficientBalance:${actualMonth}:${filter}:${dueEventKey}:${Math.round(shortage * 100)}`,
           scope: filter,
           type: 'insufficientBalance',
           priority: 'critical',
           title: 'O saldo pode não ser suficiente',
-          message: 'Confira o saldo antes dos próximos vencimentos.'
+          message: 'Confira o saldo antes dos próximos vencimentos.',
+          destination: {
+            screen: 'entries',
+            month: dueDestinationMonth,
+            ids: dueDestinationIds
+          }
         });
       }
       if (!state.dismissedInsights.has(key)) {
@@ -2495,12 +2682,18 @@ function renderFinancialInsights() {
     }
     if (forecast) {
       notificationEvents.push({
-        eventKey: `forecast:${actualMonth}:${filter}`,
+        eventKey: `forecast:${actualMonth}:${filter}:${Math.round(forecast.amount * 100)}:${balanceMovements.map(item => item.id).filter(Boolean).sort().join(',')}`,
         scope: filter,
         type: 'forecast',
         priority: 'info',
         title: 'Previsão do fim do mês',
-        message: 'Sua previsão do saldo no fim do mês foi atualizada.'
+        message: 'Sua previsão do saldo no fim do mês foi atualizada.',
+        destination: {
+          screen: 'dashboard',
+          month: actualMonth,
+          ids: [],
+          target: 'financialInsightsPanel'
+        }
       });
     }
   }
@@ -2519,12 +2712,17 @@ function renderFinancialInsights() {
     const key = `anomaly:${alertScope}:${item.id || index}`;
     if (selectedMonth === actualMonth) {
       notificationEvents.push({
-        eventKey: `anomaly:${actualMonth}:${filter}:${item.id || index}`,
+        eventKey: `anomaly:${actualMonth}:${filter}:${item.id || index}:${Math.round(Number(item.amount) * 100)}:${Math.round(average * 100)}`,
         scope: filter,
         type: 'anomaly',
         priority: 'attention',
         title: 'Gasto acima do normal',
-        message: `${item.category || 'Um gasto'} está bem acima da média dessa categoria.`
+        message: `${item.category || 'Um gasto'} está bem acima da média dessa categoria.`,
+        destination: {
+          screen: 'entries',
+          month: selectedMonth,
+          ids: typeof item.id === 'string' ? [item.id] : []
+        }
       });
     }
     if (state.dismissedInsights.has(key)) return;
@@ -2551,12 +2749,17 @@ function renderFinancialInsights() {
       const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(card, purchases);
       if (usage.alert === 'normal') return;
       notificationEvents.push({
-        eventKey: `cardLimit:${actualMonth}:${filter}:${card.id}:${usage.alert}`,
+        eventKey: `cardLimit:${actualMonth}:${filter}:${card.id}:${usage.alert}:${Math.round(usage.percent)}`,
         scope: filter,
         type: 'cardLimit',
         priority: usage.alert === 'full' ? 'critical' : 'attention',
         title: usage.alert === 'full' ? 'Limite do cartão atingido' : 'Limite do cartão quase cheio',
-        message: `${card.name}: ${Math.round(usage.percent)}% do limite está em uso.`
+        message: `${card.name}: ${Math.round(usage.percent)}% do limite está em uso.`,
+        destination: {
+          screen: 'cards',
+          month: actualMonth,
+          ids: [card.id]
+        }
       });
     });
   }
@@ -3374,7 +3577,8 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
     const needsPaidReview = item.paid && paidReviewIds.has(item.id);
 
     return `
-      <div class="manage-item-card ${item.paid ? 'is-paid' : ''} ${isInactive ? 'is-inactive-card' : ''}">
+      <div class="manage-item-card ${item.paid ? 'is-paid' : ''} ${isInactive ? 'is-inactive-card' : ''}"
+        data-entry-id="${escapeHtml(item.id)}">
         <div class="card-item-left">
           <div class="card-type-icon ${iconClass}">
             <i class="${iconI}"></i>
@@ -4440,6 +4644,9 @@ document.addEventListener('DOMContentLoaded', () => {
           markNotificationAsRead(actionElement.dataset.eventKey);
           renderNotificationCenter();
         }
+        break;
+      case 'notification-navigate':
+        if (actionElement.dataset.eventKey) navigateToNotification(actionElement.dataset.eventKey);
         break;
       case 'notification-dismiss':
         if (actionElement.dataset.eventKey) {
@@ -7032,6 +7239,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function handleAppRefresh() {
     if (isRefreshing) return;
     isRefreshing = true;
+    const viewSnapshot = captureAppViewState();
 
     // Ativa animação de rotação contínua nos ícones
     const icons = [refreshIcon].filter(Boolean);
@@ -7055,7 +7263,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Re-renderiza views e perfil
       renderUserProfile();
-      renderAll();
+      restoreAppViewState(viewSnapshot);
 
       // Feedback visual nítido (mínimo 500ms)
       const elapsed = Date.now() - startTime;
@@ -7077,7 +7285,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       console.warn('[GastoPro] Erro durante o refresh:', err);
       trackUsageEvent('sync_error');
-      renderAll();
+      restoreAppViewState(viewSnapshot);
       showToast('Dados locais atualizados.');
     } finally {
       icons.forEach(icon => icon.classList.remove('spinning'));
@@ -7128,6 +7336,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       onControllerChange = () => {
         controllerChanged = true;
+        saveAppReloadState();
         resolveControllerChange();
       };
       registration.addEventListener('updatefound', onUpdateFound);
@@ -8777,14 +8986,33 @@ document.addEventListener('DOMContentLoaded', () => {
       if (user) await refreshAdminBadge();
       else resetAdminSession();
 
-      const restoredView = window.GastoProViewHelpers.restore(
+      const defaultView = window.GastoProViewHelpers.restore(
         readStoredMainView(),
         user ? user.id : null,
         adminViewState.access === 'allowed'
       );
+      const activeOwnerId = user ? user.id : FinanceData.getActiveUserId() || null;
+      const canRestoreReloadState = appReloadState &&
+        appReloadState.ownerId === activeOwnerId &&
+        (appReloadState.view !== 'admin' || adminViewState.access === 'allowed');
+      if (appReloadState && appReloadState.ownerId !== activeOwnerId) {
+        state.currentYear = _initDate.getFullYear();
+        state.currentMonth = _initDate.getMonth() + 1;
+      }
+      const restoredView = canRestoreReloadState ? appReloadState.view : defaultView;
       document.body.classList.remove('auth-checking');
       window.switchToView(restoredView);
       if (user) await syncUserDataFromCloud(user.id);
+      if (canRestoreReloadState) {
+        window.requestAnimationFrame(() => {
+          window.scrollTo({
+            left: appReloadState.scrollX,
+            top: appReloadState.scrollY,
+            behavior: 'auto'
+          });
+        });
+      }
+      if (appReloadState) clearAppReloadState();
       accountOnboardingDataReady = true;
       window.dispatchEvent(new Event('gastopro:account-data-ready'));
     })();

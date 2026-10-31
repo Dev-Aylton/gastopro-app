@@ -765,6 +765,23 @@ body {
   gap: 0.35rem;
 }
 
+.notification-item-navigation {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-item-navigation:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
 .notification-action {
   min-height: 44px;
   padding: 0.2rem;
@@ -3899,6 +3916,11 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 
 .credit-card-item {
   align-items: flex-start;
+}
+
+.notification-destination-highlight {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
 }
 
 .credit-card-item .card-item-left,

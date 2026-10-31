@@ -3855,6 +3855,90 @@ describe('Central de avisos local', () => {
     assertTrue(notifications.getItems()[0].dismissed);
   });
 
+  it('mantém a dispensa na mesma situação e cria aviso quando a situação muda', () => {
+    setupMockLocalStorage();
+    const sameSituation = {
+      eventKey: 'cardLimit:2026-10:all:card-a:warning:80',
+      scope: 'all', type: 'cardLimit', title: 'Limite quase cheio',
+      message: '80% do limite está em uso.'
+    };
+    notifications.syncEvents([sameSituation]);
+    notifications.dismiss(sameSituation.eventKey);
+    notifications.syncEvents([{ ...sameSituation }]);
+    assertEqual(notifications.getVisible('all'), []);
+
+    const changedSituation = {
+      ...sameSituation,
+      eventKey: 'cardLimit:2026-10:all:card-a:warning:81',
+      message: '81% do limite está em uso.'
+    };
+    notifications.syncEvents([changedSituation]);
+    assertEqual(notifications.getVisible('all').map(item => item.eventKey), [
+      changedSituation.eventKey
+    ]);
+  });
+
+  it('navega ao destino do aviso, seleciona o mês e destaca o lançamento', () => {
+    setupMockLocalStorage();
+    const id = 'entry-notification-target';
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <section id="notificationsPanel">
+        <button id="notificationsTrigger"></button>
+        <span id="notificationsUnreadCount"></span>
+        <p id="notificationsUnreadLabel"></p>
+        <div id="notificationsList"></div>
+        <div id="notificationSettingsList"></div>
+      </section>
+      <div data-entry-id="${id}"></div>`;
+    document.body.appendChild(host);
+    const target = host.querySelector(`[data-entry-id="${id}"]`);
+    let scrollIntoViewCount = 0;
+    target.scrollIntoView = () => { scrollIntoViewCount++; };
+    target.focus = () => {};
+    const originalSwitch = window.switchToView;
+    const originalAnimationFrame = window.requestAnimationFrame;
+    let navigatedView = null;
+    window.switchToView = view => {
+      navigatedView = view;
+      window.GastoProReloadState.apply({
+        view, year: 2026, month: 3, scrollX: 0, scrollY: 0
+      });
+    };
+    window.requestAnimationFrame = callback => callback();
+    try {
+      notifications.syncEvents([{
+        eventKey: 'due-destination',
+        scope: 'all',
+        type: 'dueSoon',
+        title: 'Vencimento',
+        message: 'Há um lançamento.',
+        destination: { screen: 'entries', month: '2026-03', ids: [id] }
+      }]);
+      notifications.render();
+      const navigateButton = host.querySelector('[data-action="notification-navigate"]');
+      const dismissButton = host.querySelector('[data-action="notification-dismiss"]');
+      assertNotNull(navigateButton);
+      assertNotNull(dismissButton);
+      navigateButton.addEventListener('click', event =>
+        notifications.navigate(event.currentTarget.dataset.eventKey)
+      );
+      navigateButton.click();
+      assertEqual(navigatedView, 'expenses');
+      assertEqual(window.GastoProReloadState.getCurrent(), {
+        view: 'expenses', year: 2026, month: 3
+      });
+      assertEqual(scrollIntoViewCount, 1);
+      assertTrue(target.classList.contains('notification-destination-highlight'));
+      assertTrue(host.querySelector('#notificationsPanel').hidden);
+      assertEqual(notifications.getItems()[0].read, true);
+    } finally {
+      window.switchToView = originalSwitch;
+      window.requestAnimationFrame = originalAnimationFrame;
+      host.remove();
+    }
+  });
+
   itAsync('cria aviso de revisão com prioridade, mês mais antigo e IDs no destino', async () => {
     setupMockLocalStorage();
     const firstId = crypto.randomUUID();
@@ -3989,6 +4073,44 @@ describe('Central de avisos local', () => {
     assertNull(localStorage.getItem(notifications.PREFERENCES_KEY));
     assertNull(localStorage.getItem(window.GastoProUsageTelemetry.PREFERENCE_KEY));
     assertEqual(notifications.getItems(), []);
+  });
+});
+
+describe('Restauração da navegação após atualização', () => {
+  it('preserva a tela e o mês selecionados ao restaurar o estado salvo', () => {
+    const reloadState = window.GastoProReloadState;
+    const original = reloadState.getCurrent();
+    const saved = {
+      view: 'expenses', year: 2026, month: 4, scrollX: 0, scrollY: 620
+    };
+    try {
+      assertTrue(reloadState.apply(saved));
+      const snapshot = reloadState.capture();
+      assertEqual(snapshot.view, saved.view);
+      assertEqual(snapshot.year, saved.year);
+      assertEqual(snapshot.month, saved.month);
+      assertTrue(reloadState.apply({
+        ...saved, view: 'dashboard', month: 11, scrollY: 0
+      }));
+      assertTrue(reloadState.apply(snapshot));
+      assertEqual(reloadState.getCurrent(), {
+        view: 'expenses', year: 2026, month: 4
+      });
+    } finally {
+      reloadState.apply(original);
+    }
+  });
+
+  it('abre o dashboard no topo sem rolagem até os cartões', () => {
+    const originalScrollTo = window.scrollTo;
+    let scrollOptions = null;
+    window.scrollTo = options => { scrollOptions = options; };
+    try {
+      window.GastoProViewHelpers.scrollToTop('dashboard');
+      assertEqual(scrollOptions, { top: 0, behavior: 'auto' });
+    } finally {
+      window.scrollTo = originalScrollTo;
+    }
   });
 });
 
