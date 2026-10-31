@@ -212,6 +212,7 @@ const VIEW_TITLES = {
   dashboard: 'Dashboard & Saúde Financeira',
   incomes:   'Gerenciador de Ganhos do Mês',
   expenses:  'Gerenciador de Gastos do Mês',
+  cards:     'Cartões',
   accounts:  'Contas',
   contact:   'Fale comigo',
   admin:     'Admin'
@@ -220,7 +221,73 @@ const VIEW_TITLES = {
 const LAST_VIEW_STORAGE_KEY = 'gastopro_last_view_v1';
 const PERSISTED_VIEW_IDS = Object.freeze(Object.keys(VIEW_TITLES));
 const APP_RELOAD_STATE_KEY = 'gastopro_app_reload_state_v1';
+const CREDIT_CARD_PREVIOUS_SPENT_KEY = 'gastopro_credit_card_previous_spent_v1';
 const USAGE_TELEMETRY_PREFERENCE_KEY = 'gastopro_usage_telemetry_enabled_v1';
+
+function getCreditCardPreviousSpentStorageKey(userId) {
+  const profile = FinanceData.getProfile();
+  const ownerId = userId || FinanceData.getActiveUserId() ||
+    (profile && profile.userId) || 'local';
+  return `${CREDIT_CARD_PREVIOUS_SPENT_KEY}:${ownerId}`;
+}
+
+function getCreditCardPreviousSpentMap(userId) {
+  const key = getCreditCardPreviousSpentStorageKey(userId);
+  try {
+    const stored = localStorage.getItem(key);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Formato inválido para os gastos anteriores dos cartões.');
+    }
+    return Object.fromEntries(Object.entries(parsed).filter(([, amount]) =>
+      typeof amount === 'number' && Number.isFinite(amount) && amount >= 0
+    ));
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível ler os gastos anteriores dos cartões:', error);
+    throw error;
+  }
+}
+
+function saveCreditCardPreviousSpent(cardId, value, userId) {
+  if (typeof cardId !== 'string' || !cardId) {
+    throw new TypeError('O cartão precisa ter um ID para salvar o gasto anterior.');
+  }
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0 || amount > 9999999999.99) {
+    throw new RangeError('O gasto anterior deve ser um valor não negativo válido.');
+  }
+  const map = getCreditCardPreviousSpentMap(userId);
+  const roundedAmount = Math.round(amount * 100) / 100;
+  if (roundedAmount > 0) map[cardId] = roundedAmount;
+  else delete map[cardId];
+  try {
+    localStorage.setItem(
+      getCreditCardPreviousSpentStorageKey(userId),
+      JSON.stringify(map)
+    );
+    return map;
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível salvar o gasto anterior do cartão:', error);
+    throw error;
+  }
+}
+
+function removeCreditCardPreviousSpent(cardId, userId) {
+  const map = getCreditCardPreviousSpentMap(userId);
+  if (!Object.prototype.hasOwnProperty.call(map, cardId)) return map;
+  delete map[cardId];
+  try {
+    localStorage.setItem(
+      getCreditCardPreviousSpentStorageKey(userId),
+      JSON.stringify(map)
+    );
+    return map;
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível remover o gasto anterior do cartão:', error);
+    throw error;
+  }
+}
 
 function isUsageTelemetryEnabled() {
   try {
@@ -1602,6 +1669,7 @@ function renderAll() {
   // allFixed (com inativos) é passado para permitir gerenciar gastos pausados na tela de Gastos
   renderExpensesView(allFixed, variables, totalFixed, totalVariable, totalExpenses);
   renderAccountsView();
+  renderCreditCardsPanel();
   renderContactView();
   renderAdminView();
   updateAdminNavigation();
@@ -1679,7 +1747,7 @@ function updateCreditCardPurchaseFields() {
   if (hint) {
     hint.textContent = cards.length
       ? 'A parcela será lançada no mês da fatura; o saldo da conta só muda ao pagar.'
-      : 'Cadastre um cartão no painel do Dashboard para usar esta opção.';
+      : 'Cadastre um cartão na aba Cartões para usar esta opção.';
   }
 }
 
@@ -1788,8 +1856,15 @@ function renderAccountBalancesPanel() {
   if (topbarEmpty) topbarEmpty.hidden = accounts.length > 0;
   if (topbarDateNote) topbarDateNote.hidden =
     !accountsNeedBalanceDateNotice(accounts, state.accountBalanceFilter);
-  renderCreditCardsPanel();
   renderFinancialInsights();
+}
+
+function getCreditCardEmptyStateMarkup() {
+  return `
+    <p>Nenhum cartão cadastrado ainda.</p>
+    <button type="button" class="btn-primary empty-state-action" data-action="new-credit-card">
+      Cadastrar cartão
+    </button>`;
 }
 
 function renderCreditCardsPanel() {
@@ -1800,16 +1875,17 @@ function renderCreditCardsPanel() {
   const cards = FinanceData.getCreditCards();
   if (empty) empty.hidden = cards.length > 0;
   if (empty && !cards.length) {
-    empty.innerHTML = `
-      <p>Nenhum cartão cadastrado ainda.</p>
-      <button type="button" class="btn-primary empty-state-action" data-action="new-credit-card">
-        Cadastrar cartão
-      </button>`;
+    empty.innerHTML = getCreditCardEmptyStateMarkup();
   }
   const purchases = FinanceData.getCreditCardPurchases();
+  const previousSpentByCard = getCreditCardPreviousSpentMap();
   container.innerHTML = cards.map(card => {
-    const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(card, purchases);
+    const previousSpent = Number(previousSpentByCard[card.id]) || 0;
+    const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(
+      card, purchases, previousSpent
+    );
     const presentation = getCreditCardUsagePresentation(usage.alert);
+    const nextDueDate = window.GastoProCreditCardHelpers.getNextDueDate(card);
     return `
     <article class="manage-item-card credit-card-item ${presentation.className}"
       data-card-id="${escapeHtml(card.id)}">
@@ -1817,7 +1893,8 @@ function renderCreditCardsPanel() {
         <div class="card-item-info">
           ${renderCreditCardVisual(card, true)}
           <div class="card-item-meta">
-            <span>Fecha dia ${card.closingDay} · vence dia ${card.dueDay}</span>
+            <span>Fecha dia ${card.closingDay} · próximo vencimento ${nextDueDate ? escapeHtml(formatDate(nextDueDate)) : 'não disponível'}</span>
+            ${previousSpent > 0 ? `<span>Inclui ${escapeHtml(formatCurrency(previousSpent))} informado antes do app</span>` : ''}
             ${accounts.has(card.accountId) ? `<span>${escapeHtml(accounts.get(card.accountId))}</span>` : ''}
           </div>
           <div class="credit-card-usage">
@@ -1842,6 +1919,62 @@ function renderCreditCardsPanel() {
       </div>
     </article>
   `;}).join('');
+}
+
+function getCreditCardDashboardSummary(
+  cards, purchases, previousSpentByCard = {}, fromDate = new Date()
+) {
+  const cardList = Array.isArray(cards) ? cards : [];
+  const purchaseList = Array.isArray(purchases) ? purchases : [];
+  const used = cardList.reduce((sum, card) => {
+    const previousSpent = Number(previousSpentByCard[card.id]) || 0;
+    return sum + window.GastoProCreditCardHelpers.calculateLimitUsage(
+      card, purchaseList, previousSpent
+    ).used;
+  }, 0);
+  const nextDueDate = cardList.map(card =>
+    window.GastoProCreditCardHelpers.getNextDueDate(card, fromDate)
+  ).filter(Boolean).sort()[0] || null;
+  return {
+    cardCount: cardList.length,
+    used: Math.round(used * 100) / 100,
+    nextDueDate
+  };
+}
+
+function renderCreditCardDashboardSummary(summary) {
+  if (!summary.cardCount) {
+    return `
+      <button type="button" class="dashboard-card-summary is-empty" data-action="open-credit-cards"
+        aria-label="Abrir Cartões e cadastrar um cartão">
+        <strong>Cartões</strong>
+        <span>Nenhum cartão cadastrado. Abrir carteira para começar.</span>
+      </button>`;
+  }
+  return `
+    <button type="button" class="dashboard-card-summary" data-action="open-credit-cards"
+      aria-label="Abrir Cartões. Limite usado ${escapeHtml(formatCurrency(summary.used))}.">
+      <strong>Cartões</strong>
+      <span>Limite usado: <b>${escapeHtml(formatCurrency(summary.used))}</b></span>
+      <span>Próximo vencimento: <b>${summary.nextDueDate
+        ? escapeHtml(formatDate(summary.nextDueDate))
+        : 'não disponível'}</b></span>
+    </button>`;
+}
+
+function renderDashboardCreditCardSummary() {
+  const container = document.getElementById('dashboardCreditCardSummary');
+  if (!container) return;
+  const summary = getCreditCardDashboardSummary(
+    FinanceData.getCreditCards(),
+    FinanceData.getCreditCardPurchases(),
+    getCreditCardPreviousSpentMap()
+  );
+  container.innerHTML = renderCreditCardDashboardSummary(summary);
+}
+
+function openCreditCardsView() {
+  window.switchToView('cards');
 }
 
 function getCreditCardUsagePresentation(alert) {
@@ -2738,6 +2871,7 @@ function renderFinancialInsights() {
     const accountTypeById = new Map(accounts.map(account => [account.id, account.type]));
     const cards = FinanceData.getCreditCards();
     const purchases = FinanceData.getCreditCardPurchases();
+    const previousSpentByCard = getCreditCardPreviousSpentMap();
     cards.forEach(card => {
       const cardType = accountTypeById.get(card.accountId);
       const matchesScope = filter === 'all'
@@ -2746,7 +2880,9 @@ function renderFinancialInsights() {
           ? cardType === filter
           : card.accountId === filter.slice('account:'.length);
       if (!matchesScope) return;
-      const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(card, purchases);
+      const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(
+        card, purchases, Number(previousSpentByCard[card.id]) || 0
+      );
       if (usage.alert === 'normal') return;
       notificationEvents.push({
         eventKey: `cardLimit:${actualMonth}:${filter}:${card.id}:${usage.alert}:${Math.round(usage.percent)}`,
@@ -2801,7 +2937,13 @@ function renderFinancialInsights() {
 
 window.GastoProCreditCardDashboardHelpers = {
   getUsagePresentation: getCreditCardUsagePresentation,
-  renderVisual: renderCreditCardVisual
+  renderVisual: renderCreditCardVisual,
+  getSummary: getCreditCardDashboardSummary,
+  renderSummary: renderCreditCardDashboardSummary,
+  renderEmptyState: getCreditCardEmptyStateMarkup,
+  openCards: openCreditCardsView,
+  getPreviousSpentMap: getCreditCardPreviousSpentMap,
+  savePreviousSpent: saveCreditCardPreviousSpent
 };
 
 // ================================================================
@@ -2874,6 +3016,7 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
   renderCategoryChart(fixed, variables);
   renderGoalsSection(fixed, variables);
   renderAccountBalancesPanel();
+  renderDashboardCreditCardSummary();
 }
 
 /**
@@ -3759,6 +3902,8 @@ function openCreditCardModal(id) {
   document.getElementById('creditCardCustomColorGroup').hidden =
     document.getElementById('creditCardIssuerBank').value !== 'Outro';
   document.getElementById('creditCardLimit').value = card ? card.totalLimit : '';
+  document.getElementById('creditCardPreviousSpent').value =
+    card ? getCreditCardPreviousSpentMap()[card.id] || '' : '';
   document.getElementById('creditCardClosingDay').value = card ? card.closingDay : '';
   document.getElementById('creditCardDueDay').value = card ? card.dueDay : '';
   const accountSelect = document.getElementById('creditCardAccount');
@@ -3789,6 +3934,12 @@ function deleteCreditCard(id) {
     onConfirm: async () => {
       try {
         const result = await FinanceData.deleteCreditCard(id);
+        try {
+          removeCreditCardPreviousSpent(id);
+        } catch (error) {
+          console.error('[GastoPro] Cartão removido, mas o gasto anterior não foi limpo:', error);
+          showToast('Cartão removido, mas não foi possível limpar o gasto anterior neste aparelho.');
+        }
         renderAll();
         if (!result.success) {
           showToast(`O cartão foi removido localmente, mas a sincronização falhou: ${result.error && result.error.message || result.error || 'erro desconhecido'}`);
@@ -4610,6 +4761,9 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       case 'new-credit-card':
         openCreditCardModal();
+        break;
+      case 'open-credit-cards':
+        openCreditCardsView();
         break;
       case 'edit-credit-card':
         openCreditCardModal(id);
@@ -5495,6 +5649,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const name = document.getElementById('creditCardName').value.trim();
     const totalLimitRaw = document.getElementById('creditCardLimit').value;
     const totalLimit = Number(totalLimitRaw);
+    const previousSpentRaw = document.getElementById('creditCardPreviousSpent').value.trim();
+    const previousSpent = previousSpentRaw ? Number(previousSpentRaw) : 0;
     const closingDay = Number(document.getElementById('creditCardClosingDay').value);
     const dueDay = Number(document.getElementById('creditCardDueDay').value);
     const accountId = document.getElementById('creditCardAccount').value || null;
@@ -5506,6 +5662,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!name || name.length > 100) validationError = 'O nome deve ter de 1 a 100 caracteres.';
     else if (!totalLimitRaw || !Number.isFinite(totalLimit) || totalLimit <= 0 ||
       totalLimit > 9999999999.99) validationError = 'Informe um limite total válido.';
+    else if (!Number.isFinite(previousSpent) || previousSpent < 0 ||
+      previousSpent > 9999999999.99) {
+      validationError = 'Informe um valor válido e não negativo para o gasto anterior.';
+    }
     else if (!Number.isInteger(closingDay) || closingDay < 1 || closingDay > 31 ||
       !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
       validationError = 'Os dias de fechamento e vencimento devem estar entre 1 e 31.';
@@ -5535,6 +5695,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const savedCard = id
         ? FinanceData.getCreditCards().find(card => card.id === id)
         : FinanceData.getCreditCards().find(card => !previousIds.has(card.id));
+      if (savedCard) {
+        try {
+          saveCreditCardPreviousSpent(savedCard.id, previousSpent);
+        } catch (error) {
+          console.error('[GastoPro] O cartão foi salvo, mas o gasto anterior não foi salvo:', error);
+          errorEl.textContent = `Cartão salvo, mas não foi possível guardar o gasto anterior: ${error.message || error}`;
+          errorEl.hidden = false;
+          renderAll();
+          return;
+        }
+      }
       if (savedCard && !id) {
         document.getElementById('creditCardId').value = savedCard.id;
         document.getElementById('creditCardModalTitle').textContent = 'Editar cartão';

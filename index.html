@@ -93,6 +93,10 @@
               <span>Gastos do Mês</span>
               <span class="nav-badge text-danger" id="sidebarExpenseCount"></span>
             </button>
+            <button class="nav-item" data-view="cards" id="navCards">
+              <i class="fa-solid fa-credit-card"></i>
+              <span>Cartões</span>
+            </button>
           </section>
 
           <section class="sidebar-group" aria-labelledby="sidebarMoreTitle">
@@ -604,22 +608,7 @@
             <div class="account-balance-empty" id="dashboardAccountsEmpty" hidden></div>
           </div>
 
-          <div class="panel-box credit-cards-panel">
-            <div class="panel-header">
-              <div class="panel-title-group">
-                <div class="panel-icon bg-purple-soft"><i class="fa-solid fa-credit-card"></i></div>
-                <div>
-                  <h2>Cartões de crédito</h2>
-                  <p>Cadastre seus cartões e limites</p>
-                </div>
-              </div>
-              <button type="button" class="btn-add-goal" data-action="new-credit-card">
-                <i class="fa-solid fa-plus"></i> Novo cartão
-              </button>
-            </div>
-            <div id="creditCardsList" class="goals-list"></div>
-            <div id="creditCardsEmpty" class="goals-empty" hidden></div>
-          </div>
+          <div id="dashboardCreditCardSummary"></div>
 
 
 
@@ -845,6 +834,25 @@
             </div>
           </div>
 
+        </section>
+
+        <section class="view-section" id="view-cards">
+          <div class="view-header-card">
+            <div class="view-header-info">
+              <div class="view-icon-badge"><i class="fa-solid fa-credit-card"></i></div>
+              <div>
+                <h2>Carteira de cartões</h2>
+                <p>Limites e parcelas em aberto calculados pelas compras lançadas no app.</p>
+              </div>
+            </div>
+            <button type="button" class="btn-primary" data-action="new-credit-card">
+              <i class="fa-solid fa-plus"></i> Novo cartão
+            </button>
+          </div>
+          <div class="panel-box credit-cards-panel">
+            <div id="creditCardsList" class="goals-list"></div>
+            <div id="creditCardsEmpty" class="goals-empty" hidden></div>
+          </div>
         </section>
 
         <section class="view-section" id="view-accounts">
@@ -1155,6 +1163,11 @@
               <option value="">Sem conta vinculada</option>
             </select>
           </div>
+        </div>
+        <div class="form-group">
+          <label for="creditCardPreviousSpent">Já gasto antes do app (R$)</label>
+          <input type="number" id="creditCardPreviousSpent" step="0.01" min="0" max="9999999999.99" />
+          <small class="form-hint">Opcional; fica salvo apenas neste aparelho e não é incluído no backup.</small>
         </div>
         <div class="form-row-2">
           <div class="form-group">

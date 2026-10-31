@@ -149,13 +149,19 @@ function getCreditCardInstallments(purchase) {
   });
 }
 
-function calculateCreditCardLimitUsage(card, purchases) {
+function calculateCreditCardLimitUsage(card, purchases, previousSpent = 0) {
   const installments = purchases.flatMap(purchase =>
     purchase.cardId === card.id ? getCreditCardInstallments(purchase)
       .filter(installment => !(purchase.paidInstallments || []).includes(installment.number)) : []
   );
   const totalLimit = Number(card.totalLimit);
-  const used = Math.round(installments.reduce((sum, installment) => sum + installment.amount, 0) * 100) / 100;
+  const extraSpent = Number(previousSpent);
+  if (!Number.isFinite(extraSpent) || extraSpent < 0) {
+    throw new RangeError('O gasto anterior do cartão deve ser um valor não negativo.');
+  }
+  const used = Math.round((
+    installments.reduce((sum, installment) => sum + installment.amount, 0) + extraSpent
+  ) * 100) / 100;
   const percent = totalLimit > 0 ? used / totalLimit * 100 : 0;
   return {
     used,
@@ -163,6 +169,23 @@ function calculateCreditCardLimitUsage(card, purchases) {
     percent,
     alert: percent >= 100 ? 'full' : percent >= 80 ? 'warning' : 'normal'
   };
+}
+
+function getNextCreditCardDueDate(card, fromDate = new Date()) {
+  const dueDay = Number(card && card.dueDay);
+  if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31 ||
+    !(fromDate instanceof Date) || Number.isNaN(fromDate.getTime())) return null;
+
+  const today = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+  for (let offset = 0; offset < 2; offset++) {
+    const year = today.getFullYear();
+    const month = today.getMonth() + offset;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const dueDate = new Date(year, month, Math.min(dueDay, daysInMonth));
+    if (dueDate < today) continue;
+    return `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`;
+  }
+  return null;
 }
 
 function validateBackupText(text) {
@@ -557,7 +580,8 @@ window.GastoProBackupHelpers = {
 
 window.GastoProCreditCardHelpers = {
   getInstallments: getCreditCardInstallments,
-  calculateLimitUsage: calculateCreditCardLimitUsage
+  calculateLimitUsage: calculateCreditCardLimitUsage,
+  getNextDueDate: getNextCreditCardDueDate
 };
 
 const FinanceData = {

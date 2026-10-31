@@ -867,6 +867,84 @@ describe('FinanceData — Contas Bancárias', () => {
     );
   });
 
+  it('soma ao limite usado somente as parcelas que continuam em aberto', () => {
+    const card = { id: 'card-a', totalLimit: 1000 };
+    const purchases = [
+      {
+        cardId: 'card-a', amount: 500, installmentCount: 2,
+        purchaseDate: '2026-03-01', closingDay: 20, dueDay: 10,
+        paidInstallments: [1]
+      },
+      {
+        cardId: 'card-a', amount: 200, installmentCount: 1,
+        purchaseDate: '2026-03-01', closingDay: 20, dueDay: 10,
+        paidInstallments: [1]
+      }
+    ];
+    const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(card, purchases);
+    assertEqual(usage.used, 250);
+    assertEqual(usage.available, 750);
+  });
+
+  it('soma o gasto anterior opcional às compras em aberto e o persiste por cartão', () => {
+    setupMockLocalStorage();
+    const dashboard = window.GastoProCreditCardDashboardHelpers;
+    dashboard.savePreviousSpent('card-a', 125.5);
+    const previousSpent = dashboard.getPreviousSpentMap()['card-a'];
+    const usage = window.GastoProCreditCardHelpers.calculateLimitUsage({
+      id: 'card-a', totalLimit: 1000
+    }, [{
+      cardId: 'card-a', amount: 300, installmentCount: 2,
+      purchaseDate: '2026-03-01', closingDay: 20, dueDay: 10,
+      paidInstallments: []
+    }], previousSpent);
+    assertEqual(previousSpent, 125.5);
+    assertEqual(usage.used, 425.5);
+  });
+
+  it('resume próximo vencimento e abre a aba Cartões pelo atalho do dashboard', () => {
+    const dashboard = window.GastoProCreditCardDashboardHelpers;
+    const card = {
+      id: 'card-a', name: 'Cartão A', totalLimit: 1000, dueDay: 25
+    };
+    const summary = dashboard.getSummary([card], [{
+      cardId: card.id, amount: 100, installmentCount: 1,
+      purchaseDate: '2026-03-01', closingDay: 20, dueDay: 25,
+      paidInstallments: []
+    }], {}, new Date(2026, 1, 28));
+    assertEqual(summary.used, 100);
+    assertEqual(summary.nextDueDate, '2026-03-25');
+
+    const host = document.createElement('div');
+    host.innerHTML = dashboard.renderSummary(summary);
+    document.body.appendChild(host);
+    const originalSwitch = window.switchToView;
+    let destination = null;
+    window.switchToView = view => { destination = view; };
+    try {
+      const shortcut = host.querySelector('[data-action="open-credit-cards"]');
+      assertNotNull(shortcut);
+      shortcut.addEventListener('click', () => dashboard.openCards());
+      shortcut.click();
+      assertEqual(destination, 'cards');
+    } finally {
+      window.switchToView = originalSwitch;
+      host.remove();
+    }
+  });
+
+  it('mostra estado vazio claro e acesso para cadastrar ou abrir Cartões', () => {
+    const dashboard = window.GastoProCreditCardDashboardHelpers;
+    const host = document.createElement('div');
+    host.innerHTML = dashboard.renderEmptyState() + dashboard.renderSummary({
+      cardCount: 0, used: 0, nextDueDate: null
+    });
+    assertTrue(host.textContent.includes('Nenhum cartão cadastrado ainda.'));
+    assertNotNull(host.querySelector('[data-action="new-credit-card"]'));
+    assertTrue(host.textContent.includes('Nenhum cartão cadastrado.'));
+    assertNotNull(host.querySelector('[data-action="open-credit-cards"]'));
+  });
+
   itAsync('mantém compras e baixas de parcelas no backup e aceita backup antigo sem cartões', async () => {
     setupMockLocalStorage();
     const now = new Date();

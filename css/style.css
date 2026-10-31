@@ -2405,7 +2405,8 @@ button:active { transform: scale(0.98); }
   gap: 0.8rem;
 }
 
-.account-balance-link {
+.account-balance-link,
+.dashboard-card-summary {
   min-height: 64px;
   width: 100%;
   padding: 0.8rem 1rem;
@@ -2419,6 +2420,31 @@ button:active { transform: scale(0.98); }
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   text-align: left;
+}
+
+.dashboard-card-summary {
+  display: grid;
+  justify-items: start;
+  gap: 0.25rem;
+  margin-top: 1rem;
+  cursor: pointer;
+}
+
+.dashboard-card-summary strong {
+  font-size: 1rem;
+}
+
+.dashboard-card-summary span {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.dashboard-card-summary b {
+  color: var(--text-main);
+}
+
+.dashboard-card-summary.is-empty {
+  color: var(--text-muted);
 }
 
 .account-balance-link strong {

@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-353%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-357%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -59,6 +59,12 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 - Cálculo automático da sobra média diária até o fim do mês.
 - Gráfico de rosca com distribuição de gastos por categoria via Chart.js.
 - Orçamento diário ajustado ao mês selecionado e alertas para dívidas vencidas ainda não baixadas.
+- Resumo compacto do limite usado nos cartões e próximo vencimento, com atalho para a carteira.
+
+### 💳 Cartões de crédito
+- Aba Carteira com limite total, parcelas em aberto, limite disponível, barra de uso, fechamento e próximo vencimento.
+- O limite usado é calculado pelas parcelas não pagas; o valor opcional “Já gasto antes do app” fica somente neste aparelho e não é incluído no backup.
+- O formulário existente de gastos cadastra compras no cartão com descrição, valor, data e parcelas.
 
 ### 💳 Dívidas e gastos recorrentes
 - Rastreamento de parcelamentos, empréstimos e financiamentos.
@@ -179,7 +185,7 @@ financeiro-app/
 │       ├── 20261102_sync_realtime_publication.sql # Etapa 2 Realtime; aplicada no Supabase
 │       └── 20261103_sync_transactions.sql # Etapa 3; pronta para aplicação no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 353 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 357 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -445,7 +451,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 12 | `20261102_sync_realtime_publication.sql` | Aplicada |
 | 13 | `20261103_sync_transactions.sql` | Pronta para aplicação no Supabase |
 
-`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **353 testes**.
+`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **357 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -465,7 +471,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **353 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **357 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -643,6 +649,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - [ ] **RM-033 — Idioma pt/en (futuro, adiado)** / Descrição: adicionar localização para português e inglês em etapa futura.
 - [x] **RM-034 — Contraste WCAG AA nos avisos** / Descrição: cores de Crítico, Atenção e Info com contraste AA nos temas claro e escuro, exclusivamente na central de avisos. A revisão geral em celulares e gráficos segue pendente no RM-032.
 - [x] **RM-035 — Navegação contextual e preservação de tela** / Descrição: avisos levam à tela, mês e item relacionados; dispensas persistem pela situação; atualizações preservam a navegação e o dashboard abre no topo. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
+- [x] **RM-036 — Carteira de cartões e limite calculado** / Descrição: aba Cartões, limite usado pelas parcelas em aberto, gasto anterior opcional local, atalho do dashboard e estado vazio. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `tests/gastopro.test.js`.
 
 ### Em dúvida
 
@@ -656,6 +663,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 
 ### Planejamento (sem versão)
 
+- [x] RM-036 — carteira de cartões com limite usado calculado das parcelas em aberto, campo opcional local, próximo vencimento e atalho compacto no dashboard. Quatro testes adicionados; suíte com 357 aprovados.
 - [x] RM-035 — sino navega ao item e o destaca, dispensa de avisos persiste por situação e atualização preserva tela/mês/rolagem. Dashboard inicia no topo. Quatro testes adicionados; suíte com 353 aprovados.
 - Central de avisos: níveis Crítico/Atenção/Info, escalada para vencimentos e cartão, ordenação por prioridade/recência, sino com prioridade não lida e cores AA para os temas claro/escuro; preferências existentes preservadas. Quatro testes adicionados.
 - Lote A: destaque visual dos números financeiros e inteligência de categorização baseada em regras.
