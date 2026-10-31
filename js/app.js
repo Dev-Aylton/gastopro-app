@@ -221,73 +221,69 @@ const VIEW_TITLES = {
 const LAST_VIEW_STORAGE_KEY = 'gastopro_last_view_v1';
 const PERSISTED_VIEW_IDS = Object.freeze(Object.keys(VIEW_TITLES));
 const APP_RELOAD_STATE_KEY = 'gastopro_app_reload_state_v1';
-const CREDIT_CARD_PREVIOUS_SPENT_KEY = 'gastopro_credit_card_previous_spent_v1';
 const USAGE_TELEMETRY_PREFERENCE_KEY = 'gastopro_usage_telemetry_enabled_v1';
+const PAYMENT_METHOD_PREFERENCE_KEY = 'gastopro_payment_method_preference_v1';
+const PAYMENT_METHOD_OPTIONS = Object.freeze({
+  expense: Object.freeze(['pix', 'debit', 'cash', 'credit_card', 'boleto', 'other']),
+  income: Object.freeze(['pix', 'transfer', 'cash', 'other'])
+});
 
-function getCreditCardPreviousSpentStorageKey(userId) {
+function isPaidByPaymentMethod(paymentMethod, date, today = getLocalDateString()) {
+  return ['pix', 'debit', 'cash', 'transfer'].includes(paymentMethod) &&
+    typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+    date <= today;
+}
+
+function getPaymentMethodLabel(paymentMethod) {
+  const labels = {
+    pix: 'Pix',
+    debit: 'Débito',
+    cash: 'Dinheiro',
+    credit_card: 'Cartão de crédito',
+    boleto: 'Boleto',
+    transfer: 'Transferência',
+    other: 'Outro'
+  };
+  return labels[paymentMethod] || 'Não informado';
+}
+
+function getPaymentMethodPreferenceKey(kind) {
   const profile = FinanceData.getProfile();
-  const ownerId = userId || FinanceData.getActiveUserId() ||
-    (profile && profile.userId) || 'local';
-  return `${CREDIT_CARD_PREVIOUS_SPENT_KEY}:${ownerId}`;
+  const ownerId = FinanceData.getActiveUserId() || profile.userId || 'local';
+  return `${PAYMENT_METHOD_PREFERENCE_KEY}:${ownerId}:${kind}`;
 }
 
-function getCreditCardPreviousSpentMap(userId) {
-  const key = getCreditCardPreviousSpentStorageKey(userId);
+function getPaymentMethodPreference(kind) {
   try {
-    const stored = localStorage.getItem(key);
-    if (!stored) return {};
-    const parsed = JSON.parse(stored);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('Formato inválido para os gastos anteriores dos cartões.');
-    }
-    return Object.fromEntries(Object.entries(parsed).filter(([, amount]) =>
-      typeof amount === 'number' && Number.isFinite(amount) && amount >= 0
-    ));
+    const stored = localStorage.getItem(getPaymentMethodPreferenceKey(kind));
+    return PAYMENT_METHOD_OPTIONS[kind].includes(stored)
+      ? stored
+      : kind === 'expense' ? 'cash' : 'pix';
   } catch (error) {
-    console.error('[GastoPro] Não foi possível ler os gastos anteriores dos cartões:', error);
+    console.error('[GastoPro] Não foi possível ler a forma de pagamento preferida:', error);
+    return kind === 'expense' ? 'cash' : 'pix';
+  }
+}
+
+function savePaymentMethodPreference(kind, paymentMethod) {
+  if (!PAYMENT_METHOD_OPTIONS[kind].includes(paymentMethod)) {
+    throw new TypeError('A forma de pagamento não é válida para este lançamento.');
+  }
+  try {
+    localStorage.setItem(getPaymentMethodPreferenceKey(kind), paymentMethod);
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível salvar a forma de pagamento preferida:', error);
     throw error;
   }
 }
 
-function saveCreditCardPreviousSpent(cardId, value, userId) {
-  if (typeof cardId !== 'string' || !cardId) {
-    throw new TypeError('O cartão precisa ter um ID para salvar o gasto anterior.');
-  }
-  const amount = Number(value);
-  if (!Number.isFinite(amount) || amount < 0 || amount > 9999999999.99) {
-    throw new RangeError('O gasto anterior deve ser um valor não negativo válido.');
-  }
-  const map = getCreditCardPreviousSpentMap(userId);
-  const roundedAmount = Math.round(amount * 100) / 100;
-  if (roundedAmount > 0) map[cardId] = roundedAmount;
-  else delete map[cardId];
-  try {
-    localStorage.setItem(
-      getCreditCardPreviousSpentStorageKey(userId),
-      JSON.stringify(map)
-    );
-    return map;
-  } catch (error) {
-    console.error('[GastoPro] Não foi possível salvar o gasto anterior do cartão:', error);
-    throw error;
-  }
-}
-
-function removeCreditCardPreviousSpent(cardId, userId) {
-  const map = getCreditCardPreviousSpentMap(userId);
-  if (!Object.prototype.hasOwnProperty.call(map, cardId)) return map;
-  delete map[cardId];
-  try {
-    localStorage.setItem(
-      getCreditCardPreviousSpentStorageKey(userId),
-      JSON.stringify(map)
-    );
-    return map;
-  } catch (error) {
-    console.error('[GastoPro] Não foi possível remover o gasto anterior do cartão:', error);
-    throw error;
-  }
-}
+window.GastoProPaymentHelpers = {
+  isPaidByPaymentMethod,
+  getLabel: getPaymentMethodLabel,
+  getOptions: kind => PAYMENT_METHOD_OPTIONS[kind] || [],
+  getPreference: getPaymentMethodPreference,
+  savePreference: savePaymentMethodPreference
+};
 
 function isUsageTelemetryEnabled() {
   try {
@@ -1739,7 +1735,7 @@ function updateCreditCardPurchaseFields() {
     ).join('');
   }
 
-  const useCredit = paymentMethod.value === 'credit' && expenseType.value === 'variable';
+  const useCredit = paymentMethod.value === 'credit_card' && expenseType.value === 'variable';
   creditFields.hidden = !useCredit;
   accountGroup.hidden = useCredit;
   cardSelect.required = useCredit;
@@ -1878,9 +1874,8 @@ function renderCreditCardsPanel() {
     empty.innerHTML = getCreditCardEmptyStateMarkup();
   }
   const purchases = FinanceData.getCreditCardPurchases();
-  const previousSpentByCard = getCreditCardPreviousSpentMap();
   container.innerHTML = cards.map(card => {
-    const previousSpent = Number(previousSpentByCard[card.id]) || 0;
+    const previousSpent = Number(card.previousSpent) || 0;
     const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(
       card, purchases, previousSpent
     );
@@ -1922,14 +1917,13 @@ function renderCreditCardsPanel() {
 }
 
 function getCreditCardDashboardSummary(
-  cards, purchases, previousSpentByCard = {}, fromDate = new Date()
+  cards, purchases, fromDate = new Date()
 ) {
   const cardList = Array.isArray(cards) ? cards : [];
   const purchaseList = Array.isArray(purchases) ? purchases : [];
   const used = cardList.reduce((sum, card) => {
-    const previousSpent = Number(previousSpentByCard[card.id]) || 0;
     return sum + window.GastoProCreditCardHelpers.calculateLimitUsage(
-      card, purchaseList, previousSpent
+      card, purchaseList, Number(card.previousSpent) || 0
     ).used;
   }, 0);
   const nextDueDate = cardList.map(card =>
@@ -1967,8 +1961,7 @@ function renderDashboardCreditCardSummary() {
   if (!container) return;
   const summary = getCreditCardDashboardSummary(
     FinanceData.getCreditCards(),
-    FinanceData.getCreditCardPurchases(),
-    getCreditCardPreviousSpentMap()
+    FinanceData.getCreditCardPurchases()
   );
   container.innerHTML = renderCreditCardDashboardSummary(summary);
 }
@@ -2871,7 +2864,6 @@ function renderFinancialInsights() {
     const accountTypeById = new Map(accounts.map(account => [account.id, account.type]));
     const cards = FinanceData.getCreditCards();
     const purchases = FinanceData.getCreditCardPurchases();
-    const previousSpentByCard = getCreditCardPreviousSpentMap();
     cards.forEach(card => {
       const cardType = accountTypeById.get(card.accountId);
       const matchesScope = filter === 'all'
@@ -2881,7 +2873,7 @@ function renderFinancialInsights() {
           : card.accountId === filter.slice('account:'.length);
       if (!matchesScope) return;
       const usage = window.GastoProCreditCardHelpers.calculateLimitUsage(
-        card, purchases, Number(previousSpentByCard[card.id]) || 0
+        card, purchases, Number(card.previousSpent) || 0
       );
       if (usage.alert === 'normal') return;
       notificationEvents.push({
@@ -2941,9 +2933,7 @@ window.GastoProCreditCardDashboardHelpers = {
   getSummary: getCreditCardDashboardSummary,
   renderSummary: renderCreditCardDashboardSummary,
   renderEmptyState: getCreditCardEmptyStateMarkup,
-  openCards: openCreditCardsView,
-  getPreviousSpentMap: getCreditCardPreviousSpentMap,
-  savePreviousSpent: saveCreditCardPreviousSpent
+  openCards: openCreditCardsView
 };
 
 // ================================================================
@@ -3832,6 +3822,8 @@ window.openEditModal = function(id) {
   }
 
   document.getElementById('editDate').value = item.date || getTodayString();
+  const editPaymentMethod = document.getElementById('editPaymentMethod');
+  if (editPaymentMethod) editPaymentMethod.value = item.paymentMethod || '';
   const editAccount = document.getElementById('editAccount');
   if (editAccount) editAccount.value = item.accountId || '';
 
@@ -3839,8 +3831,10 @@ window.openEditModal = function(id) {
     FinanceData.getTemplates().some(template => template.id === id);
   const statusGroup = document.getElementById('editStatusGroup');
   const endMonthGroup = document.getElementById('editEndMonthGroup');
+  const paymentMethodGroup = document.getElementById('editPaymentMethodGroup');
   if (statusGroup) statusGroup.style.display = isFixed ? 'block' : 'none';
   if (endMonthGroup) endMonthGroup.style.display = isFixed ? 'block' : 'none';
+  if (paymentMethodGroup) paymentMethodGroup.style.display = isFixed ? 'none' : 'block';
 
   if (document.getElementById('editActive')) {
     document.getElementById('editActive').value = item.active !== false ? 'true' : 'false';
@@ -3903,7 +3897,7 @@ function openCreditCardModal(id) {
     document.getElementById('creditCardIssuerBank').value !== 'Outro';
   document.getElementById('creditCardLimit').value = card ? card.totalLimit : '';
   document.getElementById('creditCardPreviousSpent').value =
-    card ? getCreditCardPreviousSpentMap()[card.id] || '' : '';
+    card ? card.previousSpent || '' : '';
   document.getElementById('creditCardClosingDay').value = card ? card.closingDay : '';
   document.getElementById('creditCardDueDay').value = card ? card.dueDay : '';
   const accountSelect = document.getElementById('creditCardAccount');
@@ -3934,12 +3928,6 @@ function deleteCreditCard(id) {
     onConfirm: async () => {
       try {
         const result = await FinanceData.deleteCreditCard(id);
-        try {
-          removeCreditCardPreviousSpent(id);
-        } catch (error) {
-          console.error('[GastoPro] Cartão removido, mas o gasto anterior não foi limpo:', error);
-          showToast('Cartão removido, mas não foi possível limpar o gasto anterior neste aparelho.');
-        }
         renderAll();
         if (!result.success) {
           showToast(`O cartão foi removido localmente, mas a sincronização falhou: ${result.error && result.error.message || result.error || 'erro desconhecido'}`);
@@ -4407,6 +4395,31 @@ document.addEventListener('DOMContentLoaded', () => {
     [...categoryCatalog.EXPENSE, ...categoryCatalog.INCOME],
     categoryIcons
   );
+
+  function setPaymentMethodSelection(kind, paymentMethod, remember = true) {
+    const input = document.getElementById(`${kind}PaymentMethod`);
+    const group = document.querySelector(`[data-payment-method-group="${kind}"]`);
+    if (!input || !group || !PAYMENT_METHOD_OPTIONS[kind].includes(paymentMethod)) return;
+    input.value = paymentMethod;
+    group.querySelectorAll('[data-payment-method]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.paymentMethod === paymentMethod));
+    });
+    if (remember) {
+      try {
+        savePaymentMethodPreference(kind, paymentMethod);
+      } catch (error) {
+        console.error('[GastoPro] Não foi possível atualizar a forma de pagamento preferida:', error);
+        showToast('A forma foi selecionada, mas não foi possível salvar sua preferência.');
+      }
+    }
+    if (kind === 'expense') {
+      if (paymentMethod === 'credit_card') {
+        document.getElementById('expenseType').value = 'variable';
+      }
+      updateCreditCardPurchaseFields();
+      checkDebtVisibility();
+    }
+  }
 
   const reportModal = document.getElementById('reportModal');
   const reportDialog = reportModal && reportModal.querySelector('[role="dialog"]');
@@ -5220,6 +5233,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const amount   = parseFloat(document.getElementById('incomeAmount').value);
     const category = document.getElementById('incomeCategory').value;
     const dateVal  = document.getElementById('incomeDate').value || getTodayString();
+    const paymentMethod = document.getElementById('incomePaymentMethod').value;
 
     // Validações básicas antes de persistir
     if (!desc) {
@@ -5244,6 +5258,8 @@ document.addEventListener('DOMContentLoaded', () => {
           desc: desc,
           amount: amount,
           category: category,
+          paymentMethod,
+          paid: isPaidByPaymentMethod(paymentMethod, dateVal),
           accountId: document.getElementById('incomeAccount').value || null,
           date: dateVal
         });
@@ -5280,25 +5296,37 @@ document.addEventListener('DOMContentLoaded', () => {
                    (expenseCatSelect && (expenseCatSelect.value === 'Empréstimo' || expenseCatSelect.value === 'Parcelamento'));
     expenseEndMonthWrapper.style.display = isDebt ? 'block' : 'none';
     const paymentMethod = document.getElementById('expensePaymentMethod');
-    if (paymentMethod && expenseTypeSelect && expenseTypeSelect.value !== 'variable') {
-      paymentMethod.value = 'account';
+    if (paymentMethod && paymentMethod.value === 'credit_card' &&
+      expenseTypeSelect && expenseTypeSelect.value !== 'variable') {
+      expenseTypeSelect.value = 'variable';
     }
     updateCreditCardPurchaseFields();
   }
 
   if (expenseTypeSelect) expenseTypeSelect.addEventListener('change', checkDebtVisibility);
   if (expenseCatSelect) expenseCatSelect.addEventListener('change', checkDebtVisibility);
-  const expensePaymentMethod = document.getElementById('expensePaymentMethod');
-  if (expensePaymentMethod) {
-    expensePaymentMethod.addEventListener('change', () => {
-      if (expensePaymentMethod.value === 'credit' && expenseTypeSelect) {
-        expenseTypeSelect.value = 'variable';
-        checkDebtVisibility();
-      } else {
-        updateCreditCardPurchaseFields();
+  ['income', 'expense'].forEach(kind => {
+    const group = document.querySelector(`[data-payment-method-group="${kind}"]`);
+    if (!group) return;
+    setPaymentMethodSelection(kind, getPaymentMethodPreference(kind), false);
+    group.addEventListener('click', event => {
+      const button = event.target.closest('[data-payment-method]');
+      if (button && group.contains(button)) {
+        setPaymentMethodSelection(kind, button.dataset.paymentMethod);
       }
     });
-  }
+    group.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      const buttons = [...group.querySelectorAll('[data-payment-method]')];
+      const currentIndex = buttons.indexOf(document.activeElement);
+      if (currentIndex < 0) return;
+      event.preventDefault();
+      const direction = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1;
+      const next = buttons[(currentIndex + direction + buttons.length) % buttons.length];
+      next.focus();
+      setPaymentMethodSelection(kind, next.dataset.paymentMethod);
+    });
+  });
   const creditCardSelect = document.getElementById('expenseCreditCard');
   if (creditCardSelect) {
     creditCardSelect.addEventListener('change', updateCreditCardPurchaseFields);
@@ -5335,7 +5363,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
     await withSaving(saveButton, async () => {
       try {
-        if (paymentMethod === 'credit') {
+        if (paymentMethod === 'credit_card') {
           const cardId = document.getElementById('expenseCreditCard').value;
           if (type !== 'variable') {
             alert('Compras no crédito devem ser cadastradas como gasto variável.');
@@ -5360,7 +5388,6 @@ document.addEventListener('DOMContentLoaded', () => {
           document.getElementById('expenseDesc').value = '';
           document.getElementById('expenseAmount').value = '';
           document.getElementById('expenseDate').value = getTodayString();
-          document.getElementById('expensePaymentMethod').value = 'account';
           document.getElementById('expenseAccount').value = '';
           if (document.getElementById('expenseEndMonth')) {
             document.getElementById('expenseEndMonth').value = '';
@@ -5385,7 +5412,8 @@ document.addEventListener('DOMContentLoaded', () => {
           desc: desc,
           amount: amount,
           category: category,
-          paid: false,
+          paymentMethod: type === 'variable' ? paymentMethod : null,
+          paid: isPaidByPaymentMethod(paymentMethod, dateVal),
           date: dateVal,
           accountId: document.getElementById('expenseAccount').value || null,
           endMonth: endMonthVal || null
@@ -5395,7 +5423,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('expenseAmount').value = '';
         document.getElementById('expenseDate').value = getTodayString();
         document.getElementById('expenseAccount').value = '';
-        document.getElementById('expensePaymentMethod').value = 'account';
         if (document.getElementById('expenseEndMonth')) document.getElementById('expenseEndMonth').value = '';
         checkDebtVisibility();
         document.getElementById('expenseDesc').focus();
@@ -5515,7 +5542,7 @@ document.addEventListener('DOMContentLoaded', () => {
       : [];
     await withSaving(saveButton, async () => {
       try {
-        const updated = FinanceData.update(id, {
+        const updatedFields = {
           desc: desc,
           amount: amount,
           category: category,
@@ -5524,7 +5551,11 @@ document.addEventListener('DOMContentLoaded', () => {
           active: active,
           endMonth: endMonth,
           accountId: document.getElementById('editAccount').value || null
-        });
+        };
+        if (source && !source.isTemplate) {
+          updatedFields.paymentMethod = document.getElementById('editPaymentMethod').value || null;
+        }
+        const updated = FinanceData.update(id, updatedFields);
         if (!updated) {
           showToast('Não é possível alterar entre lançamento pontual e recorrente pela edição.');
           return;
@@ -5686,6 +5717,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const fields = {
         name, totalLimit, closingDay, dueDay, accountId, issuerBank, brand,
+        previousSpent,
         lastFour: lastFour || null,
         customColor: issuerBank === 'Outro' ? customColor : null
       };
@@ -5695,17 +5727,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const savedCard = id
         ? FinanceData.getCreditCards().find(card => card.id === id)
         : FinanceData.getCreditCards().find(card => !previousIds.has(card.id));
-      if (savedCard) {
-        try {
-          saveCreditCardPreviousSpent(savedCard.id, previousSpent);
-        } catch (error) {
-          console.error('[GastoPro] O cartão foi salvo, mas o gasto anterior não foi salvo:', error);
-          errorEl.textContent = `Cartão salvo, mas não foi possível guardar o gasto anterior: ${error.message || error}`;
-          errorEl.hidden = false;
-          renderAll();
-          return;
-        }
-      }
       if (savedCard && !id) {
         document.getElementById('creditCardId').value = savedCard.id;
         document.getElementById('creditCardModalTitle').textContent = 'Editar cartão';
@@ -6653,6 +6674,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return null;
     }
     const switchedUser = FinanceData.activateUser(user.id);
+    setPaymentMethodSelection('income', getPaymentMethodPreference('income'), false);
+    setPaymentMethodSelection('expense', getPaymentMethodPreference('expense'), false);
     if (switchedUser) window.switchToView('dashboard');
     if (FinanceData.getActiveUserId() !== user.id) {
       showAuthAlert('Há alterações não sincronizadas da conta anterior. Entre novamente nessa conta para sincronizá-las.');

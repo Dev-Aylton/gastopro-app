@@ -85,6 +85,11 @@ function validateCloudPayload(item, kind) {
     if (item.accountId != null && !isValidCloudUuid(item.accountId)) {
       return 'A conta vinculada ao cartão deve ter um UUID válido.';
     }
+    if (item.previousSpent != null &&
+      (typeof item.previousSpent === 'boolean' || !Number.isFinite(Number(item.previousSpent)) ||
+        Number(item.previousSpent) < 0 || Number(item.previousSpent) > 9999999999.99)) {
+      return 'O gasto anterior do cartão deve ser um valor não negativo válido.';
+    }
     if (item.brand != null && ![
       'Visa', 'Mastercard', 'Elo', 'American Express', 'Hipercard', 'Outra'
     ].includes(item.brand)) {
@@ -155,6 +160,9 @@ function validateCloudPayload(item, kind) {
     if (!['income', 'variable', 'fixed', 'debt'].includes(item.type)) return 'Tipo de lançamento inválido.';
     if (!isValidCloudDate(item.date)) return 'A data do lançamento deve ser uma data válida no formato AAAA-MM-DD.';
     if (item.accountId != null && !isValidCloudUuid(item.accountId)) return 'A conta do lançamento deve ter um UUID válido.';
+    if (item.paymentMethod != null && ![
+      'pix', 'debit', 'cash', 'credit_card', 'boleto', 'transfer', 'other'
+    ].includes(item.paymentMethod)) return 'A forma de pagamento do lançamento é inválida.';
     return null;
   }
 
@@ -169,6 +177,80 @@ function validateCloudPayload(item, kind) {
 
   return 'Tipo de registro inválido.';
 }
+
+function mapEntryFromCloud(row) {
+  return {
+    id: row.id,
+    desc: row.description,
+    amount: Number(row.amount),
+    category: row.category,
+    type: row.type,
+    date: row.date,
+    month: row.date ? String(row.date).substring(0, 7) : '',
+    paid: Boolean(row.paid),
+    isDebt: Boolean(row.is_debt),
+    debtInfo: row.debt_info,
+    active: row.active !== false,
+    accountId: row.account_id || null,
+    paymentMethod: row.payment_method || null
+  };
+}
+
+function mapEntryToCloud(entry) {
+  return {
+    description: entry.desc,
+    amount: entry.amount,
+    category: entry.category,
+    type: entry.type,
+    date: entry.date,
+    paid: Boolean(entry.paid),
+    is_debt: Boolean(entry.isDebt),
+    debt_info: entry.debtInfo || null,
+    active: entry.active !== false,
+    account_id: entry.accountId || null,
+    payment_method: entry.paymentMethod || null
+  };
+}
+
+function mapCreditCardFromCloud(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    totalLimit: Number(row.total_limit),
+    closingDay: row.closing_day,
+    dueDay: row.due_day,
+    brand: row.brand || 'Outra',
+    issuerBank: row.issuer_bank || 'Outro',
+    lastFour: row.last_four || null,
+    customColor: row.custom_color || null,
+    accountId: row.account_id || null,
+    previousSpent: Number(row.previous_spent) || 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapCreditCardToCloud(card) {
+  return {
+    name: card.name.trim(),
+    total_limit: Math.round(Number(card.totalLimit) * 100) / 100,
+    closing_day: card.closingDay,
+    due_day: card.dueDay,
+    brand: card.brand || 'Outra',
+    issuer_bank: card.issuerBank || 'Outro',
+    last_four: card.lastFour || null,
+    custom_color: card.issuerBank === 'Outro' ? card.customColor || '#6366f1' : null,
+    account_id: card.accountId || null,
+    previous_spent: Math.round((Number(card.previousSpent) || 0) * 100) / 100
+  };
+}
+
+window.GastoProSyncFieldHelpers = {
+  entryFromCloud: mapEntryFromCloud,
+  entryToCloud: mapEntryToCloud,
+  creditCardFromCloud: mapCreditCardFromCloud,
+  creditCardToCloud: mapCreditCardToCloud
+};
 
 const FEEDBACK_CATEGORIES = {
   duvida: 'Dúvida',
@@ -398,12 +480,7 @@ const SupabaseAuth = {
     const base = { version: row.updated_at, deletedAt: row.deleted_at || null };
     switch (table) {
       case 'entries':
-        return { ...base, kind: 'entries', item: {
-          id: row.id, desc: row.description, amount: Number(row.amount), category: row.category,
-          type: row.type, date: row.date, month: row.date ? String(row.date).substring(0, 7) : '',
-          paid: Boolean(row.paid), isDebt: Boolean(row.is_debt), debtInfo: row.debt_info,
-          active: row.active !== false, accountId: row.account_id || null
-        } };
+        return { ...base, kind: 'entries', item: mapEntryFromCloud(row) };
       case 'fixed_templates':
         return { ...base, kind: 'templates', item: {
           id: row.id, desc: row.description, amount: Number(row.amount), category: row.category,
@@ -426,13 +503,7 @@ const SupabaseAuth = {
           createdAt: row.created_at, updatedAt: row.updated_at
         } };
       case 'credit_cards':
-        return { ...base, kind: 'creditCards', item: {
-          id: row.id, name: row.name, totalLimit: Number(row.total_limit),
-          closingDay: row.closing_day, dueDay: row.due_day, brand: row.brand || 'Outra',
-          issuerBank: row.issuer_bank || 'Outro', lastFour: row.last_four || null,
-          customColor: row.custom_color || null, accountId: row.account_id || null,
-          createdAt: row.created_at, updatedAt: row.updated_at
-        } };
+        return { ...base, kind: 'creditCards', item: mapCreditCardFromCloud(row) };
       case 'credit_card_purchases':
         return { ...base, kind: 'creditCardPurchases', item: {
           id: row.id, cardId: row.card_id || null, cardName: row.card_name,
@@ -924,16 +995,7 @@ const SupabaseAuth = {
       }
       const entryPayload = entries.map(entry => ({
         id: entry.id,
-        description: entry.desc,
-        amount: entry.amount,
-        category: entry.category,
-        type: entry.type,
-        date: entry.date,
-        paid: Boolean(entry.paid),
-        is_debt: Boolean(entry.isDebt),
-        debt_info: entry.debtInfo || null,
-        active: entry.active !== false,
-        account_id: entry.accountId || null,
+        ...mapEntryToCloud(entry),
         client_edited_at: window.FinanceData.getClientEditedAt('entries', entry.id)
       }));
       const templatePayload = templates.map(template => ({
@@ -1021,20 +1083,7 @@ const SupabaseAuth = {
       if (!data) return null;
 
       // Mapeia colunas do banco para o formato do GastoPro
-      return (data || []).map(row => ({
-        id: row.id,
-        desc: row.description,
-        amount: Number(row.amount),
-        category: row.category,
-        type: row.type,
-        date: row.date,
-        month: row.date ? String(row.date).substring(0, 7) : '',
-        paid: Boolean(row.paid),
-        isDebt: Boolean(row.is_debt),
-        debtInfo: row.debt_info,
-        active: row.active !== false,
-        accountId: row.account_id || null
-      }));
+      return (data || []).map(mapEntryFromCloud);
     } catch (e) {
       console.warn('[Supabase] Falha de conexão ao buscar entries:', e);
       return null;
@@ -1072,18 +1121,9 @@ const SupabaseAuth = {
       const payload = validEntries.map(entry => ({
         id: entry.id,
         user_id: sessionUserId,
-        description: entry.desc,
-        amount: entry.amount,
-        category: entry.category,
-        type: entry.type,
-        date: entry.date,
-        paid: Boolean(entry.paid),
-        is_debt: Boolean(entry.isDebt),
-        debt_info: entry.debtInfo || null,
-        active: entry.active !== false,
-        account_id: entry.accountId || null
-        ,client_edited_at: window.FinanceData?.getClientEditedAt('entries', entry.id)
-        ,deleted_at: null
+        ...mapEntryToCloud(entry),
+        client_edited_at: window.FinanceData?.getClientEditedAt('entries', entry.id),
+        deleted_at: null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(
@@ -1415,20 +1455,7 @@ const SupabaseAuth = {
         .order('id', { ascending: true })
         .range(from, to));
       if (!data) return null;
-      return data.map(row => ({
-        id: row.id,
-        name: row.name,
-        totalLimit: Number(row.total_limit),
-        closingDay: row.closing_day,
-        dueDay: row.due_day,
-        brand: row.brand || 'Outra',
-        issuerBank: row.issuer_bank || 'Outro',
-        lastFour: row.last_four || null,
-        customColor: row.custom_color || null,
-        accountId: row.account_id || null,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at
-      }));
+      return data.map(mapCreditCardFromCloud);
     } catch (error) {
       console.warn('[Supabase] Falha ao buscar cartões:', error);
       return null;
@@ -1457,18 +1484,10 @@ const SupabaseAuth = {
       const payload = validCards.map(card => ({
         id: card.id,
         user_id: sessionUserId,
-        name: card.name.trim(),
-        total_limit: Math.round(Number(card.totalLimit) * 100) / 100,
-        closing_day: card.closingDay,
-        due_day: card.dueDay,
-        brand: card.brand || 'Outra',
-        issuer_bank: card.issuerBank || 'Outro',
-        last_four: card.lastFour || null,
-        custom_color: card.issuerBank === 'Outro' ? card.customColor || '#6366f1' : null,
-        account_id: card.accountId || null,
-        ...(card.createdAt ? { created_at: card.createdAt } : {})
-        ,client_edited_at: window.FinanceData?.getClientEditedAt('creditCards', card.id)
-        ,deleted_at: null
+        ...mapCreditCardToCloud(card),
+        ...(card.createdAt ? { created_at: card.createdAt } : {}),
+        client_edited_at: window.FinanceData?.getClientEditedAt('creditCards', card.id),
+        deleted_at: null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(

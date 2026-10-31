@@ -2188,6 +2188,39 @@ button:active { transform: scale(0.98); }
 .btn-secondary { background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border); }
 .w-100 { width: 100%; }
 
+.payment-method-field {
+  grid-column: 1 / -1;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: var(--text-main);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.payment-method-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.payment-method-chip {
+  padding: 0.55rem 0.8rem;
+}
+
+.payment-method-chip[aria-pressed="true"] {
+  background: var(--primary-strong);
+  border-color: var(--primary);
+  color: var(--theme-text-ffffff);
+}
+
+.payment-method-chip:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
 /* ================================================================
    7. FILTROS & SUBTOTAIS
    ================================================================ */

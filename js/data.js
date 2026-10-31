@@ -69,6 +69,7 @@ const STORAGE_GOALS = 'gastopro_goals_v1';
 const STORAGE_ACCOUNTS = 'gastopro_accounts_v1';
 const STORAGE_CREDIT_CARDS = 'gastopro_credit_cards_v1';
 const STORAGE_CREDIT_CARD_PURCHASES = 'gastopro_credit_card_purchases_v1';
+const STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT = 'gastopro_credit_card_previous_spent_v1';
 const STORAGE_FIXED_IMPORT_RULES = 'gastopro_fixed_import_rules_v1';
 const STORAGE_LAST_UID = 'gastopro_last_uid';
 const STORAGE_PENDING_SYNC = 'gastopro_pending_sync_v1';
@@ -149,13 +150,15 @@ function getCreditCardInstallments(purchase) {
   });
 }
 
-function calculateCreditCardLimitUsage(card, purchases, previousSpent = 0) {
+function calculateCreditCardLimitUsage(card, purchases, previousSpent) {
   const installments = purchases.flatMap(purchase =>
     purchase.cardId === card.id ? getCreditCardInstallments(purchase)
       .filter(installment => !(purchase.paidInstallments || []).includes(installment.number)) : []
   );
   const totalLimit = Number(card.totalLimit);
-  const extraSpent = Number(previousSpent);
+  const extraSpent = Number(previousSpent == null
+    ? card.previousSpent == null ? 0 : card.previousSpent
+    : previousSpent);
   if (!Number.isFinite(extraSpent) || extraSpent < 0) {
     throw new RangeError('O gasto anterior do cartão deve ser um valor não negativo.');
   }
@@ -635,6 +638,8 @@ const FinanceData = {
         key !== STORAGE_TUTORIAL_SEEN && key !== STORAGE_ACCOUNT_SETUP_SEEN &&
         key !== 'gastopro_theme' && key !== 'gastopro_notification_preferences_v1' &&
         key !== 'gastopro_usage_telemetry_enabled_v1' &&
+        !key.startsWith(STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT + ':') &&
+        !key.startsWith('gastopro_payment_method_preference_v1:') &&
         !key.startsWith('gastopro_paid_import_review_v1:')) keysToRemove.push(key);
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
@@ -1687,11 +1692,69 @@ const FinanceData = {
   getCreditCards() {
     try {
       const stored = localStorage.getItem(STORAGE_CREDIT_CARDS);
-      return stored ? JSON.parse(stored) : [];
+      const cards = stored ? JSON.parse(stored) : [];
+      return this.migrateLegacyCreditCardPreviousSpent(cards);
     } catch (error) {
       console.error('[GastoPro] Erro ao ler cartões:', error);
       return [];
     }
+  },
+
+  migrateLegacyCreditCardPreviousSpent(cards) {
+    const profile = this.getProfile();
+    const userId = this.getActiveUserId() || profile.userId || 'local';
+    const legacyKey = `${STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT}:${userId}`;
+    const stored = localStorage.getItem(legacyKey);
+    if (!stored || !Array.isArray(cards) || !cards.length) return cards;
+
+    let legacyValues;
+    try {
+      legacyValues = JSON.parse(stored);
+    } catch (error) {
+      console.error('[GastoPro] Erro ao ler gastos anteriores legados dos cartões:', error);
+      return cards;
+    }
+    if (!legacyValues || typeof legacyValues !== 'object' || Array.isArray(legacyValues)) {
+      console.error('[GastoPro] Os gastos anteriores legados dos cartões têm formato inválido.');
+      return cards;
+    }
+
+    const migratedCards = cards.map(card => ({ ...card }));
+    const handledIds = [];
+    let changed = false;
+    Object.entries(legacyValues).forEach(([cardId, amount]) => {
+      if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) return;
+      const card = migratedCards.find(item => item.id === cardId);
+      if (!card) return;
+      handledIds.push(cardId);
+      if (Number(card.previousSpent) === 0 || card.previousSpent == null) {
+        card.previousSpent = Math.round(amount * 100) / 100;
+        changed = true;
+      }
+    });
+    if (!handledIds.length) return cards;
+
+    if (changed) {
+      try {
+        localStorage.setItem(STORAGE_CREDIT_CARDS, JSON.stringify(migratedCards));
+        this.queueLocalChanges('creditCards', cards, migratedCards);
+      } catch (error) {
+        console.error('[GastoPro] Não foi possível migrar gastos anteriores para os cartões:', error);
+        return cards;
+      }
+    }
+
+    handledIds.forEach(cardId => { delete legacyValues[cardId]; });
+    try {
+      if (Object.keys(legacyValues).length) {
+        localStorage.setItem(legacyKey, JSON.stringify(legacyValues));
+      } else {
+        localStorage.removeItem(legacyKey);
+      }
+    } catch (error) {
+      console.error('[GastoPro] Não foi possível limpar os gastos anteriores legados:', error);
+    }
+    return migratedCards;
   },
 
   getCreditCardPurchases() {
@@ -1863,6 +1926,11 @@ const FinanceData = {
           (typeof card.customColor !== 'string' || !CREDIT_CARD_COLOR_PATTERN.test(card.customColor))) {
           return { success: false, error: 'Informe uma cor personalizada válida.' };
         }
+        if (card.previousSpent != null &&
+          (typeof card.previousSpent === 'boolean' || !Number.isFinite(Number(card.previousSpent)) ||
+            Number(card.previousSpent) < 0 || Number(card.previousSpent) > MAX_CREDIT_CARD_LIMIT)) {
+          return { success: false, error: 'O gasto anterior do cartão deve ser um valor não negativo válido.' };
+        }
         if (card.accountId != null && !accounts.has(card.accountId)) {
           return { success: false, error: 'A conta vinculada ao cartão não existe.' };
         }
@@ -1870,7 +1938,7 @@ const FinanceData = {
           return { success: false, error: 'Cada cartão deve ter um UUID válido e exclusivo.' };
         }
         ids.add(card.id);
-        normalizedCards.push({
+        const normalizedCard = {
           ...card,
           name: card.name.trim(),
           totalLimit: Math.round(Number(card.totalLimit) * 100) / 100,
@@ -1883,7 +1951,11 @@ const FinanceData = {
           customColor: (card.issuerBank || 'Outro') === 'Outro'
             ? card.customColor || DEFAULT_CREDIT_CARD_COLOR
             : null
-        });
+        };
+        if (card.previousSpent != null) {
+          normalizedCard.previousSpent = Math.round(Number(card.previousSpent) * 100) / 100;
+        }
+        normalizedCards.push(normalizedCard);
       }
       const previousCards = this.getCreditCards();
       localStorage.setItem(STORAGE_CREDIT_CARDS, JSON.stringify(normalizedCards));
@@ -2409,6 +2481,7 @@ const FinanceData = {
           id: isUuid(item.id) ? item.id : crypto.randomUUID(),
           date,
           month: item.month || date.substring(0, 7),
+          paymentMethod: null,
           paid: item.paid !== undefined ? item.paid : true
         };
         newEntries.push(entry);
@@ -2534,6 +2607,7 @@ const FinanceData = {
   addTemplate(tpl) {
     const templates = this.getTemplates();
     const dateStr   = tpl.date || getLocalDateString();
+    const startMonth = tpl.month || tpl.startMonth || dateStr.substring(0, 7);
     // Extrai o dia de vencimento da data (ex: "05" de "2026-11-05")
     const day = dateStr.split('-')[2] || '05';
 
@@ -2547,12 +2621,12 @@ const FinanceData = {
       isDebt:     tpl.type === 'debt' || Boolean(tpl.endMonth) ||
                   (tpl.category === 'Empréstimo' || tpl.category === 'Parcelamento'),
       active:     true,   // Todo template nasce ativo
-      startMonth: tpl.month || tpl.startMonth || dateStr.substring(0, 7),
+      startMonth,
       endMonth:   tpl.endMonth || null,  // null = sem data de quitação prevista
       day:        day,    // Usado para calcular a data de vencimento projetada
       date:       dateStr,
       accountId:  tpl.accountId || null,
-      paidMonths: {}      // Mapa de baixas por mês — começa vazio
+      paidMonths: tpl.paid === true ? { [startMonth]: true } : {}
     };
 
     templates.push(newTemplate);
@@ -2722,6 +2796,13 @@ const FinanceData = {
         STORAGE_PENDING_SYNC,
         STORAGE_SYNC_METADATA
       ].forEach(key => localStorage.removeItem(key));
+      const ownerId = profile.userId || this.getActiveUserId();
+      if (ownerId) {
+        localStorage.removeItem(`${STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT}:${ownerId}`);
+        ['income', 'expense'].forEach(kind =>
+          localStorage.removeItem(`gastopro_payment_method_preference_v1:${ownerId}:${kind}`)
+        );
+      }
       const currentProfile = this.getProfile();
       const profileResult = this.saveProfile({
         ...currentProfile,

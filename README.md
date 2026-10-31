@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-357%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-365%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -15,7 +15,7 @@
 1. O estado do projeto está no **Roadmap**: `[ ]` pendente e `[x]` implementado/testado.
 2. Quem concluir um item (pessoa ou IA) deve marcá-lo `[x]` **antes de seguir para o próximo**.
 3. Ao marcar, atualize no mesmo passo o Changelog e, se mudar a quantidade de testes, o total no README.
-4. Respeite as **Decisões de produto**: Pix entra como Gasto (pago); boleto, empréstimos, parcelamentos e contas parceladas entram como "a pagar" nos meses seguintes e só o usuário marca como pago; sem foto, print nem OCR.
+4. Respeite as **Decisões de produto**: Pix, débito, dinheiro e transferência com data de hoje ou anterior entram pagos; boleto e datas futuras entram pendentes, salvo alteração manual; importações mantêm sua regra própria; sem foto, print nem OCR.
 5. Não deduza informações nem o escopo da mudança: confirme com o Aylton antes de alterar.
 6. Mudanças no banco são feitas no painel do Supabase e registradas em `supabase/schema.sql`.
 7. Não proponha nem implemente soluções pagas. Use apenas planos e serviços gratuitos até que o app tenha usuários; não há monetização por ora.
@@ -63,7 +63,7 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 
 ### 💳 Cartões de crédito
 - Aba Carteira com limite total, parcelas em aberto, limite disponível, barra de uso, fechamento e próximo vencimento.
-- O limite usado é calculado pelas parcelas não pagas; o valor opcional “Já gasto antes do app” fica somente neste aparelho e não é incluído no backup.
+- O limite usado é calculado pelas parcelas não pagas; o valor opcional “Já gasto antes do app” fica no cartão e sincroniza entre aparelhos.
 - O formulário existente de gastos cadastra compras no cartão com descrição, valor, data e parcelas.
 
 ### 💳 Dívidas e gastos recorrentes
@@ -78,6 +78,13 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 - Vínculo opcional de ganhos e gastos a uma conta; o saldo muda conforme os lançamentos pagos.
 - Categorias de receita: Salário, Adiantamento, Renda Extra, Rendimentos e Outros.
 - Lançamentos vinculados ao mês de competência da data informada.
+- Forma de pagamento sincronizada; o backup já inclui `paymentMethod` e `previousSpent` nos objetos de lançamentos e cartões.
+
+### 💸 Forma de pagamento
+- Pix, débito, dinheiro e transferência com data de hoje ou anterior entram pagos; boleto e datas futuras entram pendentes.
+- A forma escolhida fica lembrada por usuário; o status pago continua editável e lançamentos antigos mostram “Não informado”.
+- Cartão de crédito cadastra compra e parcelas no cartão, sem debitar a conta até o pagamento da parcela.
+- Lançamentos importados preservam a regra própria de pagamento e ficam sem forma informada.
 
 ### 🏦 Contas bancárias PF/PJ
 - Cadastro e edição de contas com nome, instituição opcional, tipo e saldo inicial; ajuste manual do saldo atual.
@@ -183,9 +190,10 @@ financeiro-app/
 │       ├── 20261031_admin_analytics.sql # Painel admin, eventos de uso e retenção de 12 meses; aplicada
 │       ├── 20261101_sync_versioning.sql # Etapa 1 da sincronização; aplicada no Supabase
 │       ├── 20261102_sync_realtime_publication.sql # Etapa 2 Realtime; aplicada no Supabase
-│       └── 20261103_sync_transactions.sql # Etapa 3; pronta para aplicação no Supabase
+│       ├── 20261103_sync_transactions.sql # Etapa 3; pronta para aplicação no Supabase
+│       └── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; não aplicada
 ├── tests/
-│   ├── gastopro.test.js       # 357 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 365 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -226,6 +234,7 @@ O canal "Fale comigo" é uma consulta sob demanda entre a tela em `js/app.js` e 
 | `gastopro_accounts_v1` | Contas bancárias PF/PJ |
 | `gastopro_credit_cards_v1` | Cartões de crédito |
 | `gastopro_credit_card_purchases_v1` | Compras e parcelas de cartões |
+| `gastopro_payment_method_preference_v1:<uid>:<tipo>` | Última forma de pagamento por usuário e formulário |
 | `gastopro_fixed_import_rules_v1` | Regras fixas de importação |
 | `gastopro_theme` | Preferência de aparência deste aparelho (`dark` ou `light`), não sincronizada nem incluída no backup |
 | `gastopro_last_uid` | UID da conta dona dos dados locais ativos |
@@ -250,6 +259,7 @@ Lançamento pontual:
   "amount": 2710.00,
   "category": "Salário",
   "paid": true,
+  "paymentMethod": "pix",
   "date": "2026-11-05"
 }
 ```
@@ -294,6 +304,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 - **Etapa 1 — [x]:** versão por registro, `updated_at` definido no servidor, tombstones `deleted_at` e limpeza após 90 dias. Migration aplicada no Supabase. Commit `9219da3`. Após a poda, registro com versão conhecida ausente é tratado como excluído; só criações nunca sincronizadas são enviadas como novas.
 - **Etapa 2 — [x]:** sync completa ao voltar ao app, focar a janela ou reconectar, serializada e com intervalo de 15 segundos; um canal Realtime assina as oito tabelas. Eventos antigos são ignorados, tombstones são aplicados, e alterações do registro em edição aguardam o fechamento do modal. Migration de publicação aplicada no Supabase.
 - **Etapa 3 — [x]:** compra parcelada permanece uma única linha com ID estável, sem RPC. Os RPCs `delete_account_transactional` e `import_financial_batch` fazem, respectivamente, o desvínculo de lançamentos/templates/cartões/compras com exclusão lógica da conta e a importação atômica de lançamentos/templates/baixas. As operações ficam na fila offline com IDs e versões estáveis para retry; respeitam versões/tombstones e devolvem conflitos. O lote transacional aceita até 500 linhas de payload; acima disso, a importação inteira é recusada com aviso. Migration pronta para aplicação no Supabase.
+- **Campos financeiros — [x]:** `payment_method` em lançamentos e `previous_spent` em cartões; sincronização, fila offline, Realtime e conflitos preservam os campos. Migration nova está pronta, não aplicada.
 - **Etapa 4 — [ ]:** reset e exclusões seguros, tela de aviso e testes finais.
 
 ### Pendências de validação manual
@@ -450,8 +461,9 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 11 | `20261101_sync_versioning.sql` | Aplicada |
 | 12 | `20261102_sync_realtime_publication.sql` | Aplicada |
 | 13 | `20261103_sync_transactions.sql` | Pronta para aplicação no Supabase |
+| 14 | `20261104_payment_method.sql` | Não aplicada |
 
-`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **357 testes**.
+`CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **365 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -471,7 +483,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **357 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **365 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -597,7 +609,8 @@ O SHA-512 de pdfjs-dist foi conferido antes da extração; o pacote foi publicad
 ## 🧭 Decisões de produto
 
 - Pix importado entra como **Gasto (pago)**.
-- Boleto, empréstimos, parcelamentos e contas parceladas, depois de lançados, aparecem como **"a pagar"** em cada mês seguinte do período; **só o usuário marca como pago**, mês a mês.
+- Pix, débito, dinheiro e transferência com data até hoje entram pagos; boleto e qualquer forma com data futura entram pendentes. O usuário pode alterar manualmente o status.
+- Empréstimos e parcelamentos seguem a forma de pagamento e a data informadas; a importação mantém a regra própria de pagamento.
 - O app não terá importação por foto, print nem OCR; a decisão é manter o app leve.
 - O uso de PDF é limitado a documentos com texto selecionável; a prévia deve ser conferida.
 - Desenvolvimento 100% em planos gratuitos até o app estar funcionando e com vários usuários; não há monetização por ora.
@@ -649,7 +662,8 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - [ ] **RM-033 — Idioma pt/en (futuro, adiado)** / Descrição: adicionar localização para português e inglês em etapa futura.
 - [x] **RM-034 — Contraste WCAG AA nos avisos** / Descrição: cores de Crítico, Atenção e Info com contraste AA nos temas claro e escuro, exclusivamente na central de avisos. A revisão geral em celulares e gráficos segue pendente no RM-032.
 - [x] **RM-035 — Navegação contextual e preservação de tela** / Descrição: avisos levam à tela, mês e item relacionados; dispensas persistem pela situação; atualizações preservam a navegação e o dashboard abre no topo. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
-- [x] **RM-036 — Carteira de cartões e limite calculado** / Descrição: aba Cartões, limite usado pelas parcelas em aberto, gasto anterior opcional local, atalho do dashboard e estado vazio. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `tests/gastopro.test.js`.
+- [x] **RM-036 — Carteira de cartões e limite calculado** / Descrição: aba Cartões, limite usado pelas parcelas em aberto, gasto anterior opcional sincronizado, atalho do dashboard e estado vazio. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `tests/gastopro.test.js`.
+- [x] **RM-037 — Forma de pagamento e status automático** / Descrição: seleção rápida acessível, preferência por usuário, status inicial por forma/data, compra no crédito sem débito imediato e migração de gasto anterior para o cartão. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/supabase.js`, `css/style.css`, `supabase/schema.sql`, `supabase/migrations/20261104_payment_method.sql`, `tests/gastopro.test.js`.
 
 ### Em dúvida
 
@@ -663,6 +677,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 
 ### Planejamento (sem versão)
 
+- [x] RM-037 — seleção e sincronização da forma de pagamento, status automático por forma/data, compra no crédito sem débito imediato e migração de gasto anterior para o cartão. Oito testes adicionados; suíte com 365 aprovados. Migration `20261104_payment_method.sql` pronta e não aplicada.
 - [x] RM-036 — carteira de cartões com limite usado calculado das parcelas em aberto, campo opcional local, próximo vencimento e atalho compacto no dashboard. Quatro testes adicionados; suíte com 357 aprovados.
 - [x] RM-035 — sino navega ao item e o destaca, dispensa de avisos persiste por situação e atualização preserva tela/mês/rolagem. Dashboard inicia no topo. Quatro testes adicionados; suíte com 353 aprovados.
 - Central de avisos: níveis Crítico/Atenção/Info, escalada para vencimentos e cartão, ordenação por prioridade/recência, sino com prioridade não lida e cores AA para os temas claro/escuro; preferências existentes preservadas. Quatro testes adicionados.

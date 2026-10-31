@@ -676,6 +676,18 @@
                 <input type="date" id="incomeDate" required />
               </div>
 
+              <div class="payment-method-field">
+                <span class="form-label" id="incomePaymentMethodLabel">Forma de pagamento</span>
+                <input type="hidden" id="incomePaymentMethod" />
+                <div class="payment-method-options" role="group" aria-labelledby="incomePaymentMethodLabel"
+                  data-payment-method-group="income">
+                  <button type="button" class="payment-method-chip" data-payment-method="pix">Pix</button>
+                  <button type="button" class="payment-method-chip" data-payment-method="transfer">Transferência</button>
+                  <button type="button" class="payment-method-chip" data-payment-method="cash">Dinheiro</button>
+                  <button type="button" class="payment-method-chip" data-payment-method="other">Outro</button>
+                </div>
+              </div>
+
               <div>
                 <label for="incomeAccount">Conta</label>
                 <select id="incomeAccount" class="account-select">
@@ -781,12 +793,18 @@
                 <input type="date" id="expenseDate" required />
               </div>
 
-              <div>
-                <label for="expensePaymentMethod">Forma de pagamento</label>
-                <select id="expensePaymentMethod">
-                  <option value="account">Conta / dinheiro</option>
-                  <option value="credit">Crédito</option>
-                </select>
+              <div class="payment-method-field">
+                <span class="form-label" id="expensePaymentMethodLabel">Forma de pagamento</span>
+                <input type="hidden" id="expensePaymentMethod" />
+                <div class="payment-method-options" role="group" aria-labelledby="expensePaymentMethodLabel"
+                  data-payment-method-group="expense">
+                  <button type="button" class="payment-method-chip" data-payment-method="pix">Pix</button>
+                  <button type="button" class="payment-method-chip" data-payment-method="debit">Débito</button>
+                  <button type="button" class="payment-method-chip" data-payment-method="cash">Dinheiro</button>
+                  <button type="button" class="payment-method-chip" data-payment-method="credit_card">Cartão de crédito</button>
+                  <button type="button" class="payment-method-chip" data-payment-method="boleto">Boleto</button>
+                  <button type="button" class="payment-method-chip" data-payment-method="other">Outro</button>
+                </div>
               </div>
 
               <div id="expenseCreditFields" hidden>
@@ -1041,6 +1059,20 @@
           <label for="editAccount">Conta</label>
           <select id="editAccount" class="account-select">
             <option value="">Sem conta</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="editPaymentMethodGroup">
+          <label for="editPaymentMethod">Forma de pagamento</label>
+          <select id="editPaymentMethod">
+            <option value="">Não informado</option>
+            <option value="pix">Pix</option>
+            <option value="debit">Débito</option>
+            <option value="cash">Dinheiro</option>
+            <option value="credit_card">Cartão de crédito</option>
+            <option value="boleto">Boleto</option>
+            <option value="transfer">Transferência</option>
+            <option value="other">Outro</option>
           </select>
         </div>
 

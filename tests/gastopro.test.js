@@ -886,18 +886,15 @@ describe('FinanceData — Contas Bancárias', () => {
     assertEqual(usage.available, 750);
   });
 
-  it('soma o gasto anterior opcional às compras em aberto e o persiste por cartão', () => {
-    setupMockLocalStorage();
-    const dashboard = window.GastoProCreditCardDashboardHelpers;
-    dashboard.savePreviousSpent('card-a', 125.5);
-    const previousSpent = dashboard.getPreviousSpentMap()['card-a'];
+  it('soma o gasto anterior salvo no cartão às compras em aberto', () => {
+    const previousSpent = 125.5;
     const usage = window.GastoProCreditCardHelpers.calculateLimitUsage({
-      id: 'card-a', totalLimit: 1000
+      id: 'card-a', totalLimit: 1000, previousSpent
     }, [{
       cardId: 'card-a', amount: 300, installmentCount: 2,
       purchaseDate: '2026-03-01', closingDay: 20, dueDay: 10,
       paidInstallments: []
-    }], previousSpent);
+    }]);
     assertEqual(previousSpent, 125.5);
     assertEqual(usage.used, 425.5);
   });
@@ -905,14 +902,14 @@ describe('FinanceData — Contas Bancárias', () => {
   it('resume próximo vencimento e abre a aba Cartões pelo atalho do dashboard', () => {
     const dashboard = window.GastoProCreditCardDashboardHelpers;
     const card = {
-      id: 'card-a', name: 'Cartão A', totalLimit: 1000, dueDay: 25
+      id: 'card-a', name: 'Cartão A', totalLimit: 1000, dueDay: 25, previousSpent: 20
     };
     const summary = dashboard.getSummary([card], [{
       cardId: card.id, amount: 100, installmentCount: 1,
       purchaseDate: '2026-03-01', closingDay: 20, dueDay: 25,
       paidInstallments: []
-    }], {}, new Date(2026, 1, 28));
-    assertEqual(summary.used, 100);
+    }], new Date(2026, 1, 28));
+    assertEqual(summary.used, 120);
     assertEqual(summary.nextDueDate, '2026-03-25');
 
     const host = document.createElement('div');
@@ -943,6 +940,147 @@ describe('FinanceData — Contas Bancárias', () => {
     assertNotNull(host.querySelector('[data-action="new-credit-card"]'));
     assertTrue(host.textContent.includes('Nenhum cartão cadastrado.'));
     assertNotNull(host.querySelector('[data-action="open-credit-cards"]'));
+  });
+
+  itAsync('Pix, débito e dinheiro na data atual entram pagos e alteram o saldo', async () => {
+    setupMockLocalStorage();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const account = await FinanceData.addAccount({
+      name: 'Conta de pagamentos', type: 'PF', initialBalance: 100, balanceDate: today
+    });
+    for (const paymentMethod of ['pix', 'debit', 'cash']) {
+      FinanceData.add({
+        type: 'variable', desc: `Gasto ${paymentMethod}`, amount: 10, category: 'Outros',
+        date: today, accountId: account.account.id, paymentMethod,
+        paid: window.GastoProPaymentHelpers.isPaidByPaymentMethod(paymentMethod, today, today)
+      });
+    }
+    assertTrue(FinanceData.getEntries().every(entry => entry.paid));
+    assertEqual(FinanceData.getEntries().map(entry => entry.paymentMethod), ['pix', 'debit', 'cash']);
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 70);
+  });
+
+  itAsync('boleto e pagamentos com data futura entram pendentes', async () => {
+    setupMockLocalStorage();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const futureDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const future = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, '0')}-${String(futureDate.getDate()).padStart(2, '0')}`;
+    const account = await FinanceData.addAccount({
+      name: 'Conta pendente', type: 'PF', initialBalance: 100, balanceDate: today
+    });
+    for (const [paymentMethod, date] of [['boleto', today], ['pix', future]]) {
+      FinanceData.add({
+        type: 'variable', desc: `Pendente ${paymentMethod}`, amount: 10, category: 'Outros',
+        date, accountId: account.account.id, paymentMethod,
+        paid: window.GastoProPaymentHelpers.isPaidByPaymentMethod(paymentMethod, date, today)
+      });
+    }
+    assertTrue(FinanceData.getEntries().every(entry => !entry.paid));
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 100);
+  });
+
+  itAsync('alteração manual do pago prevalece sobre a forma automática', async () => {
+    setupMockLocalStorage();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const account = await FinanceData.addAccount({
+      name: 'Conta editável', type: 'PF', initialBalance: 100, balanceDate: today
+    });
+    const entry = FinanceData.add({
+      type: 'variable', desc: 'Pix ajustável', amount: 25, category: 'Outros',
+      date: today, accountId: account.account.id, paymentMethod: 'pix',
+      paid: window.GastoProPaymentHelpers.isPaidByPaymentMethod('pix', today, today)
+    });
+    assertTrue(entry.paid);
+    FinanceData.update(entry.id, { paid: false });
+    assertFalse(FinanceData.getEntries()[0].paid);
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 100);
+  });
+
+  itAsync('compra no crédito não debita a conta e cria compra parcelada no cartão', async () => {
+    setupMockLocalStorage();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const account = await FinanceData.addAccount({
+      name: 'Conta do crédito', type: 'PF', initialBalance: 500, balanceDate: today
+    });
+    const card = await FinanceData.addCreditCard({
+      name: 'Cartão do crédito', totalLimit: 1000, closingDay: 20, dueDay: 10,
+      accountId: account.account.id
+    });
+    const result = await FinanceData.addCreditCardPurchase({
+      cardId: card.card.id, desc: 'Compra no crédito', amount: 120, category: 'Compras',
+      purchaseDate: today, installmentCount: 3
+    });
+    assertTrue(result.success);
+    assertEqual(result.purchase.cardId, card.card.id);
+    assertEqual(FinanceData.getEntries(), []);
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 500);
+  });
+
+  it('lembra a forma escolhida por usuário e exibe Não informado para lançamentos antigos', () => {
+    setupMockLocalStorage();
+    localStorage.setItem('gastopro_last_uid', 'user-a');
+    window.GastoProPaymentHelpers.savePreference('expense', 'debit');
+    window.GastoProPaymentHelpers.savePreference('income', 'transfer');
+    assertEqual(window.GastoProPaymentHelpers.getPreference('expense'), 'debit');
+    assertEqual(window.GastoProPaymentHelpers.getPreference('income'), 'transfer');
+    localStorage.setItem('gastopro_last_uid', 'user-b');
+    assertEqual(window.GastoProPaymentHelpers.getPreference('expense'), 'cash');
+    assertEqual(window.GastoProPaymentHelpers.getLabel(null), 'Não informado');
+  });
+
+  it('mapeia payment_method e previous_spent nos dois sentidos da sincronização', () => {
+    const sync = window.GastoProSyncFieldHelpers;
+    const entry = {
+      id: '00000000-0000-4000-8000-000000000001', desc: 'Pix', amount: 10,
+      category: 'Outros', type: 'variable', date: '2026-11-05', paid: true,
+      isDebt: false, active: true, paymentMethod: 'pix'
+    };
+    assertEqual(sync.entryToCloud(entry).payment_method, 'pix');
+    assertEqual(sync.entryFromCloud({
+      id: entry.id, description: entry.desc, amount: 10, category: 'Outros',
+      type: 'variable', date: entry.date, paid: true, payment_method: 'pix'
+    }).paymentMethod, 'pix');
+    const card = {
+      id: '00000000-0000-4000-8000-000000000002', name: 'Cartão',
+      totalLimit: 1000, closingDay: 20, dueDay: 10, previousSpent: 75.5
+    };
+    assertEqual(sync.creditCardToCloud(card).previous_spent, 75.5);
+    assertEqual(sync.creditCardFromCloud({
+      id: card.id, name: card.name, total_limit: 1000, closing_day: 20,
+      due_day: 10, previous_spent: 75.5
+    }).previousSpent, 75.5);
+  });
+
+  it('mantém forma nula em lançamentos antigos e mostra Não informado', () => {
+    const entry = window.GastoProSyncFieldHelpers.entryFromCloud({
+      id: '00000000-0000-4000-8000-000000000021',
+      description: 'Lançamento antigo', amount: 10, category: 'Outros',
+      type: 'variable', date: '2026-11-05', paid: true, payment_method: null
+    });
+    assertEqual(entry.paymentMethod, null);
+    assertEqual(window.GastoProPaymentHelpers.getLabel(entry.paymentMethod), 'Não informado');
+  });
+
+  it('migra gasto anterior local para cartão sem sobrescrever valor já existente', () => {
+    setupMockLocalStorage();
+    localStorage.setItem('gastopro_last_uid', 'user-migration');
+    const cards = [
+      { id: '00000000-0000-4000-8000-000000000011', name: 'Novo', previousSpent: 0 },
+      { id: '00000000-0000-4000-8000-000000000012', name: 'Existente', previousSpent: 80 }
+    ];
+    localStorage.setItem('gastopro_credit_cards_v1', JSON.stringify(cards));
+    const legacyKey = 'gastopro_credit_card_previous_spent_v1:user-migration';
+    localStorage.setItem(legacyKey, JSON.stringify({
+      [cards[0].id]: 25.5,
+      [cards[1].id]: 120
+    }));
+    const migrated = FinanceData.getCreditCards();
+    assertEqual(migrated.map(card => card.previousSpent), [25.5, 80]);
+    assertEqual(localStorage.getItem(legacyKey), null);
   });
 
   itAsync('mantém compras e baixas de parcelas no backup e aceita backup antigo sem cartões', async () => {

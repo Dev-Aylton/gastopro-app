@@ -36,6 +36,7 @@ create table if not exists public.credit_cards (
   last_four   text check (last_four is null or last_four ~ '^[0-9]{4}$'),
   custom_color text check (custom_color is null or custom_color ~ '^#[0-9A-Fa-f]{6}$'),
   account_id  uuid,
+  previous_spent numeric(12,2) not null default 0 check (previous_spent >= 0),
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
   client_edited_at timestamptz,
@@ -80,6 +81,9 @@ create table if not exists public.entries (
   debt_info   jsonb,
   active      boolean not null default true,
   account_id  uuid,
+  payment_method text check (payment_method is null or payment_method in (
+    'pix', 'debit', 'cash', 'credit_card', 'boleto', 'transfer', 'other'
+  )),
   created_at  timestamptz default now(),
   updated_at  timestamptz not null default now(),
   client_edited_at timestamptz,
@@ -900,7 +904,8 @@ begin
           v_entry.is_debt is not distinct from coalesce((v_item->>'is_debt')::boolean, false) and
           v_entry.debt_info is not distinct from nullif(v_item->'debt_info', 'null'::jsonb) and
           v_entry.active is not distinct from coalesce((v_item->>'active')::boolean, true) and
-          v_entry.account_id is not distinct from nullif(v_item->>'account_id', '')::uuid then
+          v_entry.account_id is not distinct from nullif(v_item->>'account_id', '')::uuid and
+          v_entry.payment_method is not distinct from nullif(v_item->>'payment_method', '') then
           null;
         elsif v_client_edited_at <= v_entry.updated_at then
           v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object('kind', 'entries', 'id', v_entry.id));
@@ -916,13 +921,14 @@ begin
             debt_info = nullif(v_item->'debt_info', 'null'::jsonb),
             active = coalesce((v_item->>'active')::boolean, true),
             account_id = nullif(v_item->>'account_id', '')::uuid,
+            payment_method = nullif(v_item->>'payment_method', ''),
             client_edited_at = v_client_edited_at
           where id = v_entry.id and user_id = v_user_id;
         end if;
       else
         insert into public.entries (
           id, user_id, description, amount, category, type, date, paid, is_debt,
-          debt_info, active, account_id, client_edited_at, deleted_at
+          debt_info, active, account_id, payment_method, client_edited_at, deleted_at
         ) values (
           (v_item->>'id')::uuid, v_user_id, v_item->>'description',
           (v_item->>'amount')::numeric, v_item->>'category', v_item->>'type',
@@ -930,7 +936,8 @@ begin
           coalesce((v_item->>'is_debt')::boolean, false),
           nullif(v_item->'debt_info', 'null'::jsonb),
           coalesce((v_item->>'active')::boolean, true),
-          nullif(v_item->>'account_id', '')::uuid, v_client_edited_at, null
+          nullif(v_item->>'account_id', '')::uuid,
+          nullif(v_item->>'payment_method', ''), v_client_edited_at, null
         );
       end if;
     end loop;
