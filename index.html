@@ -464,49 +464,77 @@
              ==================================================== -->
         <section class="view-section active" id="view-dashboard">
 
-          <section class="dashboard-highlight-card" aria-label="Destaque financeiro do mês">
+          <section class="dashboard-highlight-card" aria-label="Saldo atual">
             <div class="dashboard-highlight-value">
               <span>Saldo atual</span>
               <strong class="financial-amount financial-amount--neutral" id="dashboardCurrentBalance">R$ 0,00</strong>
+              <span class="dashboard-highlight-description">Dinheiro disponível nas contas hoje</span>
             </div>
-            <div class="dashboard-highlight-value">
-              <span>Resultado do mês</span>
-              <strong class="financial-amount financial-amount--neutral" id="dashboardMonthlyResult">R$ 0,00</strong>
+            <div class="dashboard-balance-warning" id="dashboardBalanceWarning" role="status" aria-live="polite" hidden>
+              <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              <span id="dashboardBalanceWarningText"></span>
             </div>
           </section>
 
           <!-- KPIs do Mês -->
           <div class="kpi-grid">
-            <!-- Total Recebido -->
-            <div class="kpi-card income-card" data-goto="incomes" role="button" tabindex="0" title="Clique para gerenciar ganhos">
+            <!-- Resultado do mês -->
+            <div class="kpi-card result-card" role="group" aria-label="Resultado do mês">
               <div class="kpi-header">
-                <span class="kpi-title"><i class="fa-solid fa-arrow-down"></i> Total Recebido</span>
-                <span class="badge badge-success" id="incomeCount">0 entradas</span>
+                <span class="kpi-title">
+                  <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                  <span class="kpi-title-desktop">Resultado do mês</span>
+                  <span class="kpi-title-mobile">Resultado</span>
+                </span>
+              </div>
+              <div class="kpi-value financial-amount financial-amount--neutral" id="dashboardMonthlyResult">R$ 0,00</div>
+              <span class="kpi-caption">Entradas menos despesas do mês</span>
+            </div>
+
+            <!-- Total Recebido -->
+            <div class="kpi-card income-card" data-goto="incomes" role="button" tabindex="0"
+              aria-label="Total recebido: abrir e gerenciar entradas do mês" title="Clique para gerenciar ganhos">
+              <div class="kpi-header">
+                <span class="kpi-title">
+                  <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
+                  <span class="kpi-title-desktop">Total Recebido</span>
+                  <span class="kpi-title-mobile">Recebido</span>
+                </span>
               </div>
               <div class="kpi-value text-success financial-amount financial-amount--positive" id="totalIncomeDisplay">R$ 0,00</div>
-              <span class="kpi-caption">Clique para ver e editar ganhos</span>
+              <span class="badge badge-success kpi-badge" id="incomeCount">0 entradas</span>
+              <span class="kpi-caption">Entradas registradas no mês</span>
             </div>
 
             <!-- Gastos Fixos -->
-            <div class="kpi-card fixed-card" data-goto="expenses" role="button" tabindex="0" title="Clique para gerenciar gastos">
+            <div class="kpi-card fixed-card" data-goto="expenses" role="button" tabindex="0"
+              aria-label="Gastos fixos: abrir e gerenciar gastos do mês" title="Clique para gerenciar gastos">
               <div class="kpi-header">
-                <span class="kpi-title"><i class="fa-solid fa-house-lock"></i> Gastos Fixos</span>
-                <span class="badge badge-warning" id="fixedPercentage">0%</span>
+                <span class="kpi-title">
+                  <i class="fa-solid fa-house-lock" aria-hidden="true"></i>
+                  <span class="kpi-title-desktop">Gastos Fixos</span>
+                  <span class="kpi-title-mobile">Fixos</span>
+                </span>
               </div>
               <div class="kpi-value text-warning financial-amount financial-amount--neutral" id="totalFixedDisplay">R$ 0,00</div>
-              <span class="kpi-caption" id="fixedPaidStatus">Contas essenciais do mês</span>
+              <span class="badge badge-warning kpi-badge" id="fixedPercentage">0% da renda</span>
+              <span class="kpi-caption" id="fixedPaidStatus">Fixos pagos e pendentes</span>
             </div>
 
             <!-- Gastos do Mês -->
-            <div class="kpi-card variable-card" data-goto="expenses" role="button" tabindex="0" title="Clique para gerenciar gastos">
+            <div class="kpi-card variable-card" data-goto="expenses" role="button" tabindex="0"
+              aria-label="Gastos variáveis: abrir e gerenciar gastos do mês" title="Clique para gerenciar gastos">
               <div class="kpi-header">
-                <span class="kpi-title"><i class="fa-solid fa-bag-shopping"></i> Gastos Variáveis</span>
-                <span class="badge badge-danger" id="variablePercentage">0%</span>
+                <span class="kpi-title">
+                  <i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>
+                  <span class="kpi-title-desktop">Gastos Variáveis</span>
+                  <span class="kpi-title-mobile">Variáveis</span>
+                </span>
               </div>
               <div class="kpi-value text-danger financial-amount financial-amount--negative" id="totalVariableDisplay">R$ 0,00</div>
-              <span class="kpi-caption">Alimentação, lazer, compras</span>
+              <span class="badge badge-danger kpi-badge" id="variablePercentage">0% da renda</span>
+              <span class="kpi-caption">Gastos variáveis do mês</span>
             </div>
-
           </div>
 
           <section class="panel-box financial-insights-panel" id="financialInsightsPanel" aria-label="Alertas e resumo financeiro">
@@ -580,7 +608,7 @@
           </div>
 
           <!-- Gráfico de Distribuição -->
-          <div class="panel-box">
+          <div class="panel-box" id="dashboardCategoryPanel">
             <div class="panel-header">
               <div class="panel-title-group">
                 <div class="panel-icon bg-purple-soft"><i class="fa-solid fa-chart-pie"></i></div>

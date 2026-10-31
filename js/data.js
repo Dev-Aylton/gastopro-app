@@ -587,6 +587,28 @@ window.GastoProCreditCardHelpers = {
   getNextDueDate: getNextCreditCardDueDate
 };
 
+function calculatePendingOutflows(items, accountFilter = 'all', accounts = []) {
+  const accountTypes = new Map((Array.isArray(accounts) ? accounts : [])
+    .map(account => [account.id, account.type]));
+  const accountId = typeof accountFilter === 'string' && accountFilter.startsWith('account:')
+    ? accountFilter.slice('account:'.length)
+    : null;
+  const total = (Array.isArray(items) ? items : []).reduce((sum, item) => {
+    if (!item || item.paid === true || !['fixed', 'variable', 'debt'].includes(item.type) ||
+      (item.type === 'fixed' && item.active === false)) return sum;
+    if (accountFilter === 'PF' || accountFilter === 'PJ') {
+      if (!item.accountId || accountTypes.get(item.accountId) !== accountFilter) return sum;
+    } else if (accountId) {
+      if (item.accountId !== accountId) return sum;
+    } else if (accountFilter !== 'all') {
+      return sum;
+    }
+    const amount = Number(item.amount);
+    return Number.isFinite(amount) && amount > 0 ? sum + amount : sum;
+  }, 0);
+  return Math.round(total * 100) / 100;
+}
+
 const FinanceData = {
 
   getSyncMetadata() {
@@ -2404,6 +2426,10 @@ const FinanceData = {
     );
 
     return [...entries, ...fixedForMonth, ...cardInstallments];
+  },
+
+  calculatePendingOutflows(items, accountFilter, accounts) {
+    return calculatePendingOutflows(items, accountFilter, accounts);
   },
 
   /**

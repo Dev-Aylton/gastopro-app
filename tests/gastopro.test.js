@@ -3081,6 +3081,93 @@ describe('Dashboard mobile', () => {
     ), { currentBalance: 425, monthlyResult: -80 });
   });
 
+  it('aplica a cor financeira do saldo conforme positivo, negativo e zero', () => {
+    assertEqual(helpers.getBalanceTone(12), 'financial-amount financial-amount--positive');
+    assertEqual(helpers.getBalanceTone(-12), 'financial-amount financial-amount--negative');
+    assertEqual(helpers.getBalanceTone(0), 'financial-amount financial-amount--neutral');
+  });
+
+  it('calcula somente saídas pendentes do mês e respeita filtro de conta', () => {
+    const items = [
+      { type: 'income', amount: 900, accountId: 'pf' },
+      { type: 'variable', amount: 80, paid: false, accountId: 'pf' },
+      { type: 'variable', amount: 45, paid: true, accountId: 'pf' },
+      { type: 'fixed', amount: 50, paid: false, active: true, accountId: 'pf' },
+      { type: 'fixed', amount: 100, paid: false, active: false, accountId: 'pf' },
+      { type: 'variable', amount: 60, paid: false, isCardInstallment: true, accountId: 'pj' },
+      { type: 'variable', amount: 30, paid: true, isCardInstallment: true, accountId: 'pj' }
+    ];
+    const accounts = [{ id: 'pf', type: 'PF' }, { id: 'pj', type: 'PJ' }];
+    assertEqual(FinanceData.calculatePendingOutflows(items, 'all', accounts), 190);
+    assertEqual(FinanceData.calculatePendingOutflows(items, 'PF', accounts), 130);
+    assertEqual(FinanceData.calculatePendingOutflows(items, 'account:pj', accounts), 60);
+    assertEqual(items[0].paid, undefined);
+  });
+
+  it('avisa somente no mês atual quando o saldo é negativo ou insuficiente', () => {
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const previousDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const previousMonth = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, '0')}`;
+    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nextMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+    assertNull(helpers.getPendingBalanceNotice(currentMonth, currentMonth, 100, 100));
+    assertEqual(helpers.getPendingBalanceNotice(currentMonth, currentMonth, 75, 100), {
+      type: 'attention', shortfall: 25
+    });
+    assertEqual(helpers.getPendingBalanceNotice(currentMonth, currentMonth, -10, 100), {
+      type: 'critical', shortfall: 0
+    });
+    assertNull(helpers.getPendingBalanceNotice(previousMonth, currentMonth, -10, 100));
+    assertNull(helpers.getPendingBalanceNotice(nextMonth, currentMonth, 0, 100));
+  });
+
+  it('define tipografia mobile sem quebra forçada nas palavras da home', () => {
+    const sheet = Array.from(document.styleSheets).find(item =>
+      item.href && item.href.endsWith('/css/style.css')
+    );
+    assertTrue(Boolean(sheet), 'A folha de estilos do app deve estar disponível para verificação.');
+    const mobileRules = [];
+    const collectRules = rules => {
+      Array.from(rules).forEach(rule => {
+        if (rule.type === CSSRule.MEDIA_RULE &&
+          /max-width:\s*700px/.test(rule.conditionText)) {
+          collectRules(rule.cssRules);
+        } else if (rule.type === CSSRule.STYLE_RULE) {
+          mobileRules.push(rule);
+        }
+      });
+    };
+    collectRules(sheet.cssRules);
+    const compactRule = mobileRules.find(rule =>
+      rule.selectorText.includes('.mobile-brand') &&
+      rule.selectorText.includes('.kpi-value')
+    );
+    assertTrue(Boolean(compactRule), 'Rótulos compactos devem ter regras mobile explícitas.');
+    ['.mobile-brand', '.kpi-title', '.kpi-badge', '.kpi-value']
+      .forEach(selector => assertTrue(compactRule.selectorText.includes(selector)));
+    assertEqual(compactRule.style.getPropertyValue('white-space'), 'nowrap');
+    assertEqual(compactRule.style.getPropertyValue('overflow-wrap'), 'normal');
+    assertEqual(compactRule.style.getPropertyValue('word-break'), 'normal');
+    assertEqual(compactRule.style.getPropertyValue('hyphens'), 'none');
+    const navigationRule = mobileRules.find(rule =>
+      rule.selectorText.includes('.mobile-bottom-nav-item')
+    );
+    assertTrue(Boolean(navigationRule));
+    assertEqual(navigationRule.style.getPropertyValue('white-space'), 'nowrap');
+    assertEqual(navigationRule.style.getPropertyValue('overflow-wrap'), 'normal');
+    assertEqual(navigationRule.style.getPropertyValue('word-break'), 'normal');
+    assertEqual(navigationRule.style.getPropertyValue('hyphens'), 'none');
+    const descriptionRule = mobileRules.find(rule =>
+      rule.selectorText.includes('.kpi-caption') &&
+      rule.selectorText.includes('.dashboard-highlight-description')
+    );
+    assertTrue(Boolean(descriptionRule));
+    assertEqual(descriptionRule.style.getPropertyValue('overflow-wrap'), 'normal');
+    assertEqual(descriptionRule.style.getPropertyValue('word-break'), 'normal');
+    assertEqual(descriptionRule.style.getPropertyValue('hyphens'), 'none');
+  });
+
   it('leva o botão Cartões da navegação inferior à tela de cartões', () => {
     const originalSwitch = window.switchToView;
     let destination = null;
@@ -4356,15 +4443,41 @@ describe('Restauração da navegação após atualização', () => {
     }
   });
 
-  it('abre o dashboard no topo sem rolagem até os cartões', () => {
+  it('abre as telas no topo e preserva rolagem apenas na restauração explícita', () => {
     const originalScrollTo = window.scrollTo;
-    let scrollOptions = null;
-    window.scrollTo = options => { scrollOptions = options; };
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    const originalSwitchToView = window.switchToView;
+    const originalState = window.GastoProReloadState.getCurrent();
+    const scrollOptions = [];
+    window.scrollTo = options => { scrollOptions.push(options); };
+    window.requestAnimationFrame = callback => { callback(); return 1; };
+    window.switchToView = () => {};
     try {
       window.GastoProViewHelpers.scrollToTop('dashboard');
-      assertEqual(scrollOptions, { top: 0, behavior: 'auto' });
+      window.GastoProViewHelpers.scrollToTop('expenses');
+      assertEqual(scrollOptions, [
+        { top: 0, behavior: 'auto' },
+        { top: 0, behavior: 'auto' }
+      ]);
+      const focusedControl = document.createElement('input');
+      document.body.appendChild(focusedControl);
+      focusedControl.focus();
+      assertTrue(document.activeElement === focusedControl);
+      window.GastoProViewHelpers.resetInitialPosition();
+      assertFalse(document.activeElement === focusedControl);
+      assertEqual(scrollOptions[2], { top: 0, behavior: 'auto' });
+      focusedControl.remove();
+      scrollOptions.length = 0;
+      const restoredView = originalState.view === 'expenses' ? 'dashboard' : 'expenses';
+      assertTrue(window.GastoProReloadState.restore({
+        view: restoredView, year: 2026, month: 7, scrollX: 0, scrollY: 620
+      }));
+      assertEqual(scrollOptions, [{ left: 0, top: 620, behavior: 'auto' }]);
     } finally {
       window.scrollTo = originalScrollTo;
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+      window.switchToView = originalSwitchToView;
+      window.GastoProReloadState.apply(originalState);
     }
   });
 });

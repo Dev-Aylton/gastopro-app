@@ -18,6 +18,13 @@
   --text-dim: #8190a5;
   --mobile-nav-active-background: #242a46;
   --mobile-nav-active-text: #c7d2fe;
+  --dashboard-mobile-gap: 0.65rem;
+  --dashboard-badge-positive-text: #6ee7b7;
+  --dashboard-badge-positive-bg: #064e3b;
+  --dashboard-badge-warning-text: #fde68a;
+  --dashboard-badge-warning-bg: #3a2a12;
+  --dashboard-badge-critical-text: #fecaca;
+  --dashboard-badge-critical-bg: #7f1d1d;
 
   --primary: #6366f1;
   --primary-hover: #4338ca;
@@ -164,6 +171,12 @@
   --text-dim: #5d6a7c;
   --mobile-nav-active-background: #eef2ff;
   --mobile-nav-active-text: #312e81;
+  --dashboard-badge-positive-text: #047857;
+  --dashboard-badge-positive-bg: #dcfce7;
+  --dashboard-badge-warning-text: #854d0e;
+  --dashboard-badge-warning-bg: #fef3c7;
+  --dashboard-badge-critical-text: #9f1239;
+  --dashboard-badge-critical-bg: #fff1f2;
   --primary: #4f46e5;
   --primary-hover: #3730a3;
   --primary-strong: #4338ca;
@@ -1744,6 +1757,11 @@ html {
   font-size: 1.75rem;
   font-weight: 800;
   letter-spacing: -0.5px;
+}
+
+.result-card,
+.kpi-title-mobile {
+  display: none;
 }
 
 .kpi-caption {
@@ -7373,8 +7391,8 @@ input[type="month"] {
 
 .dashboard-highlight-card {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
   margin-bottom: 1.25rem;
   padding: 1.25rem;
   border: 1px solid var(--border);
@@ -7389,11 +7407,6 @@ input[type="month"] {
   min-width: 0;
 }
 
-.dashboard-highlight-value + .dashboard-highlight-value {
-  padding-left: 1rem;
-  border-left: 1px solid var(--border);
-}
-
 .dashboard-highlight-value span {
   color: var(--text-muted);
   font-size: 0.82rem;
@@ -7401,15 +7414,59 @@ input[type="month"] {
 }
 
 .dashboard-highlight-value strong {
-  color: var(--text-main);
-  font-size: clamp(1.05rem, 3.8vw, 1.5rem);
-  overflow-wrap: anywhere;
+  font-size: clamp(1.3rem, 7.2vw, 2.1rem);
+  line-height: 1.15;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.dashboard-highlight-description {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  white-space: normal;
+}
+
+.dashboard-balance-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.3rem;
+  border: 1px solid var(--notification-attention-accent);
+  border-radius: var(--radius-md);
+  background: var(--notification-attention-bg);
+  color: var(--notification-attention-text);
+  font-size: 0.59375rem;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+.dashboard-balance-warning[hidden] {
+  display: none;
+}
+
+.dashboard-balance-warning.is-critical {
+  border-color: var(--notification-critical-accent);
+  background: var(--notification-critical-bg);
+  color: var(--notification-critical-text);
+}
+
+.dashboard-balance-warning i {
+  flex: 0 0 auto;
+  padding-top: 0.08rem;
+  color: inherit;
 }
 
 @media (max-width: 700px) {
   .topbar {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) auto;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
     grid-template-areas:
       "menu brand actions"
       "month month month";
@@ -7422,19 +7479,17 @@ input[type="month"] {
 
   .topbar-left {
     grid-area: menu;
-    min-width: 44px;
+    min-width: 0;
   }
 
   .mobile-brand {
-    position: absolute;
-    top: calc(env(safe-area-inset-top) + 0.65rem);
-    left: 50%;
-    grid-area: initial;
+    grid-area: brand;
     display: inline-flex;
     align-items: center;
     justify-self: center;
     gap: 0.45rem;
     min-width: 0;
+    max-width: 100%;
     padding: 0.25rem 0.4rem;
     border: 0;
     background: transparent;
@@ -7442,7 +7497,7 @@ input[type="month"] {
     font: inherit;
     font-size: 1rem;
     font-weight: 800;
-    transform: translateX(-50%);
+    white-space: nowrap;
   }
 
   .mobile-brand img {
@@ -7467,11 +7522,11 @@ input[type="month"] {
   .topbar .menu-toggle-btn,
   .topbar .notifications-trigger,
   .topbar .user-avatar-btn {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-    min-height: 44px;
-    flex: 0 0 44px;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    flex: 0 0 40px;
   }
 
   .month-selector-bar {
@@ -7507,27 +7562,126 @@ input[type="month"] {
     padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
   }
 
+  .view-section.active#view-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dashboard-mobile-gap);
+  }
+
+  #view-dashboard > * {
+    margin-block: 0;
+  }
+
+  #view-dashboard > .dashboard-highlight-card { order: 1; }
+  #view-dashboard > .financial-insights-panel { order: 2; }
+  #view-dashboard > .kpi-grid { order: 3; }
+  #view-dashboard > #dashboardCreditCardSummary { order: 4; }
+  #view-dashboard > #goalsDashboardPanel { order: 5; }
+  #view-dashboard > #dashboardCategoryPanel { order: 6; }
+  #view-dashboard > .health-banner { order: 7; }
+  #view-dashboard > .debt-summary-panel { order: 8; }
+  #view-dashboard > .account-balance-panel { order: 9; }
+
   .dashboard-highlight-card {
-    margin-bottom: 0.85rem;
-    padding: 1rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.65rem;
+    margin-bottom: 0;
+    padding: 0.9rem;
+  }
+
+  .dashboard-highlight-value strong {
+    font-size: clamp(1.3rem, 7.2vw, 2.1rem);
   }
 
   .kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.65rem;
+    gap: 0.6rem;
   }
 
   .kpi-card {
+    display: grid;
+    grid-template-rows: auto auto auto auto;
+    align-content: start;
+    gap: 0.35rem;
     min-width: 0;
-    padding: 0.85rem;
+    padding: 0.75rem;
+  }
+
+  .kpi-card:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .kpi-header,
+  .kpi-title {
+    display: flex;
+    align-items: center;
+    min-width: 0;
   }
 
   .kpi-title {
-    font-size: 0.72rem;
+    gap: 0.35rem;
+    color: var(--text-main);
+    font-size: clamp(0.7rem, 3.3vw, 0.82rem);
+    font-weight: 700;
+  }
+
+  .kpi-title i {
+    flex: 0 0 auto;
+  }
+
+  .kpi-title-desktop {
+    display: none;
+  }
+
+  .kpi-title-mobile {
+    display: inline;
+  }
+
+  .result-card {
+    display: grid;
+  }
+
+  .kpi-value {
+    min-width: 0;
+    max-width: 100%;
+    font-size: clamp(1rem, 4.2vw, 1.35rem);
+    line-height: 1.2;
+    letter-spacing: -0.04em;
+    white-space: nowrap;
+  }
+
+  .kpi-badge {
+    align-self: start;
+    width: max-content;
+    max-width: 100%;
+    font-size: clamp(0.62rem, 2.9vw, 0.72rem);
+    white-space: nowrap;
+  }
+
+  .kpi-card .badge-success {
+    background: var(--dashboard-badge-positive-bg);
+    color: var(--dashboard-badge-positive-text);
+  }
+
+  .kpi-card .badge-warning {
+    background: var(--dashboard-badge-warning-bg);
+    color: var(--dashboard-badge-warning-text);
+  }
+
+  .kpi-card .badge-danger {
+    background: var(--dashboard-badge-critical-bg);
+    color: var(--dashboard-badge-critical-text);
   }
 
   .kpi-caption {
-    font-size: 0.72rem;
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    line-height: 1.3;
+    white-space: normal;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
   }
 
   .dashboard-card-summary {
@@ -7536,7 +7690,9 @@ input[type="month"] {
 
   .dashboard-card-summary span {
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
   }
 
   .financial-insights-panel {
@@ -7566,6 +7722,11 @@ input[type="month"] {
     text-align: left;
     cursor: pointer;
     touch-action: manipulation;
+    min-width: 0;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
   }
 
   .financial-insights-mobile-strip i {
@@ -7578,10 +7739,9 @@ input[type="month"] {
     right: 0;
     bottom: 0;
     left: 0;
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    display: flex;
     min-height: calc(68px + env(safe-area-inset-bottom));
-    padding: 0.35rem 0.35rem calc(0.35rem + env(safe-area-inset-bottom));
+    padding: 0.35rem 0.15rem calc(0.35rem + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border);
     background: var(--bg-card);
     box-shadow: 0 -4px 18px rgba(var(--theme-rgb-shadow-000000), 0.16);
@@ -7592,22 +7752,77 @@ input[type="month"] {
     align-content: center;
     justify-items: center;
     gap: 0.15rem;
+    flex: 1 1 0;
     min-width: 0;
     min-height: 44px;
-    padding: 0.2rem;
+    padding: 0.2rem 0.05rem;
     border: 0;
     border-radius: var(--radius-md);
     background: transparent;
     color: var(--text-muted);
     font: inherit;
-    font-size: 0.66rem;
+    font-size: clamp(0.59rem, 2.8vw, 0.69rem);
     font-weight: 600;
+    letter-spacing: -0.035em;
     cursor: pointer;
     touch-action: manipulation;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
   }
 
   .mobile-bottom-nav-item i {
-    font-size: 1rem;
+    font-size: 1.25rem;
+  }
+
+  .mobile-brand,
+  .mobile-brand span,
+  .dashboard-highlight-value strong,
+  .kpi-title,
+  .kpi-badge,
+  .kpi-value,
+  .financial-insights-mobile-strip span {
+    min-width: 0;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
+  }
+
+  .dashboard-highlight-description {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
+  }
+
+  .kpi-caption,
+  .dashboard-highlight-description {
+    white-space: normal;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
+  }
+
+  #view-dashboard > .dashboard-highlight-card,
+  #view-dashboard > .kpi-grid,
+  #view-dashboard > #dashboardCreditCardSummary,
+  #view-dashboard > #goalsDashboardPanel,
+  #view-dashboard > #dashboardCategoryPanel,
+  #view-dashboard > .health-banner,
+  #view-dashboard > .debt-summary-panel,
+  #view-dashboard > .account-balance-panel,
+  #view-dashboard > .financial-insights-panel {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  @media (max-width: 359px) {
+    .mobile-brand span {
+      display: none;
+    }
   }
 
   .mobile-bottom-nav-item.is-active {
