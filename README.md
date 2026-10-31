@@ -190,8 +190,8 @@ financeiro-app/
 │       ├── 20261031_admin_analytics.sql # Painel admin, eventos de uso e retenção de 12 meses; aplicada
 │       ├── 20261101_sync_versioning.sql # Etapa 1 da sincronização; aplicada no Supabase
 │       ├── 20261102_sync_realtime_publication.sql # Etapa 2 Realtime; aplicada no Supabase
-│       ├── 20261103_sync_transactions.sql # Etapa 3; pronta para aplicação no Supabase
-│       └── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; não aplicada
+│       ├── 20261103_sync_transactions.sql # Etapa 3; aplicada no Supabase
+│       └── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
 ├── tests/
 │   ├── gastopro.test.js       # 365 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
@@ -303,8 +303,8 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 
 - **Etapa 1 — [x]:** versão por registro, `updated_at` definido no servidor, tombstones `deleted_at` e limpeza após 90 dias. Migration aplicada no Supabase. Commit `9219da3`. Após a poda, registro com versão conhecida ausente é tratado como excluído; só criações nunca sincronizadas são enviadas como novas.
 - **Etapa 2 — [x]:** sync completa ao voltar ao app, focar a janela ou reconectar, serializada e com intervalo de 15 segundos; um canal Realtime assina as oito tabelas. Eventos antigos são ignorados, tombstones são aplicados, e alterações do registro em edição aguardam o fechamento do modal. Migration de publicação aplicada no Supabase.
-- **Etapa 3 — [x]:** compra parcelada permanece uma única linha com ID estável, sem RPC. Os RPCs `delete_account_transactional` e `import_financial_batch` fazem, respectivamente, o desvínculo de lançamentos/templates/cartões/compras com exclusão lógica da conta e a importação atômica de lançamentos/templates/baixas. As operações ficam na fila offline com IDs e versões estáveis para retry; respeitam versões/tombstones e devolvem conflitos. O lote transacional aceita até 500 linhas de payload; acima disso, a importação inteira é recusada com aviso. Migration pronta para aplicação no Supabase.
-- **Campos financeiros — [x]:** `payment_method` em lançamentos e `previous_spent` em cartões; sincronização, fila offline, Realtime e conflitos preservam os campos. Migration nova está pronta, não aplicada.
+- **Etapa 3 — [x]:** compra parcelada permanece uma única linha com ID estável, sem RPC. Os RPCs `delete_account_transactional` e `import_financial_batch` fazem, respectivamente, o desvínculo de lançamentos/templates/cartões/compras com exclusão lógica da conta e a importação atômica de lançamentos/templates/baixas. As operações ficam na fila offline com IDs e versões estáveis para retry; respeitam versões/tombstones e devolvem conflitos. O lote transacional aceita até 500 linhas de payload; acima disso, a importação inteira é recusada com aviso. Migration aplicada e conferida no Supabase.
+- **Campos financeiros — [x]:** `payment_method` em lançamentos e `previous_spent` em cartões; sincronização, fila offline, Realtime e conflitos preservam os campos. Migration aplicada e conferida no Supabase.
 - **Etapa 4 — [ ]:** reset e exclusões seguros, tela de aviso e testes finais.
 
 ### Pendências de validação manual
@@ -460,8 +460,8 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 10 | `20261031_admin_analytics.sql` | Aplicada |
 | 11 | `20261101_sync_versioning.sql` | Aplicada |
 | 12 | `20261102_sync_realtime_publication.sql` | Aplicada |
-| 13 | `20261103_sync_transactions.sql` | Pronta para aplicação no Supabase |
-| 14 | `20261104_payment_method.sql` | Não aplicada |
+| 13 | `20261103_sync_transactions.sql` | Aplicada e conferida no Supabase |
+| 14 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
 
 `CACHE_NAME` atual: `gastopro-v4.3`. Suíte atual: **365 testes**.
 
@@ -677,8 +677,8 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 
 ### Planejamento (sem versão)
 
-- [x] RM-037 — seleção e sincronização da forma de pagamento, status automático por forma/data, compra no crédito sem débito imediato e migração de gasto anterior para o cartão. Oito testes adicionados; suíte com 365 aprovados. Migration `20261104_payment_method.sql` pronta e não aplicada.
-- [x] RM-036 — carteira de cartões com limite usado calculado das parcelas em aberto, campo opcional local, próximo vencimento e atalho compacto no dashboard. Quatro testes adicionados; suíte com 357 aprovados.
+- [x] RM-037 — seleção e sincronização da forma de pagamento, status automático por forma/data, compra no crédito sem débito imediato e migração de gasto anterior para o cartão. Oito testes adicionados; suíte com 365 aprovados. Migration `20261104_payment_method.sql` aplicada e conferida no Supabase.
+- [x] RM-036 — carteira de cartões com limite usado calculado das parcelas em aberto, gasto anterior opcional sincronizado no cartão, próximo vencimento e atalho compacto no dashboard. Quatro testes adicionados; suíte com 357 aprovados.
 - [x] RM-035 — sino navega ao item e o destaca, dispensa de avisos persiste por situação e atualização preserva tela/mês/rolagem. Dashboard inicia no topo. Quatro testes adicionados; suíte com 353 aprovados.
 - Central de avisos: níveis Crítico/Atenção/Info, escalada para vencimentos e cartão, ordenação por prioridade/recência, sino com prioridade não lida e cores AA para os temas claro/escuro; preferências existentes preservadas. Quatro testes adicionados.
 - Lote A: destaque visual dos números financeiros e inteligência de categorização baseada em regras.
@@ -687,7 +687,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - Identidade visual: logo e ícones PWA/iOS atualizados em `assets/`.
 - Painel de administrador: `app_admins`/`is_admin()`, métricas agregadas via `admin_analytics_summary()`, feedback em `feedback_messages` e eventos permitidos em `usage_events`; telemetria tem opt-out local e retenção de 12 meses via `pg_cron` (`20261031_admin_analytics.sql`).
 - Coleta de uso: eventos mínimos de telas e importação são enviados somente com a preferência habilitada; sem payload financeiro.
-- Sincronização: Etapas 1 e 2 concluídas (commit `9219da3`; migrations `20261101` e `20261102` aplicadas). Etapa 3 implementada com a migration `20261103_sync_transactions.sql`, fila offline idempotente, conflitos de versão/tombstone e limite de 500 linhas; migration pendente de aplicação no Supabase. Etapa 4 pendente.
+- Sincronização: Etapas 1 e 2 concluídas (commit `9219da3`; migrations `20261101` e `20261102` aplicadas). Etapa 3 implementada com a migration `20261103_sync_transactions.sql`, fila offline idempotente, conflitos de versão/tombstone e limite de 500 linhas; migration aplicada e conferida no Supabase. Etapa 4 pendente.
 - RM-031: guia “Como pegar meu extrato” com três ilustrações genéricas, atalho no tutorial Primeiros passos e arquivos SVG adicionados ao cache sem alterar o CACHE_NAME; três testes adicionados.
 - Importação: possíveis duplicados (iguais a lançamentos já salvos) vêm desmarcados, com contagem; linhas repetidas dentro do mesmo arquivo continuam marcadas.
 - Importação — conferência: [x] recorrências são sugestões decididas pelo usuário; pagamentos de empréstimos/parcelas seguem a data e os importados pagos ficam em uma lista de revisão por usuário, com aviso e ações para conferir ou alterar para pendente.

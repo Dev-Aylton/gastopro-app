@@ -185,6 +185,14 @@ alter table public.accounts
 
 alter table public.entries add column if not exists account_id uuid;
 alter table public.fixed_templates add column if not exists account_id uuid;
+alter table public.entries
+  add column if not exists payment_method text
+  check (payment_method is null or payment_method in (
+    'pix', 'debit', 'cash', 'credit_card', 'boleto', 'transfer', 'other'
+  ));
+alter table public.credit_cards
+  add column if not exists previous_spent numeric(12,2) not null default 0
+  check (previous_spent >= 0);
 alter table public.entries drop constraint if exists entries_account_owner_fk;
 alter table public.entries
   add constraint entries_account_owner_fk
