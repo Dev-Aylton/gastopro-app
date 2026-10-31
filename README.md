@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-375%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-385%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -193,7 +193,7 @@ financeiro-app/
 │       ├── 20261103_sync_transactions.sql # Etapa 3; aplicada no Supabase
 │       └── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 368 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 385 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -669,6 +669,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - [x] **RM-038 — Home mobile e navegação inferior** / Descrição: cabeçalho com logo, seletor compacto, valores financeiros, faixa de avisos, grade de cartões-resumo e navegação fixa acessível. / Critério de pronto: testes automatizados aprovados.
 - [x] **RM-039 — Saldo em destaque e aviso de projeção no dashboard mobile** / Descrição: saldo real sem alteração pela projeção, aviso para saídas pendentes do mês, grade compacta, tipografia sem quebra forçada e navegação iniciada no topo. / Critério de pronto: testes automatizados e validação visual em 320, 360, 390 e 430 px nos dois temas. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-040 — Metas mobile, legenda dos fixos e paisagem compacta** / Descrição: navegação direta ao painel de metas com respeito às barras fixas, contagem de fixos pagos no dashboard e cabeçalho/menu compactos em paisagem baixa. / Critério de pronto: testes automatizados aprovados e validação visual nos dois temas.
+- [x] **RM-043 — Zoom de campos e layout responsivo** / Descrição: campos com fonte mínima de 16 px, avisos e perfil sem overflow, cabeçalho e navegação mobile compactos e limpeza da chave legada de gasto anterior. / Critério de pronto: suíte automatizada aprovada e verificação visual em 320, 360, 390 e paisagem nos dois temas. / Arquivos: `css/style.css`, `js/data.js`, `tests/gastopro.test.js`.
 
 ### Em dúvida
 
@@ -682,6 +683,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 
 ### Planejamento (sem versão)
 
+- [x] RM-043 — Corrigido zoom automático iOS em controles, cartões de aviso em coluna, nome em largura total, cabeçalho mobile e barra inferior; limpeza da chave legada em `clearAll` e `deleteAllUserData`. Cinco testes adicionados; suíte com 385 aprovados.
 - [x] Home no celular: cabeçalho centralizado com logo existente, chip de mês, destaque financeiro, faixa de avisos, resumo dos cartões, barra inferior e contraste nos dois temas. Três testes novos; suíte com 368 aprovados.
 - [x] RM-039 — Saldo real em destaque com aviso informativo das saídas pendentes no mês atual; grade de quatro blocos, cabeçalho sem sobreposição, barra inferior sem quebra forçada e abertura de telas no topo. A restauração automática da rolagem após atualização do Service Worker foi removida; somente “Atualizar dados” preserva a posição. Quatro testes adicionados; suíte com 372 aprovados.
 - [x] RM-040 — botão Metas leva ao painel com rolagem instantânea, legenda de fixos pagos restaurada e cabeçalho/menu compactos em paisagem baixa. A atualização do Service Worker mantém tela e mês, mas inicia no topo. Três testes adicionados; suíte com 375 aprovados.

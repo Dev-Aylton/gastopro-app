@@ -6986,6 +6986,255 @@ describe('Exclusão de conta do usuário', () => {
   });
 });
 
+let responsiveFixtureFrame = null;
+
+async function getResponsiveFixtureFrame(width) {
+  if (!responsiveFixtureFrame) {
+    const frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:320px;height:844px;border:0;';
+    const stylesheet = new URL('../css/style.css', window.location.href).href;
+    const loaded = new Promise((resolve, reject) => {
+      frame.addEventListener('load', resolve, { once: true });
+      frame.addEventListener('error', reject, { once: true });
+    });
+    frame.srcdoc = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${stylesheet}"></head><body data-theme="dark"><div class="app-shell" id="fixtureApp"></div></body></html>`;
+    document.body.appendChild(frame);
+    await loaded;
+    responsiveFixtureFrame = frame;
+  }
+
+  responsiveFixtureFrame.style.width = `${width}px`;
+  await new Promise(resolve => setTimeout(resolve, 25));
+  return responsiveFixtureFrame;
+}
+
+function removeResponsiveFixtureFrame() {
+  if (!responsiveFixtureFrame) return;
+  responsiveFixtureFrame.remove();
+  responsiveFixtureFrame = null;
+}
+
+describe('Layout responsivo e tipografia mobile', () => {
+  itAsync('mantém todos os controles em 16px ou mais entre 320px e 1280px', async () => {
+    const frame = await getResponsiveFixtureFrame(320);
+    const frameDocument = frame.contentDocument;
+    const inputFields = [
+      ['profileNameInput', 'text', 'profile-name-input'],
+      ['incomeDesc', 'text', ''], ['incomeAmount', 'number', ''], ['incomeDate', 'date', ''],
+      ['expenseDesc', 'text', ''], ['expenseAmount', 'number', ''], ['expenseDate', 'date', ''],
+      ['expenseEndMonth', 'month', ''], ['editDesc', 'text', ''], ['editAmount', 'number', ''],
+      ['editDate', 'date', ''], ['editEndMonth', 'month', ''], ['accountName', 'text', ''],
+      ['accountInstitution', 'text', ''], ['accountInitialBalance', 'number', ''],
+      ['accountBalanceDate', 'date', ''], ['creditCardName', 'text', ''],
+      ['creditCardLastFour', 'text', ''], ['creditCardLimit', 'number', ''],
+      ['creditCardPreviousSpent', 'number', ''], ['creditCardClosingDay', 'number', ''],
+      ['creditCardDueDay', 'number', ''], ['adjustAccountBalance', 'number', ''],
+      ['confirmPhraseInput', 'text', ''], ['deleteAccountConfirmation', 'text', ''],
+      ['deleteAllMyDataConfirmation', 'text', ''], ['reportFrom', 'month', ''],
+      ['reportTo', 'month', ''], ['wIncomeDesc', 'text', 'wizard-input'],
+      ['wIncomeAmount', 'number', 'wizard-input'], ['wIncomeDate', 'date', 'wizard-input'],
+      ['wFixedDesc', 'text', 'wizard-input'], ['wFixedAmount', 'number', 'wizard-input'],
+      ['wVarDesc', 'text', 'wizard-input'], ['wVarAmount', 'number', 'wizard-input'],
+      ['goalLimitInput', 'number', 'form-control'], ['accountOnboardingName', 'text', ''],
+      ['accountOnboardingBalance', 'number', ''], ['accountOnboardingBalanceDate', 'date', ''],
+      ['recoveryPassword', 'password', ''], ['loginEmail', 'email', ''],
+      ['loginPassword', 'password', ''], ['registerName', 'text', ''],
+      ['registerPassword', 'password', ''], ['registerConfirmPassword', 'password', ''],
+      ['editItemId', 'hidden', ''], ['confirmRememberCheckbox', 'checkbox', ''],
+      ['avatarZoomSlider', 'range', ''], ['csvFileInput', 'file', ''],
+      ['importFixedSearchInput', 'search', '']
+    ];
+    const app = frameDocument.getElementById('fixtureApp');
+    app.innerHTML = inputFields.map(([id, type, className]) =>
+      `<input id="${id}" type="${type}" class="${className}">`
+    ).join('') + `
+      <select id="reportPeriodType" class="form-control"><option>Período</option></select>
+      <select id="incomeCategory"><option>Categoria</option></select>
+      <textarea id="importRawTextarea" class="import-textarea"></textarea>
+      <textarea id="adminReplyText" class="admin-reply-editor"></textarea>
+      <input id="reportIncludeDetails" type="checkbox">
+      <input id="registerConsent" type="checkbox">
+    `;
+
+    try {
+      for (const width of [320, 360, 390, 768, 1280]) {
+        await getResponsiveFixtureFrame(width);
+        const below16 = [...frameDocument.querySelectorAll('input, select, textarea')]
+          .filter(element => parseFloat(frame.contentWindow.getComputedStyle(element).fontSize) < 16)
+          .map(element => `${element.id}: ${frame.contentWindow.getComputedStyle(element).fontSize}`);
+        assertEqual(below16, [], `${width}px: controles abaixo de 16px: ${below16.join(', ')}`);
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  itAsync('renderiza avisos longos em coluna dentro do painel', async () => {
+    setupMockLocalStorage();
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <button id="notificationsTrigger"></button>
+      <span id="notificationsUnreadCount"></span>
+      <span id="notificationsUnreadLabel"></span>
+      <span id="financialInsightsMobileSummary"></span>
+      <div id="notificationsList"></div>
+      <div id="notificationSettingsList"></div>
+    `;
+    document.body.appendChild(fixture);
+    const frame = await getResponsiveFixtureFrame(320);
+
+    try {
+      window.GastoProNotificationCenter.syncEvents([{
+        type: 'forecast',
+        eventKey: 'layout-long-notice',
+        scope: 'all',
+        title: 'Aviso de projeção com título longo para validar a quebra natural em uma tela estreita',
+        message: 'A descrição do aviso contém várias palavras e deve permanecer dentro da largura disponível no painel.',
+        createdAt: new Date().toISOString()
+      }]);
+      window.GastoProNotificationCenter.render();
+      const sourceCard = fixture.querySelector('.notification-item');
+      assertTrue(sourceCard, 'O renderizador real deve criar o cartão de aviso');
+
+      const frameDocument = frame.contentDocument;
+      const panel = frameDocument.createElement('section');
+      panel.className = 'notifications-panel';
+      const list = frameDocument.createElement('div');
+      list.className = 'notifications-list';
+      panel.appendChild(list);
+      frameDocument.body.appendChild(panel);
+      list.appendChild(frameDocument.importNode(sourceCard, true));
+
+      const card = list.querySelector('.notification-item');
+      const content = card.querySelector('.notification-item-navigation');
+      const badge = card.querySelector('.notification-priority');
+      const title = card.querySelector('h3');
+      const message = card.querySelector('p');
+      const cardRect = card.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      assertEqual(frame.contentWindow.getComputedStyle(card).flexDirection, 'column');
+      assertEqual(frame.contentWindow.getComputedStyle(content).flexDirection, 'column');
+      assertEqual(frame.contentWindow.getComputedStyle(content).whiteSpace, 'normal');
+      assertEqual(frame.contentWindow.getComputedStyle(badge).whiteSpace, 'nowrap');
+      assertTrue(badge.getBoundingClientRect().bottom <= title.getBoundingClientRect().top);
+      assertTrue(title.getBoundingClientRect().bottom <= message.getBoundingClientRect().top);
+      assertTrue(cardRect.right <= panelRect.right + 0.5, 'O cartão não deve ultrapassar o painel');
+    } finally {
+      fixture.remove();
+      removeResponsiveFixtureFrame();
+      setupMockLocalStorage();
+    }
+  });
+
+  itAsync('mantém campo e botão Salvar nome dentro do cartão em 320px e 360px', async () => {
+    const frame = await getResponsiveFixtureFrame(320);
+    const app = frame.contentDocument.getElementById('fixtureApp');
+    app.innerHTML = `
+      <aside class="profile-drawer open" aria-hidden="false">
+        <div class="drawer-body">
+          <section class="drawer-section drawer-profile-section">
+            <div class="drawer-user-card">
+              <div class="drawer-avatar-wrapper"><div class="drawer-user-avatar"></div></div>
+              <div class="drawer-user-info">
+                <label class="profile-name-label" for="profileNameInput">Seu nome</label>
+                <div class="profile-name-edit-row">
+                  <input id="profileNameInput" class="profile-name-input" value="Pessoa" type="text">
+                  <button id="saveProfileNameBtn" class="btn-save-name" type="button">Salvar nome</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+    `;
+
+    try {
+      for (const width of [320, 360]) {
+        await getResponsiveFixtureFrame(width);
+        const card = frame.contentDocument.querySelector('.drawer-user-card');
+        const row = frame.contentDocument.querySelector('.profile-name-edit-row');
+        const input = frame.contentDocument.querySelector('#profileNameInput');
+        const button = frame.contentDocument.querySelector('#saveProfileNameBtn');
+        const cardRect = card.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const inputRect = input.getBoundingClientRect();
+        const buttonRect = button.getBoundingClientRect();
+        const labelRange = frame.contentDocument.createRange();
+        labelRange.selectNodeContents(button);
+        const labelRect = labelRange.getBoundingClientRect();
+        assertTrue(Math.abs(inputRect.width - rowRect.width) < 1, `${width}px: campo em largura total`);
+        assertTrue(Math.abs(buttonRect.width - rowRect.width) < 1, `${width}px: botão em largura total`);
+        assertTrue(buttonRect.top >= inputRect.bottom, `${width}px: botão abaixo do campo`);
+        assertTrue(buttonRect.left >= cardRect.left && buttonRect.right <= cardRect.right, `${width}px: botão dentro do cartão`);
+        assertTrue(labelRect.left >= buttonRect.left && labelRect.right <= buttonRect.right, `${width}px: rótulo dentro do botão`);
+        assertTrue(buttonRect.height >= 44, `${width}px: botão com altura mínima de 44px`);
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  itAsync('mantém cinco itens da barra inferior dentro da tela em 320px e 360px', async () => {
+    const frame = await getResponsiveFixtureFrame(320);
+    const app = frame.contentDocument.getElementById('fixtureApp');
+    app.innerHTML = `
+      <nav class="mobile-bottom-nav" aria-label="Navegação principal">
+        <button class="mobile-bottom-nav-item"><i></i><span>Início</span></button>
+        <button class="mobile-bottom-nav-item"><i></i><span>Lançamentos</span></button>
+        <button class="mobile-bottom-nav-item"><i></i><span>Cartões</span></button>
+        <button class="mobile-bottom-nav-item"><i></i><span>Metas</span></button>
+        <button class="mobile-bottom-nav-item is-active"><i></i><span>Mais</span></button>
+      </nav>
+    `;
+
+    try {
+      for (const width of [320, 360]) {
+        await getResponsiveFixtureFrame(width);
+        const nav = frame.contentDocument.querySelector('.mobile-bottom-nav');
+        const navRect = nav.getBoundingClientRect();
+        const items = [...nav.querySelectorAll('.mobile-bottom-nav-item')];
+        assertEqual(items.length, 5);
+        assertTrue(navRect.left >= 0 && navRect.right <= frame.contentWindow.innerWidth);
+        items.forEach(item => {
+          const rect = item.getBoundingClientRect();
+          const label = item.querySelector('span');
+          assertTrue(rect.left >= navRect.left && rect.right <= navRect.right, `${width}px: item dentro da barra`);
+          assertEqual(frame.contentWindow.getComputedStyle(label).whiteSpace, 'nowrap');
+          assertTrue(label.scrollWidth <= label.clientWidth, `${width}px: rótulo ${label.textContent} inteiro`);
+        });
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  itAsync('clearAll e deleteAllUserData removem a chave legada de gasto anterior', async () => {
+    const legacyKey = 'gastopro_credit_card_previous_spent_v1';
+    setupMockLocalStorage();
+    localStorage.setItem(legacyKey, '25');
+    const resetResult = await FinanceData.clearAll();
+    assertTrue(resetResult.success);
+    assertNull(localStorage.getItem(legacyKey));
+
+    setupMockLocalStorage();
+    const userId = 'legacy-cleanup-test';
+    FinanceData.saveProfile({ name: 'Pessoa', email: 'pessoa@example.com', avatar: null, userId });
+    localStorage.setItem('gastopro_last_uid', userId);
+    localStorage.setItem(legacyKey, '25');
+    localStorage.setItem(`${legacyKey}:${userId}`, '35');
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = { deleteAllMyData: async () => ({ success: true }) };
+    try {
+      const deleteResult = await FinanceData.deleteAllUserData('APAGAR DADOS');
+      assertTrue(deleteResult.success);
+      assertNull(localStorage.getItem(legacyKey));
+      assertNull(localStorage.getItem(`${legacyKey}:${userId}`));
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+});
+
 // ================================================================
 // RELATÓRIO FINAL
 // ================================================================

@@ -2820,7 +2820,8 @@ const FinanceData = {
         STORAGE_CREDIT_CARD_PURCHASES,
         STORAGE_FIXED_IMPORT_RULES,
         STORAGE_PENDING_SYNC,
-        STORAGE_SYNC_METADATA
+        STORAGE_SYNC_METADATA,
+        STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT
       ].forEach(key => localStorage.removeItem(key));
       const ownerId = profile.userId || this.getActiveUserId();
       if (ownerId) {
@@ -2859,6 +2860,11 @@ const FinanceData = {
     await this.saveCreditCards([], { flush: false });
     this.saveGoals([]);
     await this.saveFixedImportRules([], { flush: false });
+    localStorage.removeItem(STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT);
+    const ownerId = profile.userId || this.getActiveUserId();
+    if (ownerId) {
+      localStorage.removeItem(`${STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT}:${ownerId}`);
+    }
     return this.flushPendingSync(profile.userId);
   },
 
