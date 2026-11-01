@@ -9415,6 +9415,121 @@ describe('Correções de formulários, cards e rodapé', () => {
       removeResponsiveFixtureFrame();
     }
   });
+
+  itAsync('protege o cabeçalho contra notch, recorte de texto e alvos pequenos', async () => {
+    const frame = await getResponsiveFixtureFrame(320);
+    const frameDocument = frame.contentDocument;
+    const frameWindow = frame.contentWindow;
+    const app = frameDocument.getElementById('fixtureApp');
+    app.innerHTML = `
+      <div class="main-content">
+        <header class="topbar">
+          <div class="topbar-left"><button class="menu-toggle-btn"><i class="fa-solid">M</i></button><h1 class="view-title">Lançamentos</h1></div>
+          <button class="mobile-brand"><img src="../assets/logo-symbol.png" alt=""><span>GastoPro</span></button>
+          <div class="month-selector-bar">
+            <button class="btn-icon" aria-label="Mês anterior"><i class="fa-solid">‹</i></button>
+            <button class="current-month-display"><i class="fa-regular text-primary">D</i> Novembro de 2026 <i class="fa-solid text-dim">⌄</i></button>
+            <button class="btn-icon" aria-label="Próximo mês"><i class="fa-solid">›</i></button>
+          </div>
+          <div class="topbar-right">
+            <button class="notifications-trigger" aria-label="Notificações"><i class="fa-solid">!</i></button>
+            <button class="user-avatar-btn" aria-label="Perfil">A</button>
+          </div>
+        </header>
+      </div>
+    `;
+    const header = app.querySelector('.topbar');
+    [header, ...header.querySelectorAll('*')].forEach(element => {
+      element.style.transition = 'none';
+    });
+    const styleSheet = [...document.styleSheets].find(sheet => sheet.href && sheet.href.endsWith('/css/style.css'));
+    assertTrue(Boolean(styleSheet), 'stylesheet principal disponível para teste estático');
+    const topbarRules = [];
+    const collectTopbarRules = rules => {
+      [...rules].forEach(rule => {
+        if (rule.selectorText && rule.selectorText.split(',').some(selector => selector.trim() === '.topbar')) {
+          topbarRules.push(rule);
+        }
+        if (rule.cssRules) collectTopbarRules(rule.cssRules);
+      });
+    };
+    collectTopbarRules(styleSheet.cssRules);
+    assertTrue(topbarRules.length > 0, 'regras do cabeçalho encontradas');
+    assertFalse(topbarRules.some(rule => rule.style.getPropertyValue('backdrop-filter')),
+      'cabeçalho sem backdrop-filter');
+    assertTrue(topbarRules.some(rule =>
+      rule.style.getPropertyValue('padding').includes('env(safe-area-inset-top, 0px)')),
+    'cabeçalho soma safe-area ao padding existente');
+    const parseRgb = value => {
+      const channels = value.match(/[\d.]+/g);
+      assertTrue(Boolean(channels && channels.length >= 3), `cor RGB válida: ${value}`);
+      return channels.slice(0, 3).map(Number);
+    };
+    const luminance = color => color.map(channel => channel / 255)
+      .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+      .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const contrast = (foreground, background) => {
+      const first = luminance(parseRgb(foreground));
+      const second = luminance(parseRgb(background));
+      return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+    };
+
+    const sizes = [[320, 844], [360, 844], [390, 844], [768, 900],
+      [1024, 900], [1280, 900], [844, 390]];
+    try {
+      for (const theme of ['dark', 'light']) {
+        for (const [width, height] of sizes) {
+          await getResponsiveFixtureFrame(width, height);
+          frameDocument.documentElement.dataset.theme = theme;
+          frameDocument.body.dataset.theme = theme;
+          const topbar = frameDocument.querySelector('.topbar');
+          const style = frameWindow.getComputedStyle(topbar);
+          assertEqual(style.backdropFilter, 'none', `${width}x${height}px ${theme}: sem desfoque`);
+          assertTrue(style.backgroundColor !== 'rgba(0, 0, 0, 0)',
+            `${width}x${height}px ${theme}: fundo opaco`);
+          assertTrue(topbar.getBoundingClientRect().height > 0,
+            `${width}x${height}px ${theme}: cabeçalho renderizado`);
+          const visibleButtons = [...topbar.querySelectorAll('button')].filter(button => {
+            const rect = button.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          });
+          visibleButtons.forEach(button => {
+            const rect = button.getBoundingClientRect();
+            assertTrue(rect.width >= 44 && rect.height >= 44,
+              `${width}x${height}px ${theme}: ${button.className} com alvo ${rect.width}x${rect.height}px`);
+          });
+          const backgroundOf = element => {
+            for (let ancestor = element; ancestor && ancestor !== frameDocument; ancestor = ancestor.parentElement) {
+              const background = frameWindow.getComputedStyle(ancestor).backgroundColor;
+              if (!background.includes(', 0)') && !background.includes(', 0.0)')) return background;
+            }
+            return style.backgroundColor;
+          };
+          [...topbar.querySelectorAll('.view-title, .mobile-brand span, .current-month-display')].forEach(element => {
+            const rect = element.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              assertTrue(element.scrollWidth <= element.clientWidth + 1,
+                `${width}x${height}px ${theme}: texto do cabeçalho sem recorte`);
+              const foreground = frameWindow.getComputedStyle(element).color;
+              const background = backgroundOf(element);
+              const ratio = contrast(foreground, background);
+              assertTrue(ratio >= 4.5,
+                `${width}x${height}px ${theme}: contraste de ${element.className} ${ratio.toFixed(2)}:1 (${foreground} sobre ${background})`);
+            }
+          });
+          [...topbar.querySelectorAll('i')].forEach(icon => {
+            const rect = icon.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              assertTrue(contrast(frameWindow.getComputedStyle(icon).color, backgroundOf(icon)) >= 3,
+                `${width}x${height}px ${theme}: contraste do ícone >= 3:1`);
+            }
+          });
+        }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
 });
 
 // ================================================================

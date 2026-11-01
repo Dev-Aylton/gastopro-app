@@ -401,7 +401,7 @@ body {
 
 .skip-link {
   position: fixed;
-  top: 1rem;
+  top: calc(1rem + env(safe-area-inset-top, 0px));
   left: 1rem;
   z-index: 1000;
   padding: 0.75rem 1rem;
@@ -441,7 +441,7 @@ body {
   top: 0;
   bottom: 0;
   left: 0;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   z-index: var(--layer-sidebar);
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -639,7 +639,7 @@ body {
 .topbar {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
-  padding: calc(0.9rem + env(safe-area-inset-top)) 2rem 0.9rem;
+  padding: calc(0.9rem + env(safe-area-inset-top, 0px)) 2rem 0.9rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -647,7 +647,6 @@ body {
   position: sticky;
   top: 0;
   z-index: 50;
-  backdrop-filter: blur(10px);
 }
 
 .topbar-right {
@@ -731,7 +730,7 @@ body {
 .notifications-panel {
   position: fixed;
   z-index: var(--layer-notifications);
-  top: calc(env(safe-area-inset-top) + 4.5rem);
+  top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
   left: max(0.75rem, env(safe-area-inset-left));
   right: max(0.75rem, env(safe-area-inset-right));
   display: flex;
@@ -1003,7 +1002,11 @@ body {
   border: none;
   cursor: pointer;
   padding: 0;
-  flex: 0 0 auto;
+  flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
   aspect-ratio: 1;
   display: flex;
   align-items: center;
@@ -1707,6 +1710,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  min-height: 44px;
   padding: 0.35rem 0.75rem;
   font-weight: 600;
   font-size: 0.95rem;
@@ -1826,8 +1830,10 @@ body {
   background: var(--theme-background-transparent);
   border: none;
   color: var(--text-muted);
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -3414,7 +3420,7 @@ button:active { transform: scale(0.98); }
   visibility: hidden;
   pointer-events: none;
   transition: opacity 0.25s ease, visibility 0s linear 0.25s;
-  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+  padding: max(1rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right))
     max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
 }
 
@@ -3726,14 +3732,16 @@ button:active { transform: scale(0.98); }
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
     border-radius: var(--radius-sm);
     background: var(--bg-input);
     border: 1px solid var(--border);
   }
   .topbar {
-    padding: calc(0.75rem + env(safe-area-inset-top))
+    padding: calc(0.75rem + env(safe-area-inset-top, 0px))
       calc(1rem + env(safe-area-inset-right)) 0.75rem
       calc(1rem + env(safe-area-inset-left));
   }
@@ -3798,7 +3806,7 @@ button:active { transform: scale(0.98); }
 /* Smartphones Compactos (< 560px - iPhone SE, Galaxy, telas de 360px a 480px) */
 @media (max-width: 560px) {
   .topbar {
-    padding: calc(0.65rem + env(safe-area-inset-top))
+    padding: calc(0.65rem + env(safe-area-inset-top, 0px))
       calc(0.85rem + env(safe-area-inset-right)) 0.65rem
       calc(0.85rem + env(safe-area-inset-left));
     gap: 0.5rem;
@@ -7309,7 +7317,7 @@ video {
 }
 
 .profile-drawer {
-  padding-top: env(safe-area-inset-top);
+  padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: 0;
 }
 
@@ -7873,14 +7881,14 @@ input[type="month"] {
 @media (max-width: 700px) {
   .topbar {
     display: grid;
-    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
     grid-template-areas:
       "menu brand actions"
       "month month month";
     align-items: center;
     column-gap: 0.3rem;
     row-gap: 0.2rem;
-    padding: calc(0.45rem + env(safe-area-inset-top))
+    padding: calc(0.45rem + env(safe-area-inset-top, 0px))
       calc(0.75rem + env(safe-area-inset-right)) 0.65rem
       calc(0.75rem + env(safe-area-inset-left));
   }
@@ -7896,7 +7904,8 @@ input[type="month"] {
     align-items: center;
     justify-self: center;
     gap: 0.45rem;
-    min-width: 0;
+    min-width: 44px;
+    min-height: 44px;
     max-width: 100%;
     padding: 0.25rem 0.4rem;
     border: 0;
@@ -7929,11 +7938,11 @@ input[type="month"] {
   .topbar .menu-toggle-btn,
   .topbar .notifications-trigger,
   .topbar .user-avatar-btn {
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
-    min-height: 40px;
-    flex: 0 0 40px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
   }
 
   .month-selector-bar {
@@ -7944,7 +7953,7 @@ input[type="month"] {
     max-width: 100%;
     min-width: 0;
     margin: 0 auto;
-    min-height: 40px;
+    min-height: 44px;
     padding: 0 0.2rem;
     border: 1px solid var(--border);
     border-radius: 999px;
@@ -7952,17 +7961,17 @@ input[type="month"] {
   }
 
   .month-selector-bar .btn-icon {
-    width: 36px;
-    min-width: 36px;
-    height: 36px;
-    min-height: 36px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
     padding: 0;
-    flex: 0 0 36px;
+    flex: 0 0 44px;
   }
 
   .current-month-display {
     min-width: 120px;
-    min-height: 36px;
+    min-height: 44px;
     justify-content: center;
     padding: 0.15rem 0.4rem;
     color: var(--text-main);
@@ -8176,7 +8185,6 @@ input[type="month"] {
     font-size: 1.25rem;
   }
 
-  .mobile-brand,
   .mobile-brand span,
   .dashboard-highlight-value strong,
   .kpi-title,
@@ -8251,14 +8259,14 @@ input[type="month"] {
     flex-wrap: nowrap;
     min-height: 56px;
     gap: 0.4rem;
-    padding: max(0.25rem, env(safe-area-inset-top))
+    padding: max(0.25rem, env(safe-area-inset-top, 0px))
       max(0.5rem, env(safe-area-inset-right)) 0.25rem
       max(0.5rem, env(safe-area-inset-left));
   }
 
   .topbar-left {
-    flex: 0 0 40px;
-    min-width: 40px;
+    flex: 0 0 44px;
+    min-width: 44px;
   }
 
   .mobile-brand,
@@ -8276,10 +8284,11 @@ input[type="month"] {
   }
 
   .month-selector-bar .btn-icon {
-    width: 32px;
-    min-width: 32px;
-    height: 32px;
-    flex: 0 0 32px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
   }
 
   .current-month-display {
@@ -8363,22 +8372,22 @@ input[type="month"] {
 
 @media (max-width: 700px) {
   .topbar {
-    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
     min-height: 0;
   }
 
   .topbar-left {
-    min-width: 40px;
+    min-width: 44px;
   }
 
   .topbar .menu-toggle-btn,
   .topbar .notifications-trigger,
   .topbar .user-avatar-btn {
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
-    min-height: 40px;
-    flex: 0 0 40px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
   }
 
   .topbar .menu-toggle-btn i,
@@ -8387,8 +8396,8 @@ input[type="month"] {
   }
 
   .topbar .user-avatar-btn .user-avatar-sm {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
   }
 
   .mobile-brand {
