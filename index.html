@@ -6,8 +6,8 @@
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self';
              script-src 'self';
-             style-src 'self' https://fonts.googleapis.com https://cdnjs.cloudflare.com 'unsafe-inline';
-             font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:;
+             style-src 'self' 'unsafe-inline';
+             font-src 'self';
              img-src 'self' data: blob:;
              object-src 'none';
              base-uri 'self';
@@ -28,18 +28,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.json" />
 
-  <!-- Google Fonts: Inter -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
-    rel="stylesheet">
-
-  <!-- FontAwesome Icons — integrity (SRI) garante que o arquivo não foi adulterado no CDN -->
-  <link rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-    integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
-    crossorigin="anonymous"
-    referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="assets/fontawesome/css/all.min.css" />
 
   <!-- CSS -->
   <link rel="stylesheet" href="css/style.css" />
@@ -274,7 +263,8 @@
             <h4 class="drawer-section-title">Perfil</h4>
             <div class="drawer-user-card">
               <label class="profile-name-label" for="profileNameInput">Seu nome</label>
-              <div class="drawer-avatar-wrapper" id="changeAvatarBtn" title="Clique para fazer upload da sua foto">
+              <div class="drawer-avatar-wrapper" id="changeAvatarBtn" role="button" tabindex="0"
+                aria-label="Enviar foto de perfil" title="Clique para fazer upload da sua foto">
                 <div class="drawer-user-avatar">
                   <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" id="drawerAvatarImg" />
                 </div>
@@ -294,10 +284,37 @@
                 <span id="accountStatusText">Modo Local (Não conectado)</span>
               </p>
             </div>
+            <p class="avatar-gallery-label">Escolha um avatar</p>
+            <div class="avatar-gallery" id="avatarGallery" role="group" aria-label="Galeria de avatares"></div>
+            <button type="button" class="drawer-action-btn avatar-remove-button" id="removeProfilePhotoBtn" hidden>
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-image-portrait text-primary" aria-hidden="true"></i>
+              </div>
+              <div class="action-text">
+                <strong>Remover foto</strong>
+                <span>Voltar ao avatar escolhido</span>
+              </div>
+            </button>
           </section>
 
-          <section class="drawer-section drawer-account-section">
-            <h4 class="drawer-section-title">Conta e sincronização</h4>
+          <section class="drawer-section drawer-appearance-section">
+            <h4 class="drawer-section-title">Aparência</h4>
+            <button type="button" class="drawer-action-btn drawer-theme-toggle" id="drawerThemeToggleBtn"
+              aria-label="Mudar para tema claro">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-moon text-primary" id="drawerThemeToggleIcon" aria-hidden="true"></i>
+              </div>
+              <div class="action-text">
+                <strong>Tema claro ou escuro</strong>
+                <span id="drawerThemeToggleLabel">Mudar para tema claro</span>
+              </div>
+            </button>
+          </section>
+
+          <section class="drawer-section drawer-data-section">
+            <h4 class="drawer-section-title">Dados e backup</h4>
+            <div class="drawer-account-controls">
+            <h5 class="drawer-subsection-title">Conta e sincronização</h5>
             <div id="accountGuestCard" class="account-card">
               <p class="account-desc">Crie uma conta gratuita para sincronizar seus dados entre dispositivos.</p>
               <button type="button" id="openAuthModalBtn" class="btn-auth-trigger">
@@ -334,10 +351,8 @@
                 <span>Verificar atualizações do aplicativo</span>
               </div>
             </button>
-          </section>
-
-          <section class="drawer-section drawer-data-section">
-            <h4 class="drawer-section-title">Meus dados e backup</h4>
+            </div>
+            <div class="drawer-backup-controls">
             <p class="user-data-description">
               A exportação inclui lançamentos, gastos fixos, metas, contas, cartões, compras no cartão,
               regras de Fixo e mensagens enviadas em Fale comigo.
@@ -371,28 +386,15 @@
                 <span>Gerar um relatório financeiro para impressão</span>
               </div>
             </button>
-          </section>
-
-          <section class="drawer-section drawer-privacy-section">
-            <h4 class="drawer-section-title">Privacidade e uso</h4>
-            <label class="usage-telemetry-setting" for="usageTelemetryEnabled">
-              <input type="checkbox" id="usageTelemetryEnabled" checked />
-              <span>
-                <strong>Compartilhar eventos anônimos de uso</strong>
-                <small>Ajuda a entender telas usadas, importações e erros. Não inclui textos nem dados financeiros.</small>
-              </span>
-            </label>
-            <div class="drawer-tip">
-              <i class="fa-solid fa-lock text-success" aria-hidden="true"></i>
-              <p>
-                Sem login, seus dados ficam no navegador. Com login, são sincronizados com o Supabase e protegidos por RLS.
-                <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Política de Privacidade (LGPD)</a>
-              </p>
             </div>
           </section>
 
-          <section class="drawer-section drawer-help-section">
-            <h4 class="drawer-section-title">Ajuda</h4>
+          <section class="drawer-section drawer-about-section">
+            <h4 class="drawer-section-title">Sobre</h4>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v…</span></p>
+            <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Privacidade e LGPD</a>
+            <div class="drawer-about-help">
+            <h5 class="drawer-subsection-title">Ajuda</h5>
             <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
               <div class="action-icon bg-primary-soft">
                 <i class="fa-solid fa-play text-primary" aria-hidden="true"></i>
@@ -408,6 +410,7 @@
             <div class="how-to-use-section">
               <h5 class="drawer-section-title">Como usar</h5>
               <div class="how-to-use-topics" id="howToUseTopics"></div>
+            </div>
             </div>
           </section>
 
@@ -1017,35 +1020,12 @@
            ========================================== -->
       <footer class="app-footer">
         <div class="footer-container">
-          <div class="footer-top">
-            <div class="footer-brand">
-              <img src="assets/logo-symbol.png" alt="Símbolo GastoPro" class="footer-logo-img" />
-              <div>
-                <h4>GastoPro</h4>
-                <p>Gestão Financeira & Saúde Orçamentária Pessoal</p>
-              </div>
-            </div>
-            <div class="footer-security-badge">
-              <i class="fa-solid fa-shield-halved text-success"></i>
-              <span>Sem login, os dados ficam no dispositivo. Com login, também são sincronizados com a nuvem.</span>
-            </div>
-          </div>
-
-          <div class="footer-divider"></div>
-
-          <div class="footer-bottom">
-            <div class="footer-author">
-              <i class="fa-solid fa-code text-primary"></i>
-              <span>Criado e desenvolvido por <strong>Aylton Alberto</strong> &bull; ADS</span>
-            </div>
-            <div class="footer-meta">
-              <span>GastoPro &copy; 2026 &bull; Todos os direitos reservados</span>
-              <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
-                <i class="fa-solid fa-shield-halved"></i> Privacidade &amp; LGPD
-              </a>
-              <span class="badge badge-version">v…</span>
-            </div>
-          </div>
+          <span class="footer-author">Criado por <strong>Aylton Alberto</strong> · ADS</span>
+          <span class="footer-copyright">© 2026 GastoPro</span>
+          <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
+            Privacidade e LGPD
+          </a>
+          <span class="badge badge-version">v…</span>
         </div>
       </footer>
 

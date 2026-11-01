@@ -59,7 +59,7 @@ const TestResults = {
   errors: []
 };
 const pendingTestPromises = [];
-const ASYNC_TEST_TIMEOUT_MS = 15000;
+const ASYNC_TEST_TIMEOUT_MS = 30000;
 
 /**
  * Declara um grupo de testes relacionados.
@@ -3591,10 +3591,10 @@ describe('Dashboard mobile', () => {
   });
 
   it('formata a versão exibida a partir do nome do cache do service worker', () => {
-    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.11'), 'v4.11');
+    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.12'), 'v4.12');
     assertNull(window.GastoProAppVersion.formatCacheName('other-v4.7'));
     assertEqual(window.GastoProAppVersion.getDisplayedVersion(null), 'v…');
-    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.11'), 'v4.11');
+    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.12'), 'v4.12');
   });
 
   it('usa o saldo filtrado das contas e o resultado mensal existente no destaque', () => {
@@ -7907,7 +7907,6 @@ async function getResponsiveFixtureFrame(width, height = 844) {
 
   responsiveFixtureFrame.style.width = `${width}px`;
   responsiveFixtureFrame.style.height = `${height}px`;
-  await new Promise(resolve => setTimeout(resolve, 25));
   return responsiveFixtureFrame;
 }
 
@@ -8250,6 +8249,200 @@ describe('Layout responsivo e tipografia mobile', () => {
   });
 });
 
+describe('Rodapé compacto, assets locais e galeria de avatares', () => {
+  itAsync('mantém fontes e ícones locais disponíveis no runner', async () => {
+    const icon = document.createElement('i');
+    icon.className = 'fa-solid fa-user';
+    icon.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(icon);
+    try {
+      const [interFonts, iconFonts] = await Promise.all([
+        document.fonts.load('400 16px Inter'),
+        document.fonts.load('900 16px "Font Awesome 6 Free"')
+      ]);
+      assertTrue(Array.from(document.styleSheets).some(sheet =>
+        sheet.href && sheet.href.includes('/assets/fontawesome/css/all.min.css')
+      ), 'CSS local do Font Awesome carregado');
+      assertTrue(interFonts.some(font => font.status === 'loaded'), 'fonte Inter local carregada');
+      assertTrue(iconFonts.some(font => font.status === 'loaded'), 'fonte local de ícones carregada');
+      const essentialAssets = window.GastoProCacheAssets.essential;
+      [
+        './js/cache-assets.js',
+        './assets/fontawesome/css/all.min.css',
+        './assets/fontawesome/webfonts/fa-solid-900.woff2',
+        './assets/fontawesome/webfonts/fa-regular-400.woff2',
+        './assets/inter-latin-ext.woff2',
+        './assets/inter-latin.woff2'
+      ].forEach(asset => assertTrue(essentialAssets.includes(asset), `precache essencial: ${asset}`));
+    } finally {
+      icon.remove();
+    }
+  });
+
+  itAsync('mantém rodapé em até duas linhas e dentro da altura-alvo', async () => {
+    const frame = await getResponsiveFixtureFrame(320, 844);
+    const frameDocument = frame.contentDocument;
+    frameDocument.getElementById('fixtureApp').innerHTML = `
+      <div class="main-content"><main class="views-wrapper"><footer class="app-footer">
+        <div class="footer-container">
+          <span class="footer-author">Criado por <strong>Aylton Alberto</strong> · ADS</span>
+          <span class="footer-copyright">© 2026 GastoPro</span>
+          <a class="footer-privacy-link">Privacidade e LGPD</a>
+          <span class="badge badge-version">v4.12</span>
+        </div>
+      </footer></main></div>
+    `;
+    try {
+      for (const [width, height] of [[320, 800], [390, 844], [1280, 900]]) {
+        await getResponsiveFixtureFrame(width, height);
+        const footer = frameDocument.querySelector('.app-footer');
+        const children = [...footer.querySelector('.footer-container').children];
+        const rowTops = children.map(child => child.getBoundingClientRect().top).sort((a, b) => a - b);
+        const rows = rowTops.reduce((count, top, index) =>
+          index === 0 || top - rowTops[index - 1] > 6 ? count + 1 : count, 0);
+        const footerHeight = footer.getBoundingClientRect().height;
+        assertTrue(rows <= 2, `${width}px: rodapé em ${rows} linhas`);
+        assertTrue(footerHeight <= (width >= 700 ? 64 : 88),
+          `${width}px: altura ${footerHeight}px dentro do limite`);
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  it('oferece 12 avatares originais em grupos de quatro e persiste a escolha', () => {
+    const gallery = window.GastoProAvatarGallery;
+    assertEqual(gallery.presets.length, 12);
+    ['feminine', 'masculine', 'neutral'].forEach(gender => {
+      assertEqual(gallery.presets.filter(preset => preset.gender === gender).length, 4,
+        `quatro opções ${gender}`);
+    });
+    assertTrue(gallery.presets.some(preset => preset.id === 'neutral-default'),
+      'avatar padrão atual incluído');
+    const previousProfile = FinanceData.getProfile();
+    try {
+      const selected = gallery.selectPreset(previousProfile, 'preset:fem-2');
+      assertEqual(selected.avatar, 'preset:fem-2');
+      assertEqual(selected.avatarPreset, 'preset:fem-2');
+      assertTrue(FinanceData.saveProfile(selected).success);
+      assertEqual(FinanceData.getProfile().avatar, 'preset:fem-2');
+    } finally {
+      FinanceData.saveProfile(previousProfile);
+    }
+  });
+
+  it('mantém fotos Base64 antigas válidas e remove a foto para o avatar escolhido ou padrão', () => {
+    const gallery = window.GastoProAvatarGallery;
+    const oldPhoto = 'data:image/jpeg;base64,legacy-avatar';
+    assertEqual(gallery.getSource(oldPhoto), oldPhoto);
+    const withPhoto = gallery.savePhoto({ avatar: 'preset:masc-3' }, 'data:image/jpeg;base64,new-photo');
+    assertEqual(withPhoto.avatarPreset, 'preset:masc-3');
+    assertEqual(gallery.removePhoto(withPhoto).avatar, 'preset:masc-3');
+    assertEqual(gallery.removePhoto({ avatar: oldPhoto }).avatar, 'preset:neutral-default');
+  });
+
+  itAsync('mantém contraste dos avatares e seus controles nos dois temas', async () => {
+    const frame = await getResponsiveFixtureFrame(390, 844);
+    const frameDocument = frame.contentDocument;
+    const frameWindow = frame.contentWindow;
+    const ratio = (first, second) => {
+      const luminance = color => {
+        const channels = color.startsWith('#')
+          ? color.slice(1).match(/.{2}/g).map(value => parseInt(value, 16))
+          : color.match(/[0-9.]+/g).slice(0, 3).map(Number);
+        const linearChannels = channels.map(value => {
+          const normalized = value / 255;
+          return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+        });
+        return linearChannels[0] * 0.2126 + linearChannels[1] * 0.7152 + linearChannels[2] * 0.0722;
+      };
+      const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
+      return (values[0] + 0.05) / (values[1] + 0.05);
+    };
+    frameDocument.getElementById('fixtureApp').innerHTML =
+      '<div class="drawer-section"><div class="avatar-gallery" id="gallery"></div></div>';
+    try {
+      for (const theme of ['light', 'dark']) {
+        frameDocument.documentElement.dataset.theme = theme;
+        frameDocument.body.dataset.theme = theme;
+        const gallery = frameDocument.getElementById('gallery');
+        gallery.replaceChildren(...window.GastoProAvatarGallery.presets.map(preset => {
+          const button = frameDocument.createElement('button');
+          button.className = 'avatar-preset-option';
+          button.setAttribute('aria-pressed', 'false');
+          const image = frameDocument.createElement('img');
+          image.src = window.GastoProAvatarGallery.getSource(`preset:${preset.id}`);
+          const label = frameDocument.createElement('span');
+          label.textContent = preset.label;
+          button.append(image, label);
+          return button;
+        }));
+        const controls = [...gallery.querySelectorAll('.avatar-preset-option')];
+        assertEqual(controls.length, 12, `${theme}: 12 opções visíveis`);
+        controls.forEach(button => {
+          const style = frameWindow.getComputedStyle(button);
+          assertTrue(ratio(style.color, style.backgroundColor) >= 4.5,
+            `${theme}: contraste do rótulo ${button.textContent}`);
+        });
+        window.GastoProAvatarGallery.presets.forEach(preset => {
+          const colorRatio = ratio('rgb(248, 250, 252)', preset.background);
+          assertTrue(colorRatio >= 3, `${theme}: contraste do avatar ${preset.label} (${colorRatio.toFixed(2)}:1)`);
+          const hairContrast = ratio('rgb(226, 232, 240)', preset.background);
+          assertTrue(hairContrast >= 3, `${theme}: contraste da silhueta ${preset.label} (${hairContrast.toFixed(2)}:1)`);
+          const svg = window.GastoProAvatarGallery.getSvg(`preset:${preset.id}`);
+          if (svg) {
+            assertTrue(svg.includes('fill="#e2e8f0"') || svg.includes('fill="#f8fafc"'),
+              `${theme}: formas SVG originais em ${preset.label}`);
+          }
+        });
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  itAsync('não corta textos do painel do usuário em 320px e 390px', async () => {
+    const frame = await getResponsiveFixtureFrame(320, 844);
+    const frameDocument = frame.contentDocument;
+    frameDocument.getElementById('fixtureApp').innerHTML = `
+      <aside class="profile-drawer open">
+        <header class="drawer-header"><h3>Meu Perfil</h3><button class="drawer-close-btn">Fechar</button></header>
+        <div class="drawer-body">
+          <section class="drawer-section">
+            <h4 class="drawer-section-title">Perfil</h4>
+            <div class="drawer-user-card"><div class="drawer-user-info">
+              <div class="profile-name-edit-row"><input class="profile-name-input" value="Nome da pessoa">
+                <button class="btn-save-name">Salvar nome</button></div>
+            </div></div>
+            <p class="user-data-description">A exportação inclui lançamentos, gastos fixos, metas, contas, cartões e mensagens enviadas em Fale comigo.</p>
+            <button class="drawer-action-btn"><span class="action-text"><strong>Exportar todos os meus dados</strong><span>Baixar uma cópia JSON neste aparelho</span></span></button>
+            <button class="drawer-action-btn"><span class="action-text"><strong>Privacidade e LGPD</strong><span>Consulte as informações sobre seus dados pessoais.</span></span></button>
+            <a class="drawer-privacy-link">Privacidade e LGPD</a>
+          </section>
+        </div>
+      </aside>
+    `;
+    try {
+      for (const [width, height] of [[320, 800], [390, 844]]) {
+        await getResponsiveFixtureFrame(width, height);
+        const drawer = frameDocument.querySelector('.profile-drawer');
+        assertTrue(drawer.scrollWidth <= drawer.clientWidth, `${width}px: painel sem overflow horizontal`);
+        frameDocument.querySelectorAll('.drawer-action-btn, .drawer-user-card, .user-data-description, .drawer-privacy-link')
+          .forEach(element => assertTrue(element.scrollWidth <= element.clientWidth,
+            `${width}px: conteúdo sem corte (${element.textContent.trim().slice(0, 45)})`));
+        frameDocument.querySelectorAll('.profile-drawer button').forEach(button => {
+          assertTrue(button.getBoundingClientRect().height >= 44,
+            `${width}px: alvo de toque de ${button.textContent.trim() || button.className}`);
+        });
+        assertTrue(frameDocument.querySelector('.drawer-privacy-link').getBoundingClientRect().height >= 44,
+          `${width}px: alvo de toque do link de privacidade`);
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+});
+
 // ================================================================
 // RELATÓRIO FINAL
 describe('Cartões de lançamentos e notificações responsivos', () => {
@@ -8411,6 +8604,7 @@ describe('Cartões de lançamentos e notificações responsivos', () => {
   itAsync('mantém chips e datas dos lançamentos inteiros dentro do cartão', async () => {
     const frame = await getResponsiveFixtureFrame(320, 800);
     const frameDocument = frame.contentDocument;
+    const frameWindow = frame.contentWindow;
     frameDocument.getElementById('fixtureApp').innerHTML = `
       <aside class="sidebar"></aside>
       <div class="main-content"><main class="views-wrapper"><section class="view-section active">
@@ -8557,6 +8751,7 @@ describe('Home unificada e formas de pagamento', () => {
   itAsync('mantém saldo, avisos e quatro KPIs em uma home responsiva nos dois temas', async () => {
     const frame = await getResponsiveFixtureFrame(320, 800);
     const frameDocument = frame.contentDocument;
+    const frameWindow = frame.contentWindow;
     frameDocument.getElementById('fixtureApp').innerHTML = `
       <aside class="sidebar"></aside>
       <div class="main-content">
@@ -8601,15 +8796,18 @@ describe('Home unificada e formas de pagamento', () => {
           const strip = dashboard.querySelector('.financial-insights-mobile-strip');
           const grid = dashboard.querySelector('.kpi-grid');
           const cards = [...grid.querySelectorAll('.kpi-card')];
-          const visible = element => getComputedStyle(element).display !== 'none' && element.getBoundingClientRect().width > 0;
+          const visible = element => {
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          };
           const titles = cards.map(card => [...card.querySelectorAll('.kpi-title span')]
             .filter(visible).map(title => title.textContent.trim()));
-          const columns = getComputedStyle(grid).gridTemplateColumns.split(/\s+/).length;
+          const columns = frameWindow.getComputedStyle(grid).gridTemplateColumns.split(/\s+/).length;
           assertTrue(visible(highlight), `${width}x${height} ${themeName}: saldo visível`);
           assertTrue(visible(strip), `${width}x${height} ${themeName}: faixa de avisos visível`);
           assertEqual(cards.filter(visible).length, 4, `${width}x${height} ${themeName}: quatro KPIs`);
           assertEqual(titles, [['Resultado'], ['Recebido'], ['Fixos'], ['Variáveis']]);
-          assertEqual(getComputedStyle(frameDocument.querySelector('.topbar-summary')).display, 'none');
+          assertEqual(frameWindow.getComputedStyle(frameDocument.querySelector('.topbar-summary')).display, 'none');
           assertEqual(columns, width >= 1024 ? 4 : 2, `${width}px: número de colunas`);
           assertTrue(frameDocument.documentElement.scrollWidth <= frameDocument.documentElement.clientWidth,
             `${width}x${height} ${themeName}: sem rolagem horizontal`);

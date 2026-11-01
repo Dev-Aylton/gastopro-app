@@ -58,6 +58,78 @@ window.GastoProProfileHelpers = {
   }
 };
 
+const PROFILE_AVATAR_PRESETS = Object.freeze([
+  { id: 'fem-1', gender: 'feminine', label: 'Feminino 1', background: '#3730a3', hair: 'long' },
+  { id: 'fem-2', gender: 'feminine', label: 'Feminino 2', background: '#6d28d9', hair: 'bun' },
+  { id: 'fem-3', gender: 'feminine', label: 'Feminino 3', background: '#9d174d', hair: 'curl' },
+  { id: 'fem-4', gender: 'feminine', label: 'Feminino 4', background: '#115e59', hair: 'long' },
+  { id: 'masc-1', gender: 'masculine', label: 'Masculino 1', background: '#1e3a8a', hair: 'short' },
+  { id: 'masc-2', gender: 'masculine', label: 'Masculino 2', background: '#5b21b6', hair: 'curl' },
+  { id: 'masc-3', gender: 'masculine', label: 'Masculino 3', background: '#9f1239', hair: 'short' },
+  { id: 'masc-4', gender: 'masculine', label: 'Masculino 4', background: '#0f766e', hair: 'cap' },
+  { id: 'neutral-default', gender: 'neutral', label: 'Padrão atual', background: '#1d4ed8', hair: 'default' },
+  { id: 'neutral-1', gender: 'neutral', label: 'Neutro 1', background: '#4c1d95', hair: 'hood' },
+  { id: 'neutral-2', gender: 'neutral', label: 'Neutro 2', background: '#7f1d1d', hair: 'short' },
+  { id: 'neutral-3', gender: 'neutral', label: 'Neutro 3', background: '#155e75', hair: 'hood' }
+]);
+
+function getProfileAvatarPreset(value) {
+  if (typeof value !== 'string' || !value.startsWith('preset:')) return null;
+  return PROFILE_AVATAR_PRESETS.find(preset => `preset:${preset.id}` === value) || null;
+}
+
+function renderProfileAvatarSvg(value) {
+  const preset = getProfileAvatarPreset(value);
+  if (!preset || preset.id === 'neutral-default') return '';
+  const hairShapes = {
+    long: '<path fill="#e2e8f0" d="M17 31c0-13 7-21 17-21s17 8 17 21v19H17z"/><path fill="#f2c99b" d="M23 27c0-8 4-13 11-13s11 5 11 13v12c0 8-5 13-11 13s-11-5-11-13z"/>',
+    bun: '<circle cx="47" cy="17" r="7" fill="#e2e8f0"/><path fill="#e2e8f0" d="M17 31c0-13 7-21 17-21s17 8 17 21v18H17z"/><path fill="#f2c99b" d="M23 27c0-8 4-13 11-13s11 5 11 13v12c0 8-5 13-11 13s-11-5-11-13z"/>',
+    curl: '<path fill="#e2e8f0" d="M18 29c0-13 7-21 16-21 10 0 17 8 17 21v20H18z"/><circle cx="23" cy="18" r="5" fill="#e2e8f0"/><circle cx="32" cy="11" r="6" fill="#e2e8f0"/><circle cx="42" cy="16" r="6" fill="#e2e8f0"/><path fill="#f2c99b" d="M23 27c0-8 4-13 11-13s11 5 11 13v12c0 8-5 13-11 13s-11-5-11-13z"/>',
+    short: '<path fill="#e2e8f0" d="M20 28c0-12 5-18 14-18s14 6 14 18v5H20z"/><path fill="#f2c99b" d="M23 27c0-8 4-13 11-13s11 5 11 13v12c0 8-5 13-11 13s-11-5-11-13z"/>',
+    cap: '<path fill="#e2e8f0" d="M20 28c1-12 5-18 14-18s13 5 14 16l8 5-1 4H19z"/><path fill="#f2c99b" d="M23 29c0-9 4-15 11-15s11 6 11 15v10c0 8-5 13-11 13s-11-5-11-13z"/>',
+    hood: '<path fill="#f8fafc" d="M16 33c0-18 7-27 18-27s18 9 18 27v18H16z"/><path fill="#f2c99b" d="M23 27c0-8 4-13 11-13s11 5 11 13v12c0 8-5 13-11 13s-11-5-11-13z"/>'
+  };
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="${preset.label}"><circle cx="32" cy="32" r="32" fill="${preset.background}"/><path fill="#f8fafc" d="M8 64c1-13 9-20 24-20s23 7 24 20z"/><path fill="#f2c99b" d="M27 39h10v11H27z"/>${hairShapes[preset.hair]}<circle cx="32" cy="33" r="1" fill="#f2c99b"/></svg>`;
+  return svg;
+}
+
+function withProfileAvatarPreset(profile, value) {
+  const preset = getProfileAvatarPreset(value);
+  if (!preset) throw new Error('Avatar predefinido inválido.');
+  return { ...profile, avatar: value, avatarPreset: value };
+}
+
+function withProfileAvatarPhoto(profile, photo) {
+  if (typeof photo !== 'string' || !photo.startsWith('data:image/')) {
+    throw new Error('Foto de perfil inválida.');
+  }
+  const selectedPreset = getProfileAvatarPreset(profile.avatar)
+    ? profile.avatar
+    : (getProfileAvatarPreset(profile.avatarPreset) ? profile.avatarPreset : 'preset:neutral-default');
+  return { ...profile, avatar: photo, avatarPreset: selectedPreset };
+}
+
+function withoutProfileAvatarPhoto(profile) {
+  const preset = getProfileAvatarPreset(profile.avatarPreset);
+  const avatar = preset ? `preset:${preset.id}` : 'preset:neutral-default';
+  return { ...profile, avatar, avatarPreset: avatar };
+}
+
+window.GastoProAvatarGallery = Object.freeze({
+  presets: PROFILE_AVATAR_PRESETS,
+  isPreset: value => Boolean(getProfileAvatarPreset(value)),
+  selectPreset: withProfileAvatarPreset,
+  savePhoto: withProfileAvatarPhoto,
+  removePhoto: withoutProfileAvatarPhoto,
+  getSource(value) {
+    const preset = getProfileAvatarPreset(value);
+    if (!preset) return typeof value === 'string' && value ? value : 'assets/default_avatar.jpg';
+    if (preset.id === 'neutral-default') return 'assets/default_avatar.jpg';
+    return `data:image/svg+xml,${encodeURIComponent(renderProfileAvatarSvg(value))}`;
+  },
+  getSvg: renderProfileAvatarSvg
+});
+
 window.GastoProAvatarCrop = {
   computeCropRect(imageWidth, imageHeight, zoom = 1, offsetX = 0, offsetY = 0, frameSize = 256) {
     const width = Number(imageWidth);
@@ -4818,8 +4890,8 @@ function getDisplayedAppVersion(cacheName) {
 }
 
 function updateDisplayedAppVersion() {
-  const badge = document.querySelector('.badge-version');
-  if (!badge || !('serviceWorker' in navigator) || typeof MessageChannel !== 'function') return;
+  const badges = document.querySelectorAll('.badge-version');
+  if (!badges.length || !('serviceWorker' in navigator) || typeof MessageChannel !== 'function') return;
 
   navigator.serviceWorker.ready.then(registration => {
     const worker = registration.active || navigator.serviceWorker.controller;
@@ -4828,7 +4900,9 @@ function updateDisplayedAppVersion() {
     const timeout = setTimeout(() => channel.port1.close(), 5000);
     channel.port1.onmessage = event => {
       clearTimeout(timeout);
-      badge.textContent = getDisplayedAppVersion(event.data && event.data.cacheName);
+      badges.forEach(badge => {
+        badge.textContent = getDisplayedAppVersion(event.data && event.data.cacheName);
+      });
       channel.port1.close();
     };
     worker.postMessage({ type: 'GASTOPRO_GET_CACHE_NAME' }, [channel.port2]);
@@ -6459,6 +6533,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveProfileNameBtn    = document.getElementById('saveProfileNameBtn');
   const changeAvatarBtn       = document.getElementById('changeAvatarBtn');
   const avatarFileInput       = document.getElementById('avatarFileInput');
+  const avatarGallery         = document.getElementById('avatarGallery');
+  const removeProfilePhotoBtn = document.getElementById('removeProfilePhotoBtn');
+  const drawerThemeToggleBtn  = document.getElementById('drawerThemeToggleBtn');
+  const drawerThemeToggleIcon = document.getElementById('drawerThemeToggleIcon');
+  const drawerThemeToggleLabel = document.getElementById('drawerThemeToggleLabel');
   const avatarCropModal       = document.getElementById('avatarCropModal');
   const avatarCropFrame       = document.getElementById('avatarCropFrame');
   const avatarCropImage       = document.getElementById('avatarCropImage');
@@ -6485,10 +6564,51 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function renderAvatarGallery(profile) {
+    if (!avatarGallery) return;
+    const savedPreset = getProfileAvatarPreset(profile.avatar) ||
+      getProfileAvatarPreset(profile.avatarPreset);
+    const selectedValue = savedPreset ? `preset:${savedPreset.id}` : 'preset:neutral-default';
+    const fragment = document.createDocumentFragment();
+    PROFILE_AVATAR_PRESETS.forEach(preset => {
+      const value = `preset:${preset.id}`;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'avatar-preset-option';
+      button.dataset.avatarPreset = value;
+      button.setAttribute('aria-label', `Escolher avatar ${preset.label}`);
+      button.setAttribute('aria-pressed', String(value === selectedValue));
+      button.title = preset.label;
+      const image = document.createElement('img');
+      image.src = window.GastoProAvatarGallery.getSource(value);
+      image.alt = '';
+      image.width = 52;
+      image.height = 52;
+      const label = document.createElement('span');
+      label.textContent = preset.label;
+      button.append(image, label);
+      fragment.append(button);
+    });
+    avatarGallery.replaceChildren(fragment);
+  }
+
+  function updateDrawerThemeToggle(theme) {
+    if (!drawerThemeToggleBtn) return;
+    const isDark = theme === 'dark';
+    const actionLabel = isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro';
+    drawerThemeToggleBtn.setAttribute('aria-label', actionLabel);
+    drawerThemeToggleBtn.setAttribute('aria-pressed', String(!isDark));
+    if (drawerThemeToggleLabel) drawerThemeToggleLabel.textContent = actionLabel;
+    if (drawerThemeToggleIcon) {
+      drawerThemeToggleIcon.className = isDark
+        ? 'fa-solid fa-moon text-primary'
+        : 'fa-solid fa-sun text-primary';
+    }
+  }
+
   function renderUserProfile() {
     const profile = FinanceData.getProfile();
-    const defaultAvatar = 'assets/default_avatar.jpg';
-    const avatarSrc = profile.avatar || defaultAvatar;
+    const avatarSrc = window.GastoProAvatarGallery.getSource(profile.avatar);
 
     if (profileNameInput) {
       profileNameInput.value = profile.name || '';
@@ -6499,6 +6619,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (drawerAvatarImg) drawerAvatarImg.src = avatarSrc;
     if (topbarAvatarImg) topbarAvatarImg.src = avatarSrc;
+    renderAvatarGallery(profile);
+    if (removeProfilePhotoBtn) {
+      removeProfilePhotoBtn.hidden = !profile.avatar ||
+        window.GastoProAvatarGallery.isPreset(profile.avatar);
+    }
+    updateDrawerThemeToggle(document.documentElement.getAttribute('data-theme'));
 
     if (userMenuBtn) {
       userMenuBtn.title = profile.name ? `Menu do Usuário (${profile.name})` : 'Menu do Usuário (Escreva seu nome)';
@@ -7685,6 +7811,12 @@ document.addEventListener('DOMContentLoaded', () => {
     changeAvatarBtn.addEventListener('click', () => {
       avatarFileInput.click();
     });
+    changeAvatarBtn.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        avatarFileInput.click();
+      }
+    });
 
     function closeAvatarCrop() {
       if (avatarCropModal) {
@@ -7860,8 +7992,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!avatarCropState) return;
       try {
         const avatar = renderAvatarCropToJpeg(avatarCropState.image, avatarCropState.crop);
-        const profile = FinanceData.getProfile();
-        profile.avatar = avatar;
+        const profile = window.GastoProAvatarGallery.savePhoto(FinanceData.getProfile(), avatar);
         const result = FinanceData.saveProfile(profile, { queueSync: true });
         if (!result.success) {
           if (result.error && result.error.name === 'QuotaExceededError') {
@@ -7882,6 +8013,47 @@ document.addEventListener('DOMContentLoaded', () => {
           avatarCropError.hidden = false;
         }
       }
+    });
+  }
+
+  if (avatarGallery) {
+    avatarGallery.addEventListener('click', event => {
+      const option = event.target.closest('[data-avatar-preset]');
+      if (!option || !avatarGallery.contains(option)) return;
+      const value = option.dataset.avatarPreset;
+      if (!getProfileAvatarPreset(value)) return;
+      const profile = window.GastoProAvatarGallery.selectPreset(FinanceData.getProfile(), value);
+      const result = FinanceData.saveProfile(profile, { queueSync: true });
+      if (!result.success) {
+        showToast('Não foi possível salvar o avatar neste aparelho.');
+        return;
+      }
+      renderUserProfile();
+      showToast('Avatar atualizado.');
+      syncEditedProfile(profile);
+    });
+  }
+
+  if (removeProfilePhotoBtn) {
+    removeProfilePhotoBtn.addEventListener('click', () => {
+      const profile = window.GastoProAvatarGallery.removePhoto(FinanceData.getProfile());
+      const result = FinanceData.saveProfile(profile, { queueSync: true });
+      if (!result.success) {
+        showToast('Não foi possível remover a foto neste aparelho.');
+        return;
+      }
+      renderUserProfile();
+      showToast('Foto removida. Avatar restaurado.');
+      syncEditedProfile(profile);
+    });
+  }
+
+  if (drawerThemeToggleBtn && window.GastoProTheme) {
+    drawerThemeToggleBtn.addEventListener('click', () => {
+      window.GastoProTheme.toggleCurrentTheme();
+    });
+    document.addEventListener('gastopro:themechange', event => {
+      updateDrawerThemeToggle(event.detail.theme);
     });
   }
 
