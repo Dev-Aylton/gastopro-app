@@ -661,6 +661,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [ ] **RM-045 — Relatório para o contador (gerado no aparelho, sem custo)** / Ideia futura após a Etapa 4. Fase 1: CSV e relatório filtrado por conta, com ganhos e gastos por categoria. Fase 2, somente após ouvir 2 ou 3 contadores: nota ou comprovante, dedutível, com/sem nota, revenda/serviço e migration. O relatório é um organizador e não substitui informe de rendimentos nem nota fiscal.
 - [x] **RM-046 — Tela única de lançamento e menu lateral** / Descrição: formulário de gasto/ganho alternável sem duplicar IDs, confirmação após salvar, contadores neutros, itens laterais sem destaque falso e avatares ajustados. / Critério de pronto: testes funcionais sem falhas e medição geométrica nas sete larguras e nos dois temas.
 - [ ] **RM-047 — Redesenhar e atualizar o site-currículo (conta GitHub da faculdade), incluindo o GastoPro como projeto de portfólio.**
+- [x] **RM-048 — Sidebar e painel do usuário organizados por função** / Descrição: tema em local único e acesso a Fale comigo sem duplicação; painel separado em Perfil, Preferências, Conta, Dados e backup, Ajuda e Zona de perigo. / Critério de pronto: testes estruturais aprovados e medições geométricas nas sete larguras e nos dois temas.
 
 ### Em dúvida
 
@@ -676,7 +677,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 - Correção do reset: IDs remotos vivos de todas as coleções financeiras são buscados antes da limpeza local; exclusões descartadas pelo trigger são confirmadas e repetidas com versão posterior. Treze testes adicionados; suíte com 402 aprovados.
 - [x] RM-044 — Home unificada em desktop/mobile, resumo duplicado oculto, selects de pagamento alimentados por uma lista central, cartões de lançamentos reorganizados e avisos/reposicionamento do rodapé ajustados. Quatro testes adicionados; suíte com 389 aprovados.
-- [x] RM-046 — Sidebar e painel do usuário organizados por função, tema em um único local e acesso a Fale comigo sem duplicação. Um teste estrutural adicionado; suíte com 452 aprovados. Arquivos: `index.html`, `css/style.css`, `js/app.js`, `tests/gastopro.test.js`.
+- [x] RM-048 — Sidebar e painel do usuário organizados por função, tema em um único local e acesso a Fale comigo sem duplicação. Um teste estrutural adicionado; suíte com 452 aprovados. Arquivos: `index.html`, `css/style.css`, `js/app.js`, `tests/gastopro.test.js`.
 - [x] RM-043 — Corrigido zoom automático iOS em controles, cartões de aviso em coluna, nome em largura total, cabeçalho mobile e barra inferior; limpeza da chave legada em `clearAll` e `deleteAllUserData`. Cinco testes adicionados; suíte com 385 aprovados.
 - [x] Home no celular: cabeçalho centralizado com logo existente, chip de mês, destaque financeiro, faixa de avisos, resumo dos cartões, barra inferior e contraste nos dois temas. Três testes novos; suíte com 368 aprovados.
 - [x] RM-039 — Saldo real em destaque com aviso informativo das saídas pendentes no mês atual; grade de quatro blocos, cabeçalho sem sobreposição, barra inferior sem quebra forçada e abertura de telas no topo. A restauração automática da rolagem após atualização do Service Worker foi removida; somente “Atualizar dados” preserva a posição. Quatro testes adicionados; suíte com 372 aprovados.
