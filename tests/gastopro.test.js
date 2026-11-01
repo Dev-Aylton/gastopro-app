@@ -592,6 +592,117 @@ describe('Estados vazios das telas', () => {
       host.remove();
     }
   });
+
+  it('mantém cores por categoria, legenda percentual e fatias legíveis', () => {
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <section class="panel-box">
+        <div class="chart-wrapper">
+          <div class="category-chart-canvas"><canvas id="categoryChart"></canvas></div>
+          <ul id="categoryChartLegend" class="category-chart-legend"></ul>
+          <div id="chartEmptyMessage" class="chart-empty"></div>
+        </div>
+      </section>`;
+    document.body.appendChild(host);
+    const originalChart = window.Chart;
+    const previousChartInstance = state.chartInstance;
+    const previousTheme = document.documentElement.dataset.theme;
+    const chartConfigs = [];
+    window.Chart = function(canvas, config) {
+      chartConfigs.push(config);
+      this.destroy = () => {};
+    };
+    const parseRgb = value => value.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const normalizeColor = value => {
+      const hex = value.match(/^#([0-9a-f]{6})$/i);
+      return hex
+        ? `rgb(${parseInt(hex[1].slice(0, 2), 16)}, ${parseInt(hex[1].slice(2, 4), 16)}, ${parseInt(hex[1].slice(4, 6), 16)})`
+        : value;
+    };
+    const luminance = color => color.map(channel => channel / 255)
+      .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+      .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const contrast = (foreground, background) => {
+      const first = luminance(parseRgb(foreground));
+      const second = luminance(parseRgb(background));
+      return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+    };
+
+    try {
+      const categoryNames = GastoProCategories.EXPENSE.slice(0, 8);
+      const expenses = categoryNames.map((category, index) => ({
+        category, amount: 160 - index, type: 'variable'
+      }));
+      const layouts = [[320, 844], [390, 844], [1280, 900]];
+      for (const theme of ['dark', 'light']) {
+        document.documentElement.dataset.theme = theme;
+        const panel = host.querySelector('.panel-box');
+        for (const [width, height] of layouts) {
+          panel.style.width = `${width}px`;
+          panel.style.minHeight = `${height}px`;
+          renderCategoryChart([], expenses);
+          const config = chartConfigs[chartConfigs.length - 1];
+          const dataset = config.data.datasets[0];
+          assertEqual(config.data.labels.length, 8, `${width}px ${theme}: até oito fatias visíveis`);
+          assertEqual(new Set(dataset.backgroundColor).size, 8,
+            `${width}px ${theme}: categorias exibidas com cores distintas`);
+          const legendItems = [...host.querySelectorAll('#categoryChartLegend li')];
+          assertEqual(legendItems.length, 8, `${width}px ${theme}: legenda para cada fatia`);
+          const panelRect = panel.getBoundingClientRect();
+          const wrapperRect = host.querySelector('.chart-wrapper').getBoundingClientRect();
+          legendItems.forEach((item, index) => {
+            const rect = item.getBoundingClientRect();
+            const name = item.querySelector('.category-chart-legend-name');
+            const percentage = item.querySelector('.category-chart-legend-percentage');
+            const swatch = item.querySelector('.category-chart-legend-swatch');
+            assertTrue(rect.left >= panelRect.left - 1 && rect.right <= panelRect.right + 1,
+              `${width}px ${theme}: item da legenda dentro do cartão`);
+            assertTrue(name.scrollWidth <= name.clientWidth + 1,
+              `${width}px ${theme}: nome da categoria em uma linha, sem corte`);
+            assertTrue(/^\d+\.\d%$/.test(percentage.textContent),
+              `${width}px ${theme}: porcentagem da categoria na legenda`);
+            assertEqual(swatch.style.backgroundColor, normalizeColor(dataset.backgroundColor[index]),
+              `${width}px ${theme}: cor de legenda corresponde à fatia`);
+            assertTrue(contrast(swatch.style.backgroundColor, getComputedStyle(panel).backgroundColor) >= 3,
+              `${width}px ${theme}: contraste da fatia com o fundo >= 3:1`);
+          });
+          assertTrue(legendItems[legendItems.length - 1].getBoundingClientRect().bottom <= wrapperRect.bottom + 1,
+            `${width}px ${theme}: legenda inteira dentro do gráfico`);
+        }
+
+        const manyCategories = GastoProCategories.EXPENSE.map((category, index) => ({
+          category, amount: GastoProCategories.EXPENSE.length - index, type: 'variable'
+        }));
+        renderCategoryChart([], manyCategories);
+        const groupedConfig = chartConfigs[chartConfigs.length - 1];
+        assertEqual(groupedConfig.data.labels.length, 8, `${theme}: agrupa categorias além das sete maiores`);
+        assertEqual(groupedConfig.data.labels[7], 'Outros', `${theme}: fatia agrupada identificada como Outros`);
+        assertEqual(groupedConfig.data.datasets[0].data.reduce((sum, value) => sum + value, 0),
+          manyCategories.reduce((sum, item) => sum + item.amount, 0),
+          `${theme}: agrupamento mantém o total integral`);
+        groupedConfig.data.datasets[0].backgroundColor.forEach(color => {
+          assertTrue(contrast(normalizeColor(color), getComputedStyle(panel).backgroundColor) >= 3,
+            `${theme}: contraste da fatia agrupada >= 3:1`);
+        });
+      }
+
+      const repeatedColorConfig = chartConfigs[0];
+      renderCategoryChart([], [expenses[0]]);
+      assertEqual(chartConfigs[chartConfigs.length - 1].data.datasets[0].backgroundColor[0],
+        repeatedColorConfig.data.datasets[0].backgroundColor[0],
+        'mesma categoria mantém a mesma cor entre atualizações');
+      renderCategoryChart([], []);
+      assertEqual(host.querySelectorAll('#categoryChartLegend li').length, 0,
+        'legenda limpa quando não há dados');
+    } finally {
+      if (state.chartInstance) state.chartInstance.destroy();
+      state.chartInstance = previousChartInstance;
+      window.Chart = originalChart;
+      if (previousTheme) document.documentElement.dataset.theme = previousTheme;
+      else delete document.documentElement.dataset.theme;
+      host.remove();
+    }
+  });
 });
 
 describe('FinanceData — Contas Bancárias', () => {

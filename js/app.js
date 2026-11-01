@@ -4244,14 +4244,27 @@ function renderCategoryChart(fixed, variables) {
     catTotals.set(key, current);
   });
 
-  const labels = [...catTotals.values()].map(item => item.label);
-  const data = [...catTotals.values()].map(item => item.amount);
+  const categories = [...catTotals.values()].sort((first, second) => second.amount - first.amount);
+  const needsOtherGroup = categories.length > 8;
+  const visibleCategories = needsOtherGroup
+    ? categories.slice(0, 7).filter(item => GastoProCategories.normalize(item.label) !== 'outros')
+    : categories;
+  if (needsOtherGroup) {
+    const retainedKeys = new Set(visibleCategories.map(item => GastoProCategories.normalize(item.label)));
+    const otherAmount = categories
+      .filter(item => !retainedKeys.has(GastoProCategories.normalize(item.label)))
+      .reduce((sum, item) => sum + item.amount, 0);
+    visibleCategories.push({ label: 'Outros', amount: otherAmount });
+  }
+  const labels = visibleCategories.map(item => item.label);
+  const data = visibleCategories.map(item => item.amount);
 
   if (labels.length === 0) {
     if (state.chartInstance) {
       state.chartInstance.destroy();
       state.chartInstance = null;
     }
+    document.getElementById('categoryChartLegend')?.replaceChildren();
     ctx.style.display = 'none';
     if (emptyMsg) {
       emptyMsg.innerHTML = `
@@ -4269,10 +4282,44 @@ function renderCategoryChart(fixed, variables) {
   ctx.style.display = 'block';
   if (emptyMsg) emptyMsg.style.display = 'none';
 
-  const colors = [
-    '#6366f1', '#f59e0b', '#ec4899', '#10b981', '#3b82f6',
-    '#8b5cf6', '#14b8a6', '#f97316', '#a855f7', '#64748b'
+  const chartColors = [
+    '#d97706', '#2563eb', '#059669', '#db2777', '#8b5cf6', '#0f766e',
+    '#c2410c', '#65a30d', '#0891b2', '#9333ea', '#b45309', '#4d7c0f',
+    '#be123c', '#0369a1', '#ca8a04', '#a21caf'
   ];
+  const categoryColor = category => {
+    if (GastoProCategories.normalize(category) === 'outros') return '#64748b';
+    const index = knownCategories.findIndex(value =>
+      GastoProCategories.normalize(value) === GastoProCategories.normalize(category)
+    );
+    if (index >= 0) return chartColors[index % chartColors.length];
+    let hash = 0;
+    for (const character of GastoProCategories.normalize(category)) {
+      hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+    }
+    return chartColors[hash % chartColors.length];
+  };
+  const colors = visibleCategories.map(item => categoryColor(item.label));
+  const totalAmount = data.reduce((sum, amount) => sum + amount, 0);
+  const legend = document.getElementById('categoryChartLegend');
+  if (legend) {
+    legend.replaceChildren();
+    visibleCategories.forEach((item, index) => {
+      const legendItem = document.createElement('li');
+      const swatch = document.createElement('span');
+      const label = document.createElement('span');
+      const percentage = document.createElement('span');
+      swatch.className = 'category-chart-legend-swatch';
+      swatch.style.backgroundColor = colors[index];
+      swatch.setAttribute('aria-hidden', 'true');
+      label.className = 'category-chart-legend-name';
+      label.textContent = item.label;
+      percentage.className = 'category-chart-legend-percentage';
+      percentage.textContent = `${totalAmount ? (item.amount / totalAmount * 100).toFixed(1) : '0.0'}%`;
+      legendItem.append(swatch, label, percentage);
+      legend.appendChild(legendItem);
+    });
+  }
 
   if (typeof Chart === 'undefined') {
     console.info('Chart.js ainda não carregou ou está indisponível.');
@@ -4289,8 +4336,8 @@ function renderCategoryChart(fixed, variables) {
       labels: labels,
       datasets: [{
         data: data,
-        backgroundColor: colors.slice(0, labels.length),
-        borderColor: '#151a26',
+        backgroundColor: colors,
+        borderColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-card').trim(),
         borderWidth: 3,
         hoverOffset: 6
       }]
@@ -4299,21 +4346,12 @@ function renderCategoryChart(fixed, variables) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: {
-          position: 'right',
-          labels: {
-            boxWidth: 12,
-            padding: 12,
-            color: '#94a3b8',
-            font: { family: 'Inter', size: 11 }
-          }
-        },
+        legend: { display: false },
         tooltip: {
           callbacks: {
             label: function(c) {
               const val = c.raw || 0;
-              const sum = data.reduce((a, b) => a + b, 0);
-              const pct = ((val / sum) * 100).toFixed(1);
+              const pct = (totalAmount ? (val / totalAmount) * 100 : 0).toFixed(1);
               return ` ${c.label}: ${formatCurrency(val)} (${pct}%)`;
             }
           }

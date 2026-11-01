@@ -412,7 +412,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Sobre</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.18</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.19</span></p>
             <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Privacidade e LGPD</a>
             <div class="drawer-about-help">
             <h5 class="drawer-subsection-title">Ajuda</h5>
@@ -633,7 +633,10 @@
               </div>
             </div>
             <div class="chart-wrapper">
-              <canvas id="categoryChart"></canvas>
+              <div class="category-chart-canvas">
+                <canvas id="categoryChart"></canvas>
+              </div>
+              <ul id="categoryChartLegend" class="category-chart-legend" aria-label="Categorias e porcentagens dos gastos"></ul>
               <div id="chartEmptyMessage" class="chart-empty" style="display: none;"></div>
             </div>
           </div>
@@ -1046,7 +1049,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.18</span>
+          <span class="badge badge-version">v4.19</span>
         </div>
       </footer>
 

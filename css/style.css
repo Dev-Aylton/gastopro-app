@@ -3553,12 +3553,58 @@ button:active { transform: scale(0.98); }
 /* Chart */
 .chart-wrapper {
   position: relative;
-  height: 280px;
+  height: auto;
   width: 100%;
   min-width: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 0.75rem;
+}
+
+.category-chart-canvas {
+  position: relative;
+  flex: 0 0 220px;
+  width: min(100%, 420px);
+  height: 220px;
+}
+
+.category-chart-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.45rem 0.75rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.category-chart-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  min-height: 28px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.category-chart-legend-swatch {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.category-chart-legend-name {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.category-chart-legend-percentage {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .chart-empty {
@@ -7288,7 +7334,6 @@ video {
 .chart-wrapper {
   width: 100%;
   min-width: 0;
-  height: 280px;
 }
 
 .import-preview-section,
