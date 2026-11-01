@@ -458,7 +458,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 14 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
 | 15 | `20261105_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.16`. Suíte atual: **442 testes**.
+`CACHE_NAME` atual: `gastopro-v4.17`. Suíte atual: **442 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 

@@ -3981,10 +3981,10 @@ describe('Dashboard mobile', () => {
   });
 
   it('formata a versão exibida a partir do nome do cache do service worker', () => {
-    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.16'), 'v4.16');
+    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.17'), 'v4.17');
     assertNull(window.GastoProAppVersion.formatCacheName('other-v4.7'));
     assertEqual(window.GastoProAppVersion.getDisplayedVersion(null), 'v…');
-    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.16'), 'v4.16');
+    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.17'), 'v4.17');
   });
 
   it('usa o saldo filtrado das contas e o resultado mensal existente no destaque', () => {
