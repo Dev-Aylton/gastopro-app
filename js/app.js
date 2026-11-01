@@ -46,6 +46,13 @@ window.GastoProSessionHelpers = {
   getAccountSwitchAction(activeUserId, nextUserId, hasPendingSync, discardConfirmed = false) {
     if (!activeUserId || activeUserId === nextUserId || !hasPendingSync) return 'continue';
     return discardConfirmed ? 'discard-and-continue' : 'confirm-discard';
+  },
+
+  shouldNavigateToDashboard(event, previousUserId, userId, activatedUser) {
+    if (event === 'INITIAL_SESSION') {
+      return !previousUserId || previousUserId === userId || activatedUser;
+    }
+    return Boolean(activatedUser && previousUserId && previousUserId !== userId);
   }
 };
 
@@ -7697,9 +7704,17 @@ document.addEventListener('DOMContentLoaded', () => {
         feedbackViewState.messages = [];
       }
       feedbackViewState.userId = user.id;
+      const previousUserId = FinanceData.getActiveUserId();
       const switchedUser = FinanceData.activateUser(user.id);
       if (switchedUser) {
         resetAdminSession();
+      }
+      if (window.GastoProSessionHelpers.shouldNavigateToDashboard(
+        event,
+        previousUserId,
+        user.id,
+        switchedUser
+      )) {
         window.switchToView('dashboard');
       }
       if (switchedUser || event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {

@@ -361,6 +361,47 @@ describe('FinanceData — Lançamentos Pontuais', () => {
 });
 
 describe('FinanceData — Isolamento entre usuários', () => {
+  it('não navega ao dashboard em TOKEN_REFRESHED para o mesmo usuário', () => {
+    setupMockLocalStorage();
+    localStorage.setItem('gastopro_last_uid', 'user-same');
+
+    assertFalse(window.GastoProSessionHelpers.shouldNavigateToDashboard(
+      'TOKEN_REFRESHED', 'user-same', 'user-same', false
+    ));
+  });
+
+  it('grava o UID ausente em SIGNED_IN sem navegar ao dashboard', () => {
+    setupMockLocalStorage();
+    assertTrue(FinanceData.activateUser('user-first-signin'));
+
+    assertFalse(window.GastoProSessionHelpers.shouldNavigateToDashboard(
+      'SIGNED_IN', null, 'user-first-signin', true
+    ));
+    assertEqual(FinanceData.getActiveUserId(), 'user-first-signin');
+  });
+
+  it('navega e limpa os dados ao ativar um usuário diferente', () => {
+    setupMockLocalStorage();
+    localStorage.setItem('gastopro_last_uid', 'user-before-switch');
+    localStorage.setItem('gastopro_entries_v4_oct', JSON.stringify([
+      makeIncome({ id: 'entry-before-switch' })
+    ]));
+    const activatedUser = FinanceData.activateUser('user-after-switch');
+
+    assertTrue(activatedUser);
+    assertTrue(window.GastoProSessionHelpers.shouldNavigateToDashboard(
+      'SIGNED_IN', 'user-before-switch', 'user-after-switch', activatedUser
+    ));
+    assertEqual(FinanceData.getEntries(), []);
+    assertEqual(FinanceData.getActiveUserId(), 'user-after-switch');
+  });
+
+  it('navega ao dashboard em INITIAL_SESSION ao abrir o app', () => {
+    assertTrue(window.GastoProSessionHelpers.shouldNavigateToDashboard(
+      'INITIAL_SESSION', 'user-same', 'user-same', false
+    ));
+  });
+
   it('primeiro login deve preservar e marcar para sync os dados criados no modo local', () => {
     setupMockLocalStorage();
     const localEntry = makeIncome({ id: 'entry-guest-1' });
