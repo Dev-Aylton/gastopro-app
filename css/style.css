@@ -1427,6 +1427,79 @@ body {
   gap: 0.65rem;
 }
 
+.diagnostic-details {
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  padding: 0.65rem;
+  background: var(--bg-input);
+}
+
+.diagnostic-details > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--text-main);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.diagnostic-description,
+.diagnostic-status {
+  margin: 0.5rem 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 0.5rem;
+}
+
+.diagnostic-actions button {
+  min-height: 44px;
+  padding: 0.55rem 0.7rem;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.diagnostic-log-list {
+  display: grid;
+  gap: 0.55rem;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.diagnostic-log-entry,
+.diagnostic-log-empty {
+  min-width: 0;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: var(--text-main);
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-log-entry strong {
+  display: block;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-log-entry pre {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font: 0.76rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .drawer-subsection-title {
   margin: 0;
   color: var(--text-muted);

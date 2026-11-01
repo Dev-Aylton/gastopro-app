@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.29-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.30-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-455%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-458%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -187,7 +187,7 @@ financeiro-app/
 │       ├── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
 │       └── 20261105_admin_consent.sql # Consentimentos e lista administrativa; criada, não aplicada
 ├── tests/
-│   ├── gastopro.test.js       # 455 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 458 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -458,7 +458,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 14 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
 | 15 | `20261105_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.29`. Suíte atual: **455 testes**.
+`CACHE_NAME` atual: `gastopro-v4.30`. Suíte atual: **458 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -478,7 +478,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **455 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **458 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -664,6 +664,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-048 — Sidebar e painel do usuário organizados por função** / Descrição: tema em local único e acesso a Fale comigo sem duplicação; painel separado em Perfil, Preferências, Conta, Dados e backup, Ajuda e Zona de perigo. / Critério de pronto: testes estruturais aprovados e medições geométricas nas sete larguras e nos dois temas.
 - [x] **RM-049 — Painel administrativo reorganizado** / Descrição: hierarquia visual, indicadores e mensagens organizados e responsivos; sem campos de registros financeiros individuais. / Critério de pronto: testes estruturais aprovados e conferência responsiva nos dois temas.
 - [x] **RM-050 — Zona de perigo e textos longos resilientes** / Descrição: descrições originais das ações destrutivas restauradas; e-mails longos do Admin podem quebrar em separadores sem overflow horizontal. / Critério de pronto: suíte automatizada aprovada e conferência responsiva nos dois temas.
+- [x] **RM-051 — Diagnóstico local temporário de sessão e navegação** / Descrição: registro circular local com eventos de autenticação, navegação, ciclo de vida, sincronização, Service Worker e Admin; leitura, cópia e limpeza no Painel do Usuário, sem armazenar identificadores pessoais. / Critério de pronto: 458 testes aprovados e medições geométricas nas sete larguras e nos dois temas. / Arquivos: `index.html`, `js/app.js`, `js/supabase.js`, `css/style.css`, `tests/gastopro.test.js`.
 
 ### Em dúvida
 
@@ -674,6 +675,10 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 ---
 
 ## 📋 Changelog
+
+### v4.30 — 01/11/2026 (versão atual)
+
+- RM-051: diagnóstico temporário salvo somente no aparelho, com limite circular de 100 registros, sem UID/e-mail e sem chamada de rede pelo logger; lista legível, copiar e limpar no Painel do Usuário. Três testes adicionados; suíte com 458 testes aprovados.
 
 ### Planejamento (sem versão)
 
@@ -720,7 +725,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - Canal "Fale comigo": mensagens autenticadas e respostas armazenadas somente no Supabase, com exclusão pelo usuário, limite de envio e migração SQL pendente de aplicação manual.
 - Ajustes responsivos para telas estreitas e reorganização do Painel do Usuário: ações irreversíveis recolhidas por padrão, logout neutro e correções de alinhamento e overflow.
 
-### v4.29 — 01/11/2026 (versão atual)
+### v4.29 — 01/11/2026
 
 - RM-050: descrições originais restauradas na zona de perigo; e-mails longos no Admin quebram apenas em separadores; suíte com 455 testes aprovados.
 

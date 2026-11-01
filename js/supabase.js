@@ -755,14 +755,35 @@ const SupabaseAuth = {
     return user.id;
   },
 
-  async checkIsAdmin() {
-    if (!this.client) return false;
+  async checkIsAdmin(onDiagnosticResult) {
+    const reportResult = result => {
+      if (typeof onDiagnosticResult !== 'function') return;
+      try {
+        onDiagnosticResult(result);
+      } catch {
+        // Instrumentação opcional não altera a verificação de acesso.
+      }
+    };
+    if (!this.client) {
+      reportResult('not-admin');
+      return false;
+    }
     try {
       const sessionState = await this.getSessionState();
-      if (sessionState.status !== 'authenticated') return false;
+      if (sessionState.status !== 'authenticated') {
+        reportResult(sessionState.status === 'indeterminate' ? 'error' : 'not-admin');
+        return false;
+      }
       const { data, error } = await this.client.rpc('is_admin');
-      return !error && data === true;
+      if (error) {
+        reportResult('error');
+        return false;
+      }
+      const isAdmin = data === true;
+      reportResult(isAdmin ? 'admin' : 'not-admin');
+      return isAdmin;
     } catch (error) {
+      reportResult('error');
       console.warn('[Supabase] Não foi possível confirmar acesso administrativo:', error);
       return false;
     }

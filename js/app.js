@@ -333,6 +333,224 @@ const VIEW_TITLES = {
   admin:     'Admin'
 };
 
+const DIAGNOSTIC_LOG_KEY = 'gastopro_diagnostic_log_v1';
+const DIAGNOSTIC_LOG_LIMIT = 100;
+const DIAGNOSTIC_EVENT_TYPES = new Set([
+  'auth-state', 'view-switch', 'page-load', 'pageshow', 'visibilitychange',
+  'focus', 'online', 'offline', 'sync', 'refresh', 'controllerchange', 'admin-check'
+]);
+const DIAGNOSTIC_VIEW_IDS = new Set(Object.keys(VIEW_TITLES));
+const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
+  'auth-state': ['event', 'previousUidPresent', 'uidEqualsPrevious', 'activation'],
+  'view-switch': ['from', 'to', 'dashboard', 'stack'],
+  'page-load': ['navigationType'],
+  pageshow: ['persisted'],
+  visibilitychange: ['state'],
+  focus: [],
+  online: [],
+  offline: [],
+  sync: ['phase', 'source', 'result'],
+  refresh: ['phase', 'result'],
+  controllerchange: [],
+  'admin-check': ['phase', 'result', 'buttonVisibleBefore', 'buttonVisibleAfter']
+});
+
+function getLocalDiagnosticTime(date = new Date()) {
+  const pad = value => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function normalizeDiagnosticData(type, data) {
+  const allowedKeys = DIAGNOSTIC_ALLOWED_DATA_KEYS[type];
+  if (!allowedKeys || !data || typeof data !== 'object') return {};
+  const normalized = {};
+  allowedKeys.forEach(key => {
+    const value = data[key];
+    if (key === 'event') {
+      if (typeof value === 'string' && /^[A-Z_]{1,40}$/.test(value)) normalized[key] = value;
+    } else if (key === 'previousUidPresent' || key === 'activation' ||
+      key === 'dashboard' || key === 'persisted' ||
+      key === 'buttonVisibleBefore' || key === 'buttonVisibleAfter') {
+      if (typeof value === 'boolean') normalized[key] = value;
+    } else if (key === 'uidEqualsPrevious' &&
+      ['yes', 'no', 'without-previous'].includes(value)) {
+      normalized[key] = value;
+    } else if (key === 'from' || key === 'to') {
+      normalized[key] = DIAGNOSTIC_VIEW_IDS.has(value) ? value : 'unknown';
+    } else if (key === 'stack' && Array.isArray(value)) {
+      normalized[key] = value
+        .filter(line => typeof line === 'string' && /^[\w.-]+\.js:\d+$/.test(line))
+        .slice(0, 6);
+    } else if (key === 'navigationType' &&
+      ['navigate', 'reload', 'back_forward'].includes(value)) {
+      normalized[key] = value;
+    } else if (key === 'state' && ['hidden', 'visible'].includes(value)) {
+      normalized[key] = value;
+    } else if (key === 'phase' && ['start', 'end'].includes(value)) {
+      normalized[key] = value;
+    } else if (key === 'source' && ['automatic', 'realtime', 'manual'].includes(value)) {
+      normalized[key] = value;
+    } else if (key === 'result' &&
+      ['success', 'failure', 'admin', 'not-admin', 'error'].includes(value)) {
+      normalized[key] = value;
+    }
+  });
+  return normalized;
+}
+
+window.GastoProDiagnostics = {
+  key: DIAGNOSTIC_LOG_KEY,
+
+  record(type, data = {}) {
+    try {
+      if (!DIAGNOSTIC_EVENT_TYPES.has(type)) return;
+      const entries = this.list();
+      entries.push({
+        time: getLocalDiagnosticTime(),
+        type,
+        view: DIAGNOSTIC_VIEW_IDS.has(state.currentView) ? state.currentView : 'unknown',
+        data: normalizeDiagnosticData(type, data)
+      });
+      localStorage.setItem(DIAGNOSTIC_LOG_KEY, JSON.stringify(entries.slice(-DIAGNOSTIC_LOG_LIMIT)));
+      if (diagnosticDetails && diagnosticDetails.open) renderDiagnosticLog();
+    } catch {
+      // O registro é diagnóstico local e nunca deve interromper o app.
+    }
+  },
+
+  list() {
+    try {
+      const stored = localStorage.getItem(DIAGNOSTIC_LOG_KEY);
+      if (!stored) return [];
+      const entries = JSON.parse(stored);
+      if (!Array.isArray(entries)) return [];
+      return entries.filter(entry => entry && typeof entry === 'object' &&
+        typeof entry.time === 'string' && DIAGNOSTIC_EVENT_TYPES.has(entry.type) &&
+        typeof entry.view === 'string' && entry.data && typeof entry.data === 'object')
+        .map(entry => ({
+          time: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(entry.time)
+            ? entry.time
+            : getLocalDiagnosticTime(),
+          type: entry.type,
+          view: DIAGNOSTIC_VIEW_IDS.has(entry.view) ? entry.view : 'unknown',
+          data: normalizeDiagnosticData(entry.type, entry.data)
+        }))
+        .slice(-DIAGNOSTIC_LOG_LIMIT);
+    } catch {
+      return [];
+    }
+  },
+
+  clear() {
+    try {
+      localStorage.removeItem(DIAGNOSTIC_LOG_KEY);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  formatEntry(entry) {
+    return `${entry.time} | ${entry.type} | tela: ${entry.view} | ${JSON.stringify(entry.data)}`;
+  }
+};
+
+function renderDiagnosticLog() {
+  const list = document.getElementById('diagnosticLogList');
+  if (!list) return;
+  list.replaceChildren();
+  const entries = window.GastoProDiagnostics.list().reverse();
+  if (!entries.length) {
+    const empty = document.createElement('li');
+    empty.className = 'diagnostic-log-empty';
+    empty.textContent = 'Nenhum evento registrado.';
+    list.appendChild(empty);
+    return;
+  }
+  entries.forEach(entry => {
+    const item = document.createElement('li');
+    item.className = 'diagnostic-log-entry';
+    const heading = document.createElement('strong');
+    heading.textContent = `${entry.time} · ${entry.type} · ${entry.view}`;
+    const details = document.createElement('pre');
+    details.textContent = JSON.stringify(entry.data, null, 2);
+    item.append(heading, details);
+    list.appendChild(item);
+  });
+}
+
+const diagnosticDetails = document.getElementById('diagnosticDetails');
+const diagnosticCopyButton = document.getElementById('diagnosticCopyButton');
+const diagnosticClearButton = document.getElementById('diagnosticClearButton');
+const diagnosticStatus = document.getElementById('diagnosticStatus');
+
+if (diagnosticDetails) {
+  diagnosticDetails.addEventListener('toggle', () => {
+    if (diagnosticDetails.open) renderDiagnosticLog();
+  });
+}
+if (diagnosticCopyButton) {
+  diagnosticCopyButton.addEventListener('click', async () => {
+    const text = window.GastoProDiagnostics.list()
+      .slice()
+      .reverse()
+      .map(entry => window.GastoProDiagnostics.formatEntry(entry))
+      .join('\n');
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+        throw new Error('Clipboard indisponível.');
+      }
+      await navigator.clipboard.writeText(text);
+      if (diagnosticStatus) diagnosticStatus.textContent = 'Registro copiado.';
+    } catch {
+      if (diagnosticStatus) diagnosticStatus.textContent = 'Não foi possível copiar neste navegador.';
+    }
+  });
+}
+if (diagnosticClearButton) {
+  diagnosticClearButton.addEventListener('click', () => {
+    const cleared = window.GastoProDiagnostics.clear();
+    renderDiagnosticLog();
+    if (diagnosticStatus) {
+      diagnosticStatus.textContent = cleared
+        ? 'Registro apagado.'
+        : 'Não foi possível apagar o registro neste aparelho.';
+    }
+  });
+}
+
+let pageNavigationType = 'navigate';
+try {
+  const navigationEntry = performance.getEntriesByType('navigation')[0];
+  if (navigationEntry && ['navigate', 'reload', 'back_forward'].includes(navigationEntry.type)) {
+    pageNavigationType = navigationEntry.type;
+  }
+} catch {
+  // A disponibilidade de Navigation Timing varia entre navegadores.
+}
+window.GastoProDiagnostics.record('page-load', { navigationType: pageNavigationType });
+window.addEventListener('pageshow', event => {
+  window.GastoProDiagnostics.record('pageshow', { persisted: event.persisted === true });
+});
+document.addEventListener('visibilitychange', () => {
+  window.GastoProDiagnostics.record('visibilitychange', {
+    state: document.visibilityState === 'hidden' ? 'hidden' : 'visible'
+  });
+});
+window.addEventListener('focus', () => window.GastoProDiagnostics.record('focus'));
+window.addEventListener('online', () => window.GastoProDiagnostics.record('online'));
+window.addEventListener('offline', () => window.GastoProDiagnostics.record('offline'));
+try {
+  if (navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.GastoProDiagnostics.record('controllerchange');
+    });
+  }
+} catch {
+  // Service Worker APIs are not available in every browsing context.
+}
+
 const LAST_VIEW_STORAGE_KEY = 'gastopro_last_view_v1';
 const PERSISTED_VIEW_IDS = Object.freeze(Object.keys(VIEW_TITLES));
 const APP_RELOAD_STATE_KEY = 'gastopro_app_reload_state_v1';
@@ -1809,27 +2027,47 @@ function renderAdminView() {
 
 async function refreshAdminBadge() {
   const requestId = ++adminViewState.requestId;
-  const isAdmin = await window.SupabaseAuth.checkIsAdmin();
-  if (requestId !== adminViewState.requestId) return false;
-  adminViewState.access = isAdmin ? 'allowed' : 'denied';
-  if (!isAdmin) {
-    adminViewState.newCount = 0;
-    adminViewState.messages = [];
-    adminViewState.editingId = null;
-  } else {
-    const result = await window.SupabaseAuth.countNewFeedback();
+  const navItem = document.getElementById('navAdmin');
+  const buttonVisibleBefore = Boolean(navItem && !navItem.hidden);
+  let checkResult = 'error';
+  window.GastoProDiagnostics.record('admin-check', {
+    phase: 'start',
+    buttonVisibleBefore,
+    buttonVisibleAfter: buttonVisibleBefore
+  });
+  try {
+    const isAdmin = await window.SupabaseAuth.checkIsAdmin(result => {
+      if (['admin', 'not-admin', 'error'].includes(result)) checkResult = result;
+    });
     if (requestId !== adminViewState.requestId) return false;
-    if (result.success) {
-      adminViewState.newCount = result.count;
-    } else {
+    adminViewState.access = isAdmin ? 'allowed' : 'denied';
+    if (!isAdmin) {
       adminViewState.newCount = 0;
-      console.warn('[GastoPro] Não foi possível atualizar o contador de mensagens novas:', result.error);
+      adminViewState.messages = [];
+      adminViewState.editingId = null;
+    } else {
+      const result = await window.SupabaseAuth.countNewFeedback();
+      if (requestId !== adminViewState.requestId) return false;
+      if (result.success) {
+        adminViewState.newCount = result.count;
+      } else {
+        adminViewState.newCount = 0;
+        console.warn('[GastoPro] Não foi possível atualizar o contador de mensagens novas:', result.error);
+      }
     }
+    updateAdminNavigation();
+    if (state.currentView === 'admin') renderAdminView();
+    if (state.currentView === 'admin') renderAdminAnalytics();
+    return isAdmin;
+  } finally {
+    const currentNavItem = document.getElementById('navAdmin');
+    window.GastoProDiagnostics.record('admin-check', {
+      phase: 'end',
+      result: checkResult,
+      buttonVisibleBefore,
+      buttonVisibleAfter: Boolean(currentNavItem && !currentNavItem.hidden)
+    });
   }
-  updateAdminNavigation();
-  if (state.currentView === 'admin') renderAdminView();
-  if (state.currentView === 'admin') renderAdminAnalytics();
-  return isAdmin;
 }
 
 async function loadAdminMessages({ reset = false } = {}) {
@@ -2003,6 +2241,19 @@ window.GastoProScrollTop = {
  * @param {string} viewId - ID definido em VIEW_TITLES.
  */
 window.switchToView = function(viewId) {
+  const stack = new Error().stack;
+  const stackLines = typeof stack === 'string'
+    ? stack.split('\n').slice(1, 7).map(line => {
+      const match = line.match(/([\w.-]+\.js):(\d+):\d+/);
+      return match ? `${match[1]}:${match[2]}` : '';
+    })
+    : [];
+  window.GastoProDiagnostics.record('view-switch', {
+    from: state.currentView,
+    to: viewId,
+    dashboard: viewId === 'dashboard',
+    stack: stackLines
+  });
   // Ignora IDs de tela desconhecidos para evitar erros silenciosos
   if (!VIEW_TITLES[viewId]) return;
   state.currentView = viewId;
@@ -7380,7 +7631,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!window.SupabaseAuth || typeof window.SupabaseAuth.subscribeToSyncChanges !== 'function') return;
     try {
       window.SupabaseAuth.subscribeToSyncChanges(userId, change => {
-        if (localStorage.getItem('gastopro_last_uid') === userId) applyRealtimeChange(change, userId);
+        if (localStorage.getItem('gastopro_last_uid') !== userId) return;
+        window.GastoProDiagnostics.record('sync', { phase: 'start', source: 'realtime' });
+        let result = 'success';
+        try {
+          applyRealtimeChange(change, userId);
+        } catch (error) {
+          result = 'failure';
+          throw error;
+        } finally {
+          window.GastoProDiagnostics.record('sync', {
+            phase: 'end',
+            source: 'realtime',
+            result
+          });
+        }
       }, status => {
         console.warn('[GastoPro] Realtime indisponível; a sincronização será retomada ao voltar ao app.', status);
         window.SupabaseAuth.unsubscribeFromSyncChanges();
@@ -7401,7 +7666,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return false;
     }
     if (activeSyncs.has(sessionUser.id)) return activeSyncs.get(sessionUser.id);
-    return automaticSyncGate.run(now, () => syncAction(sessionUser.id));
+    return automaticSyncGate.run(now, () => syncAction === syncUserDataFromCloud
+      ? syncAction(sessionUser.id, 'automatic')
+      : syncAction(sessionUser.id));
   }
 
   window.GastoProSyncLifecycle = {
@@ -7421,10 +7688,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  async function syncUserDataFromCloud(userId) {
+  async function syncUserDataFromCloud(userId, source = 'manual') {
     if (!window.SupabaseAuth || !userId) return;
     if (activeSyncs.has(userId)) return activeSyncs.get(userId);
 
+    window.GastoProDiagnostics.record('sync', { phase: 'start', source });
     const syncPromise = (async () => {
       try {
         const sessionUser = await window.SupabaseAuth.getSessionUser();
@@ -7519,10 +7787,18 @@ document.addEventListener('DOMContentLoaded', () => {
     })();
 
     activeSyncs.set(userId, syncPromise);
+    let syncSucceeded = false;
     try {
-      return await syncPromise;
+      const result = await syncPromise;
+      syncSucceeded = result === true;
+      return result;
     } finally {
       activeSyncs.delete(userId);
+      window.GastoProDiagnostics.record('sync', {
+        phase: 'end',
+        source,
+        result: syncSucceeded ? 'success' : 'failure'
+      });
     }
   }
 
@@ -7613,11 +7889,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (window.SupabaseAuth) {
     window.SupabaseAuth.onAuthStateChange((event, user) => {
+      const previousUserId = FinanceData.getActiveUserId();
+      const recordAuthState = activatedUser => {
+        window.GastoProDiagnostics.record('auth-state', {
+          event,
+          previousUidPresent: Boolean(previousUserId),
+          uidEqualsPrevious: !previousUserId
+            ? 'without-previous'
+            : user && previousUserId === user.id ? 'yes' : 'no',
+          activation: activatedUser
+        });
+      };
       if (event === 'PASSWORD_RECOVERY') {
+        recordAuthState(false);
         openPasswordRecovery();
         return;
       }
       if (event === 'SIGNED_OUT' || (!user && event === 'TOKEN_REFRESHED')) {
+        recordAuthState(false);
         resetAdminSession();
         feedbackViewState.requestId++;
         feedbackViewState.loading = false;
@@ -7634,7 +7923,10 @@ document.addEventListener('DOMContentLoaded', () => {
         clearUserSessionData();
         return;
       }
-      if (!user) return;
+      if (!user) {
+        recordAuthState(false);
+        return;
+      }
 
       if (feedbackViewState.userId && feedbackViewState.userId !== user.id) {
         feedbackViewState.requestId++;
@@ -7642,8 +7934,8 @@ document.addEventListener('DOMContentLoaded', () => {
         feedbackViewState.messages = [];
       }
       feedbackViewState.userId = user.id;
-      const previousUserId = FinanceData.getActiveUserId();
       const switchedUser = FinanceData.activateUser(user.id);
+      recordAuthState(switchedUser);
       if (switchedUser) {
         resetAdminSession();
       }
@@ -8392,6 +8684,8 @@ document.addEventListener('DOMContentLoaded', () => {
   async function handleAppRefresh() {
     if (isRefreshing) return;
     isRefreshing = true;
+    window.GastoProDiagnostics.record('refresh', { phase: 'start' });
+    let refreshResult = 'success';
     const viewSnapshot = captureAppViewState();
 
     // Ativa animação de rotação contínua nos ícones
@@ -8410,7 +8704,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const user = await window.SupabaseAuth.getSessionUser();
         if (user && user.id) {
           hasCloudSession = true;
-          isCloud = await syncUserDataFromCloud(user.id);
+          isCloud = await syncUserDataFromCloud(user.id, 'manual');
         }
       }
 
@@ -8436,6 +8730,7 @@ document.addEventListener('DOMContentLoaded', () => {
       closeMobileSidebar();
       closeProfileDrawer();
     } catch (err) {
+      refreshResult = 'failure';
       console.warn('[GastoPro] Erro durante o refresh:', err);
       trackUsageEvent('sync_error');
       restoreAppViewState(viewSnapshot);
@@ -8444,6 +8739,10 @@ document.addEventListener('DOMContentLoaded', () => {
       icons.forEach(icon => icon.classList.remove('spinning'));
       btns.forEach(btn => btn.classList.remove('refreshing'));
       isRefreshing = false;
+      window.GastoProDiagnostics.record('refresh', {
+        phase: 'end',
+        result: refreshResult
+      });
     }
   }
 

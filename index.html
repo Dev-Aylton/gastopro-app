@@ -400,7 +400,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.29</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.30</span></p>
             <div class="drawer-about-help">
             <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
               <div class="action-icon bg-primary-soft">
@@ -420,6 +420,18 @@
                 <span>Enviar mensagem e acompanhar respostas</span>
               </div>
             </button>
+            <details class="diagnostic-details" id="diagnosticDetails">
+              <summary>Diagnóstico (temporário)</summary>
+              <p class="diagnostic-description">
+                O registro fica só neste aparelho e não é enviado a ninguém.
+              </p>
+              <div class="diagnostic-actions">
+                <button type="button" class="btn-secondary" id="diagnosticCopyButton">Copiar registro</button>
+                <button type="button" class="btn-secondary" id="diagnosticClearButton">Limpar registro</button>
+              </div>
+              <p class="diagnostic-status" id="diagnosticStatus" role="status" aria-live="polite"></p>
+              <ol class="diagnostic-log-list" id="diagnosticLogList" aria-label="Eventos de diagnóstico"></ol>
+            </details>
             <div class="how-to-use-section">
               <h5 class="drawer-section-title">Como usar</h5>
               <div class="how-to-use-topics" id="howToUseTopics"></div>
@@ -1041,7 +1053,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.29</span>
+          <span class="badge badge-version">v4.30</span>
         </div>
       </footer>
 

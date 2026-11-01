@@ -473,6 +473,70 @@ describe('FinanceData — Isolamento entre usuários', () => {
   });
 });
 
+describe('Diagnóstico local temporário', () => {
+  setupMockLocalStorage();
+
+  it('mantém somente as 100 entradas mais recentes', () => {
+    const diagnostics = window.GastoProDiagnostics;
+    diagnostics.clear();
+    for (let index = 0; index < 105; index++) {
+      diagnostics.record('auth-state', {
+        event: index % 2 === 0 ? 'SIGNED_IN' : 'INITIAL_SESSION',
+        previousUidPresent: false,
+        uidEqualsPrevious: 'without-previous',
+        activation: true
+      });
+    }
+
+    const entries = diagnostics.list();
+    assertEqual(entries.length, 100);
+    assertEqual(entries[0].data.event, 'INITIAL_SESSION');
+    assertEqual(entries[99].data.event, 'SIGNED_IN');
+  });
+
+  it('não chama rede nem armazena UID ou e-mail recebidos como campos extras', () => {
+    const diagnostics = window.GastoProDiagnostics;
+    const originalFetch = window.fetch;
+    let fetchCalls = 0;
+    const fakeUid = 'fake-user-diagnostic-17';
+    const fakeEmail = 'diagnostic-fake@example.invalid';
+    try {
+      diagnostics.clear();
+      window.fetch = (...args) => {
+        fetchCalls++;
+        return originalFetch(...args);
+      };
+      diagnostics.record('auth-state', {
+        event: 'SIGNED_IN',
+        previousUidPresent: true,
+        uidEqualsPrevious: 'no',
+        activation: true,
+        userId: fakeUid,
+        uid: fakeUid,
+        email: fakeEmail
+      });
+      const serialized = localStorage.getItem(diagnostics.key);
+
+      assertEqual(fetchCalls, 0);
+      assertFalse(serialized.includes(fakeUid));
+      assertFalse(serialized.includes(fakeEmail));
+      assertFalse(/fetch|XMLHttpRequest|sendBeacon|Supabase/i.test(diagnostics.record.toString()));
+    } finally {
+      window.fetch = originalFetch;
+      diagnostics.clear();
+    }
+  });
+
+  it('limpa o registro local', () => {
+    const diagnostics = window.GastoProDiagnostics;
+    diagnostics.record('focus');
+    assertTrue(diagnostics.list().length > 0);
+
+    assertTrue(diagnostics.clear());
+    assertEqual(diagnostics.list(), []);
+  });
+});
+
 describe('FinanceData — Metas por Categoria', () => {
   setupMockLocalStorage();
 
