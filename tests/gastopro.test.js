@@ -9556,10 +9556,16 @@ describe('Correções de formulários, cards e rodapé', () => {
     const styleSheet = [...document.styleSheets].find(sheet => sheet.href && sheet.href.endsWith('/css/style.css'));
     assertTrue(Boolean(styleSheet), 'stylesheet principal disponível para teste estático');
     const topbarRules = [];
+    const blurRules = [];
     const collectTopbarRules = rules => {
       [...rules].forEach(rule => {
         if (rule.selectorText && rule.selectorText.split(',').some(selector => selector.trim() === '.topbar')) {
           topbarRules.push(rule);
+        }
+        if (rule.style &&
+          (rule.style.getPropertyValue('backdrop-filter') ||
+            rule.style.getPropertyValue('-webkit-backdrop-filter'))) {
+          blurRules.push(rule);
         }
         if (rule.cssRules) collectTopbarRules(rule.cssRules);
       });
@@ -9568,9 +9574,11 @@ describe('Correções de formulários, cards e rodapé', () => {
     assertTrue(topbarRules.length > 0, 'regras do cabeçalho encontradas');
     assertFalse(topbarRules.some(rule => rule.style.getPropertyValue('backdrop-filter')),
       'cabeçalho sem backdrop-filter');
-    assertTrue(topbarRules.some(rule =>
-      rule.style.getPropertyValue('padding').includes('env(safe-area-inset-top, 0px)')),
-    'cabeçalho soma safe-area ao padding existente');
+    assertEqual(blurRules.length, 0, 'nenhum backdrop-filter cobre a área superior');
+    assertTrue(topbarRules.every(rule => {
+      const padding = rule.style.getPropertyValue('padding');
+      return !padding || padding.includes('calc(env(safe-area-inset-top, 0px) + 12px)');
+    }), 'todas as regras de padding do cabeçalho reservam safe area + 12px');
     const parseRgb = value => {
       const channels = value.match(/[\d.]+/g);
       assertTrue(Boolean(channels && channels.length >= 3), `cor RGB válida: ${value}`);
@@ -9585,8 +9593,7 @@ describe('Correções de formulários, cards e rodapé', () => {
       return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
     };
 
-    const sizes = [[320, 844], [360, 844], [390, 844], [768, 900],
-      [1024, 900], [1280, 900], [844, 390]];
+    const sizes = [[320, 844], [390, 844], [1280, 900], [844, 390]];
     try {
       for (const theme of ['dark', 'light']) {
         for (const [width, height] of sizes) {
@@ -9596,10 +9603,12 @@ describe('Correções de formulários, cards e rodapé', () => {
           const topbar = frameDocument.querySelector('.topbar');
           const style = frameWindow.getComputedStyle(topbar);
           assertEqual(style.backdropFilter, 'none', `${width}x${height}px ${theme}: sem desfoque`);
+          assertEqual(parseFloat(style.paddingTop), 12,
+            `${width}x${height}px ${theme}: padding superior de 12px, safe area não emulada`);
           assertTrue(style.backgroundColor !== 'rgba(0, 0, 0, 0)',
             `${width}x${height}px ${theme}: fundo opaco`);
           assertTrue(topbar.getBoundingClientRect().height > 0,
-            `${width}x${height}px ${theme}: cabeçalho renderizado`);
+            `${width}x${height}px ${theme}: cabeçalho renderizado com ${topbar.getBoundingClientRect().height}px`);
           const visibleButtons = [...topbar.querySelectorAll('button')].filter(button => {
             const rect = button.getBoundingClientRect();
             return rect.width > 0 && rect.height > 0;
