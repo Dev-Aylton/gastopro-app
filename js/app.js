@@ -7248,10 +7248,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       confirmDiscardPendingBtn.disabled = true;
       try {
+        const previousUserId = FinanceData.getActiveUserId();
         FinanceData.clearUserData();
         if (!FinanceData.activateUser(user.id)) {
           throw new Error('Não foi possível preparar os dados da nova conta.');
         }
+        if (previousUserId && previousUserId !== user.id) window.switchToView('dashboard');
         pendingAccountSwitchUser = null;
         closeDiscardPendingModal();
         closeAuth();
@@ -7616,8 +7618,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function prepareAuthenticatedUser(user) {
     if (!user || !user.id) return null;
+    const previousUserId = FinanceData.getActiveUserId();
     const switchAction = window.GastoProSessionHelpers.getAccountSwitchAction(
-      FinanceData.getActiveUserId(),
+      previousUserId,
       user.id,
       FinanceData.hasPendingSync()
     );
@@ -7628,7 +7631,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const switchedUser = FinanceData.activateUser(user.id);
     setPaymentMethodSelection('income', getPaymentMethodPreference('income'), false);
     setPaymentMethodSelection('expense', getPaymentMethodPreference('expense'), false);
-    if (switchedUser) window.switchToView('dashboard');
+    if (switchedUser && previousUserId && previousUserId !== user.id) {
+      window.switchToView('dashboard');
+    }
     if (FinanceData.getActiveUserId() !== user.id) {
       showAuthAlert('Há alterações não sincronizadas da conta anterior. Entre novamente nessa conta para sincronizá-las.');
       try {
