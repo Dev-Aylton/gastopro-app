@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.27-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.28-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-452%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-454%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -187,7 +187,7 @@ financeiro-app/
 │       ├── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
 │       └── 20261105_admin_consent.sql # Consentimentos e lista administrativa; criada, não aplicada
 ├── tests/
-│   ├── gastopro.test.js       # 452 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 454 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -458,7 +458,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 14 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
 | 15 | `20261105_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.27`. Suíte atual: **452 testes**.
+`CACHE_NAME` atual: `gastopro-v4.28`. Suíte atual: **454 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -478,7 +478,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **452 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **454 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -662,6 +662,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-046 — Tela única de lançamento e menu lateral** / Descrição: formulário de gasto/ganho alternável sem duplicar IDs, confirmação após salvar, contadores neutros, itens laterais sem destaque falso e avatares ajustados. / Critério de pronto: testes funcionais sem falhas e medição geométrica nas sete larguras e nos dois temas.
 - [ ] **RM-047 — Redesenhar e atualizar o site-currículo (conta GitHub da faculdade), incluindo o GastoPro como projeto de portfólio.**
 - [x] **RM-048 — Sidebar e painel do usuário organizados por função** / Descrição: tema em local único e acesso a Fale comigo sem duplicação; painel separado em Perfil, Preferências, Conta, Dados e backup, Ajuda e Zona de perigo. / Critério de pronto: testes estruturais aprovados e medições geométricas nas sete larguras e nos dois temas.
+- [x] **RM-049 — Painel administrativo reorganizado** / Descrição: hierarquia visual, indicadores e mensagens organizados e responsivos; sem campos de registros financeiros individuais. / Critério de pronto: testes estruturais aprovados e conferência responsiva nos dois temas.
 
 ### Em dúvida
 
@@ -714,11 +715,15 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - Tema claro em preparação: a folha de estilos usa tokens semânticos com paleta escura preservada e uma paleta clara em validação.
 - Tutorial de primeiro acesso com dicas sobre lançamentos, contas fixas, dívidas, metas, importação, relatórios e dados; disponível novamente em “Como usar” no perfil.
 - RM-025 parte B: tela e modais de contas PF/PJ, vínculos em ganhos/gastos, saldo consolidado filtrável no Dashboard e duas funções puras cobertas por testes; cache do Service Worker atualizado.
-- Tema claro/escuro alternável no cabeçalho, escolhido no carregamento antes dos estilos e persistido por aparelho; limpeza de dados e restauração de backup preservam a preferência.
+- Tema claro/escuro alternável no rodapé do sidebar, escolhido no carregamento antes dos estilos e persistido por aparelho; limpeza de dados e restauração de backup preservam a preferência.
 - Canal "Fale comigo": mensagens autenticadas e respostas armazenadas somente no Supabase, com exclusão pelo usuário, limite de envio e migração SQL pendente de aplicação manual.
 - Ajustes responsivos para telas estreitas e reorganização do Painel do Usuário: ações irreversíveis recolhidas por padrão, logout neutro e correções de alinhamento e overflow.
 
-### v4.27 — 01/11/2026 (versão atual)
+### v4.28 — 01/11/2026 (versão atual)
+
+- Painel administrativo reorganizado, acesso visualmente restrito a indicadores agregados e abas responsivas; removidos o placeholder sem função do tema e as quebras proibidas. Dois testes adicionados; suíte com 454 aprovados.
+
+### v4.27 — 01/11/2026
 
 - Sidebar reorganizado por tarefa, tema fixado em um só lugar e acesso a Fale comigo unificado no painel; preferências, conta, backup e ajuda separados; 452 testes.
 

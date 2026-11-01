@@ -9184,7 +9184,7 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       'navDashboard', 'sidebarWizardBtn', 'navIncomes', 'sidebarIncomeCount',
       'navExpenses', 'sidebarExpenseCount', 'navCards', 'sidebarImportBtn',
       'navAccounts', 'navContact', 'navAdmin', 'adminNewCount',
-      'themeToggleDesktopPlaceholder', 'themeToggleBtn', 'themeToggleIcon', 'themeToggleLabel',
+      'themeToggleBtn', 'themeToggleIcon', 'themeToggleLabel',
       'profileDrawerOverlay', 'profileDrawer', 'closeDrawerBtn', 'avatarGallery',
       'removeProfilePhotoBtn', 'drawerPrivacyLink', 'accountGuestCard', 'accountLoggedCard',
       'openAuthModalBtn', 'logoutBtn', 'refreshAppBtn', 'refreshIcon', 'drawerRefreshBtn',
@@ -9197,6 +9197,7 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       .map(section => section.querySelector(':scope > .drawer-section-title, :scope > summary strong')?.textContent.trim());
 
     assertTrue(sidebar.contains(themeButton), 'Tema fixado no sidebar');
+    assertFalse(appDocument.getElementById('themeToggleDesktopPlaceholder'), 'placeholder de tema removido');
     assertEqual(appDocument.querySelectorAll('.theme-toggle-btn').length, 1, 'um botão de tema');
     assertEqual(appDocument.querySelectorAll('#navContact').length, 1, 'um acesso a Fale comigo');
     assertTrue(drawer.contains(navContact), 'Fale comigo dentro do painel');
@@ -9207,6 +9208,49 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     ]);
     assertEqual(expectedIds.filter(id => !allIds.includes(id)), [], 'IDs existentes preservados');
     assertEqual(allIds.filter((id, index) => allIds.indexOf(id) !== index), [], 'IDs sem duplicação');
+  });
+
+  itAsync('remove o encaixe e o reposicionamento responsivo obsoletos do tema', async () => {
+    const [htmlResponse, appResponse] = await Promise.all([
+      fetch('../index.html'),
+      fetch('../js/app.js')
+    ]);
+    assertTrue(htmlResponse.ok && appResponse.ok, 'Não foi possível carregar os arquivos do app.');
+    const html = await htmlResponse.text();
+    const appSource = await appResponse.text();
+    const appDocument = new DOMParser().parseFromString(html, 'text/html');
+    const themeButton = appDocument.getElementById('themeToggleBtn');
+
+    assertFalse(appDocument.getElementById('themeToggleDesktopPlaceholder'));
+    assertFalse(appSource.includes('setupResponsiveThemeToggle'));
+    assertTrue(appDocument.querySelector('#sidebar .sidebar-footer').contains(themeButton));
+    assertEqual(appDocument.querySelectorAll('.theme-toggle-btn').length, 1);
+  });
+
+  itAsync('mantém o painel administrativo sem campos de lançamentos', async () => {
+    const [htmlResponse, appResponse] = await Promise.all([
+      fetch('../index.html'),
+      fetch('../js/app.js')
+    ]);
+    assertTrue(htmlResponse.ok && appResponse.ok, 'Não foi possível carregar os arquivos do app.');
+    const appDocument = new DOMParser().parseFromString(await htmlResponse.text(), 'text/html');
+    const adminControls = appDocument.getElementById('view-admin')
+      .querySelectorAll('form, input, select, textarea');
+    const appSource = await appResponse.text();
+    const analyticsStart = appSource.indexOf('function renderAdminAnalytics() {');
+    const analyticsEnd = appSource.indexOf('async function loadAdminAnalytics() {', analyticsStart);
+    const messagesStart = appSource.indexOf('function renderAdminView() {');
+    const messagesEnd = appSource.indexOf('async function refreshAdminBadge() {', messagesStart);
+    const analyticsTemplate = appSource.slice(analyticsStart, analyticsEnd);
+    const messagesTemplate = appSource.slice(messagesStart, messagesEnd);
+
+    assertEqual(adminControls.length, 0, 'HTML administrativo sem controles de edição');
+    assertTrue(analyticsStart >= 0 && analyticsEnd > analyticsStart);
+    assertFalse(/<input\b|<select\b/i.test(analyticsTemplate));
+    assertFalse(/<input\b|<select\b/i.test(messagesTemplate));
+    assertEqual((messagesTemplate.match(/<textarea\b/gi) || []).length, 1,
+      'a única área editável responde mensagens');
+    assertTrue(messagesTemplate.includes('id="adminReplyText"'));
   });
 
   itAsync('não corta textos do painel do usuário em 320px e 390px', async () => {

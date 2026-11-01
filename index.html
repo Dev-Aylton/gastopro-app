@@ -199,7 +199,6 @@
             <span class="notifications-unread-count" id="notificationsUnreadCount" hidden>0</span>
           </button>
 
-          <span id="themeToggleDesktopPlaceholder" hidden aria-hidden="true"></span>
           <button class="user-avatar-btn" id="userMenuBtn" title="Menu do Usuário" aria-label="Abrir menu do usuário" aria-haspopup="dialog" aria-expanded="false">
             <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" class="user-avatar-sm" id="topbarAvatarImg" />
           </button>
@@ -401,7 +400,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.27</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.28</span></p>
             <div class="drawer-about-help">
             <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
               <div class="action-icon bg-primary-soft">
@@ -1000,10 +999,14 @@
               <div class="view-icon-badge"><i class="fa-solid fa-shield-halved"></i></div>
               <div>
                 <h2>Painel do administrador</h2>
-                <p>Indicadores gerais e mensagens do canal Fale comigo.</p>
+                <p>Indicadores agregados e mensagens do canal Fale comigo.</p>
               </div>
             </div>
           </div>
+          <p class="admin-privacy-note">
+            <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+            <span>Indicadores agregados; nenhum registro financeiro individual é exibido.</span>
+          </p>
           <div class="admin-panel-tabs" id="adminPanelTabs" role="tablist" aria-label="Seções administrativas">
             <button type="button" class="filter-btn active" id="adminAnalyticsTab" role="tab"
               aria-selected="true" aria-controls="adminAnalyticsContent" data-action="admin-panel-tab"
@@ -1035,7 +1038,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.27</span>
+          <span class="badge badge-version">v4.28</span>
         </div>
       </footer>
 
