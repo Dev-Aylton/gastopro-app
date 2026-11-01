@@ -703,6 +703,91 @@ describe('Estados vazios das telas', () => {
       host.remove();
     }
   });
+
+  it('renderiza cadastros em barras com eixos legíveis e contraste nos dois temas', () => {
+    const host = document.createElement('div');
+    host.id = 'adminAnalyticsContent';
+    host.className = 'panel-box admin-panel admin-analytics-panel';
+    document.body.appendChild(host);
+    const originalChart = window.Chart;
+    const previousAnalytics = { ...adminAnalyticsState };
+    const previousAdminAccess = adminViewState.access;
+    const previousTheme = document.documentElement.dataset.theme;
+    const chartConfigs = [];
+    window.Chart = function(canvas, config) {
+      chartConfigs.push(config);
+      this.destroy = () => {};
+    };
+
+    const parseRgb = value => {
+      const hex = value.match(/^#([0-9a-f]{6})$/i);
+      return hex
+        ? [0, 2, 4].map(index => parseInt(hex[1].slice(index, index + 2), 16))
+        : value.match(/[\d.]+/g).slice(0, 3).map(Number);
+    };
+    const luminance = color => color.map(channel => channel / 255)
+      .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+      .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const contrast = (foreground, background) => {
+      const first = luminance(parseRgb(foreground));
+      const second = luminance(parseRgb(background));
+      return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+    };
+
+    try {
+      adminViewState.access = 'allowed';
+      Object.assign(adminAnalyticsState, {
+        activeTab: 'analytics',
+        data: {
+          users: { total: 0, newWeek: 0, newMonth: 0, active7Days: 0, active30Days: 0 },
+          records: { entries: 0, fixedTemplates: 0, accounts: 0, cards: 0, goals: 0 },
+          feedback: { status: [], categories: [] },
+          usage: { screens: [], importsByDay: [], uniqueUsers30Days: 0, errors: [] },
+          registrations: Array.from({ length: 12 }, (_, index) => ({
+            period: `2026-${String(index + 1).padStart(2, '0')}`,
+            count: index + 1
+          }))
+        },
+        error: '',
+        loading: false,
+        growthChart: null,
+        importsChart: null,
+        userList: null
+      });
+
+      for (const theme of ['dark', 'light']) {
+        document.documentElement.dataset.theme = theme;
+        for (const width of [320, 390, 1280]) {
+          host.style.width = `${width}px`;
+          renderAdminAnalytics();
+          const config = chartConfigs[chartConfigs.length - 2];
+          const chart = host.querySelector('#adminGrowthChart');
+          const chartArea = chart.parentElement;
+          const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
+          const background = getComputedStyle(document.documentElement).getPropertyValue('--bg-card').trim();
+          assertEqual(config.type, 'bar', `${width}px ${theme}: cadastros usam barras`);
+          assertTrue(chartArea.getBoundingClientRect().width <= width + 1,
+            `${width}px ${theme}: gráfico cabe no contêiner`);
+          assertEqual(config.options.scales.x.ticks.maxRotation, 0,
+            `${width}px ${theme}: rótulos do eixo ficam em uma linha`);
+          assertTrue(config.options.scales.x.ticks.autoSkip &&
+            config.options.scales.x.ticks.maxTicksLimit <= 6,
+          `${width}px ${theme}: eixo reduz rótulos para evitar sobreposição`);
+          assertTrue(config.data.labels.every(label => !/[\r\n]/.test(label)),
+            `${width}px ${theme}: rótulos não têm quebra de linha`);
+          assertTrue(contrast(primary, background) >= 3,
+            `${width}px ${theme}: barras contrastam com o fundo em pelo menos 3:1`);
+        }
+      }
+    } finally {
+      Object.assign(adminAnalyticsState, previousAnalytics);
+      adminViewState.access = previousAdminAccess;
+      window.Chart = originalChart;
+      if (previousTheme) document.documentElement.dataset.theme = previousTheme;
+      else delete document.documentElement.dataset.theme;
+      host.remove();
+    }
+  });
 });
 
 describe('FinanceData — Contas Bancárias', () => {

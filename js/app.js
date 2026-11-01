@@ -1641,21 +1641,20 @@ function renderAdminAnalytics() {
     maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
-      x: { ticks: { color: textColor, maxRotation: 45, minRotation: 0 }, grid: { color: borderColor } },
+      x: { ticks: { color: textColor, maxRotation: 0, minRotation: 0, autoSkip: true, maxTicksLimit: 6 }, grid: { color: borderColor } },
       y: { beginAtZero: true, ticks: { color: textColor, precision: 0 }, grid: { color: borderColor } }
     }
   });
   const growthCanvas = document.getElementById('adminGrowthChart');
   if (growthCanvas) {
     adminAnalyticsState.growthChart = new window.Chart(growthCanvas, {
-      type: 'line',
+      type: 'bar',
       data: {
         labels: registrations.map(item => item.period),
         datasets: [{
           data: registrations.map(item => item.count),
           borderColor: primary,
-          backgroundColor: primary,
-          tension: 0.25
+          backgroundColor: primary
         }]
       },
       options: makeOptions()
