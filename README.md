@@ -794,7 +794,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - Adicionada política de privacidade e LGPD, link no rodapé/drawer e consentimento no cadastro.
 - Atualizados layout da sidebar, badge v2.5 e cache PWA.
 
-#### v2.4 Pro — versão anterior
+#### v2.4 — versão anterior
 - Wizard de Lançamento Rápido, importação CSV/texto, autenticação multiusuário e Centro de Dívidas.
 - Modal de confirmação customizado e pull-to-refresh mobile (PWA).
 
