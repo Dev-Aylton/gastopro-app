@@ -294,6 +294,7 @@ function makeIncome(overrides = {}) {
     month: '2026-11',
     category: 'Salário',
     date: '2026-11-05',
+    accountId: FinanceData.getAccounts().find(account => isUuid(account.id))?.id,
     ...overrides
   };
 }
@@ -311,6 +312,8 @@ function makeVariable(overrides = {}) {
     month: '2026-11',
     category: 'Alimentação',
     date: '2026-11-10',
+    dueDay: overrides.paid === false ? 5 : undefined,
+    accountId: FinanceData.getAccounts().find(account => isUuid(account.id))?.id,
     ...overrides
   };
 }
@@ -328,6 +331,8 @@ function makeFixed(overrides = {}) {
     month: '2026-11',
     category: 'Moradia',
     date: '2026-11-01',
+    dueDay: 5,
+    accountId: FinanceData.getAccounts().find(account => isUuid(account.id))?.id,
     ...overrides
   };
 }
@@ -605,6 +610,36 @@ describe('FinanceData — Metas por Categoria', () => {
     }
   });
 
+  itAsync('abre Lançamentos como Ganho e foca o campo de valor', async () => {
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <section id="view-entries">
+        <p id="entryComposerPrompt"></p>
+        <button class="entry-type-button" data-entry-type="expense" aria-pressed="false"></button>
+        <button class="entry-type-button" data-entry-type="income" aria-pressed="false"></button>
+        <div class="entry-form-slot" id="entryExpenseFormSlot"></div>
+        <div class="entry-form-slot" id="entryIncomeFormSlot"></div>
+      </section>
+      <div class="panel-box"><form id="expenseForm"></form></div>
+      <div class="panel-box"><form id="incomeForm"><input id="incomeAmount" /></form></div>`;
+    document.body.appendChild(fixture);
+    const previousSwitch = window.switchToView;
+    let destination = null;
+    window.switchToView = view => { destination = view; };
+    try {
+      window.GastoProEntryComposer.setup(fixture.querySelector('#view-entries'));
+      assertTrue(window.GastoProEntryComposer.openIncome());
+      await new Promise(resolve => window.requestAnimationFrame(resolve));
+      assertEqual(destination, 'entries');
+      assertFalse(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+      assertEqual(fixture.querySelector('[data-entry-type="income"]').getAttribute('aria-pressed'), 'true');
+      assertEqual(document.activeElement, fixture.querySelector('#incomeAmount'));
+    } finally {
+      window.switchToView = previousSwitch;
+      fixture.remove();
+    }
+  });
+
   it('mantém um único botão para criar metas no estado vazio', () => {
     FinanceData.saveGoals([]);
     const host = document.createElement('div');
@@ -685,7 +720,7 @@ describe('Estados vazios das telas', () => {
       renderCategoryChart([], []);
       renderAccountBalancesPanel();
 
-      assertTrue(host.querySelector('#incomesListDetailed [data-action="focus-entry-form"]'));
+      assertTrue(host.querySelector('#incomesListDetailed [data-action="open-income-entry"]'));
       assertTrue(host.querySelector('#expensesListDetailed [data-action="focus-entry-form"]'));
       assertTrue(host.querySelector('#accountsList [data-action="new-account"]'));
       assertTrue(host.querySelector('#creditCardsEmpty [data-action="new-credit-card"]'));
@@ -913,7 +948,61 @@ describe('Estados vazios das telas', () => {
 describe('FinanceData — Contas Bancárias', () => {
   setupMockLocalStorage();
 
+  itAsync('cria a Conta principal uma única vez para o primeiro lançamento', async () => {
+    setupMockLocalStorage();
+    const first = FinanceData.add(makeIncome({ accountId: null }));
+    const account = FinanceData.getAccounts()[0];
+    const second = FinanceData.add(makeIncome({ accountId: account.id, desc: 'Outra renda' }));
+
+    await Promise.resolve();
+    assertTrue(Boolean(first));
+    assertTrue(Boolean(second));
+    assertEqual(account.name, 'Conta principal');
+    assertEqual(account.initialBalance, 0);
+    assertEqual(FinanceData.getAccounts().length, 1);
+    assertEqual(FinanceData.getEntries().map(entry => entry.accountId), [account.id, account.id]);
+  });
+
+  itAsync('exige uma conta de destino quando já existem contas', async () => {
+    setupMockLocalStorage();
+    const account = await FinanceData.addAccount({ name: 'Conta destino', type: 'PF' });
+    const missingAccount = [
+      makeIncome({ accountId: null }),
+      makeVariable({ accountId: null, paid: true }),
+      makeFixed({ accountId: null }),
+      makeFixed({ accountId: null, type: 'debt', category: 'Empréstimo' })
+    ];
+
+    missingAccount.forEach(item => assertNull(FinanceData.add(item)));
+    assertEqual(FinanceData.getEntries(), []);
+    assertEqual(FinanceData.getTemplates(), []);
+    assertEqual(FinanceData.getAccounts().map(item => item.id), [account.account.id]);
+  });
+
+  itAsync('migra lançamentos antigos sem conta quando não há contas e os preserva quando há contas', async () => {
+    setupMockLocalStorage();
+    const entry = makeIncome({ id: crypto.randomUUID(), accountId: null });
+    FinanceData.saveEntries([entry]);
+    const migrated = await FinanceData.migrateUnassignedAccounts();
+    assertTrue(migrated.success);
+    assertTrue(migrated.migrated);
+    assertEqual(FinanceData.getAccounts()[0].name, 'Conta principal');
+    assertEqual(FinanceData.getEntries()[0].accountId, FinanceData.getAccounts()[0].id);
+
+    setupMockLocalStorage();
+    const account = await FinanceData.addAccount({ name: 'Conta existente', type: 'PF' });
+    const unassigned = makeIncome({ id: crypto.randomUUID(), accountId: null });
+    FinanceData.saveEntries([unassigned]);
+    const notMigrated = await FinanceData.migrateUnassignedAccounts();
+    assertTrue(notMigrated.success);
+    assertFalse(notMigrated.migrated);
+    assertEqual(FinanceData.getUnassignedAccountItems().map(item => item.id), [unassigned.id]);
+    assertEqual(FinanceData.getEntries()[0].accountId, null);
+    assertEqual(FinanceData.getAccounts().map(item => item.id), [account.account.id]);
+  });
+
   itAsync('cria, edita e valida contas PF/PJ', async () => {
+    setupMockLocalStorage();
     const created = await FinanceData.addAccount({
       name: '  Conta pessoal  ',
       institution: '  Banco Exemplo  ',
@@ -1117,6 +1206,7 @@ describe('FinanceData — Contas Bancárias', () => {
         if (attempt === 2) return { success: false, error: 'resposta perdida após commit' };
         return { success: true };
       },
+      saveCloudAccounts: async () => ({ success: true }),
       saveCloudEntries: async () => { genericWrites++; return { success: true }; },
       saveCloudTemplates: async () => { genericWrites++; return { success: true }; }
     };
@@ -1376,6 +1466,7 @@ describe('FinanceData — Contas Bancárias', () => {
     const entry = FinanceData.add({
       type: 'variable', desc: 'Pix ajustável', amount: 25, category: 'Outros',
       date: today, accountId: account.account.id, paymentMethod: 'pix',
+      dueDay: 10,
       paid: window.GastoProPaymentHelpers.isPaidByPaymentMethod('pix', today, today)
     });
     assertTrue(entry.paid);
@@ -1593,10 +1684,51 @@ describe('FinanceData — Contas Bancárias', () => {
       makeVariable({ id: crypto.randomUUID(), accountId: created.account.id, amount: 10, date: todayString, paid: true })
     ]);
 
-    const adjusted = await FinanceData.adjustAccountBalance(created.account.id, 500);
+    const adjusted = await FinanceData.adjustAccountBalance(created.account.id, 500, todayString);
     assertTrue(adjusted.success);
     assertEqual(FinanceData.getAccounts()[0].initialBalance, 490);
     assertEqual(FinanceData.getAccountBalance(created.account.id), 500);
+  });
+
+  itAsync('abre o ajuste preenchido com o saldo calculado e explica a data-base', async () => {
+    setupMockLocalStorage();
+    const created = await FinanceData.addAccount({
+      name: 'Conta para ajuste', type: 'PF', initialBalance: 100
+    });
+    const today = getTodayString();
+    FinanceData.add(makeIncome({
+      accountId: created.account.id, amount: 20, date: today, paid: true
+    }));
+    FinanceData.add(makeVariable({
+      accountId: created.account.id, amount: 10, date: today, paid: true
+    }));
+
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div id="adjustAccountModal">
+        <select id="adjustAccountId"><option value="${created.account.id}">Conta</option></select>
+        <input id="adjustAccountBalance" />
+        <input id="adjustAccountBalanceDate" />
+        <span id="adjustAccountName"></span>
+        <p class="account-adjust-hint">Lançamentos anteriores à data escolhida deixam de entrar no cálculo.</p>
+        <div id="adjustAccountError"></div>
+      </div>`;
+    document.body.appendChild(host);
+    const originalGetElementById = document.getElementById.bind(document);
+    document.getElementById = id => host.querySelector(`#${id}`) || originalGetElementById(id);
+    try {
+      openAdjustAccountModal(created.account.id);
+      assertEqual(host.querySelector('#adjustAccountBalance').value, '110');
+      assertEqual(FinanceData.getAccountBalance(created.account.id), 110);
+      assertTrue(document.getElementById('adjustAccountModal').classList.contains('active'));
+      assertTrue(host.querySelector('.account-adjust-hint').textContent.includes(
+        'Lançamentos anteriores à data escolhida deixam de entrar no cálculo'
+      ));
+      await new Promise(resolve => setTimeout(resolve, 120));
+    } finally {
+      document.getElementById = originalGetElementById;
+      host.remove();
+    }
   });
 
   itAsync('excluir uma conta desvincula lançamentos e templates sem apagá-los', async () => {
@@ -1872,18 +2004,23 @@ describe('FinanceData — Contas Bancárias', () => {
 
   itAsync('converte em recorrência somente os lançamentos futuros confirmados', async () => {
     setupMockLocalStorage();
-    const source = makeVariable({ id: 'fixed-source', date: '2026-01-10', paid: true });
-    const future = makeVariable({ id: 'fixed-future', date: '2026-02-10', paid: true });
+    const account = await FinanceData.addAccount({ name: 'Conta conversão', type: 'PF' });
+    const source = makeVariable({
+      id: 'fixed-source', date: '2026-01-10', paid: true, accountId: account.account.id
+    });
+    const future = makeVariable({
+      id: 'fixed-future', date: '2026-02-10', paid: true, accountId: account.account.id
+    });
     const fields = {
       desc: source.desc, amount: source.amount, category: source.category,
-      accountId: 'conta-original', active: true, endMonth: null
+      accountId: account.account.id, dueDay: 10, active: true, endMonth: null
     };
     await FinanceData.saveEntries([source, future], { flush: false });
 
     const result = await FinanceData.convertEntryToTemplate(source.id, fields, []);
     assertTrue(result.success);
     assertEqual(FinanceData.getEntries().map(entry => entry.id), [future.id]);
-    assertEqual(FinanceData.getTemplates()[0].accountId, 'conta-original');
+    assertEqual(FinanceData.getTemplates()[0].accountId, account.account.id);
     assertEqual(FinanceData.getTemplates()[0].paidMonths, { '2026-01': true });
 
     setupMockLocalStorage();
@@ -2067,12 +2204,12 @@ describe('Interface — filtros e opções de contas', () => {
     assertTrue(accountsNeedBalanceDateNotice(accounts, 'account:pj'));
   });
 
-  it('monta as opções de conta com Sem conta como primeira opção', () => {
+  it('monta as opções de conta exigindo a seleção de destino', () => {
     assertEqual(buildAccountSelectOptions([
       { id: 'account-1', name: 'Conta pessoal' },
       { id: 'account-2', name: 'Conta empresa' }
     ]), [
-      { value: '', label: 'Sem conta' },
+      { value: '', label: 'Selecione uma conta' },
       { value: 'account-1', label: 'Conta pessoal' },
       { value: 'account-2', label: 'Conta empresa' }
     ]);
@@ -2098,6 +2235,26 @@ describe('FinanceData — Templates de Gastos Fixos', () => {
 
 describe('FinanceData — add() Lançamentos', () => {
   setupMockLocalStorage();
+
+  itAsync('exige dias válidos para pendentes/fixos/dívidas e deixa pagos/ganhos sem dia', async () => {
+    setupMockLocalStorage();
+    const account = await FinanceData.addAccount({ name: 'Conta destino', type: 'PF' });
+    const base = { accountId: account.account.id };
+
+    assertNull(FinanceData.add(makeFixed({ ...base, dueDay: null })));
+    assertNull(FinanceData.add(makeFixed({ ...base, dueDay: 0 })));
+    assertNull(FinanceData.add(makeFixed({ ...base, dueDay: 32 })));
+    assertNull(FinanceData.add(makeFixed({ ...base, type: 'debt', dueDay: null })));
+    assertNull(FinanceData.add(makeVariable({ ...base, paid: false, dueDay: null })));
+    assertNull(FinanceData.add(makeVariable({
+      ...base, paid: false, paymentMethod: 'boleto', dueDay: 32
+    })));
+
+    assertTrue(Boolean(FinanceData.add(makeVariable({ ...base, paid: true, dueDay: null }))));
+    assertTrue(Boolean(FinanceData.add(makeIncome({ ...base, dueDay: null }))));
+    assertTrue(Boolean(FinanceData.add(makeFixed({ ...base, dueDay: 31 }))));
+    assertEqual(FinanceData.getTemplates().length, 1);
+  });
 
   it('add(income) deve criar um lançamento pontual com UUID v4', () => {
     const item = FinanceData.add(makeIncome());
@@ -2177,6 +2334,7 @@ describe('FinanceData — addTemplate() Gastos Fixos', () => {
       amount: 800,
       month: '2026-01',
       date: '2026-01-05',
+      dueDay: 5,
       endMonth: '2026-12'
     });
     assertTrue(tpl.isDebt, 'isDebt deveria ser true para type=debt');
@@ -2192,7 +2350,53 @@ describe('FinanceData — addTemplate() Gastos Fixos', () => {
 describe('FinanceData — getByMonth()', () => {
   setupMockLocalStorage();
 
+  it('mapeia dias ausentes ou inválidos sem erro e sinaliza falta na lista', () => {
+    setupMockLocalStorage();
+    const mappedEntry = window.GastoProSyncFieldHelpers.entryFromCloud({
+      id: crypto.randomUUID(),
+      description: 'Gasto pendente',
+      amount: 25,
+      category: 'Contas',
+      type: 'variable',
+      date: '2026-11-10',
+      paid: false,
+      debt_info: { dueDay: 32 }
+    });
+    assertNull(mappedEntry.debtInfo.dueDay);
+    assertNull(window.GastoProSyncFieldHelpers.dueDayFromCloud(0));
+    assertNull(window.GastoProSyncFieldHelpers.templateDayFromCloud('00'));
+    assertEqual(window.GastoProSyncFieldHelpers.templateDayFromCloud('5'), '05');
+
+    FinanceData.saveEntries([mappedEntry]);
+    FinanceData.saveTemplates([{
+      id: crypto.randomUUID(), desc: 'Fixo sem dia', amount: 50, type: 'fixed',
+      startMonth: '2026-11', day: null, active: true, accountId: null, paidMonths: {}
+    }]);
+    const monthItems = FinanceData.getByMonth('2026-11');
+    assertTrue(monthItems.find(item => item.type === 'variable').dueDayMissing);
+    assertTrue(monthItems.find(item => item.desc === 'Fixo sem dia').dueDayMissing);
+
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div id="expensesPageTotal"></div>
+      <div id="subtotalFixedLabel"></div>
+      <div id="subtotalVarLabel"></div>
+      <div id="expensesListDetailed"></div>`;
+    document.body.appendChild(host);
+    const originalGetElementById = document.getElementById.bind(document);
+    document.getElementById = id => host.querySelector(`#${id}`) || originalGetElementById(id);
+    try {
+      state.expenseFilter = 'all';
+      renderExpensesView([], [monthItems.find(item => item.type === 'variable')], 0, 25, 25);
+      assertTrue(host.querySelector('#expensesListDetailed').textContent.includes('Falta o dia'));
+    } finally {
+      document.getElementById = originalGetElementById;
+      host.remove();
+    }
+  });
+
   it('deve retornar apenas lançamentos do mês especificado', () => {
+    setupMockLocalStorage();
     FinanceData.add(makeIncome({ month: '2026-11', date: '2026-11-05' }));
     FinanceData.add(makeIncome({ month: '2026-10', date: '2026-10-05', desc: 'Outro mês' }));
 
@@ -2292,7 +2496,7 @@ describe('FinanceData — update()', () => {
     setupMockLocalStorage();
     const tpl     = FinanceData.add(makeFixed({ date: '2026-11-05' }));
     const updated = FinanceData.update(tpl.id, { date: '2026-11-15' });
-    assertEqual(updated.day, '15', 'Campo day deve refletir o dia da nova data');
+    assertEqual(updated.day, '05', 'O dia do vencimento é independente da data de início');
   });
 
   it('deve retornar null para template com ID inexistente', () => {
@@ -4352,20 +4556,24 @@ describe('Dashboard mobile', () => {
     const previousMonth = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, '0')}`;
     const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const nextMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+    const account = await FinanceData.addAccount({ name: 'Conta projeção', type: 'PF' });
 
     FinanceData.add(makeVariable({
-      month: currentMonth, date: today, amount: 25, paid: false
+      month: currentMonth, date: today, amount: 25, paid: false,
+      accountId: account.account.id
     }));
     FinanceData.add(makeIncome({
-      month: currentMonth, date: today, amount: 900, paid: false
+      month: currentMonth, date: today, amount: 900, paid: false,
+      accountId: account.account.id
     }));
     FinanceData.add(makeFixed({
       month: currentMonth, startMonth: currentMonth, date: `${currentMonth}-05`,
-      amount: 35, paidMonths: {}
+      amount: 35, paidMonths: {}, accountId: account.account.id
     }));
 
     const cardResult = await FinanceData.addCreditCard({
-      name: 'Cartão para teste de projeção', totalLimit: 1000, closingDay: 31, dueDay: 10
+      name: 'Cartão para teste de projeção', totalLimit: 1000,
+      closingDay: 31, dueDay: 10, accountId: account.account.id
     });
     assertTrue(cardResult.success);
     const purchaseResult = await FinanceData.addCreditCardPurchase({
@@ -6516,6 +6724,56 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     assertEqual(window.GastoProImportHelpers.getImportPreviewType(future), 'variable_pending');
   });
 
+  it('marca dia ausente na prévia e mantém as outras linhas importáveis', () => {
+    const helper = window.GastoProImportHelpers;
+    const rows = [
+      { type: 'variable', dueDay: null, pending: true },
+      { type: 'variable', dueDay: 12, pending: true }
+    ];
+    const issues = rows.map(row => helper.getDueDayIssue(row, 'variable_pending'));
+    const importableRows = rows.filter((row, index) => !issues[index]);
+
+    assertEqual(issues, ['missing', null]);
+    assertEqual(importableRows.length, 1);
+    assertEqual(importableRows[0].dueDay, 12);
+  });
+
+  it('cria e exibe o campo de vencimento ao trocar Ganho por Gasto a pagar', () => {
+    const helper = window.GastoProImportHelpers;
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <label hidden>Dia do vencimento
+        <input type="number" />
+        <span hidden></span>
+      </label>`;
+    document.body.appendChild(fixture);
+    const row = { dueDay: null };
+    const label = fixture.querySelector('label');
+    const input = fixture.querySelector('input');
+    const status = fixture.querySelector('span');
+
+    try {
+      helper.updateDueDayField(row, 'income', label, input, status);
+      assertTrue(label.hidden);
+      assertFalse(input.required);
+      helper.updateDueDayField(row, 'variable_pending', label, input, status);
+      assertFalse(label.hidden);
+      assertTrue(input.required);
+      assertFalse(status.hidden);
+      assertEqual(status.textContent, 'Falta o dia');
+
+      row.dueDay = 12;
+      input.value = '12';
+      helper.updateDueDayField(row, 'variable_pending', label, input, status);
+      assertTrue(status.hidden);
+      assertTrue(helper.isValidDueDay(12));
+      assertFalse(helper.isValidDueDay(0));
+      assertFalse(helper.isValidDueDay(32));
+    } finally {
+      fixture.remove();
+    }
+  });
+
   it('sugere descrição recorrente limpa sem converter linhas em gasto fixo', () => {
     const rows = prepareRecurringRows(
       `Data;Descrição;Valor\n${firstRecurringDate};Curso Exemplo (111) - c/ desconto;-150,00\n${secondRecurringDate};Curso Exemplo;-150,00`
@@ -6582,7 +6840,7 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
   itAsync('cria fixo confirmado sem fim e projeta nos meses seguintes', async () => {
     setupMockLocalStorage();
     const rows = prepareRecurringRows(
-      `Data;Descrição;Valor\n${currentMonth}-05;Internet Exemplo;-120,00\n${GastoProImporter.shiftMonth(currentMonth, 1)}-05;Internet Exemplo;-125,00`
+      `Data;Descrição;Valor;dia_venc\n${currentMonth}-05;Internet Exemplo;-120,00;05\n${GastoProImporter.shiftMonth(currentMonth, 1)}-05;Internet Exemplo;-125,00;05`
     );
     const helper = window.GastoProImportHelpers;
     const candidate = helper.collectRecurringImportCandidates(rows)[0];
@@ -6610,6 +6868,7 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
       amount: 80,
       category: 'Saúde',
       date: `${currentMonth}-05`,
+      dueDay: 5,
       startMonth: currentMonth,
       endMonth: null,
       active: false
@@ -7310,6 +7569,7 @@ describe('FinanceData — inserção em lote para importação', () => {
 
   itAsync('addMany grava entries e templates e solicita apenas um flush', async () => {
     setupMockLocalStorage();
+    const account = await FinanceData.addAccount({ name: 'Conta lote', type: 'PF' });
     let flushes = 0;
     const originalFlush = FinanceData.flushPendingSync;
     FinanceData.flushPendingSync = async () => {
@@ -7318,14 +7578,14 @@ describe('FinanceData — inserção em lote para importação', () => {
     };
     try {
       const added = await FinanceData.addMany([
-        { type: 'variable', desc: 'Gasto lote', amount: 10, date: '2026-10-15', month: '2026-10', accountId: 'account-id' },
-        { type: 'fixed', desc: 'Fixo lote', amount: 20, date: '2026-10-15', month: '2026-10', accountId: 'account-id' }
+        { type: 'variable', desc: 'Gasto lote', amount: 10, date: '2026-10-15', month: '2026-10', accountId: account.account.id },
+        { type: 'fixed', desc: 'Fixo lote', amount: 20, date: '2026-10-15', month: '2026-10', dueDay: 15, accountId: account.account.id }
       ]);
       assertEqual(added.items.length, 2);
       assertEqual(FinanceData.getEntries().length, 1);
       assertEqual(FinanceData.getTemplates().length, 1);
-      assertEqual(FinanceData.getEntries()[0].accountId, 'account-id');
-      assertEqual(FinanceData.getTemplates()[0].accountId, 'account-id');
+      assertEqual(FinanceData.getEntries()[0].accountId, account.account.id);
+      assertEqual(FinanceData.getTemplates()[0].accountId, account.account.id);
       assertEqual(flushes, 1);
       assertTrue(added.items.every(item => isUuid(item.id)));
     } finally {
@@ -7344,6 +7604,7 @@ describe('FinanceData — inserção em lote para importação', () => {
         amount: 500,
         date: '2026-08-15',
         startMonth: '2026-08',
+        dueDay: 15,
         endMonth: '2030-07',
         paidMonths: { '2026-08': true, '2026-09': true, '2026-10': true }
       }]);
@@ -7373,7 +7634,8 @@ describe('FinanceData — inserção em lote para importação', () => {
         date: '2026-10-15',
         desc: 'Gasto a pagar importado',
         amount: 45,
-        category: 'Mercado'
+        category: 'Mercado',
+        dueDay: 15
       }, 'variable', false);
       await FinanceData.addMany([fixed, pending]);
       assertEqual(FinanceData.getTemplates()[0].paidMonths, {});
@@ -7393,7 +7655,8 @@ describe('FinanceData — inserção em lote para importação', () => {
         desc: 'Faculdade X',
         amount: 500,
         date: '2026-08-15',
-        startMonth: '2026-08'
+        startMonth: '2026-08',
+        dueDay: 15
       }]);
       const first = await FinanceData.markPaid(items[0].id, '2026-10');
       const second = await FinanceData.markPaid(items[0].id, '2026-10');
@@ -7428,8 +7691,8 @@ describe('FinanceData — inserção em lote para importação', () => {
     const originalSaveTemplates = FinanceData.saveTemplates;
     FinanceData.flushPendingSync = async () => ({ success: true });
     const { items } = await FinanceData.addMany([
-      { type: 'debt', desc: 'Dívida A', amount: 100, date: '2026-08-15' },
-      { type: 'debt', desc: 'Dívida B', amount: 200, date: '2026-08-15' }
+      { type: 'debt', desc: 'Dívida A', amount: 100, date: '2026-08-15', dueDay: 15 },
+      { type: 'debt', desc: 'Dívida B', amount: 200, date: '2026-08-15', dueDay: 15 }
     ]);
     let saves = 0;
     FinanceData.saveTemplates = async function(templates) {
@@ -7463,7 +7726,7 @@ describe('FinanceData — inserção em lote para importação', () => {
     const originalFlush = FinanceData.flushPendingSync;
     FinanceData.flushPendingSync = async () => ({ success: true });
     const { items } = await FinanceData.addMany([
-      { type: 'debt', desc: 'Dívida futura', amount: 200, date: '2026-08-15' }
+      { type: 'debt', desc: 'Dívida futura', amount: 200, date: '2026-08-15', dueDay: 15 }
     ]);
     try {
       const future = new Date();

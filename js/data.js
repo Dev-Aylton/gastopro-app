@@ -620,6 +620,101 @@ const FinanceData = {
     }
   },
 
+  ensureAccountForLaunch(accountId) {
+    let accounts = this.getAccounts();
+    if (!accounts.length) {
+      const created = {
+        id: crypto.randomUUID(),
+        name: 'Conta principal',
+        institution: null,
+        type: 'PF',
+        initialBalance: 0,
+        balanceDate: null
+      };
+      const save = this.saveAccounts([created], { flush: false });
+      save.then(result => {
+        if (!result.success) {
+          console.error('[GastoPro] Não foi possível criar a Conta principal:', result.error);
+        }
+      });
+      accounts = this.getAccounts();
+      if (!accounts.some(account => account.id === created.id)) {
+        return { success: false, error: 'Não foi possível criar a Conta principal neste aparelho.' };
+      }
+      return { success: true, accountId: created.id, created: true };
+    }
+    if (!accounts.some(account => account.id === accountId)) {
+      return {
+        success: false,
+        error: 'Selecione uma conta de destino antes de salvar o lançamento.'
+      };
+    }
+    return { success: true, accountId, created: false };
+  },
+
+  getUnassignedAccountItems() {
+    return [
+      ...this.getEntries().filter(item => !item.accountId).map(item => ({ ...item, storageKind: 'entry' })),
+      ...this.getTemplates().filter(item => !item.accountId).map(item => ({ ...item, type: 'fixed', storageKind: 'template' })),
+      ...this.getCreditCardPurchases().filter(item => !item.accountId).map(item => ({ ...item, type: 'variable', storageKind: 'creditCardPurchase' }))
+    ];
+  },
+
+  async assignUnassignedAccount(kind, id, accountId) {
+    if (!this.getAccounts().some(account => account.id === accountId)) {
+      return { success: false, error: 'Selecione uma conta válida.' };
+    }
+    let result;
+    if (kind === 'entry') {
+      const entries = this.getEntries();
+      const entry = entries.find(item => item.id === id);
+      if (!entry || entry.accountId) return { success: false, error: 'O lançamento não está mais sem conta.' };
+      entry.accountId = accountId;
+      result = await this.saveEntries(entries, { flush: false });
+    } else if (kind === 'template') {
+      const templates = this.getTemplates();
+      const template = templates.find(item => item.id === id);
+      if (!template || template.accountId) return { success: false, error: 'O lançamento não está mais sem conta.' };
+      template.accountId = accountId;
+      result = await this.saveTemplates(templates, { flush: false });
+    } else if (kind === 'creditCardPurchase') {
+      const purchases = this.getCreditCardPurchases();
+      const purchase = purchases.find(item => item.id === id);
+      if (!purchase || purchase.accountId) return { success: false, error: 'O lançamento não está mais sem conta.' };
+      purchase.accountId = accountId;
+      result = await this.saveCreditCardPurchases(purchases, { flush: false });
+    } else {
+      return { success: false, error: 'O tipo de lançamento não é válido.' };
+    }
+    if (!result.success) return result;
+    return this.flushPendingSync(this.getProfile().userId);
+  },
+
+  async migrateUnassignedAccounts() {
+    const unassigned = this.getUnassignedAccountItems();
+    if (!unassigned.length) return { success: true, count: 0, migrated: false };
+    if (this.getAccounts().length) return { success: true, count: unassigned.length, migrated: false };
+    const account = this.ensureAccountForLaunch(null);
+    if (!account.success) return account;
+    const entries = this.getEntries().map(item =>
+      item.accountId ? item : { ...item, accountId: account.accountId }
+    );
+    const templates = this.getTemplates().map(item =>
+      item.accountId ? item : { ...item, accountId: account.accountId }
+    );
+    const purchases = this.getCreditCardPurchases().map(item =>
+      item.accountId ? item : { ...item, accountId: account.accountId }
+    );
+    const entryResult = await this.saveEntries(entries, { flush: false });
+    if (!entryResult.success) return entryResult;
+    const templateResult = await this.saveTemplates(templates, { flush: false });
+    if (!templateResult.success) return templateResult;
+    const purchaseResult = await this.saveCreditCardPurchases(purchases, { flush: false });
+    if (!purchaseResult.success) return purchaseResult;
+    const syncResult = await this.flushPendingSync(this.getProfile().userId);
+    return { success: true, count: unassigned.length, migrated: true, syncResult };
+  },
+
   saveSyncMetadata(metadata) {
     localStorage.setItem(STORAGE_SYNC_METADATA, JSON.stringify(metadata));
   },
@@ -1880,12 +1975,14 @@ const FinanceData = {
   async addCreditCardPurchase(fields) {
     const card = this.getCreditCards().find(item => item.id === fields.cardId);
     if (!card) return { success: false, error: 'Selecione um cartão válido.' };
+    const account = this.ensureAccountForLaunch(fields.accountId || card.accountId);
+    if (!account.success) return { success: false, error: account.error };
     const purchase = {
       ...fields,
       id: crypto.randomUUID(),
       cardId: card.id,
       cardName: card.name,
-      accountId: card.accountId || null,
+      accountId: account.accountId,
       closingDay: card.closingDay,
       dueDay: card.dueDay,
       amount: Number(fields.amount),
@@ -2228,6 +2325,12 @@ const FinanceData = {
     if (!isValidCivilMonth(sourceMonth)) {
       return { success: false, error: 'A data do lançamento não permite criar um gasto fixo.' };
     }
+    const dueDay = Number(fields.dueDay);
+    if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
+      return { success: false, error: 'Informe um dia de vencimento entre 1 e 31.' };
+    }
+    const account = this.ensureAccountForLaunch(fields.accountId);
+    if (!account.success) return { success: false, error: account.error };
     const candidateIds = new Set(futureEntryIds);
     const futureEntries = entries.filter(entry =>
       candidateIds.has(entry.id) && entry.type === 'variable' &&
@@ -2251,9 +2354,9 @@ const FinanceData = {
       active: fields.active !== false,
       startMonth: sourceMonth,
       endMonth: fields.endMonth || null,
-      day: String(source.date).slice(8, 10) || '05',
+      day: String(dueDay).padStart(2, '0'),
       date: source.date,
-      accountId: fields.accountId || null,
+      accountId: account.accountId,
       paidMonths
     };
     const templateResult = await this.saveTemplates([...templates, template], { flush: false });
@@ -2301,10 +2404,8 @@ const FinanceData = {
           year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28,
           31, 30, 31, 30, 31, 31, 30, 31, 30, 31
         ][month - 1];
-        const storedDay = Number(template.day || String(template.date || '').slice(8, 10));
-        const dueDay = Number.isInteger(storedDay) && storedDay >= 1 && storedDay <= 31
-          ? storedDay
-          : 5;
+        const dueDay = Number(template.day);
+        if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return false;
         const paidDate = `${ym}-${String(Math.min(dueDay, daysInMonth)).padStart(2, '0')}`;
         return paidDate <= today && (!balanceDate || paidDate >= balanceDate);
       }).length;
@@ -2337,16 +2438,58 @@ const FinanceData = {
     return totals;
   },
 
-  async adjustAccountBalance(accountId, currentBalance) {
+  getAccountActivitySince(accountId, balanceDate) {
+    const today = getLocalDateString();
+    let activity = 0;
+    this.getEntries().forEach(entry => {
+      if (entry.accountId !== accountId || !entry.paid ||
+        !isValidCivilDate(entry.date) || entry.date > today || entry.date < balanceDate) return;
+      activity += entry.type === 'income' ? Number(entry.amount) : -Number(entry.amount);
+    });
+    this.getTemplates().forEach(template => {
+      if (template.accountId !== accountId || !template.paidMonths) return;
+      const paidCount = Object.entries(template.paidMonths).filter(([ym, paid]) => {
+        if (paid !== true || !isValidCivilMonth(ym)) return false;
+        const [year, month] = ym.split('-').map(Number);
+        const daysInMonth = [
+          31,
+          year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28,
+          31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+        ][month - 1];
+        const dueDay = Number(template.day);
+        if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return false;
+        const paidDate = `${ym}-${String(Math.min(dueDay, daysInMonth)).padStart(2, '0')}`;
+        return paidDate <= today && paidDate >= balanceDate;
+      }).length;
+      activity -= Number(template.amount) * paidCount;
+    });
+    this.getCreditCardPurchases().forEach(purchase => {
+      if (purchase.accountId !== accountId) return;
+      const paid = new Set(purchase.paidInstallments || []);
+      getCreditCardInstallments(purchase).forEach(installment => {
+        const paidDate = purchase.paidDates && purchase.paidDates[installment.number] || installment.date;
+        if (paid.has(installment.number) && paidDate <= today && paidDate >= balanceDate) {
+          activity -= installment.amount;
+        }
+      });
+    });
+    return Math.round(activity * 100) / 100;
+  },
+
+  async adjustAccountBalance(accountId, currentBalance, balanceDate) {
     const account = this.getAccounts().find(item => item.id === accountId);
     if (!account) return { success: false, error: 'Conta não encontrada.' };
     if (typeof currentBalance === 'boolean' || currentBalance === '' ||
       !Number.isFinite(Number(currentBalance)) || Math.abs(Number(currentBalance)) > MAX_ACCOUNT_BALANCE) {
       return { success: false, error: 'Informe um saldo atual válido.' };
     }
-    const activityBalance = this.getAccountBalance(accountId) - Number(account.initialBalance);
+    if (!isValidCivilDate(balanceDate)) {
+      return { success: false, error: 'Informe uma data válida para o saldo real.' };
+    }
+    const activityBalance = this.getAccountActivitySince(accountId, balanceDate);
     return this.updateAccount(accountId, {
-      initialBalance: Math.round((Number(currentBalance) - activityBalance) * 100) / 100
+      initialBalance: Math.round((Number(currentBalance) - activityBalance) * 100) / 100,
+      balanceDate
     });
   },
 
@@ -2377,7 +2520,13 @@ const FinanceData = {
     const entries = this.getEntries().filter(e => {
       const itemMonth = e.month || (e.date ? String(e.date).substring(0, 7) : '');
       return itemMonth === yearMonth;
-    });
+    }).map(entry => ({
+      ...entry,
+      dueDayMissing: entry.type !== 'income' && entry.paymentMethod !== 'credit_card' &&
+        (entry.type === 'fixed' || entry.type === 'debt' || entry.paid === false) &&
+        (!Number.isInteger(entry.debtInfo && entry.debtInfo.dueDay) ||
+          entry.debtInfo.dueDay < 1 || entry.debtInfo.dueDay > 31)
+    }));
 
     // Passo 2: projeta templates fixos ativos para o mês pedido
     const templates = this.getTemplates();
@@ -2389,6 +2538,8 @@ const FinanceData = {
       const isNotEnded = !tpl.endMonth   || yearMonth <= tpl.endMonth;
 
       if (isStarted && isNotEnded) {
+        const storedDay = Number(tpl.day);
+        const validDueDay = Number.isInteger(storedDay) && storedDay >= 1 && storedDay <= 31;
         // Verifica se houve baixa de pagamento especificamente neste mês
         const isPaidThisMonth = Boolean(tpl.paidMonths && tpl.paidMonths[yearMonth]);
 
@@ -2402,7 +2553,12 @@ const FinanceData = {
           category:   tpl.category || 'Contas',
           active:     tpl.active !== false,   // undefined é tratado como ativo
           month:      yearMonth,
-          date:       `${yearMonth}-${String(tpl.day || '05').padStart(2, '0')}`,
+          date:       validDueDay
+            ? `${yearMonth}-${String(Math.min(storedDay, new Date(
+              Number(yearMonth.slice(0, 4)), Number(yearMonth.slice(5, 7)), 0
+            ).getDate())).padStart(2, '0')}`
+            : null,
+          dueDayMissing: !validDueDay,
           startMonth: tpl.startMonth,
           endMonth:   tpl.endMonth || null,
           accountId:  tpl.accountId || null,
@@ -2448,13 +2604,16 @@ const FinanceData = {
    */
   getAll() {
     const entries   = this.getEntries();
-    const templates = this.getTemplates().map(t => ({
-      ...t,
-      isTemplate: true,
-      type: 'fixed',
-      // Garante que o template tenha uma data para exibição no calendário
-      date: t.date || `${t.startMonth || '2026-01'}-${String(t.day || '05').padStart(2, '0')}`
-    }));
+    const templates = this.getTemplates().map(t => {
+      const day = Number(t.day);
+      const fallbackDate = isValidCivilMonth(t.startMonth) &&
+        Number.isInteger(day) && day >= 1 && day <= 31
+        ? `${t.startMonth}-${String(Math.min(day, new Date(
+          Number(t.startMonth.slice(0, 4)), Number(t.startMonth.slice(5, 7)), 0
+        ).getDate())).padStart(2, '0')}`
+        : null;
+      return { ...t, isTemplate: true, type: 'fixed', date: t.date || fallbackDate };
+    });
     return [...entries, ...templates];
   },
 
@@ -2481,15 +2640,36 @@ const FinanceData = {
     const newEntries = [];
     const newTemplates = [];
     const addedItems = [];
+    let batchAccountId = null;
     for (const item of items) {
       if (!item || typeof item !== 'object') {
         return { success: false, items: [], error: 'O lote contém uma linha inválida.' };
       }
+      const dueDayValue = item.dueDay;
+      const dueDay = dueDayValue === '' || dueDayValue == null ? null : Number(dueDayValue);
+      const dueDayRequired = item.type === 'fixed' || item.type === 'debt' ||
+        (item.type !== 'income' && item.paymentMethod !== 'credit_card' && item.paid === false);
+      if (dueDayRequired && (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) {
+        return {
+          success: false,
+          items: [],
+          error: 'Informe um dia de vencimento entre 1 e 31 para cada lançamento a pagar.'
+        };
+      }
+      if (dueDayValue !== '' && dueDayValue != null &&
+        (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) {
+        return { success: false, items: [], error: 'O dia de vencimento deve estar entre 1 e 31.' };
+      }
+      const account = this.ensureAccountForLaunch(item.accountId || batchAccountId);
+      if (!account.success) {
+        return { success: false, items: [], error: account.error };
+      }
+      if (!this.getAccounts().length || account.created) batchAccountId = account.accountId;
+      else if (!batchAccountId && account.created) batchAccountId = account.accountId;
       if (item.type === 'fixed' || item.type === 'debt') {
         const date = item.date || getLocalDateString();
         const category = item.category || (item.type === 'debt' ? 'Empréstimo' : 'Contas');
         const template = {
-          ...item,
           id: isUuid(item.id) ? item.id : crypto.randomUUID(),
           desc: item.desc,
           amount: parseFloat(item.amount) || 0,
@@ -2500,9 +2680,9 @@ const FinanceData = {
           active: item.active !== false,
           startMonth: item.month || item.startMonth || date.substring(0, 7),
           endMonth: item.endMonth || null,
-          day: date.split('-')[2] || '05',
+          day: String(dueDay).padStart(2, '0'),
           date,
-          accountId: item.accountId || null,
+          accountId: account.accountId,
           paidMonths: item.paidMonths || {}
         };
         newTemplates.push(template);
@@ -2511,10 +2691,12 @@ const FinanceData = {
         const date = item.date || getLocalDateString();
         const entry = {
           ...item,
+          accountId: account.accountId,
           id: isUuid(item.id) ? item.id : crypto.randomUUID(),
           date,
           month: item.month || date.substring(0, 7),
           paymentMethod: null,
+          debtInfo: dueDay ? { ...(item.debtInfo || {}), dueDay } : item.debtInfo || null,
           paid: item.paid !== undefined ? item.paid : true
         };
         newEntries.push(entry);
@@ -2612,15 +2794,39 @@ const FinanceData = {
    * @returns {Object} Item criado com ID gerado automaticamente.
    */
   add(item) {
+    const dueDayValue = item.dueDay;
+    const dueDay = dueDayValue === '' || dueDayValue == null ? null : Number(dueDayValue);
+    const dueDayRequired = item.type === 'fixed' || item.type === 'debt' ||
+      (item.type !== 'income' && item.paymentMethod !== 'credit_card' && item.paid === false);
+    if (dueDayRequired && (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) {
+      return null;
+    }
+    if (dueDayValue !== '' && dueDayValue != null &&
+      (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) {
+      return null;
+    }
+    const account = this.ensureAccountForLaunch(item.accountId);
+    if (!account.success) return null;
+    const entry = {
+      ...item,
+      accountId: account.accountId
+    };
+    if (entry.type !== 'income' && entry.paymentMethod !== 'credit_card' && dueDay) {
+      entry.debtInfo = { ...(entry.debtInfo || {}), dueDay };
+    }
+
     // Gastos fixos e dívidas/parcelamentos são templates recorrentes
-    if (item.type === 'fixed' || item.type === 'debt') {
-      return this.addTemplate(item);
+    if (entry.type === 'fixed' || entry.type === 'debt') {
+      return this.addTemplate({
+        ...entry,
+        day: dueDay
+      });
     }
 
     // Ganhos e variáveis são lançamentos pontuais de mês único
     const entries = this.getEntries();
     const newItem = {
-      ...item,
+      ...entry,
       id:   crypto.randomUUID(),
       date: item.date || getLocalDateString(),
       paid: item.paid !== undefined ? item.paid : true // Lançamentos nascem confirmados
@@ -2638,11 +2844,16 @@ const FinanceData = {
    * @returns {Object} Template criado com ID gerado.
    */
   addTemplate(tpl) {
-    const templates = this.getTemplates();
     const dateStr   = tpl.date || getLocalDateString();
     const startMonth = tpl.month || tpl.startMonth || dateStr.substring(0, 7);
-    // Extrai o dia de vencimento da data (ex: "05" de "2026-11-05")
-    const day = dateStr.split('-')[2] || '05';
+    const dayValue = tpl.day == null || tpl.day === ''
+      ? ''
+      : String(tpl.day).padStart(2, '0');
+    const dayNumber = Number(dayValue);
+    if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > 31) return null;
+    const account = this.ensureAccountForLaunch(tpl.accountId);
+    if (!account.success) return null;
+    const templates = this.getTemplates();
 
     const newTemplate = {
       id:         crypto.randomUUID(),
@@ -2656,9 +2867,9 @@ const FinanceData = {
       active:     true,   // Todo template nasce ativo
       startMonth,
       endMonth:   tpl.endMonth || null,  // null = sem data de quitação prevista
-      day:        day,    // Usado para calcular a data de vencimento projetada
+      day:        dayValue,
       date:       dateStr,
-      accountId:  tpl.accountId || null,
+      accountId:  account.accountId,
       paidMonths: tpl.paid === true ? { [startMonth]: true } : {}
     };
 
@@ -2689,9 +2900,23 @@ const FinanceData = {
         console.warn('[GastoPro] Não é possível converter um template recorrente em lançamento pontual pela edição.');
         return null;
       }
-      if (updatedFields.date) {
-        updatedFields.day = String(updatedFields.date).split('-')[2] || templates[tplIdx].day;
-      }
+      const accountId = Object.prototype.hasOwnProperty.call(updatedFields, 'accountId')
+        ? updatedFields.accountId
+        : templates[tplIdx].accountId;
+      const account = this.ensureAccountForLaunch(accountId);
+      if (!account.success) return null;
+      const dueDayValue = updatedFields.dueDay === ''
+        ? ''
+        : updatedFields.dueDay != null
+          ? updatedFields.dueDay
+          : updatedFields.day != null
+            ? updatedFields.day
+            : templates[tplIdx].day;
+      const dueDay = Number(dueDayValue);
+      if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return null;
+      updatedFields.day = String(dueDay).padStart(2, '0');
+      updatedFields.accountId = account.accountId;
+      delete updatedFields.dueDay;
       templates[tplIdx] = { ...templates[tplIdx], ...updatedFields };
       this.saveTemplates(templates);
       return templates[tplIdx];
@@ -2708,6 +2933,31 @@ const FinanceData = {
       if (updatedFields.date) {
         updatedFields.month = String(updatedFields.date).substring(0, 7);
       }
+      const accountId = Object.prototype.hasOwnProperty.call(updatedFields, 'accountId')
+        ? updatedFields.accountId
+        : entries[entryIdx].accountId;
+      const account = this.ensureAccountForLaunch(accountId);
+      if (!account.success) return null;
+      updatedFields.accountId = account.accountId;
+      const currentEntry = entries[entryIdx];
+      const dueDayValue = Object.prototype.hasOwnProperty.call(updatedFields, 'dueDay')
+        ? updatedFields.dueDay
+        : currentEntry.debtInfo && currentEntry.debtInfo.dueDay;
+      const dueDay = dueDayValue === '' || dueDayValue == null ? null : Number(dueDayValue);
+      const dueDayRequired = updatedFields.type !== 'income' &&
+        updatedFields.paymentMethod !== 'credit_card' &&
+        (updatedFields.paid === undefined ? currentEntry.paid === false : updatedFields.paid === false);
+      if (dueDayRequired && (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) return null;
+      if (dueDayValue !== '' && dueDayValue != null &&
+        (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) return null;
+      if (dueDay) {
+        updatedFields.debtInfo = { ...(entries[entryIdx].debtInfo || {}), dueDay };
+      } else if (entries[entryIdx].debtInfo) {
+        const debtInfo = { ...entries[entryIdx].debtInfo };
+        delete debtInfo.dueDay;
+        updatedFields.debtInfo = Object.keys(debtInfo).length ? debtInfo : null;
+      }
+      delete updatedFields.dueDay;
       entries[entryIdx] = { ...entries[entryIdx], ...updatedFields };
       this.saveEntries(entries);
       return entries[entryIdx];

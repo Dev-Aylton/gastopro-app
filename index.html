@@ -180,7 +180,8 @@
             <div class="topbar-balance-content">
               <div class="topbar-balance-line">
                 <span class="topbar-label">Saldo atual:</span>
-                <span class="topbar-value financial-amount financial-amount--neutral" id="topbarBalance">R$ 0,00</span>
+                <button type="button" class="topbar-value financial-amount financial-amount--neutral topbar-balance-button" id="topbarBalance"
+                  data-action="open-balance-adjustment" aria-label="Ajustar saldo real da conta">R$ 0,00</button>
                 <span class="topbar-empty-message" id="topbarBalanceEmpty" hidden>Cadastre uma conta para ver seu saldo.</span>
               </div>
               <div class="topbar-month-result">
@@ -400,7 +401,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.30</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.31</span></p>
             <div class="drawer-about-help">
             <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
               <div class="action-icon bg-primary-soft">
@@ -672,9 +673,10 @@
                   </div>
                 </div>
               </div>
-              <button type="button" class="account-balance-link" data-goto="accounts" aria-label="Abrir tela de Contas">
+              <button type="button" class="account-balance-link" data-action="open-balance-adjustment"
+                aria-label="Ajustar saldo real das contas">
                 <strong id="dashboardAccountBalance">R$ 0,00</strong>
-                <span>Gerenciar contas <i class="fa-solid fa-arrow-right"></i></span>
+                <span>Ajustar saldo real <i class="fa-solid fa-scale-balanced"></i></span>
               </button>
             </div>
             <div class="form-group account-balance-filters">
@@ -784,7 +786,7 @@
               <div>
                 <label for="incomeAccount">Conta</label>
                 <select id="incomeAccount" class="account-select">
-                  <option value="">Sem conta</option>
+                  <option value="">Selecione uma conta</option>
                 </select>
               </div>
 
@@ -876,6 +878,12 @@
                 <input type="month" id="expenseEndMonth" placeholder="Ex: 2027-12" />
               </div>
 
+              <div id="expenseDueDayWrapper" hidden>
+              <label for="expenseDueDay">Dia do vencimento</label>
+              <input type="number" id="expenseDueDay" min="1" max="31" step="1"
+                inputmode="numeric" placeholder="1 a 31" />
+              </div>
+
               <div>
                 <label for="expenseCategory">Categoria</label>
                 <select id="expenseCategory"></select>
@@ -899,12 +907,16 @@
                 </div>
                 <div id="expenseCreditCardPreview" class="credit-card-select-preview" aria-live="polite"></div>
                 <small class="form-hint" id="expenseCreditCardHint"></small>
+                <label for="expenseCreditAccount">Conta de destino</label>
+                <select id="expenseCreditAccount" class="account-select">
+                  <option value="">Selecione uma conta</option>
+                </select>
               </div>
 
               <div id="expenseAccountGroup">
                 <label for="expenseAccount">Conta</label>
                 <select id="expenseAccount" class="account-select">
-                  <option value="">Sem conta</option>
+                  <option value="">Selecione uma conta</option>
                 </select>
               </div>
 
@@ -989,6 +1001,19 @@
               <!-- Renderizado dinamicamente -->
             </div>
           </div>
+
+          <div class="panel-box" id="unassignedEntriesPanel" hidden>
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-orange-soft"><i class="fa-solid fa-link"></i></div>
+                <div>
+                  <h3>Lançamentos sem conta</h3>
+                  <p>Escolha uma conta para cada lançamento. Nada será movido sem sua escolha.</p>
+                </div>
+              </div>
+            </div>
+            <div class="items-cards-list" id="unassignedEntriesList"></div>
+          </div>
         </section>
 
         <section class="view-section" id="view-contact">
@@ -1053,7 +1078,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.30</span>
+          <span class="badge badge-version">v4.31</span>
         </div>
       </footer>
 
@@ -1123,8 +1148,14 @@
         <div class="form-group">
           <label for="editAccount">Conta</label>
           <select id="editAccount" class="account-select">
-            <option value="">Sem conta</option>
+            <option value="">Selecione uma conta</option>
           </select>
+        </div>
+
+        <div class="form-group" id="editDueDayGroup" hidden>
+          <label for="editDueDay">Dia do vencimento</label>
+          <input type="number" id="editDueDay" min="1" max="31" step="1"
+            inputmode="numeric" placeholder="1 a 31" />
         </div>
 
         <div class="form-group" id="editPaymentMethodGroup">
@@ -1283,12 +1314,22 @@
         <button type="button" class="modal-close-btn" id="closeAdjustAccountModalBtn" aria-label="Fechar ajuste de saldo">&times;</button>
       </div>
       <form id="adjustAccountForm" novalidate>
-        <input type="hidden" id="adjustAccountId" />
+        <div class="form-group">
+          <label for="adjustAccountId">Conta</label>
+          <select id="adjustAccountId" required>
+            <option value="">Selecione uma conta</option>
+          </select>
+        </div>
         <p class="account-adjust-hint" id="adjustAccountName"></p>
         <div class="form-group">
-          <label for="adjustAccountBalance">Saldo atual informado (R$)</label>
+          <label for="adjustAccountBalance">Saldo real na data informada (R$)</label>
           <input type="number" id="adjustAccountBalance" step="0.01" min="-9999999999.99" max="9999999999.99" required />
         </div>
+        <div class="form-group">
+          <label for="adjustAccountBalanceDate">Data do saldo real</label>
+          <input type="date" id="adjustAccountBalanceDate" required />
+        </div>
+        <p class="account-adjust-hint">Lançamentos anteriores à data escolhida deixam de entrar no cálculo.</p>
         <p class="form-error account-form-error" id="adjustAccountError" role="alert" hidden></p>
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="cancelAdjustAccountBtn">Cancelar</button>
@@ -1704,7 +1745,7 @@
       </details>
       <div id="statementGuideButtonContainer"></div>
       <div class="form-group">
-        <label for="importTargetAccount">Conta de destino <span aria-hidden="true">*</span></label>
+        <label for="importTargetAccount">Conta de destino <span id="importTargetAccountRequiredIndicator" aria-hidden="true">*</span></label>
         <select id="importTargetAccount" required aria-required="true">
           <option value="">Selecione uma conta</option>
         </select>
@@ -1961,6 +2002,7 @@
         <div class="wizard-add-row">
           <input type="text" id="wFixedDesc" class="wizard-input" placeholder="Descrição (ex: Aluguel, Plano de saúde...)" aria-label="Descrição do gasto fixo" />
           <input type="number" id="wFixedAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" aria-label="Valor do gasto fixo" />
+          <input type="number" id="wFixedDay" class="wizard-input" min="1" max="31" step="1" inputmode="numeric" placeholder="Vencimento 1-31" aria-label="Dia do vencimento do gasto fixo" />
           <button type="button" class="btn-wizard-add" id="wAddFixedBtn" title="Adicionar gasto fixo" aria-label="Adicionar gasto fixo">
             <i class="fa-solid fa-plus"></i>
           </button>
@@ -1996,6 +2038,7 @@
         <div class="wizard-add-row">
           <input type="text" id="wVarDesc" class="wizard-input" placeholder="Descrição" aria-label="Descrição do gasto variável" />
           <input type="number" id="wVarAmount" class="wizard-input wizard-input-amount" placeholder="R$ 0,00" min="0" step="0.01" aria-label="Valor do gasto variável" />
+          <input type="number" id="wVarDay" class="wizard-input" min="1" max="31" step="1" inputmode="numeric" placeholder="Vencimento 1-31" aria-label="Dia do vencimento dos gastos variáveis" />
           <button type="button" class="btn-wizard-add" id="wAddVarBtn" title="Adicionar gasto variável" aria-label="Adicionar gasto variável">
             <i class="fa-solid fa-plus"></i>
           </button>
@@ -2009,6 +2052,12 @@
            PASSO 4: RESULTADO
            ======================== -->
       <div class="wizard-panel" id="wPanel4">
+        <div class="form-group wizard-account-field">
+          <label for="wizardAccount">Conta de destino</label>
+          <select id="wizardAccount">
+            <option value="">Selecione uma conta</option>
+          </select>
+        </div>
         <div class="wizard-result-header">
           <div class="wizard-result-emoji" id="wizardResultEmoji">🎉</div>
           <h4 id="wizardResultTitle">Diagnóstico Financeiro</h4>

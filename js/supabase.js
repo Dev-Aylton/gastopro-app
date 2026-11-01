@@ -163,6 +163,11 @@ function validateCloudPayload(item, kind) {
     if (item.paymentMethod != null && ![
       'pix', 'debit', 'cash', 'credit_card', 'boleto', 'transfer', 'other'
     ].includes(item.paymentMethod)) return 'A forma de pagamento do lançamento é inválida.';
+    if (item.debtInfo && item.debtInfo.dueDay != null &&
+      (!Number.isInteger(item.debtInfo.dueDay) || item.debtInfo.dueDay < 1 ||
+        item.debtInfo.dueDay > 31)) {
+      return 'O dia de vencimento deve ser um inteiro entre 1 e 31.';
+    }
     return null;
   }
 
@@ -170,12 +175,32 @@ function validateCloudPayload(item, kind) {
     if (!['fixed', 'debt', 'variable'].includes(item.type || 'fixed')) return 'Tipo de template inválido.';
     if (!isValidCloudMonth(item.startMonth)) return 'O mês inicial deve estar no formato AAAA-MM.';
     if (item.endMonth && !isValidCloudMonth(item.endMonth)) return 'O mês final deve estar no formato AAAA-MM.';
-    if (item.day != null && !/^\d{2}$/.test(String(item.day))) return 'O dia deve ter dois dígitos.';
+    if (item.day != null && !/^(0[1-9]|[12]\d|3[01])$/.test(String(item.day))) {
+      return 'Informe um dia de vencimento entre 1 e 31.';
+    }
     if (item.accountId != null && !isValidCloudUuid(item.accountId)) return 'A conta do template deve ter um UUID válido.';
     return null;
   }
 
   return 'Tipo de registro inválido.';
+}
+
+function normalizeDueDay(value) {
+  const day = typeof value === 'number' ? value : Number.NaN;
+  return Number.isInteger(day) && day >= 1 && day <= 31 ? day : null;
+}
+
+function normalizeTemplateDay(value) {
+  if (typeof value !== 'string' || !/^\d{1,2}$/.test(value)) return null;
+  const day = Number(value);
+  return Number.isInteger(day) && day >= 1 && day <= 31
+    ? String(day).padStart(2, '0')
+    : null;
+}
+
+function normalizeDebtInfo(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return { ...value, dueDay: normalizeDueDay(value.dueDay) };
 }
 
 function mapEntryFromCloud(row) {
@@ -189,7 +214,7 @@ function mapEntryFromCloud(row) {
     month: row.date ? String(row.date).substring(0, 7) : '',
     paid: Boolean(row.paid),
     isDebt: Boolean(row.is_debt),
-    debtInfo: row.debt_info,
+    debtInfo: normalizeDebtInfo(row.debt_info),
     active: row.active !== false,
     accountId: row.account_id || null,
     paymentMethod: row.payment_method || null
@@ -205,7 +230,7 @@ function mapEntryToCloud(entry) {
     date: entry.date,
     paid: Boolean(entry.paid),
     is_debt: Boolean(entry.isDebt),
-    debt_info: entry.debtInfo || null,
+    debt_info: normalizeDebtInfo(entry.debtInfo),
     active: entry.active !== false,
     account_id: entry.accountId || null,
     payment_method: entry.paymentMethod || null
@@ -248,6 +273,8 @@ function mapCreditCardToCloud(card) {
 window.GastoProSyncFieldHelpers = {
   entryFromCloud: mapEntryFromCloud,
   entryToCloud: mapEntryToCloud,
+  templateDayFromCloud: normalizeTemplateDay,
+  dueDayFromCloud: normalizeDueDay,
   creditCardFromCloud: mapCreditCardFromCloud,
   creditCardToCloud: mapCreditCardToCloud
 };
@@ -542,7 +569,7 @@ const SupabaseAuth = {
         return { ...base, kind: 'templates', item: {
           id: row.id, desc: row.description, amount: Number(row.amount), category: row.category,
           type: row.type || 'fixed', isDebt: Boolean(row.is_debt), active: row.active !== false,
-          startMonth: row.start_month, endMonth: row.end_month || null, day: row.day || '01',
+          startMonth: row.start_month, endMonth: row.end_month || null, day: normalizeTemplateDay(row.day),
           paidMonths: row.paid_months || {}, accountId: row.account_id || null
         } };
       case 'profiles':
@@ -1221,7 +1248,7 @@ const SupabaseAuth = {
         active: template.active !== false,
         start_month: template.startMonth,
         end_month: template.endMonth || null,
-        day: template.day || '01',
+        day: template.day || null,
         paid_months: template.paidMonths || {},
         account_id: template.accountId || null,
         client_edited_at: window.FinanceData.getClientEditedAt('templates', template.id)
@@ -1473,7 +1500,7 @@ const SupabaseAuth = {
         active: row.active !== false,
         startMonth: row.start_month,
         endMonth: row.end_month || null,
-        day: row.day || '01',
+        day: normalizeTemplateDay(row.day),
         paidMonths: row.paid_months || {},
         accountId: row.account_id || null
       }));
@@ -1522,7 +1549,7 @@ const SupabaseAuth = {
         active: tpl.active !== false,
         start_month: tpl.startMonth,
         end_month: tpl.endMonth || null,
-        day: tpl.day || '01',
+        day: tpl.day || null,
         paid_months: tpl.paidMonths || {},
         account_id: tpl.accountId || null
         ,client_edited_at: window.FinanceData?.getClientEditedAt('templates', tpl.id)

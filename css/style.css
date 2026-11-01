@@ -1960,6 +1960,22 @@ body {
 }
 .topbar-label { font-size: 0.82rem; color: var(--text-muted); }
 .topbar-value { font-size: 1rem; font-weight: 800; color: var(--text-main); }
+.topbar-balance-button {
+  min-height: 44px;
+  padding: 0.25rem 0.4rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.topbar-balance-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.wizard-account-field {
+  margin-bottom: 1rem;
+}
 .topbar-month-result {
   display: flex;
   align-items: baseline;
@@ -5852,6 +5868,8 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 
 .import-preview-table {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   border-collapse: collapse;
   font-size: 0.78rem;
 }
@@ -5891,7 +5909,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 }
 
 .import-preview-table .col-check {
-  width: 36px;
+  width: 44px;
   text-align: center;
 }
 
@@ -5921,13 +5939,40 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   font-weight: 700;
 }
 
+.import-due-day-field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+  font-size: 1rem;
+}
+
+.import-due-day-input {
+  width: 5rem;
+  min-height: 44px;
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-main);
+  font-size: 1rem;
+}
+
+.import-due-day-status {
+  color: var(--danger-text);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
 .import-preview-table .col-category select {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-main);
-  font-size: 0.75rem;
-  padding: 0.25rem 0.4rem;
+  font-size: 1rem;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.4rem;
   cursor: pointer;
   max-width: 130px;
 }
@@ -5941,8 +5986,10 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-main);
-  font-size: 0.75rem;
-  padding: 0.25rem 0.4rem;
+  font-size: 1rem;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.4rem;
   cursor: pointer;
 }
 
@@ -5998,11 +6045,20 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   font-size: 0.75rem;
 }
 
-.import-preview-table input[type="checkbox"] {
-  width: 15px;
-  height: 15px;
-  accent-color: var(--primary);
+.import-row-check-target {
+  display: inline-flex;
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+}
+
+.import-row-check-target input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
 }
 
 /* Barra de ações do preview */
@@ -6227,7 +6283,9 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
     border-radius: var(--radius-md) var(--radius-md) 0 0;
     max-height: 92vh;
   }
+}
 
+@media (max-width: 800px) {
   .import-preview-table-wrapper {
     overflow-x: hidden;
   }

@@ -995,6 +995,39 @@ function getImportPaidValue(row) {
   return Boolean(row && row.date) && row.date < todayString;
 }
 
+function isValidImportDueDay(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 31;
+}
+
+function isImportDueDayRequired(row, selectedType, installmentDebt = false) {
+  if (selectedType === 'income') return false;
+  return ['fixed', 'debt', 'variable_pending'].includes(selectedType) ||
+    Boolean(installmentDebt);
+}
+
+function getImportDueDayIssue(row, selectedType, installmentDebt = false) {
+  const required = isImportDueDayRequired(row, selectedType, installmentDebt);
+  const invalid = row && row.dueDay != null && !isValidImportDueDay(row.dueDay);
+  if (required && !isValidImportDueDay(row && row.dueDay)) return 'missing';
+  return selectedType !== 'income' && invalid ? 'invalid' : null;
+}
+
+function updateImportDueDayField(row, selectedType, label, input, status, installmentDebt = false) {
+  const required = isImportDueDayRequired(row, selectedType, installmentDebt);
+  const issue = getImportDueDayIssue(row, selectedType, installmentDebt);
+  const missing = Boolean(issue);
+  if (label) label.hidden = selectedType === 'income';
+  if (input) {
+    input.required = required;
+    input.setAttribute('aria-invalid', String(missing));
+  }
+  if (status) {
+    status.hidden = !missing;
+    status.textContent = missing ? 'Falta o dia' : '';
+  }
+  return { required, missing };
+}
+
 function buildRecurringImportTemplate(candidate, rows, decision, currentMonth) {
   if (!candidate || !decision || decision.type !== 'fixed' ||
     typeof decision.active !== 'boolean') return null;
@@ -1015,6 +1048,7 @@ function buildRecurringImportTemplate(candidate, rows, decision, currentMonth) {
     .filter(month => /^\d{4}-\d{2}$/.test(month || ''))
     .sort()
     .pop() || null;
+  const dueDay = templateSource.dueDay;
 
   return {
     ...templateSource,
@@ -1025,6 +1059,7 @@ function buildRecurringImportTemplate(candidate, rows, decision, currentMonth) {
     month: startMonth,
     startMonth,
     endMonth: finiteEndMonth,
+    dueDay,
     date: `${startMonth}-${templateSource.date.slice(8, 10)}`,
     paidMonths
   };
@@ -1093,6 +1128,10 @@ window.GastoProImportHelpers = Object.freeze({
   getImportPreviewType,
   getRecurringImportLineType,
   getImportPaidValue,
+  isValidDueDay: isValidImportDueDay,
+  requiresDueDay: isImportDueDayRequired,
+  getDueDayIssue: getImportDueDayIssue,
+  updateDueDayField: updateImportDueDayField,
   requiresImportPaymentReview,
   getImportAccountId,
   normalizeFixedDescription,
@@ -1475,7 +1514,7 @@ function accountsNeedBalanceDateNotice(accounts, filter) {
 
 function buildAccountSelectOptions(accounts) {
   return [
-    { value: '', label: 'Sem conta' },
+    { value: '', label: 'Selecione uma conta' },
     ...accounts.map(account => ({ value: account.id, label: account.name }))
   ];
 }
@@ -2371,11 +2410,24 @@ function setEntryFormType(type) {
   return true;
 }
 
+function openIncomeEntryComposer() {
+  if (typeof window.switchToView !== 'function') return false;
+  window.switchToView('entries');
+  if (!setEntryFormType('income')) return false;
+  window.requestAnimationFrame(() => {
+    const form = document.getElementById('incomeForm');
+    const amount = document.getElementById('incomeAmount');
+    form?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    amount?.focus();
+  });
+  return true;
+}
+
 function clearEntryFormFields(type) {
   const fields = type === 'income'
     ? ['incomeDesc', 'incomeAmount', 'incomeAccount']
     : type === 'expense'
-      ? ['expenseDesc', 'expenseAmount', 'expenseAccount', 'expenseEndMonth']
+      ? ['expenseDesc', 'expenseAmount', 'expenseAccount', 'expenseEndMonth', 'expenseDueDay', 'expenseCreditAccount']
       : null;
   if (!fields) return false;
 
@@ -2431,6 +2483,7 @@ function bindDetailsExpandedState(details) {
 
 window.GastoProEntryComposer = Object.freeze({
   setType: setEntryFormType,
+  openIncome: openIncomeEntryComposer,
   clearForm: clearEntryFormFields,
   completeSave: completeEntrySave,
   setup: setupEntryComposer
@@ -2484,6 +2537,7 @@ function scrollToGoalsDashboardPanel() {
  *  5. Delega para as funções de renderização de cada tela.
  */
 function renderAll() {
+  migrateLegacyAccountAssignments();
   updateAccountSelects();
   updateCreditCardPurchaseFields();
   const ym         = getYearMonthString(state.currentYear, state.currentMonth);
@@ -2523,6 +2577,7 @@ function renderAll() {
   if (topbarMonthlyResult) {
     setFinancialAmount(topbarMonthlyResult, balance, { signed: true });
   }
+
   const highlights = getDashboardHighlightValues(
     FinanceData.getAccountBalances(),
     state.accountBalanceFilter,
@@ -2543,6 +2598,36 @@ function renderAll() {
   renderContactView();
   renderAdminView();
   updateAdminNavigation();
+}
+
+let accountMigrationInProgress = false;
+function migrateLegacyAccountAssignments() {
+  if (accountMigrationInProgress || FinanceData.getAccounts().length ||
+    !FinanceData.getUnassignedAccountItems().length) return;
+  accountMigrationInProgress = true;
+  FinanceData.migrateUnassignedAccounts().then(result => {
+    if (!result.success) {
+      console.error('[GastoPro] Não foi possível atribuir os lançamentos antigos à Conta principal:', result.error);
+      showToast('Não foi possível migrar lançamentos sem conta. Tente novamente.');
+      return;
+    }
+    if (result.migrated) {
+      const noticeKey = 'gastopro_account_migration_notice';
+      if (!localStorage.getItem(noticeKey)) {
+        localStorage.setItem(noticeKey, 'true');
+        showToast(`${result.count} lançamento(s) sem conta foram atribuídos à Conta principal.`);
+      }
+      if (result.syncResult && !result.syncResult.success) {
+        showToast('Lançamentos salvos neste aparelho; a sincronização com a nuvem ficará pendente.');
+      }
+      renderAll();
+    }
+  }).catch(error => {
+    console.error('[GastoPro] Erro ao migrar lançamentos sem conta:', error);
+    showToast('Não foi possível migrar lançamentos sem conta. Tente novamente.');
+  }).finally(() => {
+    accountMigrationInProgress = false;
+  });
 }
 
 function getCreditCardIssuerClass(issuerBank) {
@@ -2627,20 +2712,70 @@ function updateAccountSelects() {
   const accounts = FinanceData.getAccounts();
   document.querySelectorAll('.account-select').forEach(select => {
     const selectedId = select.value;
-    const options = buildAccountSelectOptions(accounts);
+    const options = accounts.length
+      ? buildAccountSelectOptions(accounts)
+      : [{ value: '', label: 'Conta principal será criada ao salvar' }];
     select.innerHTML = options.map(option =>
       `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
     ).join('');
     select.value = accounts.some(account => account.id === selectedId) ? selectedId : '';
+    select.required = accounts.length > 0;
   });
+  const adjustSelect = document.getElementById('adjustAccountId');
+  if (adjustSelect) {
+    const selectedId = adjustSelect.value;
+    adjustSelect.innerHTML = buildAccountSelectOptions(accounts).map(option =>
+      `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
+    ).join('');
+    adjustSelect.value = accounts.some(account => account.id === selectedId) ? selectedId : '';
+  }
+  const wizardSelect = document.getElementById('wizardAccount');
+  if (wizardSelect) {
+    const selectedId = wizardSelect.value;
+    const options = accounts.length
+      ? buildAccountSelectOptions(accounts)
+      : [{ value: '', label: 'Conta principal será criada ao salvar' }];
+    wizardSelect.innerHTML = options.map(option =>
+      `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
+    ).join('');
+    wizardSelect.value = accounts.some(account => account.id === selectedId) ? selectedId : '';
+    wizardSelect.required = accounts.length > 0;
+    const field = wizardSelect.closest('.wizard-account-field');
+    if (field) field.hidden = accounts.length === 0;
+  }
 }
 
 function renderAccountsView() {
   const accounts = FinanceData.getAccounts();
   const list = document.getElementById('accountsList');
+  const unassignedPanel = document.getElementById('unassignedEntriesPanel');
+  const unassignedList = document.getElementById('unassignedEntriesList');
   const total = document.getElementById('accountsPageTotal');
   setFinancialAmount(total, FinanceData.getAccountBalances().total, { signed: true, tone: 'inverse' });
   if (!list) return;
+  const unassigned = FinanceData.getUnassignedAccountItems();
+  if (unassignedPanel && unassignedList) {
+    unassignedPanel.hidden = !accounts.length || !unassigned.length;
+    unassignedList.innerHTML = unassigned.map(item => `
+      <article class="manage-item-card">
+        <div class="card-item-left">
+          <div class="card-item-info">
+            <div class="card-item-title">${escapeHtml(item.desc || item.cardName || 'Lançamento')}</div>
+            <div class="card-item-meta">${escapeHtml(item.date || item.startMonth || 'Data não informada')} · ${formatCurrency(item.amount)}</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="assign-account-${escapeHtml(item.id)}">Escolha a conta</label>
+          <select id="assign-account-${escapeHtml(item.id)}" data-action="assign-unassigned-account"
+            data-kind="${escapeHtml(item.storageKind)}" data-id="${escapeHtml(item.id)}">
+            ${buildAccountSelectOptions(accounts).map(option =>
+              `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
+            ).join('')}
+          </select>
+        </div>
+      </article>
+    `).join('');
+  }
 
   if (!accounts.length) {
     list.innerHTML = `
@@ -4604,9 +4739,10 @@ function renderIncomesView(incomes, totalIncome) {
       <div class="empty-state">
         <i class="fa-solid fa-hand-holding-dollar" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.4;"></i>
         <p>Nenhum ganho cadastrado para este mês ainda.</p>
-        <span>Use o formulário acima para adicionar seu salário ou rendas extras.</span>
-        <button type="button" class="btn-primary empty-state-action" data-action="focus-entry-form"
-          data-form="incomeForm" data-focus="incomeDesc">Adicionar ganho</button>
+        <span>Adicione seu salário ou outras fontes de renda.</span>
+        <button type="button" class="btn-primary empty-state-action" data-action="open-income-entry">
+          Adicionar ganho
+        </button>
         <small class="empty-state-tip">Depois de salvar, você pode editar ou excluir o lançamento nesta lista.</small>
       </div>
     `;
@@ -4724,6 +4860,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
               <span class="tag-badge">${escapeHtml(item.category || typeLabel)}</span>
               ${accountName ? `<span class="tag-badge">${escapeHtml(accountName)}</span>` : ''}
               <span class="tag-badge">${typeLabel}</span>
+              ${item.dueDayMissing ? '<span class="badge badge-warning" role="status">Falta o dia</span>' : ''}
               ${renderPaymentMethodBadge(item.paymentMethod)}
               ${item.isCardInstallment
                 ? `<span class="tag-badge">${escapeHtml(item.cardName)} · ${item.installmentNumber}/${item.installmentCount}x</span>`
@@ -4841,6 +4978,18 @@ window.openEditModal = function(id) {
   }
   const editAccount = document.getElementById('editAccount');
   if (editAccount) editAccount.value = item.accountId || '';
+  const editDueDayGroup = document.getElementById('editDueDayGroup');
+  const editDueDay = document.getElementById('editDueDay');
+  const itemDueDay = item.day || (item.debtInfo && item.debtInfo.dueDay) || '';
+  const requiresDueDay = item.type !== 'income' &&
+    (item.isTemplate || item.type === 'fixed' || item.type === 'debt' ||
+      (item.paid === false && item.paymentMethod !== 'credit_card'));
+  if (editDueDayGroup) editDueDayGroup.hidden = item.type === 'income';
+  if (editDueDay) {
+    editDueDay.value = itemDueDay;
+    editDueDay.required = requiresDueDay;
+    editDueDay.dataset.dueRequired = String(requiresDueDay);
+  }
 
   const isFixed = item.type === 'fixed' || item.type === 'debt' || item.isTemplate ||
     FinanceData.getTemplates().some(template => template.id === id);
@@ -4958,17 +5107,30 @@ function deleteCreditCard(id) {
   });
 }
 
-function openAdjustAccountModal(id) {
-  const account = FinanceData.getAccounts().find(item => item.id === id);
-  if (!account) return;
-  document.getElementById('adjustAccountId').value = account.id;
-  document.getElementById('adjustAccountName').textContent = account.name;
-  document.getElementById('adjustAccountBalance').value = FinanceData.getAccountBalance(id);
+function openAdjustAccountModal(id = '') {
+  const accounts = FinanceData.getAccounts();
+  if (!accounts.length) {
+    showToast('Cadastre uma conta para informar o saldo real.');
+    openAccountModal();
+    return;
+  }
+  const account = accounts.find(item => item.id === id) || null;
+  const accountSelect = document.getElementById('adjustAccountId');
+  accountSelect.value = account ? account.id : '';
+  document.getElementById('adjustAccountName').textContent = account
+    ? `Saldo real em ${account.balanceDate || getTodayString()}`
+    : 'Selecione a conta e informe o saldo real na data escolhida.';
+  document.getElementById('adjustAccountBalance').value = account
+    ? FinanceData.getAccountBalance(account.id)
+    : '';
+  document.getElementById('adjustAccountBalanceDate').value = account
+    ? account.balanceDate || getTodayString()
+    : getTodayString();
   const error = document.getElementById('adjustAccountError');
   error.textContent = '';
   error.hidden = true;
   document.getElementById('adjustAccountModal').classList.add('active');
-  setTimeout(() => document.getElementById('adjustAccountBalance').focus(), 100);
+  setTimeout(() => (account ? document.getElementById('adjustAccountBalance') : accountSelect).focus(), 100);
 }
 
 function closeAdjustAccountModal() {
@@ -5751,6 +5913,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         break;
       }
+      case 'open-income-entry':
+        openIncomeEntryComposer();
+        break;
       case 'new-goal':
         openGoalModal();
         break;
@@ -5845,6 +6010,9 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       case 'adjust-account':
         openAdjustAccountModal(id);
+        break;
+      case 'open-balance-adjustment':
+        openAdjustAccountModal();
         break;
       case 'delete-account':
         deleteAccount(id);
@@ -5981,6 +6149,37 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.addEventListener('change', (e) => {
+    if (e.target instanceof HTMLSelectElement &&
+      e.target.dataset.action === 'assign-unassigned-account') {
+      const { kind, id } = e.target.dataset;
+      const accountId = e.target.value;
+      if (!accountId) return;
+      e.target.disabled = true;
+      FinanceData.assignUnassignedAccount(kind, id, accountId).then(result => {
+        if (!result.success) {
+          showToast(result.error && result.error.message || result.error || 'Não foi possível vincular a conta.');
+          return;
+        }
+        renderAll();
+        showToast('Conta vinculada ao lançamento.');
+      }).catch(error => {
+        console.error('[GastoPro] Falha ao vincular conta ao lançamento:', error);
+        showToast('Não foi possível vincular a conta ao lançamento.');
+      }).finally(() => {
+        e.target.disabled = false;
+      });
+      return;
+    }
+    if (e.target instanceof HTMLSelectElement && e.target.id === 'adjustAccountId') {
+      const account = FinanceData.getAccounts().find(item => item.id === e.target.value);
+      if (account) {
+        document.getElementById('adjustAccountBalance').value =
+          FinanceData.getAccountBalance(account.id);
+        document.getElementById('adjustAccountBalanceDate').value = account.balanceDate || getTodayString();
+        document.getElementById('adjustAccountName').textContent =
+          `Saldo real em ${account.balanceDate || getTodayString()}`;
+      }
+    }
     if (e.target instanceof HTMLSelectElement && e.target.id === 'feedbackCategory') {
       feedbackViewState.draftCategory = e.target.value;
     }
@@ -6118,6 +6317,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.sidebar-nav .nav-item[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
       const view = btn.getAttribute('data-view');
+      if (view === 'incomes') {
+        openIncomeEntryComposer();
+        return;
+      }
       switchToView(view);
     });
   });
@@ -6340,7 +6543,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
     await withSaving(saveButton, async () => {
       try {
-        FinanceData.add({
+        const savedItem = FinanceData.add({
           month: itemMonth,
           type: 'income',
           desc: desc,
@@ -6351,6 +6554,12 @@ document.addEventListener('DOMContentLoaded', () => {
           accountId: document.getElementById('incomeAccount').value || null,
           date: dateVal
         });
+        if (!savedItem) {
+          alert(FinanceData.getAccounts().length
+            ? 'Selecione uma conta de destino antes de salvar o ganho.'
+            : 'Não foi possível criar a Conta principal para salvar o ganho.');
+          return;
+        }
 
         completeEntrySave('income');
         document.getElementById('incomeDesc').focus();
@@ -6385,16 +6594,28 @@ document.addEventListener('DOMContentLoaded', () => {
       expenseTypeSelect.value = 'variable';
     }
     updateCreditCardPurchaseFields();
+    const dateVal = document.getElementById('expenseDate').value || getTodayString();
+    const requiresDueDay = expenseTypeSelect.value === 'fixed' || expenseTypeSelect.value === 'debt' ||
+      (expenseTypeSelect.value === 'variable' && paymentMethod.value !== 'credit_card' &&
+        !isPaidByPaymentMethod(paymentMethod.value, dateVal));
+    const dueDayWrapper = document.getElementById('expenseDueDayWrapper');
+    const dueDayInput = document.getElementById('expenseDueDay');
+    if (dueDayWrapper) dueDayWrapper.hidden = !requiresDueDay;
+    if (dueDayInput) dueDayInput.required = requiresDueDay;
   }
 
   if (expenseTypeSelect) expenseTypeSelect.addEventListener('change', checkDebtVisibility);
   if (expenseCatSelect) expenseCatSelect.addEventListener('change', checkDebtVisibility);
+  if (expenseDateInput) expenseDateInput.addEventListener('change', checkDebtVisibility);
   ['income', 'expense'].forEach(kind => {
     const select = document.getElementById(`${kind}PaymentMethod`);
     if (!select) return;
     populatePaymentMethodSelect(select, kind);
     setPaymentMethodSelection(kind, getPaymentMethodPreference(kind), false);
-    select.addEventListener('change', () => setPaymentMethodSelection(kind, select.value));
+    select.addEventListener('change', () => {
+      setPaymentMethodSelection(kind, select.value);
+      if (kind === 'expense') checkDebtVisibility();
+    });
   });
   const creditCardSelect = document.getElementById('expenseCreditCard');
   if (creditCardSelect) {
@@ -6417,6 +6638,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dateVal = document.getElementById('expenseDate').value || getTodayString();
     const endMonthVal = document.getElementById('expenseEndMonth') ? document.getElementById('expenseEndMonth').value : null;
     const paymentMethod = document.getElementById('expensePaymentMethod').value;
+    const dueDayValue = document.getElementById('expenseDueDay').value;
 
     if (!desc) {
       alert('Por favor, informe a descrição do gasto.');
@@ -6424,6 +6646,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (isNaN(amount) || amount <= 0) {
       alert('Por favor, informe um valor válido maior que zero.');
+      return;
+    }
+    const requiresDueDay = type === 'fixed' || type === 'debt' ||
+      (type === 'variable' && paymentMethod !== 'credit_card' &&
+        !isPaidByPaymentMethod(paymentMethod, dateVal));
+    const dueDay = dueDayValue === '' ? null : Number(dueDayValue);
+    if (requiresDueDay && (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) {
+      alert('Informe um dia de vencimento entre 1 e 31.');
+      return;
+    }
+    if (dueDayValue !== '' && (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) {
+      alert('O dia de vencimento deve estar entre 1 e 31.');
       return;
     }
 
@@ -6448,6 +6682,7 @@ document.addEventListener('DOMContentLoaded', () => {
             amount,
             category,
             purchaseDate: dateVal,
+            accountId: document.getElementById('expenseCreditAccount').value || null,
             installmentCount: Number(document.getElementById('expenseInstallments').value)
           });
           if (!result.purchase) {
@@ -6466,7 +6701,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        FinanceData.add({
+        const savedItem = FinanceData.add({
           month: itemMonth,
           type: type,
           desc: desc,
@@ -6476,8 +6711,15 @@ document.addEventListener('DOMContentLoaded', () => {
           paid: isPaidByPaymentMethod(paymentMethod, dateVal),
           date: dateVal,
           accountId: document.getElementById('expenseAccount').value || null,
+          dueDay,
           endMonth: endMonthVal || null
         });
+        if (!savedItem) {
+          alert(FinanceData.getAccounts().length
+            ? 'Selecione uma conta de destino antes de salvar o gasto.'
+            : 'Não foi possível criar a Conta principal para salvar o gasto.');
+          return;
+        }
 
         completeEntrySave('expense');
         checkDebtVisibility();
@@ -6521,14 +6763,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const date = document.getElementById('editDate').value;
     const active = document.getElementById('editActive') ? document.getElementById('editActive').value === 'true' : true;
     const endMonth = document.getElementById('editEndMonth') ? document.getElementById('editEndMonth').value || null : null;
+    const dueDayValue = document.getElementById('editDueDay').value;
+    const dueDay = dueDayValue === '' ? null : Number(dueDayValue);
+    const source = FinanceData.getAll().find(entry => entry.id === id);
+    const dueDayRequired = type === 'fixed' || type === 'debt' ||
+      Boolean(source && source.isTemplate) ||
+      Boolean(source && source.paid === false && source.paymentMethod !== 'credit_card' && type !== 'income');
 
     if (!id || !desc || isNaN(amount) || amount <= 0) {
       alert('Por favor, informe a descrição e um valor maior que zero.');
       return;
     }
+    if (dueDayRequired && (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) {
+      alert('Informe um dia de vencimento entre 1 e 31.');
+      return;
+    }
+    if (dueDayValue !== '' && (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) {
+      alert('O dia de vencimento deve estar entre 1 e 31.');
+      return;
+    }
 
     const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
-    const source = FinanceData.getAll().find(entry => entry.id === id);
     if (source && source.type === 'variable' && type === 'fixed') {
       const sourceForMatching = { ...source, desc, date };
       const matches = findFutureFixedDescriptionMatches(sourceForMatching, FinanceData.getEntries());
@@ -6538,6 +6793,7 @@ document.addEventListener('DOMContentLoaded', () => {
         category,
         active,
         endMonth,
+        dueDay,
         accountId: document.getElementById('editAccount').value || null
       };
       const convert = async (futureIds, remember) => withSaving(saveButton, async () => {
@@ -6597,6 +6853,7 @@ document.addEventListener('DOMContentLoaded', () => {
           date: date,
           active: active,
           endMonth: endMonth,
+          dueDay,
           accountId: document.getElementById('editAccount').value || null
         };
         if (source && !source.isTemplate) {
@@ -6802,8 +7059,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorEl = document.getElementById('adjustAccountError');
     const rawBalance = document.getElementById('adjustAccountBalance').value;
     const balance = Number(rawBalance);
+    const balanceDate = document.getElementById('adjustAccountBalanceDate').value;
+    const parsedBalanceDate = new Date(`${balanceDate}T00:00:00Z`);
     if (rawBalance === '' || !Number.isFinite(balance) || Math.abs(balance) > 9999999999.99) {
       errorEl.textContent = 'Informe um saldo atual válido.';
+      errorEl.hidden = false;
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(balanceDate) || Number.isNaN(parsedBalanceDate.getTime()) ||
+      parsedBalanceDate.toISOString().slice(0, 10) !== balanceDate ||
+      parsedBalanceDate.getUTCFullYear() < 1) {
+      errorEl.textContent = 'Informe a data do saldo real.';
       errorEl.hidden = false;
       return;
     }
@@ -6814,7 +7080,8 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const result = await FinanceData.adjustAccountBalance(
         document.getElementById('adjustAccountId').value,
-        balance
+        balance,
+        balanceDate
       );
       if (!result.success) {
         renderAll();
@@ -6854,6 +7121,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const endMonthGroup = document.getElementById('editEndMonthGroup');
       if (statusGroup) statusGroup.style.display = isFixed ? 'block' : 'none';
       if (endMonthGroup) endMonthGroup.style.display = isFixed ? 'block' : 'none';
+      const dueDayGroup = document.getElementById('editDueDayGroup');
+      const dueDayInput = document.getElementById('editDueDay');
+      if (dueDayGroup) dueDayGroup.hidden = val === 'income';
+      if (dueDayInput) dueDayInput.required = isFixed || dueDayInput.dataset.dueRequired === 'true';
     });
   }
 
@@ -9066,12 +9337,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!importTargetAccount) return;
     const accounts = FinanceData.getAccounts();
     importTargetAccount.innerHTML = [
-      '<option value="">Selecione uma conta</option>',
+      `<option value="">${accounts.length ? 'Selecione uma conta' : 'Conta principal será criada ao importar'}</option>`,
       ...accounts.map(account =>
         `<option value="${escapeHtml(account.id)}">${escapeHtml(account.name)}</option>`
       )
     ].join('');
+    importTargetAccount.required = accounts.length > 0;
+    importTargetAccount.setAttribute('aria-required', String(accounts.length > 0));
     importTargetAccount.value = accounts.some(account => account.id === selectedId) ? selectedId : '';
+    const requiredIndicator = document.getElementById('importTargetAccountRequiredIndicator');
+    if (requiredIndicator) requiredIndicator.hidden = accounts.length === 0;
     if (createImportAccountBtn) createImportAccountBtn.hidden = accounts.length > 0;
     if (importTargetAccountError) {
       importTargetAccountError.hidden = true;
@@ -9184,6 +9459,14 @@ document.addEventListener('DOMContentLoaded', () => {
               : ''
           }`
           : '';
+      const dueDayDisplay = `
+        <label class="import-due-day-field" for="importDueDay${i}" ${isIncome ? 'hidden' : ''}>
+          Dia do vencimento
+          <input type="number" class="import-due-day-input" id="importDueDay${i}"
+            data-row="${i}" min="1" max="31" step="1" inputmode="numeric"
+            value="${row.dueDay == null ? '' : escapeHtml(row.dueDay)}" aria-label="Dia do vencimento do lançamento ${i + 1}" />
+          <span class="import-due-day-status" data-row="${i}" hidden>Falta o dia</span>
+        </label>`;
       const paymentPeriodDisplay = (row.type === 'fixed' || row.type === 'debt') && row.startMonth
         ? `<small class="import-row-reason">${escapeHtml(row.endMonth
           ? `A pagar de ${row.startMonth.slice(5, 7)}/${row.startMonth.slice(0, 4)} até ${row.endMonth.slice(5, 7)}/${row.endMonth.slice(0, 4)}`
@@ -9192,15 +9475,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="col-check">
-          <input type="checkbox" class="import-row-check" data-row="${i}"
-            aria-label="Incluir lançamento ${escapeHtml(row.desc)}"
-            ${row.selected ? 'checked' : ''} ${row.invalid ? 'disabled' : ''} />
+          <label class="import-row-check-target">
+            <input type="checkbox" class="import-row-check" data-row="${i}"
+              aria-label="Incluir lançamento ${escapeHtml(row.desc)}"
+              ${row.selected ? 'checked' : ''} ${row.invalid ? 'disabled' : ''} />
+          </label>
         </td>
         <td class="col-date">${escapeHtml(dateDisplay)}</td>
         <td class="col-desc" title="${escapeHtml(row.desc)}">
           ${escapeHtml(row.desc)} ${rowStatus}
           ${installmentDisplay}
           ${paymentPeriodDisplay}
+          ${dueDayDisplay}
           ${row.invalidReason ? `<small class="import-row-reason">${escapeHtml(row.invalidReason)}</small>` : ''}
         </td>
         <td class="col-category">
@@ -9237,7 +9523,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const isInc = e.target.value === 'income';
         row.previewType = e.target.value;
         tr.querySelector('.col-amount').classList.toggle('income', isInc);
+        const dueDayField = tr.querySelector('.import-due-day-field');
+        const dueDayInput = tr.querySelector('.import-due-day-input');
+        const dueDayStatus = tr.querySelector('.import-due-day-status');
+        updateImportDueDayField(
+          row, e.target.value, dueDayField, dueDayInput, dueDayStatus,
+          Boolean(row.installment)
+        );
       });
+      const dueDayInput = tr.querySelector('.import-due-day-input');
+      if (dueDayInput) {
+        const dueDayField = tr.querySelector('.import-due-day-field');
+        const dueDayStatus = tr.querySelector('.import-due-day-status');
+        updateImportDueDayField(
+          row, selectedType, dueDayField, dueDayInput, dueDayStatus,
+          Boolean(row.installment)
+        );
+        dueDayInput.addEventListener('input', event => {
+          row.dueDay = event.target.value === '' ? null : Number(event.target.value);
+          updateImportDueDayField(
+            row, tr.querySelector('.import-type-select').value,
+            dueDayField, dueDayInput, dueDayStatus, Boolean(row.installment)
+          );
+        });
+      }
 
       importPreviewTbody.appendChild(tr);
     });
@@ -9272,6 +9581,8 @@ document.addEventListener('DOMContentLoaded', () => {
         importPreviewTbody.querySelector(`.import-cat-select[data-row="${index}"]`);
       const typeSelect = importPreviewTbody &&
         importPreviewTbody.querySelector(`.import-type-select[data-row="${index}"]`);
+      const dueDayInput = importPreviewTbody &&
+        importPreviewTbody.querySelector(`.import-due-day-input[data-row="${index}"]`);
       if (checkbox && checkbox.checked !== row.selected) {
         row.selected = checkbox.checked;
         row.selectionTouched = true;
@@ -9280,6 +9591,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeSelect && typeSelect.value !== (row.previewType || getImportPreviewType(row))) {
         row.previewType = typeSelect.value;
       }
+      if (dueDayInput) row.dueDay = dueDayInput.value === '' ? null : Number(dueDayInput.value);
     });
     _importSourceRows = rows.map(row => ({ ...row }));
     const templates = FinanceData.getTemplates();
@@ -9393,7 +9705,7 @@ document.addEventListener('DOMContentLoaded', () => {
       importTargetAccount ? importTargetAccount.value : '',
       FinanceData.getAccounts()
     );
-    if (!accountId) {
+    if (!accountId && FinanceData.getAccounts().length) {
       const message = 'Selecione uma conta de destino antes de importar.';
       if (importTargetAccountError) {
         importTargetAccountError.textContent = message;
@@ -9406,6 +9718,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const checkboxes = importPreviewTbody.querySelectorAll('.import-row-check');
     const catSelects  = importPreviewTbody.querySelectorAll('.import-cat-select');
     const typeSelects = importPreviewTbody.querySelectorAll('.import-type-select');
+    const dueDayInputs = importPreviewTbody.querySelectorAll('.import-due-day-input');
+    dueDayInputs.forEach(input => {
+      const row = _importParsedRows[Number(input.dataset.row)];
+      if (row) row.dueDay = input.value === '' ? null : Number(input.value);
+    });
 
     const items = [];
     const debtItems = [];
@@ -9416,8 +9733,66 @@ document.addEventListener('DOMContentLoaded', () => {
       candidateByIndex.set(index, candidate)
     ));
     const processedFixedCandidates = new Set();
+    let excludedDueDayRows = 0;
+    const excludeImportRow = index => {
+      const checkbox = checkboxes[index];
+      const row = _importParsedRows[index];
+      if (!checkbox || !row || !checkbox.checked) return;
+      checkbox.checked = false;
+      row.selected = false;
+      row.dueDayMissing = true;
+      excludedDueDayRows++;
+      const typeSelect = typeSelects[index];
+      const dueDayLabel = importPreviewTbody.querySelector(
+        `.import-due-day-field[for="importDueDay${index}"]`
+      );
+      const dueDayInput = dueDayInputs[index];
+      const dueDayStatus = importPreviewTbody.querySelector(
+        `.import-due-day-status[data-row="${index}"]`
+      );
+      updateImportDueDayField(
+        row, typeSelect ? typeSelect.value : getImportPreviewType(row),
+        dueDayLabel, dueDayInput, dueDayStatus, Boolean(row.installment)
+      );
+    };
     const now = new Date();
     const currentMonth = getYearMonthString(now.getFullYear(), now.getMonth() + 1);
+    for (let index = 0; index < checkboxes.length; index++) {
+      const sourceRow = _importParsedRows[index];
+      if (!checkboxes[index].checked || sourceRow.invalid) continue;
+      const candidate = candidateByIndex.get(index);
+      const candidateDecision = candidate && importCandidateDecisions.get(candidate.key);
+      if (candidateDecision && candidateDecision.type === 'fixed') {
+        const latestSelected = candidate.indexes
+          .filter(candidateIndex => _importParsedRows[candidateIndex].selected)
+          .sort((left, right) =>
+            _importParsedRows[left].date.localeCompare(_importParsedRows[right].date)
+          ).pop();
+        if (latestSelected !== index) continue;
+      }
+      const selectedType = typeSelects[index] ? typeSelects[index].value : getImportPreviewType(sourceRow);
+      const type = getRecurringImportLineType(sourceRow, candidateDecision, selectedType);
+      const installmentCheckbox = importPreviewTbody.querySelector(
+        `.import-installment-check[data-row="${index}"]`
+      );
+      const createsInstallmentDebt = Boolean(
+        sourceRow.installment && installmentCheckbox && installmentCheckbox.checked &&
+        !sourceRow.linkedTemplateId
+      );
+      const dueDayIssue = getImportDueDayIssue(
+        sourceRow, type, createsInstallmentDebt
+      );
+      if (dueDayIssue) {
+        if (candidateDecision && candidateDecision.type === 'fixed' && candidate) {
+          candidate.indexes.forEach(excludeImportRow);
+        } else {
+          excludeImportRow(index);
+        }
+      }
+    }
+    if (excludedDueDayRows) {
+      showToast(`${excludedDueDayRows} linha(s) sem dia válido ficaram fora da importação.`);
+    }
     checkboxes.forEach((cb, i) => {
       const sourceRow = _importParsedRows[i];
       if (sourceRow.invalid) return;
@@ -9530,7 +9905,8 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(
           `${debtCount} conta${debtCount === 1 ? '' : 's'} a pagar criada${debtCount === 1 ? '' : 's'}, ` +
           `${paymentCount} baixa${paymentCount === 1 ? '' : 's'} registrada${paymentCount === 1 ? '' : 's'} e ` +
-          `${launchCount} lançamento${launchCount === 1 ? '' : 's'} importado${launchCount === 1 ? '' : 's'} com sucesso!`
+          `${launchCount} lançamento${launchCount === 1 ? '' : 's'} importado${launchCount === 1 ? '' : 's'} com sucesso!` +
+          (excludedDueDayRows ? ` ${excludedDueDayRows} linha(s) sem dia ficaram pendentes.` : '')
         );
         renderAll();
         closeImportModal(true);
@@ -9540,7 +9916,9 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Não foi possível concluir a importação. Tente novamente.');
       }
     } else {
-      showToast('Selecione ao menos um lançamento para importar.');
+      showToast(excludedDueDayRows
+        ? `${excludedDueDayRows} linha(s) sem dia válido ficaram fora da importação; edite o dia e tente novamente.`
+        : 'Selecione ao menos um lançamento para importar.');
     }
   }
 
@@ -9715,9 +10093,10 @@ document.addEventListener('DOMContentLoaded', () => {
     step: 1,              // Passo atual (1–4)
     incomes: [],          // { desc, amount, date }
     fixedChecked: [],     // IDs dos templates fixos marcados para baixa
-    fixedNew: [],         // { desc, amount } → novos gastos fixos digitados
+    fixedNew: [],         // { desc, amount, dueDay } → novos gastos fixos digitados
     varItems: {},         // { category: amount } → categorias com valor
-    varCustom: [],        // { desc, amount } → gastos variáveis avulsos
+    varCustom: [],        // { desc, amount, dueDay } → gastos variáveis avulsos
+    varDueDay: null,
   };
 
   /** Categorias do Passo 3 — variáveis por categoria */
@@ -9747,6 +10126,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const wizardFixedList      = document.getElementById('wizardFixedList');
   const wFixedDesc           = document.getElementById('wFixedDesc');
   const wFixedAmount         = document.getElementById('wFixedAmount');
+  const wFixedDay            = document.getElementById('wFixedDay');
   const wAddFixedBtn         = document.getElementById('wAddFixedBtn');
 
   // Passo 3 — Variáveis
@@ -9754,6 +10134,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const wizardVarList      = document.getElementById('wizardVarList');
   const wVarDesc           = document.getElementById('wVarDesc');
   const wVarAmount         = document.getElementById('wVarAmount');
+  const wVarDay            = document.getElementById('wVarDay');
   const wAddVarBtn         = document.getElementById('wAddVarBtn');
 
   // Passo 4 — Resultado
@@ -9790,6 +10171,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function openWizard() {
     if (!wizardModal) return;
     resetWizardState();
+    updateAccountSelects();
+    const wizardAccount = document.getElementById('wizardAccount');
+    if (wizardAccount) wizardAccount.value = '';
     wizardModal.classList.add('active');
     goToWizardStep(1, 'forward');
     closeMobileSidebar();
@@ -9810,6 +10194,7 @@ document.addEventListener('DOMContentLoaded', () => {
       fixedNew: [],
       varItems: {},
       varCustom: [],
+      varDueDay: null,
     };
   }
 
@@ -9999,13 +10384,20 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleWizardAddFixed() {
     const desc   = (wFixedDesc   ? wFixedDesc.value.trim()          : '');
     const amount = (wFixedAmount ? parseFloat(wFixedAmount.value)   : 0);
+    const dueDayValue = wFixedDay ? wFixedDay.value : '';
+    const dueDay = dueDayValue === '' ? null : Number(dueDayValue);
 
     if (!desc)   { showToast('Informe a descrição do gasto fixo.'); return; }
     if (!amount || amount <= 0) { showToast('Informe um valor válido.'); return; }
+    if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
+      showToast('Informe um dia de vencimento entre 1 e 31.');
+      return;
+    }
 
-    wizardState.fixedNew.push({ desc, amount });
+    wizardState.fixedNew.push({ desc, amount, dueDay });
     if (wFixedDesc)   wFixedDesc.value   = '';
     if (wFixedAmount) wFixedAmount.value = '';
+    if (wFixedDay) wFixedDay.value = '';
     renderWizardFixedNewList();
     if (wFixedDesc) wFixedDesc.focus();
   }
@@ -10074,11 +10466,17 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleWizardAddVar() {
     const desc   = (wVarDesc   ? wVarDesc.value.trim()          : '');
     const amount = (wVarAmount ? parseFloat(wVarAmount.value)   : 0);
+    const dueDayValue = wVarDay ? wVarDay.value : '';
+    const dueDay = dueDayValue === '' ? null : Number(dueDayValue);
 
     if (!desc)   { showToast('Informe a descrição do gasto.'); return; }
     if (!amount || amount <= 0) { showToast('Informe um valor válido.'); return; }
+    if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
+      showToast('Informe um dia de vencimento entre 1 e 31.');
+      return;
+    }
 
-    wizardState.varCustom.push({ desc, amount });
+    wizardState.varCustom.push({ desc, amount, dueDay });
     if (wVarDesc)   wVarDesc.value   = '';
     if (wVarAmount) wVarAmount.value = '';
     renderWizardVarList();
@@ -10179,12 +10577,42 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   async function handleWizardFinish() {
     const ym = getYearMonthString(state.currentYear, state.currentMonth);
+    const hasVariableItems = Object.values(wizardState.varItems).some(amount => amount > 0) ||
+      wizardState.varCustom.length > 0;
+    const varDueValue = wVarDay ? wVarDay.value : '';
+    const varDueDay = varDueValue === '' ? null : Number(varDueValue);
+    if (hasVariableItems && (!Number.isInteger(varDueDay) || varDueDay < 1 || varDueDay > 31)) {
+      showToast('Informe um dia de vencimento entre 1 e 31 para os gastos variáveis.');
+      goToWizardStep(3, 'back');
+      return;
+    }
+    const itemsToSave = wizardState.incomes.length + wizardState.fixedChecked.length +
+      wizardState.fixedNew.length + Object.values(wizardState.varItems).filter(amount => amount > 0).length +
+      wizardState.varCustom.length;
+    if (!itemsToSave) {
+      showToast('Nenhum dado foi informado para salvar.');
+      closeWizard();
+      return;
+    }
+    let accountId = document.getElementById('wizardAccount').value || null;
+    if (FinanceData.getAccounts().length && !accountId) {
+      showToast('Escolha uma conta de destino antes de salvar.');
+      return;
+    }
+    if (!FinanceData.getAccounts().length) {
+      const account = FinanceData.ensureAccountForLaunch(null);
+      if (!account.success) {
+        showToast(account.error || 'Não foi possível criar a Conta principal.');
+        return;
+      }
+      accountId = account.accountId;
+    }
     let saved = 0;
 
     // 1. Salvar rendas
     wizardState.incomes.forEach(item => {
       const dateStr = item.date || `${ym}-01`;
-      FinanceData.add({
+      const result = FinanceData.add({
         type:     'income',
         desc:     item.desc,
         amount:   item.amount,
@@ -10192,19 +10620,27 @@ document.addEventListener('DOMContentLoaded', () => {
         date:     dateStr,
         month:    dateStr.substring(0, 7),
         paid:     true,
+        accountId,
       });
+      if (!result) throw new Error('Não foi possível salvar uma renda na conta escolhida.');
       saved++;
     });
 
     // 2. Registrar baixa dos fixos marcados no mês atual
     wizardState.fixedChecked.forEach(id => {
+      const template = FinanceData.getTemplates().find(item => item.id === id);
+      const assigned = template && FinanceData.update(id, {
+        accountId,
+        dueDay: template.day
+      });
+      if (!assigned) throw new Error('Não foi possível vincular um gasto fixo à conta escolhida.');
       FinanceData.togglePaid(id, ym);
       saved++;
     });
 
     // 3. Salvar novos gastos fixos (templates)
     wizardState.fixedNew.forEach(item => {
-      FinanceData.add({
+      const result = FinanceData.add({
         type:       'fixed',
         desc:       item.desc,
         amount:     item.amount,
@@ -10213,8 +10649,10 @@ document.addEventListener('DOMContentLoaded', () => {
         active:     true,
         startMonth: ym,
         endMonth:   null,
-        day:        '01',
+        dueDay:     item.dueDay,
+        accountId,
       });
+      if (!result) throw new Error('Não foi possível salvar um gasto fixo com o vencimento informado.');
       saved++;
     });
 
@@ -10222,7 +10660,7 @@ document.addEventListener('DOMContentLoaded', () => {
     WIZARD_VAR_CATEGORIES.forEach(cat => {
       const amount = wizardState.varItems[cat.name];
       if (amount && amount > 0) {
-        FinanceData.add({
+        const result = FinanceData.add({
           type:     'variable',
           desc:     cat.name,
           amount:   amount,
@@ -10230,14 +10668,17 @@ document.addEventListener('DOMContentLoaded', () => {
           date:     `${ym}-01`,
           month:    ym,
           paid:     false,
+          dueDay:   varDueDay,
+          accountId,
         });
+        if (!result) throw new Error('Não foi possível salvar um gasto variável com a conta e vencimento informados.');
         saved++;
       }
     });
 
     // 5. Salvar gastos variáveis avulsos
     wizardState.varCustom.forEach(item => {
-      FinanceData.add({
+      const result = FinanceData.add({
         type:     'variable',
         desc:     item.desc,
         amount:   item.amount,
@@ -10245,7 +10686,10 @@ document.addEventListener('DOMContentLoaded', () => {
         date:     `${ym}-01`,
         month:    ym,
         paid:     false,
+        dueDay:   item.dueDay,
+        accountId,
       });
+      if (!result) throw new Error('Não foi possível salvar um gasto variável com a conta e vencimento informados.');
       saved++;
     });
 

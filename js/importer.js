@@ -349,6 +349,9 @@ const GastoProImporter = (() => {
         invalidReason: date ? '' : 'Data inválida ou ausente.',
         raw: line
       };
+      const sourceDueDay = valueAt(idxDueDay);
+      const parsedDueDay = /^\d{1,2}$/.test(sourceDueDay) ? Number(sourceDueDay) : null;
+      row.dueDay = parsedDueDay >= 1 && parsedDueDay <= 31 ? parsedDueDay : null;
       if (idxType >= 0 && ['income', 'fixed', 'debt', 'variable'].includes(explicitType)) {
         row.type = explicitType;
         if (explicitType === 'fixed' || explicitType === 'debt') {
@@ -360,13 +363,10 @@ const GastoProImporter = (() => {
           };
           const startMonth = validMonth(valueAt(idxStartMonth)) || (date ? date.substring(0, 7) : null);
           const requestedEndMonth = validMonth(valueAt(idxEndMonth));
-          const dueDayValue = valueAt(idxDueDay);
-          const dueDay = /^\d{1,2}$/.test(dueDayValue) ? Number(dueDayValue) : null;
           row.startMonth = startMonth;
           row.endMonth = requestedEndMonth && startMonth && requestedEndMonth >= startMonth
             ? requestedEndMonth
             : null;
-          row.dueDay = dueDay >= 1 && dueDay <= 31 ? dueDay : null;
         }
       } else {
         defaultTypeRows.push(row);
@@ -484,6 +484,7 @@ const GastoProImporter = (() => {
       amount: row.amount,
       category,
       accountId: row.accountId || null,
+      dueDay: row.dueDay,
       startMonth,
       endMonth: shiftMonth(startMonth, row.installment.total - 1),
       date: `${startMonth}-${row.date.substring(8, 10)}`,
@@ -897,6 +898,7 @@ const GastoProImporter = (() => {
     }
     const localDate = formatIsoDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
     let date = localDate;
+    let dueDay = null;
     let desc;
     let amount;
     let invalidReason = '';
@@ -917,6 +919,7 @@ const GastoProImporter = (() => {
             ? candidate : selected
         );
         date = formatIsoDate(nearest.getUTCFullYear(), nearest.getUTCMonth() + 1, nearest.getUTCDate());
+        dueDay = Number(date.slice(8, 10));
       }
       if (amount === 0) invalidReason = 'Boleto sem valor';
     } else {
@@ -945,6 +948,7 @@ const GastoProImporter = (() => {
       signedAmount: -amount,
       category: autoDetectCategory(desc),
       type: 'variable',
+      dueDay,
       invalid: Boolean(invalidReason),
       invalidReason,
       raw: truncateText(digits, MAX_LINE_CHARS),
@@ -1017,12 +1021,22 @@ const GastoProImporter = (() => {
       `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
     if (type === 'fixed' || type === 'debt') {
       const startMonth = row.startMonth || fallbackMonth;
+      const dueDay = Number(row.dueDay);
+      const monthMatch = startMonth.match(/^(\d{4})-(\d{2})$/);
+      const daysInStartMonth = monthMatch
+        ? new Date(Number(monthMatch[1]), Number(monthMatch[2]), 0).getDate()
+        : 0;
+      const dueDate = Number.isInteger(dueDay) && dueDay >= 1 && dueDay <= 31 &&
+        daysInStartMonth > 0
+        ? `${startMonth}-${String(Math.min(dueDay, daysInStartMonth)).padStart(2, '0')}`
+        : row.date;
       return {
         type,
         desc: truncateText(row.desc, 300),
         amount: row.amount,
         category: truncateText(row.category, 100),
-        date: row.dueDay ? `${startMonth}-${String(row.dueDay).padStart(2, '0')}` : row.date,
+        dueDay: row.dueDay,
+        date: dueDate,
         month: startMonth,
         startMonth,
         endMonth: row.endMonth || null,
@@ -1037,6 +1051,7 @@ const GastoProImporter = (() => {
       date:     row.date,
       month:    fallbackMonth,
       accountId: row.accountId || null,
+      dueDay:   row.dueDay,
       paid
     };
   }
