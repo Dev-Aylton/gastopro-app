@@ -412,10 +412,10 @@
           </section>
 
           <details class="drawer-section irreversible-actions" id="irreversibleActions">
-            <summary class="irreversible-actions-summary">
+            <summary class="irreversible-actions-summary" aria-expanded="false">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
               <span class="action-text">
-                <strong>Zona de perigo</strong>
+                <strong>Opções avançadas</strong>
                 <span>Ações irreversíveis. Faça um backup antes.</span>
               </span>
             </summary>
@@ -424,7 +424,7 @@
                 <h5>Zerar dados financeiros</h5>
                 <p>Apaga lançamentos, fixos, contas, cartões, compras, metas e regras no aparelho e na nuvem. Preserva perfil, mensagens e login.</p>
               </div>
-              <button type="button" id="clearDataBtn" class="irreversible-action-button">
+              <button type="button" id="clearDataBtn" class="irreversible-action-button" data-risk-level="1">
                 <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Zerar dados financeiros
               </button>
             </div>
@@ -433,7 +433,7 @@
                 <h5>Apagar meus dados (manter login)</h5>
                 <p>Apaga dados financeiros, perfil, mensagens e eventos no aparelho e na nuvem. Mantém sua conta de login.</p>
               </div>
-              <button type="button" id="deleteAllMyDataBtn" class="irreversible-action-button">
+              <button type="button" id="deleteAllMyDataBtn" class="irreversible-action-button" data-risk-level="2">
                 <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Apagar meus dados
               </button>
             </div>
@@ -442,7 +442,7 @@
                 <h5>Excluir conta definitivamente</h5>
                 <p>Remove a conta de login e todos os dados vinculados na nuvem e neste aparelho.</p>
               </div>
-              <button type="button" id="deleteAccountBtn" class="irreversible-action-button">
+              <button type="button" id="deleteAccountBtn" class="irreversible-action-button" data-risk-level="3">
                 <i class="fa-solid fa-user-xmark" aria-hidden="true"></i> Excluir conta definitivamente
               </button>
             </div>
@@ -676,7 +676,7 @@
               <div class="view-icon-badge"><i class="fa-solid fa-plus"></i></div>
               <div>
                 <h2>Lançamentos</h2>
-                <p>Escolha o tipo e preencha os dados do lançamento.</p>
+                <p id="entryComposerPrompt">Escolha o que deseja lançar</p>
               </div>
             </div>
           </div>
@@ -703,7 +703,7 @@
             </div>
             <div class="view-header-total">
               <span class="total-caption">Total de Ganhos:</span>
-              <span class="total-big text-white financial-amount financial-amount--positive" id="incomesPageTotal">R$ 0,00</span>
+              <span class="total-big text-white financial-amount" id="incomesPageTotal">R$ 0,00</span>
             </div>
           </div>
 
@@ -805,7 +805,7 @@
             </div>
             <div class="view-header-total">
               <span class="total-caption">Total de Gastos:</span>
-              <span class="total-big text-white financial-amount financial-amount--negative" id="expensesPageTotal">R$ 0,00</span>
+              <span class="total-big text-white financial-amount" id="expensesPageTotal">R$ 0,00</span>
             </div>
           </div>
 
@@ -941,7 +941,7 @@
             </div>
             <div class="view-header-total">
               <span class="total-caption">Saldo total:</span>
-              <span class="total-big text-white financial-amount financial-amount--neutral" id="accountsPageTotal">R$ 0,00</span>
+              <span class="total-big text-white financial-amount" id="accountsPageTotal">R$ 0,00</span>
             </div>
           </div>
 

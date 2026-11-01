@@ -1246,6 +1246,11 @@ function renderAdminMetricRows(items, labelFor) {
   `).join('')}</ul>`;
 }
 
+function formatDistinctUsersCaption(count) {
+  const total = Number(count);
+  return `${total} ${total === 1 ? 'usuário distinto' : 'usuários distintos'}`;
+}
+
 function renderAdminAnalytics() {
   const container = document.getElementById('adminAnalyticsContent');
   if (!container) return;
@@ -1322,7 +1327,7 @@ function renderAdminAnalytics() {
       </div>
       <div>
         <h3>Telas mais usadas (30 dias)</h3>
-        <p class="admin-analytics-caption">${usage.uniqueUsers30Days} usuários distintos</p>
+        <p class="admin-analytics-caption">${formatDistinctUsersCaption(usage.uniqueUsers30Days)}</p>
         ${renderAdminMetricRows(screenRows, getAdminEventLabel)}
       </div>
     </section>
@@ -1814,7 +1819,7 @@ function navigateMobileBottomItem(destination) {
 }
 
 function setEntryFormType(type) {
-  if (!['expense', 'income'].includes(type)) return false;
+  if (type !== null && !['expense', 'income'].includes(type)) return false;
   const panels = {
     expense: document.getElementById('expenseForm')?.closest('.panel-box'),
     income: document.getElementById('incomeForm')?.closest('.panel-box')
@@ -1829,6 +1834,8 @@ function setEntryFormType(type) {
   Object.entries(panels).forEach(([formType, panel]) => {
     panel.hidden = formType !== type;
   });
+  const prompt = document.getElementById('entryComposerPrompt');
+  if (prompt) prompt.hidden = type !== null;
   return true;
 }
 
@@ -1855,8 +1862,7 @@ function completeEntrySave(type) {
   return true;
 }
 
-function setupEntryComposer() {
-  const view = document.getElementById('view-entries');
+function setupEntryComposer(view = document.getElementById('view-entries')) {
   if (!view) return;
 
   const expenseForm = document.getElementById('expenseForm');
@@ -1874,15 +1880,28 @@ function setupEntryComposer() {
   view.querySelectorAll('.entry-type-button[data-entry-type]').forEach(button => {
     button.addEventListener('click', () => setEntryFormType(button.dataset.entryType));
   });
-  if (!setEntryFormType('expense')) {
-    throw new Error('Não foi possível iniciar o formulário de gasto.');
+  if (!setEntryFormType(null)) {
+    throw new Error('Não foi possível iniciar a tela de lançamentos.');
   }
+}
+
+function bindDetailsExpandedState(details) {
+  const summary = details?.querySelector('summary');
+  if (!summary) return false;
+
+  const syncExpandedState = () => {
+    summary.setAttribute('aria-expanded', String(details.open));
+  };
+  syncExpandedState();
+  details.addEventListener('toggle', syncExpandedState);
+  return true;
 }
 
 window.GastoProEntryComposer = Object.freeze({
   setType: setEntryFormType,
   clearForm: clearEntryFormFields,
-  completeSave: completeEntrySave
+  completeSave: completeEntrySave,
+  setup: setupEntryComposer
 });
 
 function scrollToGoalsDashboardPanel() {
@@ -2088,7 +2107,7 @@ function renderAccountsView() {
   const accounts = FinanceData.getAccounts();
   const list = document.getElementById('accountsList');
   const total = document.getElementById('accountsPageTotal');
-  setFinancialAmount(total, FinanceData.getAccountBalances().total, { signed: true });
+  setFinancialAmount(total, FinanceData.getAccountBalances().total, { signed: true, tone: 'inverse' });
   if (!list) return;
 
   if (!accounts.length) {
@@ -3990,7 +4009,7 @@ function renderCategoryChart(fixed, variables) {
  * @param {number} totalIncome - Soma total de ganhos do mês em R$.
  */
 function renderIncomesView(incomes, totalIncome) {
-  setFinancialAmount(document.getElementById('incomesPageTotal'), totalIncome, { signed: true });
+  setFinancialAmount(document.getElementById('incomesPageTotal'), totalIncome, { signed: true, tone: 'inverse' });
 
   const container = document.getElementById('incomesListDetailed');
   if (!container) return;
@@ -4063,7 +4082,7 @@ function renderIncomesView(incomes, totalIncome) {
  * @param {number} totalExpenses - totalFixed + totalVariable.
  */
 function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalExpenses) {
-  setFinancialAmount(document.getElementById('expensesPageTotal'), -totalExpenses, { signed: true });
+  setFinancialAmount(document.getElementById('expensesPageTotal'), -totalExpenses, { signed: true, tone: 'inverse' });
   setFinancialAmount(document.getElementById('subtotalFixedLabel'), -totalFixed, { signed: true });
   setFinancialAmount(document.getElementById('subtotalVarLabel'), -totalVariable, { signed: true });
 
@@ -5090,6 +5109,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   // ── Navegação e ações delegadas ───────────────────────────────
+  const irreversibleActions = document.getElementById('irreversibleActions');
+  if (irreversibleActions) bindDetailsExpandedState(irreversibleActions);
+
   document.addEventListener('click', (e) => {
     if (!(e.target instanceof Element)) return;
 
@@ -5109,6 +5131,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const summary = details?.querySelector('summary');
         if (details && summary) {
           details.open = true;
+          summary.setAttribute('aria-expanded', 'true');
           summary.focus();
           summary.scrollIntoView({ block: 'center' });
         }
@@ -9756,9 +9779,6 @@ function renderGoalsSection(fixed, variables) {
         <i class="fa-solid fa-bullseye"></i>
         <p>Nenhuma meta definida ainda.</p>
         <span>Defina um teto de gastos por categoria para acompanhar seus limites.</span>
-        <button type="button" class="btn-primary empty-state-action" data-action="new-goal">
-          Criar meta
-        </button>
         <small class="empty-state-tip">A tela mostra o progresso ao atingir 80% e 100% do limite.</small>`;
       emptyState.style.display = 'flex';
     }

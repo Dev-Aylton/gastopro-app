@@ -59,6 +59,7 @@ const TestResults = {
   errors: []
 };
 const pendingTestPromises = [];
+const ASYNC_TEST_TIMEOUT_MS = 15000;
 
 /**
  * Declara um grupo de testes relacionados.
@@ -98,7 +99,23 @@ function itAsync(testName, fn) {
     ? pendingTestPromises[pendingTestPromises.length - 1]
     : Promise.resolve();
   const pending = previous
-    .then(fn)
+    .then(async () => {
+      window.GastoProActiveTestName = testName;
+      let timeoutId;
+      try {
+        await Promise.race([
+          Promise.resolve().then(fn),
+          new Promise((_, reject) => {
+            timeoutId = window.setTimeout(
+              () => reject(new Error(`Timeout após ${ASYNC_TEST_TIMEOUT_MS} ms.`)),
+              ASYNC_TEST_TIMEOUT_MS
+            );
+          })
+        ]);
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    })
     .then(() => {
       TestResults.passed++;
       console.log(`  ✅ PASS — ${testName}`);
@@ -108,6 +125,11 @@ function itAsync(testName, fn) {
       TestResults.errors.push({ test: testName, error: e.message });
       console.error(`  ❌ FAIL — ${testName}`);
       console.error(`     → ${e.message}`);
+    })
+    .finally(() => {
+      if (window.GastoProActiveTestName === testName) {
+        window.GastoProActiveTestName = null;
+      }
     });
   pendingTestPromises.push(pending);
 }
@@ -472,13 +494,60 @@ describe('FinanceData — Metas por Categoria', () => {
       renderGoalsSection([], []);
       assertEqual(container.innerHTML, '');
       assertEqual(emptyState.style.display, 'flex');
+      assertFalse(emptyState.innerHTML.includes('data-action="new-goal"'));
     } finally {
       document.getElementById = originalGetElementById;
+    }
+  });
+
+  it('mantém um único botão para criar metas no estado vazio', () => {
+    FinanceData.saveGoals([]);
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <button id="openGoalModalBtn">Nova Meta</button>
+      <div id="goalsListContainer"></div>
+      <div id="goalsEmptyState"></div>`;
+    document.body.appendChild(host);
+    const originalGetElementById = document.getElementById.bind(document);
+    document.getElementById = id => host.querySelector(`#${id}`) || originalGetElementById(id);
+
+    try {
+      renderGoalsSection([], [], []);
+      assertEqual(host.querySelectorAll('#openGoalModalBtn, [data-action="new-goal"]').length, 1);
+      assertFalse(host.querySelector('#goalsEmptyState').textContent.includes('Criar meta'));
+    } finally {
+      document.getElementById = originalGetElementById;
+      host.remove();
     }
   });
 });
 
 describe('Estados vazios das telas', () => {
+  it('sincroniza aria-expanded nas opções avançadas recolhíveis', () => {
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <details>
+        <summary aria-expanded="false">Opções avançadas</summary>
+        <button data-risk-level="1">Ação</button>
+      </details>`;
+    document.body.appendChild(host);
+    const details = host.querySelector('details');
+    const summary = host.querySelector('summary');
+
+    try {
+      assertTrue(bindDetailsExpandedState(details));
+      assertEqual(summary.getAttribute('aria-expanded'), 'false');
+      details.open = true;
+      details.dispatchEvent(new Event('toggle'));
+      assertEqual(summary.getAttribute('aria-expanded'), 'true');
+      details.open = false;
+      details.dispatchEvent(new Event('toggle'));
+      assertEqual(summary.getAttribute('aria-expanded'), 'false');
+    } finally {
+      host.remove();
+    }
+  });
+
   it('oferece uma ação nas listas e painéis sem dados', () => {
     setupMockLocalStorage();
     const host = document.createElement('div');
@@ -515,7 +584,7 @@ describe('Estados vazios das telas', () => {
       assertTrue(host.querySelector('#expensesListDetailed [data-action="focus-entry-form"]'));
       assertTrue(host.querySelector('#accountsList [data-action="new-account"]'));
       assertTrue(host.querySelector('#creditCardsEmpty [data-action="new-credit-card"]'));
-      assertTrue(host.querySelector('#goalsEmptyState [data-action="new-goal"]'));
+      assertFalse(host.querySelector('#goalsEmptyState [data-action="new-goal"]'));
       assertTrue(host.querySelector('#debtCardsGrid [data-goto="expenses"]'));
       assertTrue(host.querySelector('#chartEmptyMessage [data-goto="expenses"]'));
       assertTrue(host.querySelector('#dashboardAccountsEmpty [data-goto="accounts"]'));
@@ -2072,6 +2141,11 @@ describe('Canal Fale comigo', () => {
     assertEqual(helpers.getAdminLabel(2), 'Mensagem #3');
   });
 
+  it('pluraliza o rótulo de usuários distintos no painel Admin', () => {
+    assertEqual(formatDistinctUsersCaption(1), '1 usuário distinto');
+    assertEqual(formatDistinctUsersCaption(2), '2 usuários distintos');
+  });
+
   itAsync('checkIsAdmin falha fechado em erro ou resposta inesperada', async () => {
     const previousClient = window.SupabaseAuth.client;
     const authenticatedClient = rpcResult => ({
@@ -3517,10 +3591,10 @@ describe('Dashboard mobile', () => {
   });
 
   it('formata a versão exibida a partir do nome do cache do service worker', () => {
-    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.10'), 'v4.10');
+    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.11'), 'v4.11');
     assertNull(window.GastoProAppVersion.formatCacheName('other-v4.7'));
     assertEqual(window.GastoProAppVersion.getDisplayedVersion(null), 'v…');
-    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.10'), 'v4.10');
+    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.11'), 'v4.11');
   });
 
   it('usa o saldo filtrado das contas e o resultado mensal existente no destaque', () => {
@@ -3785,7 +3859,45 @@ describe('Dashboard mobile', () => {
     }
   });
 
-  it('alterna entre os formulários sem exibi-los juntos e sem duplicar IDs', () => {
+  it('inicia lançamentos sem formulário e mostra apenas o selecionado', () => {
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <section id="view-entries">
+        <p id="entryComposerPrompt">Escolha o que deseja lançar</p>
+        <button class="entry-type-button" data-entry-type="expense" aria-pressed="false">Gasto</button>
+        <button class="entry-type-button" data-entry-type="income" aria-pressed="false">Ganho</button>
+        <div class="entry-form-slot" id="entryExpenseFormSlot"></div>
+        <div class="entry-form-slot" id="entryIncomeFormSlot"></div>
+      </section>
+      <div class="panel-box"><form id="expenseForm"></form></div>
+      <div class="panel-box"><form id="incomeForm"></form></div>
+    `;
+    document.body.appendChild(fixture);
+    try {
+      window.GastoProEntryComposer.setup(fixture.querySelector('#view-entries'));
+      assertTrue(fixture.querySelector('#expenseForm').closest('.panel-box').hidden);
+      assertTrue(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+      assertFalse(fixture.querySelector('#entryComposerPrompt').hidden);
+      assertEqual(fixture.querySelector('[data-entry-type="expense"]').getAttribute('aria-pressed'), 'false');
+      assertEqual(fixture.querySelector('[data-entry-type="income"]').getAttribute('aria-pressed'), 'false');
+
+      fixture.querySelector('[data-entry-type="expense"]').click();
+      assertFalse(fixture.querySelector('#expenseForm').closest('.panel-box').hidden);
+      assertTrue(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+      assertTrue(fixture.querySelector('#entryComposerPrompt').hidden);
+      fixture.querySelector('[data-entry-type="income"]').click();
+      assertTrue(fixture.querySelector('#expenseForm').closest('.panel-box').hidden);
+      assertFalse(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+      assertTrue(fixture.querySelector('#entryComposerPrompt').hidden);
+      ['expenseForm', 'incomeForm'].forEach(id => {
+        assertEqual(fixture.querySelectorAll(`[id="${id}"]`).length, 1, `${id} deve existir uma vez.`);
+      });
+    } finally {
+      fixture.remove();
+    }
+  });
+
+  it('não mostra os dois formulários ao alternar entre Gasto e Ganho', () => {
     const fixture = document.createElement('div');
     fixture.innerHTML = `
       <button class="entry-type-button" data-entry-type="expense" aria-pressed="false"></button>
@@ -7759,13 +7871,37 @@ async function getResponsiveFixtureFrame(width, height = 844) {
     const frame = document.createElement('iframe');
     frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:320px;height:844px;border:0;';
     const stylesheet = new URL('../css/style.css', window.location.href).href;
+    const loadTimeoutMs = 10000;
     const loaded = new Promise((resolve, reject) => {
-      frame.addEventListener('load', resolve, { once: true });
-      frame.addEventListener('error', reject, { once: true });
+      let timeoutId;
+      const cleanup = () => {
+        window.clearTimeout(timeoutId);
+        frame.removeEventListener('load', onLoad);
+        frame.removeEventListener('error', onError);
+      };
+      const onLoad = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = () => {
+        cleanup();
+        reject(new Error('Não foi possível carregar o iframe de layout.'));
+      };
+      frame.addEventListener('load', onLoad, { once: true });
+      frame.addEventListener('error', onError, { once: true });
+      timeoutId = window.setTimeout(() => {
+        cleanup();
+        reject(new Error(`Timeout ao carregar iframe de layout (${loadTimeoutMs} ms).`));
+      }, loadTimeoutMs);
     });
     frame.srcdoc = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${stylesheet}"></head><body data-theme="dark"><div class="app-shell" id="fixtureApp"></div></body></html>`;
     document.body.appendChild(frame);
-    await loaded;
+    try {
+      await loaded;
+    } catch (error) {
+      frame.remove();
+      throw error;
+    }
     responsiveFixtureFrame = frame;
   }
 
@@ -8117,6 +8253,161 @@ describe('Layout responsivo e tipografia mobile', () => {
 // ================================================================
 // RELATÓRIO FINAL
 describe('Cartões de lançamentos e notificações responsivos', () => {
+  it('mantém contraste mínimo dos estados de gastos e avisos nos dois temas', () => {
+    const root = document.documentElement;
+    const body = document.body;
+    const previousTheme = root.getAttribute('data-theme');
+    const previousBodyTheme = body.getAttribute('data-theme');
+    const parseColor = value => {
+      if (value.startsWith('#')) {
+        const hex = value.slice(1);
+        const fullHex = hex.length === 3 ? [...hex].map(part => part + part).join('') : hex;
+        return {
+          channels: [0, 2, 4].map(index => parseInt(fullHex.slice(index, index + 2), 16)),
+          alpha: 1
+        };
+      }
+      const matches = value.match(/[\d.]+/g);
+      if (!matches) {
+        throw new Error(`Cor inválida na verificação de contraste: "${value}"\n${new Error().stack}`);
+      }
+      const values = matches.map(Number);
+      return { channels: values.slice(0, 3), alpha: values[3] ?? 1 };
+    };
+    const composite = (foreground, background) => ({
+      channels: foreground.channels.map((channel, index) =>
+        channel * foreground.alpha + background.channels[index] * (1 - foreground.alpha)),
+      alpha: 1
+    });
+    const luminance = color => color.channels
+      .map(channel => channel / 255)
+      .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+      .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const contrast = (foreground, background) => {
+      const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+      return (values[0] + 0.05) / (values[1] + 0.05);
+    };
+    const themedBackground = (style, token, alpha, parent) => composite({
+      channels: style.getPropertyValue(token).split(',').map(Number),
+      alpha
+    }, parent);
+
+    try {
+      for (const theme of ['dark', 'light']) {
+        root.dataset.theme = theme;
+        body.dataset.theme = theme;
+        const rootStyle = getComputedStyle(root);
+        const panelBackground = parseColor(rootStyle.getPropertyValue('--bg-card'));
+        const pairs = [
+          ['ativo', '--theme-text-10b981', '--theme-rgb-background-10b981', 0.15],
+          ['inativo', '--theme-text-94a3b8', '--theme-rgb-background-94a3b8', 0.12],
+          ['inativo em hover', '--theme-text-cbd5e1', '--theme-rgb-background-94a3b8', 0.22],
+          ['aviso de erro', '--theme-text-fca5a5', '--theme-rgb-background-ef4444', 0.15],
+          ['aviso de sucesso', '--theme-text-6ee7b7', '--theme-rgb-background-10b981', 0.15]
+        ];
+        pairs.forEach(([label, textToken, backgroundToken, alpha]) => {
+          const foreground = parseColor(rootStyle.getPropertyValue(textToken));
+          const background = themedBackground(rootStyle, backgroundToken, alpha, panelBackground);
+          assertTrue(contrast(foreground, background) >= 4.5, `${theme}: contraste ${label}`);
+        });
+
+        const whiteText = parseColor(rootStyle.getPropertyValue('--theme-text-ffffff'));
+        ['--theme-background-064e3b', '--theme-background-0f766e',
+          '--theme-background-7f1d1d', '--theme-background-881337'].forEach(backgroundToken => {
+          assertTrue(contrast(whiteText, parseColor(rootStyle.getPropertyValue(backgroundToken))) >= 4.5,
+            `${theme}: contraste do cabeçalho colorido ${backgroundToken}`);
+        });
+        [
+          ['saldo total de contas', 'bg-green-gradient', '--theme-background-064e3b', '--theme-background-0f766e'],
+          ['total de ganhos', 'bg-green-gradient', '--theme-background-064e3b', '--theme-background-0f766e'],
+          ['total de gastos', 'bg-red-gradient', '--theme-background-7f1d1d', '--theme-background-881337']
+        ].forEach(([label, backgroundClass, firstStop, secondStop]) => {
+          const header = document.createElement('div');
+          header.className = backgroundClass;
+          const total = document.createElement('span');
+          total.className = 'total-big text-white financial-amount';
+          header.appendChild(total);
+          body.appendChild(header);
+          try {
+            setFinancialAmount(total, 0, { signed: true, tone: 'inverse' });
+            assertTrue(total.classList.contains('financial-amount--inverse'),
+              `${theme}: ${label} usa texto inverso`);
+            const foreground = parseColor(getComputedStyle(total).color);
+            [firstStop, secondStop].forEach(backgroundToken => {
+              assertTrue(contrast(foreground, parseColor(rootStyle.getPropertyValue(backgroundToken))) >= 4.5,
+                `${theme}: contraste do ${label} ${backgroundToken}`);
+            });
+          } finally {
+            header.remove();
+          }
+        });
+
+        const badgeSurface = document.createElement('div');
+        badgeSurface.className = 'panel-box';
+        const dangerBadge = document.createElement('span');
+        dangerBadge.className = 'badge badge-danger';
+        badgeSurface.appendChild(dangerBadge);
+        body.appendChild(badgeSurface);
+        const dangerBadgeStyle = getComputedStyle(dangerBadge);
+        const badgeBackground = composite(parseColor(dangerBadgeStyle.backgroundColor), panelBackground);
+        const badgeForeground = parseColor(dangerBadgeStyle.color);
+        badgeSurface.remove();
+        assertTrue(contrast(badgeForeground, badgeBackground) >= 4.5,
+          `${theme}: contraste do selo de perigo`);
+
+        const authTabs = document.createElement('div');
+        authTabs.className = 'auth-tabs-nav';
+        const authTab = document.createElement('button');
+        authTab.className = 'auth-tab-btn active';
+        authTabs.appendChild(authTab);
+        body.appendChild(authTabs);
+        const authTabStyle = getComputedStyle(authTab);
+        const authTabContrast = contrast(parseColor(authTabStyle.color), parseColor(authTabStyle.backgroundColor));
+        authTabs.remove();
+        assertTrue(authTabContrast >= 4.5,
+          `${theme}: contraste da aba de autenticação ativa`);
+        ['--primary-strong', '--theme-background-4f46e5'].forEach(backgroundToken => {
+          assertTrue(contrast(whiteText, parseColor(rootStyle.getPropertyValue(backgroundToken))) >= 4.5,
+            `${theme}: contraste do botão de autenticação ${backgroundToken}`);
+        });
+
+        const goalContent = document.createElement('div');
+        goalContent.className = 'modal-content modal-goal-content';
+        const dangerProbe = document.createElement('span');
+        dangerProbe.className = 'text-danger';
+        goalContent.appendChild(dangerProbe);
+        body.appendChild(goalContent);
+        const dangerStyle = getComputedStyle(dangerProbe);
+        const dangerColor = dangerStyle.color;
+        const dangerBackground = getComputedStyle(goalContent).backgroundColor;
+        goalContent.remove();
+        assertTrue(contrast(parseColor(dangerColor), parseColor(dangerBackground)) >= 4.5,
+          `${theme}: contraste do texto de alerta`);
+
+        const cardBanks = [
+          'nubank', 'itau', 'inter', 'bradesco', 'santander',
+          'banco-do-brasil', 'caixa', 'mercado-pago', 'c6', 'btg', 'picpay'
+        ];
+        cardBanks.forEach(bank => {
+          const card = document.createElement('div');
+          card.className = `credit-card-visual credit-card-visual--${bank}`;
+          body.appendChild(card);
+          const cardStyle = getComputedStyle(card);
+          const foreground = parseColor(cardStyle.color);
+          const background = parseColor(cardStyle.backgroundColor);
+          card.remove();
+          assertTrue(contrast(foreground, background) >= 4.5,
+            `${theme}: contraste do cartão ${bank}`);
+        });
+      }
+    } finally {
+      if (previousTheme === null) root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme', previousTheme);
+      if (previousBodyTheme === null) body.removeAttribute('data-theme');
+      else body.setAttribute('data-theme', previousBodyTheme);
+    }
+  });
+
   itAsync('mantém chips e datas dos lançamentos inteiros dentro do cartão', async () => {
     const frame = await getResponsiveFixtureFrame(320, 800);
     const frameDocument = frame.contentDocument;

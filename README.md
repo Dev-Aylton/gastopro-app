@@ -6,7 +6,7 @@
 ![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.0-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-417%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-422%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -181,7 +181,7 @@ financeiro-app/
 │       ├── 20261103_sync_transactions.sql # Etapa 3; aplicada no Supabase
 │       └── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
 ├── tests/
-│   ├── gastopro.test.js       # 417 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 422 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -451,7 +451,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 13 | `20261103_sync_transactions.sql` | Aplicada e conferida no Supabase |
 | 14 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
 
-`CACHE_NAME` atual: `gastopro-v4.10`. Suíte atual: **417 testes**.
+`CACHE_NAME` atual: `gastopro-v4.11`. Suíte atual: **422 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -471,7 +471,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **417 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **422 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
