@@ -673,6 +673,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - [x] **RM-044 — Home unificada e lançamentos responsivos** / Descrição: home única com saldo, avisos e quatro KPIs em colunas adaptáveis; meios de pagamento em selects; cartões de ganhos/gastos com chips e data sem corte. / Critério de pronto: 389 testes aprovados e medições geométricas nas larguras previstas, em dois temas. / Arquivos: `index.html`, `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [ ] **RM-045 — Relatório para o contador (gerado no aparelho, sem custo)** / Ideia futura após a Etapa 4. Fase 1: CSV e relatório filtrado por conta, com ganhos e gastos por categoria. Fase 2, somente após ouvir 2 ou 3 contadores: nota ou comprovante, dedutível, com/sem nota, revenda/serviço e migration. O relatório é um organizador e não substitui informe de rendimentos nem nota fiscal.
 - [x] **RM-046 — Tela única de lançamento e menu lateral** / Descrição: formulário de gasto/ganho alternável sem duplicar IDs, confirmação após salvar, contadores neutros, itens laterais sem destaque falso e avatares ajustados. / Critério de pronto: testes funcionais sem falhas e medição geométrica nas sete larguras e nos dois temas.
+- [ ] **RM-047 — Redesenhar e atualizar o site-currículo (conta GitHub da faculdade), incluindo o GastoPro como projeto de portfólio.**
 
 ### Em dúvida
 
