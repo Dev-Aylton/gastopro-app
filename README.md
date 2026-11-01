@@ -10,18 +10,6 @@
 
 ---
 
-## 🤖 Guia para IAs (leia antes de editar)
-
-1. O estado do projeto está no **Roadmap**: `[ ]` pendente e `[x]` implementado/testado.
-2. Quem concluir um item (pessoa ou IA) deve marcá-lo `[x]` **antes de seguir para o próximo**.
-3. Ao marcar, atualize no mesmo passo o Changelog e, se mudar a quantidade de testes, o total no README.
-4. Respeite as **Decisões de produto**: Pix, débito, dinheiro e transferência com data de hoje ou anterior entram pagos; boleto e datas futuras entram pendentes, salvo alteração manual; importações mantêm sua regra própria; sem foto, print nem OCR.
-5. Não deduza informações nem o escopo da mudança: confirme com o Aylton antes de alterar.
-6. Mudanças no banco são feitas no painel do Supabase e registradas em `supabase/schema.sql`.
-7. Não proponha nem implemente soluções pagas. Use apenas planos e serviços gratuitos até que o app tenha usuários; não há monetização por ora.
-
----
-
 ## 📚 Sumário
 
 1. [Título, badges e resumo](#-gastopro--controle-de-gastos--saúde-financeira)
@@ -611,15 +599,13 @@ O SHA-512 de pdfjs-dist foi conferido antes da extração; o pacote foi publicad
 - Pix importado entra como **Gasto (pago)**.
 - Pix, débito, dinheiro e transferência com data até hoje entram pagos; boleto e qualquer forma com data futura entram pendentes. O usuário pode alterar manualmente o status.
 - Empréstimos e parcelamentos seguem a forma de pagamento e a data informadas; a importação mantém a regra própria de pagamento.
-- O app não terá importação por foto, print nem OCR; a decisão é manter o app leve.
 - O uso de PDF é limitado a documentos com texto selecionável; a prévia deve ser conferida.
-- Desenvolvimento 100% em planos gratuitos até o app estar funcionando e com vários usuários; não há monetização por ora.
 
 ---
 
 ## 🗺️ Roadmap
 
-Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia para IAs](#-guia-para-ias-leia-antes-de-editar).
+Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções para agentes em [`.github/copilot-instructions.md`](./.github/copilot-instructions.md).
 
 ### Itens
 
@@ -644,11 +630,6 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - [ ] **RM-019 — Offline-First aprimorado com IndexedDB** / Descrição: migrar de localStorage para IndexedDB para maior capacidade e performance; manter fila para operações offline e envio ao reconectar; exibir status de conectividade na UI. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-020 — Ampliar cobertura de testes automatizados** / Descrição: testes para o fluxo completo de quatro passos do Wizard. / Critério de pronto: a definir. / Arquivos: a definir.
 
-### Descartado
-
-- Importação por foto de cupom (6E) — motivo: decisão do autor: o app não terá foto/OCR.
-- Plano Pro e pagamentos, Open Finance, Pix voluntário e propaganda — descartados; sem monetização ou conexões financeiras externas no escopo atual.
-
 ### Novas melhorias
 
 - [x] **RM-025 — Contas PF/PJ, saldo inicial, filtro e ajuste rápido** / Descrição: cadastro de contas PF/PJ, saldo inicial e data-base, filtro no Dashboard e ajuste rápido do saldo; com sincronização e backup. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`.
@@ -659,7 +640,6 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as regras no [Guia 
 - [x] **RM-030 — Evitar gravações duplicadas ao salvar** / Descrição: trava reutilizável de salvamento com estado visual/acessível e espera de sincronização; modo local sem espera. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/app.js`, `tests/gastopro.test.js`.
 - [x] **RM-031 — Guia para obter extrato bancário** / Descrição: guia acessível de três passos com ilustrações genéricas, botão no importador e atalho em Primeiros passos. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/onboarding.js`, `js/app.js`, `css/style.css`, `assets/statement-guide-step-*.svg`, `sw.js`, `tests/gastopro.test.js`.
 - [x] **RM-032 — Contraste WCAG AA em celular e gráficos** / Descrição: contraste mínimo AA nas áreas mobile alteradas, avisos e textos sobre fundos coloridos nos temas claro e escuro. / Critério de pronto: testes automatizados aprovados.
-- [ ] **RM-033 — Idioma pt/en (futuro, adiado)** / Descrição: adicionar localização para português e inglês em etapa futura.
 - [x] **RM-034 — Contraste WCAG AA nos avisos** / Descrição: cores de Crítico, Atenção e Info com contraste AA nos temas claro e escuro, exclusivamente na central de avisos. O contraste nas áreas mobile alteradas foi concluído no RM-032; gráficos não foram alterados neste lote.
 - [x] **RM-035 — Navegação contextual e preservação de tela** / Descrição: avisos levam à tela, mês e item relacionados; dispensas persistem pela situação; atualizações preservam a navegação e o dashboard abre no topo. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-036 — Carteira de cartões e limite calculado** / Descrição: aba Cartões, limite usado pelas parcelas em aberto, gasto anterior opcional sincronizado, atalho do dashboard e estado vazio. / Critério de pronto: testes automatizados aprovados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `tests/gastopro.test.js`.
