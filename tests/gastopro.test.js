@@ -793,7 +793,15 @@ describe('Estados vazios das telas', () => {
         loading: false,
         growthChart: null,
         importsChart: null,
-        userList: null
+        userListLoading: false,
+        userListUnavailable: false,
+        userListError: '',
+        userList: [{
+          displayName: 'Usuário de teste',
+          email: 'nome.muito.longo.para.medir.larguras@example.invalid',
+          createdAt: '2026-10-01T00:00:00Z',
+          liveEntries: 23
+        }]
       });
 
       for (const theme of ['dark', 'light']) {
@@ -804,8 +812,15 @@ describe('Estados vazios das telas', () => {
           const config = chartConfigs[chartConfigs.length - 2];
           const chart = host.querySelector('#adminGrowthChart');
           const chartArea = chart.parentElement;
+          const userEmail = host.querySelector('.admin-user-row > div > span');
           const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
           const background = getComputedStyle(document.documentElement).getPropertyValue('--bg-card').trim();
+          assertEqual(userEmail.textContent, 'nome.muito.longo.para.medir.larguras@example.invalid',
+            `${width}px ${theme}: e-mail permanece íntegro`);
+          assertTrue(userEmail.querySelectorAll('wbr').length >= 2,
+            `${width}px ${theme}: quebra de e-mail somente em separadores`);
+          assertTrue(host.scrollWidth <= host.clientWidth + 1,
+            `${width}px ${theme}: lista de usuários sem overflow horizontal`);
           assertEqual(config.type, 'bar', `${width}px ${theme}: cadastros usam barras`);
           assertTrue(chartArea.getBoundingClientRect().width <= width + 1,
             `${width}px ${theme}: gráfico cabe no contêiner`);
@@ -9208,6 +9223,34 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     ]);
     assertEqual(expectedIds.filter(id => !allIds.includes(id)), [], 'IDs existentes preservados');
     assertEqual(allIds.filter((id, index) => allIds.indexOf(id) !== index), [], 'IDs sem duplicação');
+  });
+
+  itAsync('preserva descrições das ações na zona de perigo recolhida e mantém IDs', async () => {
+    const response = await fetch('../index.html');
+    assertTrue(response.ok, 'Não foi possível carregar o HTML do app.');
+    const appDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const dangerZone = appDocument.getElementById('irreversibleActions');
+    const descriptions = [
+      ['clearDataBtn', 'Apaga lançamentos, fixos, contas, cartões, compras, metas e regras. Preserva perfil, mensagens e login.'],
+      ['deleteAllMyDataBtn', 'Apaga dados financeiros, perfil, mensagens e eventos. Mantém sua conta de login.'],
+      ['deleteAccountBtn', 'Remove a conta de login e todos os dados vinculados na nuvem e neste aparelho.']
+    ];
+
+    assertTrue(dangerZone, 'Zona de perigo preservada');
+    assertFalse(dangerZone.open, 'Zona de perigo continua recolhida por padrão');
+    descriptions.forEach(([buttonId, description]) => {
+      const button = appDocument.getElementById(buttonId);
+      const row = button?.closest('.irreversible-action');
+      const text = row?.querySelector('.irreversible-action-description');
+      assertTrue(dangerZone.contains(button), `${buttonId}: botão permanece na zona`);
+      assertTrue(row?.contains(text), `${buttonId}: descrição permanece junto ao botão`);
+      assertEqual(text?.textContent.trim(), description, `${buttonId}: descrição original`);
+    });
+    assertEqual(
+      descriptions.filter(([buttonId]) => !appDocument.getElementById(buttonId)).length,
+      0,
+      'IDs das três ações preservados'
+    );
   });
 
   itAsync('remove o encaixe e o reposicionamento responsivo obsoletos do tema', async () => {

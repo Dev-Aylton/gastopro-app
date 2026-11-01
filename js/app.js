@@ -1284,7 +1284,7 @@ function renderContactView() {
           <i class="fa-solid fa-arrow-right-to-bracket"></i> Entrar ou criar conta
         </button>
         <p>Se preferir, você também pode escrever para
-          <a href="mailto:desenvolvedor.aylton@gmail.com">desenvolvedor.aylton@gmail.com</a>.
+          <a href="mailto:desenvolvedor.aylton@gmail.com">desenvolvedor<wbr>.aylton<wbr>@gmail<wbr>.com</a>.
         </p>
       </div>
     `;
@@ -1510,7 +1510,7 @@ function renderAdminAnalytics() {
       <li class="admin-user-row">
         <div>
           <strong>${escapeHtml(user.displayName)}</strong>
-          ${user.email ? `<span>${escapeHtml(user.email)}</span>` : ''}
+          ${user.email ? `<span>${escapeHtml(user.email).replace(/([.@])/g, '$1<wbr>')}</span>` : ''}
           <small>Cadastro: ${escapeHtml(new Date(user.createdAt).toLocaleDateString('pt-BR'))}</small>
         </div>
         ${user.email ? `<span>${user.liveEntries} lançamento(s) ativo(s)</span>` : ''}
