@@ -284,7 +284,6 @@
                 <span id="accountStatusText">Modo Local (Não conectado)</span>
               </p>
             </div>
-            <p class="avatar-gallery-label">Escolha um avatar</p>
             <div class="avatar-gallery" id="avatarGallery" role="group" aria-label="Galeria de avatares"></div>
             <button type="button" class="drawer-action-btn avatar-remove-button" id="removeProfilePhotoBtn" hidden>
               <div class="action-icon bg-primary-soft">
@@ -293,20 +292,6 @@
               <div class="action-text">
                 <strong>Remover foto</strong>
                 <span>Voltar ao avatar escolhido</span>
-              </div>
-            </button>
-          </section>
-
-          <section class="drawer-section drawer-appearance-section">
-            <h4 class="drawer-section-title">Aparência</h4>
-            <button type="button" class="drawer-action-btn drawer-theme-toggle" id="drawerThemeToggleBtn"
-              aria-label="Mudar para tema claro">
-              <div class="action-icon bg-primary-soft">
-                <i class="fa-solid fa-moon text-primary" id="drawerThemeToggleIcon" aria-hidden="true"></i>
-              </div>
-              <div class="action-text">
-                <strong>Tema claro ou escuro</strong>
-                <span id="drawerThemeToggleLabel">Mudar para tema claro</span>
               </div>
             </button>
           </section>
@@ -412,7 +397,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Sobre</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.25</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.26</span></p>
             <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Privacidade e LGPD</a>
             <div class="drawer-about-help">
             <h5 class="drawer-subsection-title">Ajuda</h5>
@@ -439,35 +424,28 @@
             <summary class="irreversible-actions-summary" aria-expanded="false">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
               <span class="action-text">
-                <strong>Opções avançadas</strong>
-                <span>Ações irreversíveis. Faça um backup antes.</span>
+                <strong>Zona de perigo</strong>
               </span>
             </summary>
             <div class="irreversible-action">
-              <div class="irreversible-action-copy">
-                <h5>Zerar dados financeiros</h5>
-                <p>Apaga lançamentos, fixos, contas, cartões, compras, metas e regras no aparelho e na nuvem. Preserva perfil, mensagens e login.</p>
-              </div>
-              <button type="button" id="clearDataBtn" class="irreversible-action-button" data-risk-level="1">
+              <button type="button" id="clearDataBtn" class="irreversible-action-button" data-risk-level="1"
+                aria-label="Zerar dados financeiros. Apaga lançamentos, fixos, contas, cartões, compras, metas e regras; preserva perfil, mensagens e login."
+                title="Apaga lançamentos, fixos, contas, cartões, compras, metas e regras. Preserva perfil, mensagens e login.">
                 <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Zerar dados financeiros
               </button>
             </div>
             <div class="irreversible-action">
-              <div class="irreversible-action-copy">
-                <h5>Apagar meus dados (manter login)</h5>
-                <p>Apaga dados financeiros, perfil, mensagens e eventos no aparelho e na nuvem. Mantém sua conta de login.</p>
-              </div>
-              <button type="button" id="deleteAllMyDataBtn" class="irreversible-action-button" data-risk-level="2">
+              <button type="button" id="deleteAllMyDataBtn" class="irreversible-action-button" data-risk-level="2"
+                aria-label="Apagar meus dados e manter o login. Apaga dados financeiros, perfil, mensagens e eventos."
+                title="Apaga dados financeiros, perfil, mensagens e eventos. Mantém sua conta de login.">
                 <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Apagar meus dados
               </button>
             </div>
             <div class="irreversible-action irreversible-action-account" id="deleteAccountAction" hidden>
-              <div class="irreversible-action-copy">
-                <h5>Excluir conta definitivamente</h5>
-                <p>Remove a conta de login e todos os dados vinculados na nuvem e neste aparelho.</p>
-              </div>
-              <button type="button" id="deleteAccountBtn" class="irreversible-action-button" data-risk-level="3">
-                <i class="fa-solid fa-user-xmark" aria-hidden="true"></i> Excluir conta definitivamente
+              <button type="button" id="deleteAccountBtn" class="irreversible-action-button" data-risk-level="3"
+                aria-label="Excluir conta definitivamente. Remove a conta de login e todos os dados vinculados na nuvem e neste aparelho."
+                title="Remove a conta de login e todos os dados vinculados na nuvem e neste aparelho.">
+                <i class="fa-solid fa-user-xmark" aria-hidden="true"></i> Excluir conta
               </button>
             </div>
           </details>
@@ -1049,7 +1027,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.25</span>
+          <span class="badge badge-version">v4.26</span>
         </div>
       </footer>
 

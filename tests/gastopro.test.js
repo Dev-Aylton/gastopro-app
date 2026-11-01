@@ -9038,22 +9038,16 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     }
   });
 
-  it('oferece 12 avatares originais em grupos de quatro e persiste a escolha', () => {
+  it('usa o avatar padrão e converte presets antigos removidos sem erro', () => {
     const gallery = window.GastoProAvatarGallery;
-    assertEqual(gallery.presets.length, 12);
-    ['feminine', 'masculine', 'neutral'].forEach(gender => {
-      assertEqual(gallery.presets.filter(preset => preset.gender === gender).length, 4,
-        `quatro opções ${gender}`);
-    });
-    assertTrue(gallery.presets.some(preset => preset.id === 'neutral-default'),
-      'avatar padrão atual incluído');
+    assertEqual(gallery.presets.map(preset => preset.id), ['neutral-default']);
+    assertFalse(gallery.isPreset('preset:fem-2'));
+    assertEqual(gallery.getSource('preset:fem-2'), 'assets/default_avatar.jpg');
     const previousProfile = FinanceData.getProfile();
     try {
-      const selected = gallery.selectPreset(previousProfile, 'preset:fem-2');
-      assertEqual(selected.avatar, 'preset:fem-2');
-      assertEqual(selected.avatarPreset, 'preset:fem-2');
-      assertTrue(FinanceData.saveProfile(selected).success);
-      assertEqual(FinanceData.getProfile().avatar, 'preset:fem-2');
+      const legacyProfile = { ...previousProfile, avatar: 'preset:fem-2', avatarPreset: 'preset:fem-2' };
+      assertEqual(gallery.getSource(legacyProfile.avatar), 'assets/default_avatar.jpg');
+      assertEqual(gallery.removePhoto(legacyProfile).avatar, 'preset:neutral-default');
     } finally {
       FinanceData.saveProfile(previousProfile);
     }
@@ -9063,13 +9057,13 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     const gallery = window.GastoProAvatarGallery;
     const oldPhoto = 'data:image/jpeg;base64,legacy-avatar';
     assertEqual(gallery.getSource(oldPhoto), oldPhoto);
-    const withPhoto = gallery.savePhoto({ avatar: 'preset:masc-3' }, 'data:image/jpeg;base64,new-photo');
-    assertEqual(withPhoto.avatarPreset, 'preset:masc-3');
-    assertEqual(gallery.removePhoto(withPhoto).avatar, 'preset:masc-3');
+    const withPhoto = gallery.savePhoto({ avatar: 'preset:neutral-default' }, 'data:image/jpeg;base64,new-photo');
+    assertEqual(withPhoto.avatarPreset, 'preset:neutral-default');
+    assertEqual(gallery.removePhoto(withPhoto).avatar, 'preset:neutral-default');
     assertEqual(gallery.removePhoto({ avatar: oldPhoto }).avatar, 'preset:neutral-default');
   });
 
-  itAsync('mantém contraste dos avatares e seus controles nos dois temas', async () => {
+  itAsync('mantém o seletor compacto e legível nos dois temas', async () => {
     const frame = await getResponsiveFixtureFrame(390, 844);
     const frameDocument = frame.contentDocument;
     const frameWindow = frame.contentWindow;
@@ -9088,40 +9082,87 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       return (values[0] + 0.05) / (values[1] + 0.05);
     };
     frameDocument.getElementById('fixtureApp').innerHTML =
-      '<div class="drawer-section"><div class="avatar-gallery" id="gallery"></div></div>';
+      '<div class="drawer-section"><div class="avatar-gallery" id="gallery"><button class="avatar-preset-option"><img src="assets/default_avatar.jpg" alt=""><span>Avatar padrão</span></button></div></div>';
     try {
       for (const theme of ['light', 'dark']) {
         frameDocument.documentElement.dataset.theme = theme;
         frameDocument.body.dataset.theme = theme;
         const gallery = frameDocument.getElementById('gallery');
-        gallery.replaceChildren(...window.GastoProAvatarGallery.presets.map(preset => {
-          const button = frameDocument.createElement('button');
-          button.className = 'avatar-preset-option';
-          button.setAttribute('aria-pressed', 'false');
-          const image = frameDocument.createElement('img');
-          image.src = window.GastoProAvatarGallery.getSource(`preset:${preset.id}`);
-          const label = frameDocument.createElement('span');
-          label.textContent = preset.label;
-          button.append(image, label);
-          return button;
-        }));
         const controls = [...gallery.querySelectorAll('.avatar-preset-option')];
-        assertEqual(controls.length, 12, `${theme}: 12 opções visíveis`);
+        assertEqual(controls.length, 1, `${theme}: somente avatar padrão`);
         controls.forEach(button => {
           const style = frameWindow.getComputedStyle(button);
           assertTrue(ratio(style.color, style.backgroundColor) >= 4.5,
             `${theme}: contraste do rótulo ${button.textContent}`);
+          assertTrue(button.getBoundingClientRect().height >= 44,
+            `${theme}: seletor com alvo mínimo de 44px`);
+          assertTrue(button.scrollWidth <= button.clientWidth,
+            `${theme}: rótulo do avatar sem corte`);
         });
-        window.GastoProAvatarGallery.presets.forEach(preset => {
-          const colorRatio = ratio('rgb(248, 250, 252)', preset.background);
-          assertTrue(colorRatio >= 3, `${theme}: contraste do avatar ${preset.label} (${colorRatio.toFixed(2)}:1)`);
-          const hairContrast = ratio('rgb(226, 232, 240)', preset.background);
-          assertTrue(hairContrast >= 3, `${theme}: contraste da silhueta ${preset.label} (${hairContrast.toFixed(2)}:1)`);
-          const svg = window.GastoProAvatarGallery.getSvg(`preset:${preset.id}`);
-          if (svg) {
-            assertTrue(svg.includes('fill="#e2e8f0"') || svg.includes('fill="#f8fafc"'),
-              `${theme}: formas SVG originais em ${preset.label}`);
-          }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  itAsync('mantém um botão de tema e as três ações na zona de perigo recolhível', async () => {
+    const frame = await getResponsiveFixtureFrame(390, 844);
+    const frameDocument = frame.contentDocument;
+    frameDocument.getElementById('fixtureApp').innerHTML = `
+      <footer class="sidebar-footer">
+        <button type="button" class="theme-toggle-btn" id="themeToggleBtn">Tema</button>
+      </footer>
+      <aside class="profile-drawer">
+        <details class="drawer-section irreversible-actions" id="irreversibleActions">
+          <summary class="irreversible-actions-summary"><span class="action-text"><strong>Zona de perigo</strong></span></summary>
+          <div class="irreversible-action"><button class="irreversible-action-button" id="clearDataBtn" data-risk-level="1"><i></i>Zerar dados financeiros</button></div>
+          <div class="irreversible-action"><button class="irreversible-action-button" id="deleteAllMyDataBtn" data-risk-level="2"><i></i>Apagar meus dados</button></div>
+          <div class="irreversible-action" id="deleteAccountAction" hidden><button class="irreversible-action-button" id="deleteAccountBtn" data-risk-level="3"><i></i>Excluir conta</button></div>
+        </details>
+      </aside>`;
+    try {
+      const details = frameDocument.getElementById('irreversibleActions');
+      assertEqual(frameDocument.querySelectorAll('.theme-toggle-btn').length, 1);
+      assertFalse(frameDocument.querySelector('.drawer-theme-toggle'));
+      assertFalse(details.open, 'zona de perigo inicia fechada');
+      details.open = true;
+      frameDocument.getElementById('deleteAccountAction').hidden = false;
+      const actions = [...details.querySelectorAll('.irreversible-action-button')];
+      assertEqual(actions.map(action => action.id), [
+        'clearDataBtn', 'deleteAllMyDataBtn', 'deleteAccountBtn'
+      ]);
+      const parseColor = value => {
+        const channels = value.match(/[\d.]+/g).map(Number);
+        return { channels: channels.slice(0, 3), alpha: channels[3] ?? 1 };
+      };
+      const composite = (foreground, background) => ({
+        channels: foreground.channels.map((channel, index) =>
+          channel * foreground.alpha + background.channels[index] * (1 - foreground.alpha)),
+        alpha: 1
+      });
+      const luminance = color => color.channels
+        .map(channel => channel / 255)
+        .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+        .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+      const contrast = (foreground, background) => {
+        const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+        return (values[0] + 0.05) / (values[1] + 0.05);
+      };
+      for (const theme of ['dark', 'light']) {
+        frameDocument.documentElement.dataset.theme = theme;
+        frameDocument.body.dataset.theme = theme;
+        const drawerBackground = parseColor(frameDocument.defaultView
+          .getComputedStyle(frameDocument.querySelector('.profile-drawer')).backgroundColor);
+        actions.forEach(action => {
+          const style = frameDocument.defaultView.getComputedStyle(action);
+          const background = composite(parseColor(style.backgroundColor), drawerBackground);
+          const foreground = parseColor(style.color);
+          assertTrue(action.getBoundingClientRect().height >= 44, `${action.id}: alvo mínimo de 44px`);
+          assertEqual(style.whiteSpace, 'nowrap');
+          assertTrue(action.scrollWidth <= action.clientWidth, `${action.id}: texto sem corte`);
+          assertTrue(contrast(foreground, background) >= 4.5, `${theme}: contraste do texto de ${action.id}`);
+          assertTrue(contrast(parseColor(frameDocument.defaultView.getComputedStyle(action.querySelector('i')).color),
+            background) >= 3, `${theme}: contraste do ícone de ${action.id}`);
         });
       }
     } finally {
