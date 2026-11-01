@@ -3848,10 +3848,10 @@ describe('Dashboard mobile', () => {
   });
 
   it('formata a versão exibida a partir do nome do cache do service worker', () => {
-    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.13'), 'v4.13');
+    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.14'), 'v4.14');
     assertNull(window.GastoProAppVersion.formatCacheName('other-v4.7'));
     assertEqual(window.GastoProAppVersion.getDisplayedVersion(null), 'v…');
-    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.13'), 'v4.13');
+    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.14'), 'v4.14');
   });
 
   it('usa o saldo filtrado das contas e o resultado mensal existente no destaque', () => {
@@ -4132,19 +4132,27 @@ describe('Dashboard mobile', () => {
     document.body.appendChild(fixture);
     try {
       window.GastoProEntryComposer.setup(fixture.querySelector('#view-entries'));
-      assertTrue(fixture.querySelector('#expenseForm').closest('.panel-box').hidden);
-      assertTrue(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+      const expensePanel = fixture.querySelector('#expenseForm').closest('.panel-box');
+      const incomePanel = fixture.querySelector('#incomeForm').closest('.panel-box');
+      assertTrue(expensePanel.hidden);
+      assertTrue(incomePanel.hidden);
+      assertEqual(getComputedStyle(expensePanel).display, 'none');
+      assertEqual(getComputedStyle(incomePanel).display, 'none');
       assertFalse(fixture.querySelector('#entryComposerPrompt').hidden);
       assertEqual(fixture.querySelector('[data-entry-type="expense"]').getAttribute('aria-pressed'), 'false');
       assertEqual(fixture.querySelector('[data-entry-type="income"]').getAttribute('aria-pressed'), 'false');
 
       fixture.querySelector('[data-entry-type="expense"]').click();
-      assertFalse(fixture.querySelector('#expenseForm').closest('.panel-box').hidden);
-      assertTrue(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+      assertFalse(expensePanel.hidden);
+      assertTrue(incomePanel.hidden);
+      assertEqual(getComputedStyle(expensePanel).display, 'flex');
+      assertEqual(getComputedStyle(incomePanel).display, 'none');
       assertTrue(fixture.querySelector('#entryComposerPrompt').hidden);
       fixture.querySelector('[data-entry-type="income"]').click();
-      assertTrue(fixture.querySelector('#expenseForm').closest('.panel-box').hidden);
-      assertFalse(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+      assertTrue(expensePanel.hidden);
+      assertFalse(incomePanel.hidden);
+      assertEqual(getComputedStyle(expensePanel).display, 'none');
+      assertEqual(getComputedStyle(incomePanel).display, 'flex');
       assertTrue(fixture.querySelector('#entryComposerPrompt').hidden);
       ['expenseForm', 'incomeForm'].forEach(id => {
         assertEqual(fixture.querySelectorAll(`[id="${id}"]`).length, 1, `${id} deve existir uma vez.`);
@@ -4621,8 +4629,8 @@ describe('FinanceData — getAll()', () => {
 describe('Utilitários — voltar ao topo', () => {
   it('mostra o botão após rolar em tela longa e esconde no topo', () => {
     assertFalse(window.GastoProScrollTop.shouldShow(0, 1200, 700));
-    assertFalse(window.GastoProScrollTop.shouldShow(401, 1100, 700));
-    assertTrue(window.GastoProScrollTop.shouldShow(401, 1201, 700));
+    assertFalse(window.GastoProScrollTop.shouldShow(1050, 2450, 700));
+    assertTrue(window.GastoProScrollTop.shouldShow(1051, 2452, 700));
 
     const button = document.createElement('button');
     button.id = 'backToTopBtn';
@@ -4635,9 +4643,9 @@ describe('Utilitários — voltar ao topo', () => {
     );
     const innerHeightDescriptor = Object.getOwnPropertyDescriptor(window, 'innerHeight');
     try {
-      Object.defineProperty(window, 'scrollY', { configurable: true, value: 401 });
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: 1051 });
       Object.defineProperty(document.documentElement, 'scrollHeight', {
-        configurable: true, value: 1201
+        configurable: true, value: 2452
       });
       Object.defineProperty(window, 'innerHeight', { configurable: true, value: 700 });
       window.GastoProScrollTop.updateVisibility();
@@ -9113,6 +9121,167 @@ describe('Home unificada e formas de pagamento', () => {
             const title = card.querySelector('.kpi-title');
             assertTrue(title.scrollWidth <= title.clientWidth, `${width}px: rótulo ${title.textContent.trim()} inteiro`);
           });
+        }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+});
+
+describe('Correções de formulários, cards e rodapé', () => {
+  it('orienta o cadastro de renda pela tela e pelo tipo de lançamento existentes', () => {
+    const diagnostic = window.GastoProReportHelpers.getHealthDiagnostic(0, 0, 0, 0, 0);
+    assertEqual(diagnostic.description, 'Registre um ganho em Lançamentos > Ganho.');
+  });
+
+  it('organiza cards fixos e variáveis e omite pagamento não informado', () => {
+    setupMockLocalStorage();
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <span id="expensesPageTotal"></span>
+      <span id="subtotalFixedLabel"></span>
+      <span id="subtotalVarLabel"></span>
+      <div id="expensesListDetailed"></div>
+    `;
+    document.body.appendChild(fixture);
+    try {
+      window.GastoProExpenseListHelpers.render([
+        {
+          id: 'fixed-entry', type: 'fixed', desc: 'Aluguel', amount: 100,
+          category: 'Moradia', date: '2026-11-05', active: true,
+          paid: false, paymentMethod: null
+        }
+      ], [
+        {
+          id: 'variable-entry', type: 'variable', desc: 'Mercado', amount: 25,
+          category: 'Alimentação', date: '2026-11-01', paid: true,
+          paymentMethod: 'pix'
+        }
+      ], 100, 25, 125);
+
+      const cards = [...fixture.querySelectorAll('.transaction-item-card')];
+      assertEqual(cards.length, 2);
+      cards.forEach(card => {
+        const right = card.querySelector('.card-item-right');
+        const topRow = right.querySelector('.transaction-card-main-row');
+        const actionRow = right.querySelector('.transaction-card-action-row');
+        assertEqual(topRow.children.length, 3);
+        assertTrue(topRow.children[1].classList.contains('checkbox-paid-label'));
+        assertTrue(topRow.children[2].classList.contains('card-item-amount'));
+        assertTrue(actionRow);
+        assertEqual(actionRow.querySelectorAll('[data-action="edit"], [data-action="delete"]').length, 2);
+      });
+      assertTrue(cards[0].querySelector('.transaction-card-status .badge-status-btn'));
+      assertFalse(cards[1].querySelector('.transaction-card-status .badge-status-btn'));
+      assertEqual(cards[0].querySelectorAll('.transaction-payment-method-chip').length, 0);
+      assertEqual(cards[1].querySelector('.transaction-payment-method-chip').textContent, 'Pix');
+      assertFalse(fixture.textContent.includes('Não informado'));
+      assertTrue(cards.every(card => card.querySelector('.card-item-meta .tag-badge')));
+    } finally {
+      fixture.remove();
+    }
+  });
+
+  itAsync('mantém o campo de data alinhado e dentro do cartão nos tamanhos previstos', async () => {
+    const frame = await getResponsiveFixtureFrame(320);
+    const frameDocument = frame.contentDocument;
+    const frameWindow = frame.contentWindow;
+    frameDocument.getElementById('fixtureApp').innerHTML = `
+      <div class="main-content">
+        <main class="views-wrapper">
+          <section class="view-section active">
+            <div class="panel-box">
+              <form class="form-grid-6">
+                <div><label for="dateReference">Descrição</label><input id="dateReference" type="text"></div>
+                <div><label for="dateControl">Data</label><input id="dateControl" type="date"></div>
+              </form>
+            </div>
+          </section>
+        </main>
+      </div>
+    `;
+    const sizes = [[320, 844], [360, 844], [390, 844], [768, 900],
+      [1024, 900], [1280, 900], [844, 390]];
+
+    try {
+      for (const theme of ['dark', 'light']) {
+        for (const [width, height] of sizes) {
+          await getResponsiveFixtureFrame(width, height);
+          frameDocument.documentElement.dataset.theme = theme;
+          frameDocument.body.dataset.theme = theme;
+          const date = frameDocument.getElementById('dateControl');
+          const reference = frameDocument.getElementById('dateReference');
+          const dateRect = date.getBoundingClientRect();
+          const referenceRect = reference.getBoundingClientRect();
+          const dateStyle = frameWindow.getComputedStyle(date);
+          assertEqual(dateStyle.textAlign, 'left', `${width}px ${theme}: data alinhada à esquerda`);
+          assertTrue(dateRect.width <= referenceRect.width + 1,
+            `${width}px ${theme}: data não excede a largura dos outros campos`);
+          assertTrue(dateRect.left >= 0 && dateRect.right <= width,
+            `${width}px ${theme}: campo de data dentro da viewport`);
+        }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  itAsync('encosta o rodapé curto na navegação, mantém o longo após o conteúdo e posiciona o botão de topo', async () => {
+    const frame = await getResponsiveFixtureFrame(320, 844);
+    const frameDocument = frame.contentDocument;
+    const frameWindow = frame.contentWindow;
+    const app = frameDocument.getElementById('fixtureApp');
+    app.innerHTML = `
+      <div class="main-content">
+        <header class="topbar"><span>GastoPro</span></header>
+        <nav class="mobile-bottom-nav"><button class="mobile-bottom-nav-item">Início</button></nav>
+        <main id="mainContent" class="views-wrapper">
+          <section class="view-section active"><div id="fixtureContent"></div></section>
+        </main>
+        <footer class="app-footer"><div class="footer-container"><span class="footer-author">Rodapé</span></div></footer>
+        <button class="back-to-top-btn is-visible" id="fixtureBackToTop">Topo</button>
+      </div>
+    `;
+    const sizes = [[320, 844], [360, 844], [390, 844], [768, 900],
+      [1024, 900], [1280, 900], [844, 390]];
+    const nextFrame = () => new Promise(resolve =>
+      frameWindow.requestAnimationFrame(() => resolve())
+    );
+
+    try {
+      for (const theme of ['dark', 'light']) {
+        for (const [width, height] of sizes) {
+          await getResponsiveFixtureFrame(width, height);
+          frameDocument.documentElement.dataset.theme = theme;
+          frameDocument.body.dataset.theme = theme;
+          const content = frameDocument.getElementById('fixtureContent');
+          const footer = frameDocument.querySelector('.app-footer');
+          const nav = frameDocument.querySelector('.mobile-bottom-nav');
+          const button = frameDocument.getElementById('fixtureBackToTop');
+          content.style.height = '80px';
+          frameWindow.scrollTo(0, 0);
+          await nextFrame();
+          const footerRect = footer.getBoundingClientRect();
+          const navRect = nav.getBoundingClientRect();
+          const navVisible = frameWindow.getComputedStyle(nav).display !== 'none';
+          if (navVisible) {
+            assertTrue(Math.abs(footerRect.bottom - navRect.top) <= 1,
+              `${width}x${height}px ${theme}: rodapé curto encosta na navegação`);
+            const buttonRect = button.getBoundingClientRect();
+            assertTrue(buttonRect.width >= 44 && buttonRect.height >= 44,
+              `${width}px ${theme}: botão de topo tem alvo mínimo de 44px`);
+            assertTrue(buttonRect.bottom <= navRect.top,
+              `${width}px ${theme}: botão de topo fica acima da barra inferior`);
+          } else {
+            assertTrue(Math.abs(footerRect.bottom - height) <= 1,
+              `${width}x${height}px ${theme}: rodapé sem faixa vazia quando não há barra inferior`);
+          }
+
+          content.style.height = '1200px';
+          await nextFrame();
+          assertTrue(footer.getBoundingClientRect().top >= content.getBoundingClientRect().bottom - 1,
+            `${width}x${height}px ${theme}: rodapé longo permanece após o conteúdo`);
         }
       }
     } finally {

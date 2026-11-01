@@ -2309,9 +2309,12 @@ html {
   border-radius: var(--radius-lg);
   padding: 1.4rem;
   box-shadow: var(--shadow);
-  display: flex;
   flex-direction: column;
   gap: 1.2rem;
+}
+
+.panel-box:not([hidden]) {
+  display: flex;
 }
 
 .panel-header {
@@ -2395,7 +2398,10 @@ select {
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 42px;
+  text-align: left;
   color-scheme: dark;
 }
 
@@ -2679,15 +2685,30 @@ button:active { transform: scale(0.98); }
 }
 
 .transaction-item-card .card-item-right {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.5rem;
   width: 100%;
   min-width: 0;
   padding-top: 0.5rem;
   border-top: 1px solid rgba(var(--theme-rgb-border-ffffff), 0.08);
+}
+
+.transaction-card-main-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.transaction-card-status {
+  min-width: 0;
+}
+
+.transaction-card-action-row {
+  justify-content: flex-end;
 }
 
 .card-item-amount {
@@ -3994,6 +4015,10 @@ input[type="date"],
 input[type="month"] {
   color-scheme: dark;
   cursor: pointer;
+}
+
+input[type="date"]::-webkit-datetime-edit {
+  text-align: left;
 }
 
 input[type="date"]::-webkit-calendar-picker-indicator,
@@ -7297,9 +7322,9 @@ body.has-open-layer {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 700px) {
   .app-footer {
-    margin-bottom: calc(10rem + env(safe-area-inset-bottom));
+    margin-bottom: calc(68px + env(safe-area-inset-bottom));
   }
 }
 

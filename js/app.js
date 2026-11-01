@@ -409,6 +409,13 @@ function getPaymentMethodLabel(paymentMethod) {
   return method ? method.label : 'Não informado';
 }
 
+function renderPaymentMethodBadge(paymentMethod) {
+  const label = getPaymentMethodLabel(paymentMethod);
+  return label === 'Não informado'
+    ? ''
+    : `<span class="tag-badge transaction-payment-method-chip">${escapeHtml(label)}</span>`;
+}
+
 function getPaymentMethodPreferenceKey(kind) {
   const profile = FinanceData.getProfile();
   const ownerId = FinanceData.getActiveUserId() || profile.userId || 'local';
@@ -442,6 +449,7 @@ function savePaymentMethodPreference(kind, paymentMethod) {
 window.GastoProPaymentHelpers = {
   isPaidByPaymentMethod,
   getLabel: getPaymentMethodLabel,
+  renderBadge: renderPaymentMethodBadge,
   getOptions: kind => (PAYMENT_METHOD_OPTIONS[kind] || []).map(option => option.value),
   populateSelect: populatePaymentMethodSelect,
   getPreference: getPaymentMethodPreference,
@@ -1980,7 +1988,8 @@ function showToast(msg) {
 }
 
 function shouldShowBackToTop(scrollY, scrollHeight, viewportHeight) {
-  return scrollHeight - viewportHeight > 400 && scrollY > 400;
+  return scrollHeight - viewportHeight > viewportHeight * 1.5 &&
+    scrollY > viewportHeight * 1.5;
 }
 
 function updateBackToTopVisibility() {
@@ -3734,7 +3743,7 @@ function getHealthDiagnostic(income, balance, pctFixed, pctVar, pctSave) {
       badge: 'Sem Renda', badgeClass: 'badge badge-warning',
       icon: 'fa-hourglass-start', iconBackground: 'var(--warning-bg)', iconColor: 'var(--warning)',
       title: 'Nenhuma renda lançada neste mês',
-      description: 'Acesse a aba Ganhos do Mês para inserir seu salário ou receitas.'
+      description: 'Registre um ganho em Lançamentos > Ganho.'
     };
   }
   if (balance < 0) {
@@ -4352,7 +4361,7 @@ function renderIncomesView(incomes, totalIncome) {
           <div class="card-item-meta">
             <span class="tag-badge">${escapeHtml(item.category || 'Renda')}</span>
             ${accountName ? `<span class="tag-badge">${escapeHtml(accountName)}</span>` : ''}
-            <span class="tag-badge">${escapeHtml(getPaymentMethodLabel(item.paymentMethod))}</span>
+            ${renderPaymentMethodBadge(item.paymentMethod)}
           </div>
           <time class="card-item-date" datetime="${escapeHtml(item.date || '')}">${escapeHtml(formatDate(item.date))}</time>
         </div>
@@ -4449,7 +4458,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
               <span class="tag-badge">${escapeHtml(item.category || typeLabel)}</span>
               ${accountName ? `<span class="tag-badge">${escapeHtml(accountName)}</span>` : ''}
               <span class="tag-badge">${typeLabel}</span>
-              <span class="tag-badge">${escapeHtml(getPaymentMethodLabel(item.paymentMethod))}</span>
+              ${renderPaymentMethodBadge(item.paymentMethod)}
               ${item.isCardInstallment
                 ? `<span class="tag-badge">${escapeHtml(item.cardName)} · ${item.installmentNumber}/${item.installmentCount}x</span>`
                 : ''}
@@ -4462,23 +4471,25 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
         </div>
 
         <div class="card-item-right">
-          ${isFixed ? `
-            <button class="badge-status-btn ${item.active ? 'status-active' : 'status-inactive'}"
-                    data-action="toggle-active" data-id="${escapeHtml(item.id)}"
-                    title="Clique para ${item.active ? 'pausar nos meses seguintes' : 'reativar nos meses seguintes'}">
-              <i class="fa-solid ${item.active ? 'fa-circle-check' : 'fa-circle-pause'}"></i> ${item.active ? 'Ativo' : 'Inativo'}
-            </button>
-          ` : ''}
-          <!-- Checkbox de Pago (específico para o mês atual) -->
-          <label class="checkbox-paid-label" title="${item.paid ? 'Marcar como pendente neste mês' : 'Dar baixa como pago neste mês'}">
-            <input type="checkbox" ${item.paid ? 'checked' : ''} data-action="toggle-paid" data-id="${escapeHtml(item.id)}" ${item.isCardInstallment
-              ? `data-kind="credit-card" data-installment="${item.installmentNumber}" data-month="${escapeHtml(item.month)}"`
-              : ''} />
-            <span>${item.paid ? 'Pago' : 'Pagar'}</span>
-          </label>
-
-          <div class="card-item-amount financial-amount financial-amount--negative ${isInactive ? 'text-muted' : ''}">
-            − ${formatCurrency(item.amount)}
+          <div class="transaction-card-main-row">
+            <span class="transaction-card-status">
+              ${isFixed ? `
+                <button class="badge-status-btn ${item.active ? 'status-active' : 'status-inactive'}"
+                        data-action="toggle-active" data-id="${escapeHtml(item.id)}"
+                        title="Clique para ${item.active ? 'pausar nos meses seguintes' : 'reativar nos meses seguintes'}">
+                  <i class="fa-solid ${item.active ? 'fa-circle-check' : 'fa-circle-pause'}"></i> ${item.active ? 'Ativo' : 'Inativo'}
+                </button>
+              ` : ''}
+            </span>
+            <label class="checkbox-paid-label" title="${item.paid ? 'Marcar como pendente neste mês' : 'Dar baixa como pago neste mês'}">
+              <input type="checkbox" ${item.paid ? 'checked' : ''} data-action="toggle-paid" data-id="${escapeHtml(item.id)}" ${item.isCardInstallment
+                ? `data-kind="credit-card" data-installment="${item.installmentNumber}" data-month="${escapeHtml(item.month)}"`
+                : ''} />
+              <span>${item.paid ? 'Pago' : 'Pagar'}</span>
+            </label>
+            <div class="card-item-amount financial-amount financial-amount--negative ${isInactive ? 'text-muted' : ''}">
+              − ${formatCurrency(item.amount)}
+            </div>
           </div>
 
           ${needsPaidReview ? `
@@ -4491,7 +4502,7 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
           ` : ''}
 
           ${item.isCardInstallment ? '' : `
-            <div class="card-item-actions">
+            <div class="card-item-actions transaction-card-action-row">
               <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Informação" aria-label="Editar gasto ${escapeHtml(item.desc)}">
                 <i class="fa-solid fa-pen"></i>
               </button>
@@ -4505,6 +4516,10 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
     `;
   }).join('');
 }
+
+window.GastoProExpenseListHelpers = Object.freeze({
+  render: renderExpensesView
+});
 
 // ================================================================
 // 11. MODAL DE EDIÇÃO DE LANÇAMENTOS
