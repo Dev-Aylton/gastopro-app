@@ -356,7 +356,7 @@ const LAST_VIEW_STORAGE_KEY = 'gastopro_last_view_v1';
 const PERSISTED_VIEW_IDS = Object.freeze(Object.keys(VIEW_TITLES));
 const APP_RELOAD_STATE_KEY = 'gastopro_app_reload_state_v1';
 const USER_CONSENT_STORAGE_PREFIX = 'gastopro_user_consents_v1';
-const USER_CONSENT_TEXT_VERSION = '2026-11-02-v1';
+const USER_CONSENT_TEXT_VERSION = '2026-11-01-v1';
 const PAYMENT_METHOD_PREFERENCE_KEY = 'gastopro_payment_method_preference_v1';
 const PAYMENT_METHOD_OPTIONS = Object.freeze({
   expense: Object.freeze([

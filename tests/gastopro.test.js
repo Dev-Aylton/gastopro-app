@@ -2276,7 +2276,7 @@ describe('Canal Fale comigo', () => {
       localStorage.setItem(window.GastoProUsageTelemetry.PREFERENCE_KEY, JSON.stringify({
         adminVisibility: false,
         telemetryEnabled: true,
-        textVersion: '2026-11-02-v1',
+        textVersion: '2026-11-01-v1',
         acceptedAt: '2026-11-02T10:00:00.000Z',
         revokedAt: null,
         updatedAt: '2026-11-02T10:00:00.000Z'
@@ -2286,7 +2286,7 @@ describe('Canal Fale comigo', () => {
       localStorage.setItem(window.GastoProUsageTelemetry.PREFERENCE_KEY, JSON.stringify({
         adminVisibility: false,
         telemetryEnabled: false,
-        textVersion: '2026-11-02-v1',
+        textVersion: '2026-11-01-v1',
         acceptedAt: '2026-11-02T10:00:00.000Z',
         revokedAt: '2026-11-02T10:01:00.000Z',
         updatedAt: '2026-11-02T10:01:00.000Z'
@@ -2319,7 +2319,7 @@ describe('Canal Fale comigo', () => {
       assertFalse(signupConsent.adminVisibility);
       assertFalse(signupConsent.telemetryEnabled);
       assertNull(signupConsent.acceptedAt);
-      assertEqual(signupConsent.textVersion, '2026-11-02-v1');
+      assertEqual(signupConsent.textVersion, '2026-11-01-v1');
       assertFalse(window.GastoProConsent.getState().adminVisibility);
       assertFalse(window.GastoProConsent.getState().telemetryEnabled);
 
@@ -2327,7 +2327,7 @@ describe('Canal Fale comigo', () => {
       const accepted = window.GastoProConsent.getState();
       assertTrue(accepted.adminVisibility);
       assertTrue(Boolean(accepted.acceptedAt));
-      assertEqual(accepted.textVersion, '2026-11-02-v1');
+      assertEqual(accepted.textVersion, '2026-11-01-v1');
 
       await window.GastoProConsent.set('adminVisibility', false);
       const revoked = window.GastoProConsent.getState();
@@ -2338,6 +2338,40 @@ describe('Canal Fale comigo', () => {
       if (previousState === null) localStorage.removeItem(key);
       else localStorage.setItem(key, previousState);
     }
+  });
+
+  itAsync('mantém a Política de Privacidade atualizada e alinhada à versão do consentimento', async () => {
+    const response = await fetch('../index.html');
+    assertTrue(response.ok, 'Não foi possível carregar a Política de Privacidade.');
+    const source = await response.text();
+    const page = new DOMParser().parseFromString(source, 'text/html');
+    const policy = page.querySelector('#privacyPolicyModal .privacy-body');
+    assertTrue(Boolean(policy), 'A Política de Privacidade não foi encontrada.');
+
+    const policyText = policy.textContent.replace(/\s+/g, ' ');
+    const headings = [...policy.querySelectorAll('h4')].map(heading => heading.textContent.trim());
+    assertEqual(headings, [
+      '1. Quem somos',
+      '2. Dados e armazenamento',
+      '3. Preferências opcionais de privacidade',
+      '4. Recursos do aplicativo',
+      '5. Seus direitos (LGPD — Lei 13.709/2018)',
+      '6. Compartilhamento de dados',
+      '7. Segurança',
+      '8. Contato'
+    ]);
+    [
+      'Última atualização: 1 de novembro de 2026',
+      'GastoPro',
+      'Aylton Alberto',
+      'desenvolvedor.aylton@gmail.com',
+      'Fontes e ícones são servidos por arquivos locais do GastoPro.',
+      'Arquivos PDF importados são lidos no próprio aparelho e não são enviados',
+      'perfil, mensagens, consentimentos e eventos de uso',
+      '2026-11-01-v1'
+    ].forEach(expected => assertTrue(policyText.includes(expected), `Política deve incluir: ${expected}`));
+    assertEqual(window.GastoProConsent.createSignupState(false).textVersion, '2026-11-01-v1');
+    assertFalse(policyText.includes('SRI'));
   });
 
   itAsync('mantém o consentimento local e sincroniza quando user_consents fica disponível', async () => {
@@ -2384,7 +2418,7 @@ describe('Canal Fale comigo', () => {
     const serverRow = {
       admin_visibility: true,
       telemetry_enabled: false,
-      text_version: '2026-11-02-v1',
+      text_version: '2026-11-01-v1',
       accepted_at: '2026-11-02T10:00:00.000Z',
       revoked_at: null,
       updated_at: '2026-11-02T10:00:00.000Z'
@@ -2421,12 +2455,12 @@ describe('Canal Fale comigo', () => {
       assertTrue(loaded.success);
       assertTrue(loaded.consent.adminVisibility);
       assertFalse(loaded.consent.telemetryEnabled);
-      assertEqual(loaded.consent.textVersion, '2026-11-02-v1');
+      assertEqual(loaded.consent.textVersion, '2026-11-01-v1');
 
       const consent = {
         adminVisibility: false,
         telemetryEnabled: true,
-        textVersion: '2026-11-02-v1',
+        textVersion: '2026-11-01-v1',
         acceptedAt: serverRow.accepted_at,
         revokedAt: '2026-11-02T11:00:00.000Z',
         updatedAt: '2026-11-02T11:00:00.000Z'
@@ -2476,7 +2510,7 @@ describe('Canal Fale comigo', () => {
     [
       'profiles.avatar',
       'user_consents',
-      '2026-11-02-v1',
+      '2026-11-01-v1',
       'telemetria só é gravada quando você a ativa',
       'O administrador não vê os registros individuais'
     ].forEach(fragment => assertTrue(text.includes(fragment), `Política sem: ${fragment}`));
@@ -3848,10 +3882,10 @@ describe('Dashboard mobile', () => {
   });
 
   it('formata a versão exibida a partir do nome do cache do service worker', () => {
-    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.14'), 'v4.14');
+    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.15'), 'v4.15');
     assertNull(window.GastoProAppVersion.formatCacheName('other-v4.7'));
     assertEqual(window.GastoProAppVersion.getDisplayedVersion(null), 'v…');
-    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.14'), 'v4.14');
+    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.15'), 'v4.15');
   });
 
   it('usa o saldo filtrado das contas e o resultado mensal existente no destaque', () => {
