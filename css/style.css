@@ -3331,6 +3331,13 @@ button:active { transform: scale(0.98); }
   line-height: 1.45;
 }
 
+.privacy-sync-status {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  margin: 0.25rem 0 0;
+}
+
 .auth-optional-consent-label {
   min-height: 44px;
   margin-top: 0.75rem;
@@ -7298,6 +7305,7 @@ video {
 .confirm-actions > button {
   min-width: 0;
   max-width: 100%;
+  min-height: 44px;
 }
 
 .profile-drawer {

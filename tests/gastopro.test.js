@@ -2365,6 +2365,9 @@ describe('Canal Fale comigo', () => {
       'GastoPro',
       'Aylton Alberto',
       'desenvolvedor.aylton@gmail.com',
+      'O administrador (desenvolvedor) lê as mensagens para responder.',
+      'A aba Mensagens não exibe o nome nem o e-mail do remetente',
+      'qualquer contato informado no texto da mensagem fica visível ao administrador',
       'Fontes e ícones são servidos por arquivos locais do GastoPro.',
       'Arquivos PDF importados são lidos no próprio aparelho e não são enviados',
       'perfil, mensagens, consentimentos e eventos de uso',
@@ -2372,6 +2375,101 @@ describe('Canal Fale comigo', () => {
     ].forEach(expected => assertTrue(policyText.includes(expected), `Política deve incluir: ${expected}`));
     assertEqual(window.GastoProConsent.createSignupState(false).textVersion, '2026-11-01-v1');
     assertFalse(policyText.includes('SRI'));
+  });
+
+  itAsync('mantém a revogação pendente até sincronizar sem restaurar consentimento remoto antigo', async () => {
+    const user = { id: '550e8400-e29b-41d4-a716-446655440077', email: 'revogacao@example.com' };
+    const userKey = `gastopro_user_consents_v1:${user.id}`;
+    const previousState = localStorage.getItem(userKey);
+    const previousActiveUserId = FinanceData.getActiveUserId;
+    const previousSave = window.SupabaseAuth.saveUserConsent;
+    const previousFetch = window.SupabaseAuth.fetchUserConsent;
+    const statusElement = document.createElement('p');
+    statusElement.id = 'privacySyncStatus';
+    statusElement.hidden = true;
+    document.body.append(statusElement);
+    let saveAttempts = 0;
+    let sentConsent = null;
+    FinanceData.getActiveUserId = () => user.id;
+    localStorage.setItem(userKey, JSON.stringify({
+      adminVisibility: true,
+      telemetryEnabled: false,
+      textVersion: '2026-11-01-v1',
+      acceptedAt: '2026-10-30T10:00:00.000Z',
+      revokedAt: null,
+      updatedAt: '2026-10-30T10:00:00.000Z',
+      pendingSync: false
+    }));
+    window.SupabaseAuth.saveUserConsent = async consent => {
+      saveAttempts++;
+      if (saveAttempts === 1) return { success: false, error: 'offline' };
+      sentConsent = consent;
+      return { success: true };
+    };
+    window.SupabaseAuth.fetchUserConsent = async () => ({
+      success: true,
+      consent: {
+        adminVisibility: true,
+        telemetryEnabled: false,
+        textVersion: '2026-11-01-v1',
+        acceptedAt: '2026-10-29T10:00:00.000Z',
+        revokedAt: null,
+        updatedAt: '2026-10-29T10:00:00.000Z'
+      }
+    });
+
+    try {
+      const failedSave = await window.GastoProConsent.set('adminVisibility', false);
+      assertFalse(failedSave.success);
+      assertFalse(window.GastoProConsent.getState().adminVisibility);
+      assertTrue(Boolean(window.GastoProConsent.getState().revokedAt));
+      assertTrue(window.GastoProConsent.getState().pendingSync);
+      assertFalse(document.getElementById('privacySyncStatus').hidden);
+
+      await window.GastoProConsent.syncForUser(user);
+      assertEqual(saveAttempts, 2);
+      assertFalse(sentConsent.adminVisibility);
+      assertFalse(window.GastoProConsent.getState().adminVisibility);
+      assertFalse(window.GastoProConsent.getState().pendingSync);
+      assertTrue(document.getElementById('privacySyncStatus').hidden);
+    } finally {
+      FinanceData.getActiveUserId = previousActiveUserId;
+      window.SupabaseAuth.saveUserConsent = previousSave;
+      window.SupabaseAuth.fetchUserConsent = previousFetch;
+      if (previousState === null) localStorage.removeItem(userKey);
+      else localStorage.setItem(userKey, previousState);
+      statusElement.remove();
+    }
+  });
+
+  itAsync('usa apenas fontes e ícones locais e mantém definidas as classes de ícone usadas', async () => {
+    const paths = [
+      '../index.html',
+      '../js/app.js',
+      '../js/theme.js',
+      '../js/onboarding.js',
+      '../js/importer.js',
+      '../js/report.js',
+      '../js/a11y.js',
+      '../css/style.css'
+    ];
+    const responses = await Promise.all(paths.map(path => fetch(path)));
+    assertTrue(responses.every(response => response.ok), 'Não foi possível carregar os recursos locais.');
+    const sources = await Promise.all(responses.map(response => response.text()));
+    const sourceText = sources.join('\n');
+    assertFalse(/fonts\.googleapis\.com|fonts\.gstatic\.com|cdnjs\.cloudflare\.com|use\.fontawesome\.com/i.test(sourceText));
+    assertFalse(/\bfa-brands\b|\bfab\b/.test(sourceText));
+
+    const iconCssResponse = await fetch('../assets/fontawesome/css/all.min.css');
+    assertTrue(iconCssResponse.ok, 'O CSS local do Font Awesome não foi encontrado.');
+    const iconCss = await iconCssResponse.text();
+    const usedIcons = new Set(sourceText.match(/\bfa-[a-z0-9-]+\b/g) || []);
+    const definedIcons = new Set((iconCss.match(/\.fa-[a-z0-9-]+(?=[,:.{])/g) || [])
+      .map(className => className.slice(1)));
+    usedIcons.forEach(className => assertTrue(
+      definedIcons.has(className),
+      `Ícone sem definição local: ${className}`
+    ));
   });
 
   itAsync('mantém o consentimento local e sincroniza quando user_consents fica disponível', async () => {
@@ -3882,10 +3980,10 @@ describe('Dashboard mobile', () => {
   });
 
   it('formata a versão exibida a partir do nome do cache do service worker', () => {
-    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.15'), 'v4.15');
+    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.16'), 'v4.16');
     assertNull(window.GastoProAppVersion.formatCacheName('other-v4.7'));
     assertEqual(window.GastoProAppVersion.getDisplayedVersion(null), 'v…');
-    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.15'), 'v4.15');
+    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.16'), 'v4.16');
   });
 
   it('usa o saldo filtrado das contas e o resultado mensal existente no destaque', () => {
@@ -9279,10 +9377,6 @@ describe('Correções de formulários, cards e rodapé', () => {
     `;
     const sizes = [[320, 844], [360, 844], [390, 844], [768, 900],
       [1024, 900], [1280, 900], [844, 390]];
-    const nextFrame = () => new Promise(resolve =>
-      frameWindow.requestAnimationFrame(() => resolve())
-    );
-
     try {
       for (const theme of ['dark', 'light']) {
         for (const [width, height] of sizes) {
@@ -9295,7 +9389,6 @@ describe('Correções de formulários, cards e rodapé', () => {
           const button = frameDocument.getElementById('fixtureBackToTop');
           content.style.height = '80px';
           frameWindow.scrollTo(0, 0);
-          await nextFrame();
           const footerRect = footer.getBoundingClientRect();
           const navRect = nav.getBoundingClientRect();
           const navVisible = frameWindow.getComputedStyle(nav).display !== 'none';
@@ -9311,9 +9404,8 @@ describe('Correções de formulários, cards e rodapé', () => {
             assertTrue(Math.abs(footerRect.bottom - height) <= 1,
               `${width}x${height}px ${theme}: rodapé sem faixa vazia quando não há barra inferior`);
           }
-
           content.style.height = '1200px';
-          await nextFrame();
+          content.style.height = '1200px';
           assertTrue(footer.getBoundingClientRect().top >= content.getBoundingClientRect().bottom - 1,
             `${width}x${height}px ${theme}: rodapé longo permanece após o conteúdo`);
         }

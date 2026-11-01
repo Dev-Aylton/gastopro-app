@@ -327,6 +327,9 @@
                 <small>Desligado por padrão. Compartilha apenas eventos de uso sem texto livre ou dados financeiros.</small>
               </span>
             </label>
+            <p class="privacy-sync-status" id="privacySyncStatus" role="status" aria-live="polite" hidden>
+              Alteração ainda não enviada ao servidor
+            </p>
           </section>
 
           <section class="drawer-section drawer-data-section">
@@ -2096,7 +2099,7 @@
         <h4>2. Dados e armazenamento</h4>
         <p>Os lançamentos, gastos fixos, metas, contas, cartões e demais dados financeiros ficam neste aparelho. Quando você entra em uma conta, são sincronizados com o Supabase e protegidos por regras de acesso por usuário (RLS). O Supabase processa a autenticação e os dados da conta.</p>
         <p>O e-mail é usado na autenticação do Supabase. O nome informado no cadastro fica nos metadados da conta e no perfil do app. O nome e o avatar também ficam neste aparelho e, com login, na tabela <code>profiles</code> do Supabase, protegida por RLS. Fotos ficam no campo <code>profiles.avatar</code> como imagem Base64. Avatares predefinidos são identificadores e ilustrações locais. A senha é processada pelo Supabase Auth e não é salva pelo app no localStorage.</p>
-        <p>Com login, o canal Fale comigo armazena no Supabase a categoria, o texto da mensagem, a data de envio e eventuais respostas. Você pode apagar suas mensagens na própria tela. Evite incluir senhas ou informações financeiras nas mensagens.</p>
+        <p>Com login, o canal Fale comigo armazena no Supabase a categoria, o texto da mensagem, a data de envio e eventuais respostas. O administrador (desenvolvedor) lê as mensagens para responder. A aba Mensagens não exibe o nome nem o e-mail do remetente; qualquer contato informado no texto da mensagem fica visível ao administrador junto com esse conteúdo. Você pode apagar suas mensagens na própria tela. Evite incluir senhas ou informações financeiras nas mensagens.</p>
 
         <h4>3. Preferências opcionais de privacidade</h4>
         <p>As duas opções da seção Privacidade começam desligadas e podem ser alteradas ou revogadas no painel do usuário. O estado, a versão do texto de consentimento, as datas de aceite e de revogação ficam neste aparelho e são sincronizados com a tabela <code>user_consents</code> quando ela está disponível no servidor. A versão atual do texto é <code>2026-11-01-v1</code>.</p>

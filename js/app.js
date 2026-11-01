@@ -494,11 +494,18 @@ function writeConsentState(consent, key = getConsentStorageKey()) {
     const normalized = normalizeConsentState(consent);
     normalized.updatedAt = normalized.updatedAt || new Date().toISOString();
     localStorage.setItem(key, JSON.stringify(normalized));
+    updateConsentSyncStatus(normalized);
     return normalized;
   } catch (error) {
     console.error('[GastoPro] Não foi possível salvar as preferências de privacidade:', error);
     throw error;
   }
+}
+
+function updateConsentSyncStatus(consent = readConsentState()) {
+  const status = document.getElementById('privacySyncStatus');
+  if (!status) return;
+  status.hidden = !getConsentUserId() || consent.pendingSync !== true;
 }
 
 function getConsentStateForUser(user) {
@@ -569,9 +576,11 @@ function saveConsentSetting(field, enabled) {
     field === 'telemetryEnabled' ? enabled : previous.telemetryEnabled,
     previous
   );
-  const saved = writeConsentState({ ...next, pendingSync: true }, getConsentStorageKey(userId));
-  if (!userId || !window.SupabaseAuth ||
-    typeof window.SupabaseAuth.saveUserConsent !== 'function') {
+  const hasCloudUser = Boolean(userId);
+  const hasSyncTarget = Boolean(hasCloudUser && window.SupabaseAuth &&
+    typeof window.SupabaseAuth.saveUserConsent === 'function');
+  const saved = writeConsentState({ ...next, pendingSync: hasCloudUser }, getConsentStorageKey(userId));
+  if (!hasSyncTarget) {
     return Promise.resolve({ success: true, localOnly: true });
   }
   consentSyncQueue = consentSyncQueue.catch(() => {}).then(async () => {
@@ -6901,6 +6910,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const consent = window.GastoProConsent.getState();
     if (adminVisibilityToggle) adminVisibilityToggle.checked = consent.adminVisibility;
     if (usageTelemetryToggle) usageTelemetryToggle.checked = consent.telemetryEnabled;
+    updateConsentSyncStatus(consent);
 
     // Atualiza status de Conta & Autenticação no Drawer
     const accountGuestCard   = document.getElementById('accountGuestCard');
