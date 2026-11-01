@@ -5543,6 +5543,58 @@ describe('Central de avisos local', () => {
     assertEqual(notifications.getVisible('all').map(item => item.eventKey), ['card-all']);
   });
 
+  it('mantém o painel aberto ao marcar avisos em sequência e fecha ao clicar fora', () => {
+    setupMockLocalStorage();
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <button id="notificationsTrigger"></button>
+      <section id="notificationsPanel">
+        <span id="notificationsUnreadCount"></span>
+        <p id="notificationsUnreadLabel"></p>
+        <div id="notificationsList"></div>
+        <div id="notificationSettingsList"></div>
+      </section>`;
+    document.body.appendChild(host);
+    const panel = host.querySelector('#notificationsPanel');
+    panel.hidden = false;
+    notifications.syncEvents([
+      { eventKey: 'notice-one', scope: 'all', type: 'dueSoon', title: 'Aviso 1', message: 'Primeiro aviso.' },
+      { eventKey: 'notice-two', scope: 'all', type: 'dueSoon', title: 'Aviso 2', message: 'Segundo aviso.' }
+    ]);
+
+    const handleAction = event => {
+      if (!(event.target instanceof Element)) return;
+      const action = event.target.closest('[data-action="notification-mark-read"]');
+      if (!action) return;
+      notifications.markRead(action.dataset.eventKey);
+      notifications.render();
+    };
+    const handleOutsideClick = event => {
+      if (!notifications.eventPathContains(event, panel) &&
+        !notifications.eventPathContains(event, host.querySelector('#notificationsTrigger'))) {
+        panel.hidden = true;
+      }
+    };
+    document.addEventListener('click', handleAction);
+    document.addEventListener('click', handleOutsideClick);
+
+    try {
+      notifications.render();
+      host.querySelector('[data-action="notification-mark-read"]').click();
+      assertFalse(panel.hidden);
+      host.querySelector('[data-action="notification-mark-read"]').click();
+      assertFalse(panel.hidden);
+      assertEqual(notifications.getUnreadCount('all'), 0);
+
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      assertTrue(panel.hidden);
+    } finally {
+      document.removeEventListener('click', handleAction);
+      document.removeEventListener('click', handleOutsideClick);
+      host.remove();
+    }
+  });
+
   it('classifica os cinco tipos e ajusta vencimentos e limite conforme o estado', () => {
     assertEqual(notifications.getPriority({ type: 'insufficientBalance' }), 'critical');
     assertEqual(notifications.getPriority({ type: 'cardLimit', title: 'Limite atingido' }), 'critical');

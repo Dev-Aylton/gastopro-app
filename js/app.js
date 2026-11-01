@@ -3296,6 +3296,14 @@ function renderNotificationCenter() {
   `).join('');
 }
 
+function notificationEventPathContains(event, element) {
+  if (!element) return false;
+  const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+  return path.length
+    ? path.includes(element)
+    : event.target instanceof Node && element.contains(event.target);
+}
+
 window.GastoProNotificationCenter = {
   TYPES: NOTIFICATION_TYPES,
   PREFERENCES_KEY: NOTIFICATION_PREFERENCES_KEY,
@@ -3313,6 +3321,7 @@ window.GastoProNotificationCenter = {
   clearAll: clearAllNotifications,
   navigate: navigateToNotification,
   clearPreferences: clearNotificationPreferences,
+  eventPathContains: notificationEventPathContains,
   render: renderNotificationCenter
 };
 
@@ -5724,9 +5733,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('click', event => {
       if (!(event.target instanceof Element) ||
         notificationsPanel.hidden ||
-        notificationsPanel.contains(event.target) ||
-        (notificationsTrigger && notificationsTrigger.contains(event.target)) ||
-        (financialInsightsMobileStrip && financialInsightsMobileStrip.contains(event.target))) return;
+        notificationEventPathContains(event, notificationsPanel) ||
+        notificationEventPathContains(event, notificationsTrigger) ||
+        notificationEventPathContains(event, financialInsightsMobileStrip)) return;
       closeNotifications();
     });
     document.addEventListener('keydown', event => {
