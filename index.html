@@ -311,6 +311,24 @@
             </button>
           </section>
 
+          <section class="drawer-section drawer-privacy-section">
+            <h4 class="drawer-section-title">Privacidade</h4>
+            <label class="privacy-consent-setting" for="adminVisibilityEnabled">
+              <input type="checkbox" id="adminVisibilityEnabled" />
+              <span>
+                <strong>Permitir que o administrador veja meu nome e e-mail</strong>
+                <small>Desligado por padrão. Você pode revogar a qualquer momento.</small>
+              </span>
+            </label>
+            <label class="privacy-consent-setting" for="usageTelemetryEnabled">
+              <input type="checkbox" id="usageTelemetryEnabled" />
+              <span>
+                <strong>Compartilhar dados de uso para melhorar o app</strong>
+                <small>Desligado por padrão. Compartilha apenas eventos de uso sem texto livre ou dados financeiros.</small>
+              </span>
+            </label>
+          </section>
+
           <section class="drawer-section drawer-data-section">
             <h4 class="drawer-section-title">Dados e backup</h4>
             <div class="drawer-account-controls">
@@ -1530,7 +1548,7 @@
 
         <div class="auth-security-notice">
           <i class="fa-solid fa-shield-halved text-success"></i>
-          <span>Seus dados ficam 100% isolados e inacessíveis para outros usuários.</span>
+          <span>Seus dados financeiros individuais ficam isolados por conta e não são exibidos ao administrador.</span>
         </div>
 
         <!-- LGPD: Consentimento e Política de Privacidade -->
@@ -1542,6 +1560,10 @@
               e autorizo o tratamento dos meus dados financeiros para fins de controle pessoal,
               conforme a <strong>LGPD (Lei 13.709/2018)</strong>.
             </span>
+          </label>
+          <label class="auth-consent-label auth-optional-consent-label" for="registerAdminVisibility">
+            <input type="checkbox" id="registerAdminVisibility" />
+            <span>Permito que o administrador veja meu nome e e-mail para suporte e para acompanhar os testes. Nunca vê meus dados financeiros.</span>
           </label>
         </div>
 
@@ -2066,44 +2088,26 @@
         <button class="modal-close-btn" id="closePrivacyModalBtn" aria-label="Fechar política de privacidade">&times;</button>
       </div>
       <div class="privacy-body">
-        <p class="privacy-date"><i class="fa-regular fa-calendar"></i> Última atualização: 29 de outubro de 2026</p>
+        <p class="privacy-date"><i class="fa-regular fa-calendar"></i> Última atualização: 2 de novembro de 2026</p>
 
-        <h4>1. Quem somos</h4>
-        <p>O <strong>GastoPro</strong> é um aplicativo de controle financeiro pessoal desenvolvido por <strong>Aylton Alberto</strong>. Não é uma empresa, não tem fins comerciais e não coleta dados para venda ou publicidade.</p>
+        <h4>1. Dados e armazenamento</h4>
+        <p>O GastoPro guarda no navegador os dados que você informa para controlar suas finanças. Quando você entra em uma conta, lançamentos, gastos fixos, metas, contas e cartões são sincronizados com o Supabase e protegidos por regras de acesso por usuário (RLS).</p>
+        <p>O e-mail é usado pela autenticação do Supabase. O nome informado no cadastro fica nos metadados da conta e no perfil do app. O nome e o avatar do perfil também ficam neste aparelho e, com login, na tabela <code>profiles</code> do Supabase, protegida por RLS. Fotos ficam no campo <code>profiles.avatar</code> como imagem Base64; o limite do campo é 400.000 caracteres. Avatares predefinidos são identificadores e ilustrações locais. A senha é processada pelo Supabase Auth e não é salva pelo app no localStorage.</p>
+        <p>O canal Fale comigo armazena no Supabase as mensagens que você envia, sua categoria, data e eventuais respostas. O administrador pode ler essas mensagens para responder. Evite incluir senhas ou informações financeiras na mensagem.</p>
 
-        <h4>2. Dados coletados e finalidade</h4>
-        <ul>
-          <li><strong>Lançamentos, gastos fixos/dívidas, metas e contas cadastradas</strong>: no modo local, ficam no navegador; com login, são sincronizados com o Supabase e protegidos por RLS.</li>
-          <li><strong>Nome e foto de perfil</strong>: quando você usa login, são enviados à tabela <code>profiles</code> do Supabase, protegida por RLS; também ficam armazenados neste aparelho.</li>
-          <li><strong>E-mail e senha</strong>: usados para autenticação via Supabase quando você cria uma conta; o e-mail e o nome informado no cadastro são guardados pela conta de login. Senhas não são armazenadas pelo app no localStorage.</li>
-          <li><strong>Sessão de login</strong>: é mantida pelo cliente Supabase no armazenamento do navegador.</li>
-        </ul>
-        <p>Quando você usa o canal "Fale comigo" com login, armazenamos a categoria (dúvida, sugestão ou problema), o texto da mensagem, a data de envio e, quando houver, a resposta do desenvolvedor. Esses dados ficam no Supabase e são usados para responder dúvidas e melhorar o app. A tela de administração do app não exibe seu nome nem seu e-mail automaticamente e não dá acesso aos seus dados financeiros. Se você optar por incluir um contato (como WhatsApp ou e-mail) na mensagem, ele será visto apenas pelo desenvolvedor e usado só para responder. Pedimos que não inclua senhas, dados de cartão ou dados bancários. As mensagens ficam armazenadas até você apagá-las ou excluir sua conta, não são vendidas e não são usadas para publicidade.</p>
-        <p>Com login, o app também pode registrar eventos de uso com nomes fechados (telas abertas, importações concluídas e tipos de erro), sem texto livre, nomes de arquivos ou dados financeiros. O identificador da conta é usado para contar usuários distintos e apagar os eventos quando você exclui seus dados ou sua conta; o painel administrativo recebe apenas contagens agregadas, nunca esse identificador. Os eventos são apagados após 12 meses. Você pode desativar essa coleta a qualquer momento em "Privacidade e uso" no menu do usuário.</p>
+        <h4>2. Preferências opcionais de privacidade</h4>
+        <p>As duas opções da seção Privacidade começam desligadas e podem ser alteradas ou revogadas no painel do usuário. O estado, a versão do texto de consentimento, as datas de aceite e de revogação ficam neste aparelho e são sincronizados com a tabela <code>user_consents</code> quando ela está disponível no servidor. A versão atual do texto é <code>2026-11-02-v1</code>.</p>
+        <p><strong>Visibilidade para o administrador:</strong> se você permitir, o administrador pode ver seu nome, e-mail, data de cadastro, último acesso e somente a contagem de lançamentos ativos. Sem essa permissão, a lista mostra apenas um número de usuário e a data de cadastro. O administrador não vê os registros individuais, descrições, valores, contas, metas ou fotos de perfil. Os indicadores do painel mostram apenas contagens agregadas.</p>
+        <p><strong>Dados de uso:</strong> a telemetria só é gravada quando você a ativa. Ela registra eventos predefinidos, como telas abertas, importações concluídas e tipos de erro; não inclui textos de lançamentos, descrições ou valores. Os eventos ficam associados ao identificador da conta para calcular contagens de usuários vinculados e são removidos após até 12 meses ou quando a conta é excluída. Revogar a opção impede novos registros, mas não apaga imediatamente eventos já gravados.</p>
 
-        <h4>3. Como os dados são armazenados</h4>
-        <p><strong>Modo Local (sem login):</strong> os dados financeiros ficam no <em>localStorage</em> deste navegador. Google Fonts e cdnjs (Font Awesome) são carregados de terceiros; esses provedores podem receber seu endereço IP e dados técnicos da conexão. Os dados financeiros não são enviados a esses provedores.</p>
-        <p><strong>Modo Nuvem (com login):</strong> os dados são sincronizados com o Supabase (banco de dados seguro), protegidos por autenticação e criptografia em trânsito (HTTPS/TLS). O acesso é isolado por usuário via Row Level Security (RLS).</p>
-        <p>Arquivos PDF são lidos no próprio aparelho; não são enviados nem armazenados.</p>
+        <h4>3. Recursos do aplicativo</h4>
+        <p>Fontes e ícones são servidos por arquivos locais do GastoPro. O navegador pode armazenar dados do app e a sessão de autenticação.</p>
 
-        <h4>4. Seus direitos (LGPD — Lei 13.709/2018)</h4>
-        <ul>
-          <li><strong>Acesso e portabilidade</strong>: o backup JSON exporta exatamente versão, data de exportação, lançamentos, templates, metas e contas cadastradas. Não inclui perfil, nome, foto, e-mail, UID nem sessão.</li>
-          <li><strong>Reset com login</strong>: apaga lançamentos, templates, metas e contas deste aparelho e solicita a exclusão desses dados sincronizados na nuvem. Mantém a sessão de login, o nome e a foto locais.</li>
-          <li><strong>Reset sem login</strong>: apaga lançamentos, templates, metas e contas somente deste aparelho; mantém o nome e a foto locais.</li>
-          <li><strong>Logout</strong>: encerra a sessão e apaga os dados locais deste aparelho; os dados sincronizados na nuvem permanecem.</li>
-          <li><strong>Exclusão da conta</strong>: o botão "Excluir minha conta" apaga a conta de login, os dados na nuvem e neste aparelho e também as mensagens vinculadas. A ação é irreversível; recomendamos exportar o backup antes.</li>
-          <li>Você pode apagar suas mensagens a qualquer momento na tela "Fale comigo"; a exclusão da conta apaga também as mensagens; Reset e Logout NÃO apagam as mensagens da nuvem.</li>
-        </ul>
+        <h4>4. Acesso e exclusão</h4>
+        <p>Você pode consultar e alterar suas preferências no painel do usuário. A opção Excluir conta remove a conta de autenticação; os dados vinculados, incluindo perfil, mensagens, consentimentos e eventos de uso, são apagados por exclusão em cascata e pela limpeza local do app. A exclusão é irreversível.</p>
 
-        <h4>5. Compartilhamento de dados</h4>
-        <p>Os dados <strong>não são vendidos nem utilizados para fins publicitários</strong>. O Supabase processa autenticação e dados financeiros quando você usa a conta na nuvem. Google Fonts e cdnjs (Font Awesome) também são provedores externos e recebem dados técnicos de conexão, como o endereço IP.</p>
-
-        <h4>6. Segurança</h4>
-        <p>O app implementa Content-Security-Policy (CSP), proteção contra XSS, bibliotecas JavaScript servidas localmente e SRI para a folha de estilos do Font Awesome. A sessão de autenticação é mantida pelo cliente Supabase no navegador.</p>
-
-        <h4>7. Contato</h4>
-        <p>Para exercer seus direitos, inclusive solicitar exclusão dos dados na nuvem, use: desenvolvedor.aylton@gmail.com. Não envie dados financeiros em canais públicos.</p>
+        <h4>5. Contato</h4>
+        <p>Para dúvidas ou solicitações relacionadas aos seus dados, use o canal Fale comigo no aplicativo.</p>
 
         <div class="privacy-footer-note">
           <i class="fa-solid fa-circle-info text-primary"></i>

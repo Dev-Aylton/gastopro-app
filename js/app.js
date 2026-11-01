@@ -316,7 +316,13 @@ const adminViewState = {
 
 const adminAnalyticsState = {
   data: null,
+  userList: null,
+  userListLoading: false,
+  userListUnavailable: false,
+  userListError: '',
+  selectedMonth: '',
   loading: false,
+  reloadAfterCurrent: false,
   error: '',
   requestId: 0,
   activeTab: 'analytics',
@@ -349,7 +355,8 @@ const VIEW_TITLES = {
 const LAST_VIEW_STORAGE_KEY = 'gastopro_last_view_v1';
 const PERSISTED_VIEW_IDS = Object.freeze(Object.keys(VIEW_TITLES));
 const APP_RELOAD_STATE_KEY = 'gastopro_app_reload_state_v1';
-const USAGE_TELEMETRY_PREFERENCE_KEY = 'gastopro_usage_telemetry_enabled_v1';
+const USER_CONSENT_STORAGE_PREFIX = 'gastopro_user_consents_v1';
+const USER_CONSENT_TEXT_VERSION = '2026-11-02-v1';
 const PAYMENT_METHOD_PREFERENCE_KEY = 'gastopro_payment_method_preference_v1';
 const PAYMENT_METHOD_OPTIONS = Object.freeze({
   expense: Object.freeze([
@@ -441,32 +448,182 @@ window.GastoProPaymentHelpers = {
   savePreference: savePaymentMethodPreference
 };
 
-function isUsageTelemetryEnabled() {
+function getConsentStorageKey(userId = getConsentUserId()) {
+  return `${USER_CONSENT_STORAGE_PREFIX}:${userId || 'local'}`;
+}
+
+function getConsentUserId() {
+  if (typeof FinanceData === 'undefined') return null;
+  const profile = FinanceData.getProfile();
+  return FinanceData.getActiveUserId() || profile.userId || null;
+}
+
+function normalizeConsentState(value) {
+  const consent = value && typeof value === 'object' ? value : {};
+  return {
+    adminVisibility: consent.adminVisibility === true,
+    telemetryEnabled: consent.telemetryEnabled === true,
+    textVersion: typeof consent.textVersion === 'string' ? consent.textVersion : USER_CONSENT_TEXT_VERSION,
+    acceptedAt: typeof consent.acceptedAt === 'string' ? consent.acceptedAt : null,
+    revokedAt: typeof consent.revokedAt === 'string' ? consent.revokedAt : null,
+    updatedAt: typeof consent.updatedAt === 'string' ? consent.updatedAt : null,
+    pendingSync: consent.pendingSync === true
+  };
+}
+
+function readConsentState(key = getConsentStorageKey()) {
   try {
-    const stored = localStorage.getItem(USAGE_TELEMETRY_PREFERENCE_KEY);
-    return stored !== 'false';
+    const stored = localStorage.getItem(key);
+    return stored ? normalizeConsentState(JSON.parse(stored)) : normalizeConsentState(null);
   } catch (error) {
-    console.warn('[GastoPro] Não foi possível ler a preferência de coleta de uso:', error);
-    return true;
+    console.warn('[GastoPro] Não foi possível ler as preferências de privacidade:', error);
+    return normalizeConsentState(null);
   }
 }
 
-function setUsageTelemetryEnabled(enabled) {
-  if (typeof enabled !== 'boolean') throw new TypeError('A preferência de coleta deve ser booleana.');
+function writeConsentState(consent, key = getConsentStorageKey()) {
   try {
-    localStorage.setItem(USAGE_TELEMETRY_PREFERENCE_KEY, String(enabled));
-    return enabled;
+    const normalized = normalizeConsentState(consent);
+    normalized.updatedAt = normalized.updatedAt || new Date().toISOString();
+    localStorage.setItem(key, JSON.stringify(normalized));
+    return normalized;
   } catch (error) {
-    console.error('[GastoPro] Não foi possível salvar a preferência de coleta de uso:', error);
+    console.error('[GastoPro] Não foi possível salvar as preferências de privacidade:', error);
     throw error;
   }
 }
 
-function clearUsageTelemetryPreference() {
+function getConsentStateForUser(user) {
+  const userKey = getConsentStorageKey(user.id);
   try {
-    localStorage.removeItem(USAGE_TELEMETRY_PREFERENCE_KEY);
+    const stored = localStorage.getItem(userKey);
+    if (stored) return { state: normalizeConsentState(JSON.parse(stored)), key: userKey };
+    const email = typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
+    const pendingKey = email
+      ? `${USER_CONSENT_STORAGE_PREFIX}:pending:${encodeURIComponent(email)}`
+      : '';
+    const pending = pendingKey ? localStorage.getItem(pendingKey) : null;
+    return pending
+      ? { state: normalizeConsentState(JSON.parse(pending)), key: pendingKey }
+      : { state: null, key: userKey };
   } catch (error) {
-    console.error('[GastoPro] Não foi possível apagar a preferência de coleta de uso:', error);
+    console.warn('[GastoPro] Não foi possível ler preferências pendentes de privacidade:', error);
+    return { state: null, key: userKey };
+  }
+}
+
+function storePendingConsent(email, consent) {
+  if (typeof email !== 'string' || !email.trim()) throw new TypeError('O e-mail da conta é necessário.');
+  const key = `${USER_CONSENT_STORAGE_PREFIX}:pending:${encodeURIComponent(email.trim().toLowerCase())}`;
+  return writeConsentState({ ...consent, pendingSync: true }, key);
+}
+
+function removePendingConsent(email) {
+  if (typeof email !== 'string' || !email.trim()) return;
+  const key = `${USER_CONSENT_STORAGE_PREFIX}:pending:${encodeURIComponent(email.trim().toLowerCase())}`;
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível limpar o consentimento pendente:', error);
+  }
+}
+
+function createConsentState(adminVisibility, telemetryEnabled, previous = null) {
+  const now = new Date().toISOString();
+  const hasConsent = adminVisibility || telemetryEnabled;
+  const newlyAccepted = previous && (
+    adminVisibility && !previous.adminVisibility ||
+    telemetryEnabled && !previous.telemetryEnabled
+  );
+  return {
+    adminVisibility,
+    telemetryEnabled,
+    textVersion: USER_CONSENT_TEXT_VERSION,
+    acceptedAt: newlyAccepted ? now : previous && previous.acceptedAt || (hasConsent ? now : null),
+    revokedAt: previous && (
+      previous.adminVisibility && !adminVisibility ||
+      previous.telemetryEnabled && !telemetryEnabled
+    ) ? now : null,
+    updatedAt: now
+  };
+}
+
+let consentSyncQueue = Promise.resolve();
+
+function saveConsentSetting(field, enabled) {
+  if (!['adminVisibility', 'telemetryEnabled'].includes(field) || typeof enabled !== 'boolean') {
+    throw new TypeError('A preferência de privacidade é inválida.');
+  }
+  const userId = getConsentUserId();
+  const previous = readConsentState(getConsentStorageKey(userId));
+  const next = createConsentState(
+    field === 'adminVisibility' ? enabled : previous.adminVisibility,
+    field === 'telemetryEnabled' ? enabled : previous.telemetryEnabled,
+    previous
+  );
+  const saved = writeConsentState({ ...next, pendingSync: true }, getConsentStorageKey(userId));
+  if (!userId || !window.SupabaseAuth ||
+    typeof window.SupabaseAuth.saveUserConsent !== 'function') {
+    return Promise.resolve({ success: true, localOnly: true });
+  }
+  consentSyncQueue = consentSyncQueue.catch(() => {}).then(async () => {
+    const result = await window.SupabaseAuth.saveUserConsent(saved, userId);
+    if (!result.success && !result.unavailable) {
+      console.error('[GastoPro] Não foi possível sincronizar a preferência de privacidade:', result.error);
+    } else if (result.success) {
+      writeConsentState({ ...saved, pendingSync: false }, getConsentStorageKey(userId));
+    }
+    return result;
+  });
+  return consentSyncQueue;
+}
+
+async function syncConsentForUser(user) {
+  if (!user || !user.id || !window.SupabaseAuth) return;
+  const local = getConsentStateForUser(user);
+  const localState = local.state;
+  const userKey = getConsentStorageKey(user.id);
+  if (localState && local.key !== userKey) writeConsentState(localState, userKey);
+  if (typeof window.SupabaseAuth.fetchUserConsent !== 'function' ||
+    typeof window.SupabaseAuth.saveUserConsent !== 'function') return;
+
+  const remoteResult = await window.SupabaseAuth.fetchUserConsent(user.id);
+  if (!remoteResult.success) {
+    if (remoteResult.unavailable) {
+      console.warn('[GastoPro] A tabela de consentimentos ainda não existe; as preferências ficam locais.');
+      return;
+    }
+    console.warn('[GastoPro] Não foi possível buscar preferências de privacidade:', remoteResult.error);
+    return;
+  }
+
+  const localUpdatedAt = localState ? Date.parse(localState.updatedAt || '') : NaN;
+  const remoteUpdatedAt = remoteResult.consent
+    ? Date.parse(remoteResult.consent.updatedAt)
+    : NaN;
+  const shouldUploadLocal = localState && (
+    localState.pendingSync || !remoteResult.consent ||
+    Number.isFinite(localUpdatedAt) && remoteUpdatedAt < localUpdatedAt
+  );
+  if (remoteResult.consent && !shouldUploadLocal) {
+    writeConsentState(remoteResult.consent, userKey);
+  } else if (localState) {
+    const saveResult = await window.SupabaseAuth.saveUserConsent(localState, user.id);
+    if (!saveResult.success && !saveResult.unavailable) {
+      console.warn('[GastoPro] Não foi possível enviar preferências de privacidade:', saveResult.error);
+      return;
+    }
+    writeConsentState({ ...localState, pendingSync: !saveResult.success }, userKey);
+  }
+  removePendingConsent(user.email);
+}
+
+function clearConsentPreference(userId = getConsentUserId()) {
+  try {
+    localStorage.removeItem(getConsentStorageKey(userId));
+    localStorage.removeItem('gastopro_usage_telemetry_enabled_v1');
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível apagar preferências de privacidade:', error);
   }
 }
 
@@ -474,7 +631,7 @@ function trackUsageEvent(eventName) {
   const allowedEvents = window.GastoProTelemetryConstants &&
     window.GastoProTelemetryConstants.eventNames;
   if (!Array.isArray(allowedEvents) || !allowedEvents.includes(eventName) ||
-    !isUsageTelemetryEnabled() || !window.SupabaseAuth ||
+    !readConsentState().telemetryEnabled || !window.SupabaseAuth ||
     typeof window.SupabaseAuth.recordUsageEvent !== 'function') return;
 
   Promise.resolve()
@@ -488,11 +645,20 @@ function trackUsageEvent(eventName) {
 }
 
 window.GastoProUsageTelemetry = {
-  PREFERENCE_KEY: USAGE_TELEMETRY_PREFERENCE_KEY,
-  getEnabled: isUsageTelemetryEnabled,
-  setEnabled: setUsageTelemetryEnabled,
-  clearPreference: clearUsageTelemetryPreference,
+  get PREFERENCE_KEY() { return getConsentStorageKey(); },
+  getEnabled: () => readConsentState().telemetryEnabled,
+  setEnabled: enabled => saveConsentSetting('telemetryEnabled', enabled),
+  clearPreference: clearConsentPreference,
   track: trackUsageEvent
+};
+
+window.GastoProConsent = {
+  textVersion: USER_CONSENT_TEXT_VERSION,
+  getState: () => readConsentState(),
+  set: saveConsentSetting,
+  createSignupState: adminVisibility => createConsentState(adminVisibility === true, false),
+  storePending: storePendingConsent,
+  syncForUser: syncConsentForUser
 };
 
 function isFutureImportDate(date) {
@@ -1320,7 +1486,7 @@ function renderAdminMetricRows(items, labelFor) {
 
 function formatDistinctUsersCaption(count) {
   const total = Number(count);
-  return `${total} ${total === 1 ? 'usuário distinto' : 'usuários distintos'}`;
+  return `${total} ${total === 1 ? 'usuário vinculado à conta' : 'usuários vinculados à conta'}`;
 }
 
 function renderAdminAnalytics() {
@@ -1357,14 +1523,35 @@ function renderAdminAnalytics() {
   const screenRows = usage.screens.filter(item => item.name.startsWith('screen_'));
   const recordItems = [
     ['Lançamentos', records.entries],
+    ['Gastos fixos', records.fixedTemplates],
     ['Contas', records.accounts],
     ['Cartões', records.cards],
     ['Metas', records.goals]
   ];
+  const consentedUserRows = adminAnalyticsState.userList
+    ? adminAnalyticsState.userList.map(user => `
+      <li class="admin-user-row">
+        <div>
+          <strong>${escapeHtml(user.displayName)}</strong>
+          ${user.email ? `<span>${escapeHtml(user.email)}</span>` : ''}
+          <small>Cadastro: ${escapeHtml(new Date(user.createdAt).toLocaleDateString('pt-BR'))}</small>
+        </div>
+        ${user.email ? `<span>${user.liveEntries} lançamento(s) ativo(s)</span>` : ''}
+      </li>
+    `).join('')
+    : '';
+  const userListMarkup = adminAnalyticsState.userListLoading
+    ? '<p role="status">Carregando lista de usuários...</p>'
+    : adminAnalyticsState.userListUnavailable
+      ? '<p role="status">A lista estará disponível após a atualização do banco de dados.</p>'
+      : adminAnalyticsState.userListError
+        ? `<p role="alert">${escapeHtml(adminAnalyticsState.userListError)}</p>`
+        : `<ul class="admin-user-list">${consentedUserRows || '<li>Nenhum usuário cadastrado.</li>'}</ul>`;
+  const selectedMonthLabel = `${MONTH_NAMES[state.currentMonth - 1]} ${state.currentYear}`;
 
   container.innerHTML = `
     <div class="admin-analytics-toolbar">
-      <p>Indicadores gerais. Uso de telas, importações e erros considera os últimos 30 dias.</p>
+      <p>Uso de telas e erros considera os últimos 30 dias. O gráfico de importações usa o mês selecionado.</p>
       <button type="button" class="btn-secondary admin-analytics-refresh" data-action="admin-analytics-refresh"
         ${adminAnalyticsState.loading ? 'disabled' : ''}>Atualizar indicadores</button>
     </div>
@@ -1380,6 +1567,11 @@ function renderAdminAnalytics() {
       <div class="admin-analytics-chart">
         <h4>Cadastros por mês</h4>
         <canvas id="adminGrowthChart" role="img" aria-label="Gráfico de cadastros nos últimos 12 meses"></canvas>
+      </div>
+      <div class="admin-analytics-section" aria-labelledby="adminUserListTitle">
+        <h4 id="adminUserListTitle">Lista de usuários</h4>
+        <p>Somente aparecem nome e e-mail de quem autorizou essa visualização.</p>
+        ${userListMarkup}
       </div>
     </section>
     <section class="admin-analytics-section" aria-labelledby="adminRecordsTitle">
@@ -1404,9 +1596,9 @@ function renderAdminAnalytics() {
       </div>
     </section>
     <section class="admin-analytics-section" aria-labelledby="adminImportsTitle">
-      <h3 id="adminImportsTitle">Importações concluídas por dia (30 dias)</h3>
+      <h3 id="adminImportsTitle">Importações concluídas por dia — ${escapeHtml(selectedMonthLabel)}</h3>
       <div class="admin-analytics-chart">
-        <canvas id="adminImportsChart" role="img" aria-label="Gráfico de importações diárias nos últimos 30 dias"></canvas>
+        <canvas id="adminImportsChart" role="img" aria-label="Gráfico de importações diárias em ${escapeHtml(selectedMonthLabel)}"></canvas>
       </div>
     </section>
     <section class="admin-analytics-section">
@@ -1470,19 +1662,40 @@ function renderAdminAnalytics() {
 }
 
 async function loadAdminAnalytics() {
-  if (adminViewState.access !== 'allowed' || adminAnalyticsState.loading) return;
+  if (adminViewState.access !== 'allowed') return;
+  if (adminAnalyticsState.loading) {
+    adminAnalyticsState.reloadAfterCurrent = true;
+    return;
+  }
   const requestId = ++adminAnalyticsState.requestId;
+  const selectedMonth = getYearMonthString(state.currentYear, state.currentMonth);
+  adminAnalyticsState.selectedMonth = selectedMonth;
   adminAnalyticsState.loading = true;
+  adminAnalyticsState.userListLoading = true;
   adminAnalyticsState.error = '';
+  adminAnalyticsState.userListError = '';
+  adminAnalyticsState.userListUnavailable = false;
   renderAdminAnalytics();
   try {
-    const result = await window.SupabaseAuth.fetchAdminAnalytics();
+    const [result, userListResult] = await Promise.all([
+      window.SupabaseAuth.fetchAdminAnalytics(selectedMonth),
+      window.SupabaseAuth.fetchAdminUsers()
+    ]);
     if (requestId !== adminAnalyticsState.requestId || state.currentView !== 'admin') return;
     if (!result.success) {
       adminAnalyticsState.error = result.error || 'Não foi possível carregar os indicadores.';
       return;
     }
     adminAnalyticsState.data = result.analytics;
+    if (userListResult.success) {
+      adminAnalyticsState.userList = userListResult.users;
+    } else {
+      adminAnalyticsState.userList = null;
+      adminAnalyticsState.userListUnavailable = userListResult.unavailable === true;
+      adminAnalyticsState.userListError = userListResult.unavailable
+        ? ''
+        : userListResult.error || 'Não foi possível carregar a lista de usuários.';
+    }
   } catch (error) {
     if (requestId !== adminAnalyticsState.requestId) return;
     console.error('[GastoPro] Não foi possível carregar indicadores administrativos:', error);
@@ -1490,7 +1703,12 @@ async function loadAdminAnalytics() {
   } finally {
     if (requestId === adminAnalyticsState.requestId) {
       adminAnalyticsState.loading = false;
+      adminAnalyticsState.userListLoading = false;
       renderAdminAnalytics();
+      if (adminAnalyticsState.reloadAfterCurrent && state.currentView === 'admin') {
+        adminAnalyticsState.reloadAfterCurrent = false;
+        loadAdminAnalytics();
+      }
     }
   }
 }
@@ -1508,7 +1726,13 @@ function resetAdminSession() {
     .filter(Boolean)
     .forEach(chart => chart.destroy());
   adminAnalyticsState.data = null;
+  adminAnalyticsState.userList = null;
+  adminAnalyticsState.userListLoading = false;
+  adminAnalyticsState.userListUnavailable = false;
+  adminAnalyticsState.userListError = '';
+  adminAnalyticsState.selectedMonth = '';
   adminAnalyticsState.loading = false;
+  adminAnalyticsState.reloadAfterCurrent = false;
   adminAnalyticsState.error = '';
   adminAnalyticsState.activeTab = 'analytics';
   adminAnalyticsState.growthChart = null;
@@ -1692,7 +1916,15 @@ async function openAdminView() {
     .forEach(chart => chart.destroy());
   adminAnalyticsState.growthChart = null;
   adminAnalyticsState.importsChart = null;
+  adminAnalyticsState.requestId++;
   adminAnalyticsState.data = null;
+  adminAnalyticsState.userList = null;
+  adminAnalyticsState.loading = false;
+  adminAnalyticsState.userListLoading = false;
+  adminAnalyticsState.userListUnavailable = false;
+  adminAnalyticsState.userListError = '';
+  adminAnalyticsState.selectedMonth = '';
+  adminAnalyticsState.reloadAfterCurrent = false;
   await Promise.all([
     loadAdminAnalytics(),
     loadAdminMessages({ reset: true })
@@ -3576,6 +3808,12 @@ window.GastoProAccountDeletion = {
   },
 
   async deleteAccountAndClearPendingSync(auth, financeData) {
+    const profile = typeof financeData.getProfile === 'function'
+      ? financeData.getProfile()
+      : {};
+    const consentUserId = typeof financeData.getActiveUserId === 'function'
+      ? financeData.getActiveUserId() || profile.userId
+      : profile.userId;
     const result = await auth.deleteAccount();
     if (result && result.success) {
       try {
@@ -3590,7 +3828,7 @@ window.GastoProAccountDeletion = {
           localStorage.removeItem('gastopro_notification_preferences_v1');
         }
         if (window.GastoProUsageTelemetry) {
-          window.GastoProUsageTelemetry.clearPreference();
+          window.GastoProUsageTelemetry.clearPreference(consentUserId);
         } else {
           localStorage.removeItem('gastopro_usage_telemetry_enabled_v1');
         }
@@ -5651,6 +5889,7 @@ document.addEventListener('DOMContentLoaded', () => {
       state.currentYear--;  // Retrocede o ano ao passar de Janeiro
     }
     renderAll();
+    if (state.currentView === 'admin') loadAdminAnalytics();
   });
 
   document.getElementById('nextMonthBtn').addEventListener('click', () => {
@@ -5660,6 +5899,7 @@ document.addEventListener('DOMContentLoaded', () => {
       state.currentYear++;  // Avança o ano ao passar de Dezembro
     }
     renderAll();
+    if (state.currentView === 'admin') loadAdminAnalytics();
   });
 
   // ── 4. Mini Calendário Popover (Month Picker) ─────────────────
@@ -5723,6 +5963,7 @@ document.addEventListener('DOMContentLoaded', () => {
     state.currentMonth = month;
     closeMonthPicker();
     renderAll();
+    if (state.currentView === 'admin') loadAdminAnalytics();
   };
 
   /** Alterna a visibilidade do popover de calendário. */
@@ -6473,22 +6714,35 @@ document.addEventListener('DOMContentLoaded', () => {
   const userMenuBtn          = document.getElementById('userMenuBtn');
   const closeDrawerBtn       = document.getElementById('closeDrawerBtn');
   const usageTelemetryToggle = document.getElementById('usageTelemetryEnabled');
+  const adminVisibilityToggle = document.getElementById('adminVisibilityEnabled');
+  const consentToggles = [adminVisibilityToggle, usageTelemetryToggle].filter(Boolean);
 
-  if (usageTelemetryToggle) {
-    usageTelemetryToggle.checked = isUsageTelemetryEnabled();
-    usageTelemetryToggle.addEventListener('change', () => {
+  consentToggles.forEach(toggle => {
+    const field = toggle === adminVisibilityToggle ? 'adminVisibility' : 'telemetryEnabled';
+    toggle.checked = window.GastoProConsent.getState()[field];
+    toggle.addEventListener('change', async () => {
+      const previous = !toggle.checked;
+      consentToggles.forEach(input => { input.disabled = true; });
       try {
-        setUsageTelemetryEnabled(usageTelemetryToggle.checked);
-        showToast(usageTelemetryToggle.checked
-          ? 'Coleta de eventos de uso ativada.'
-          : 'Coleta de eventos de uso desativada.');
+        const result = await window.GastoProConsent.set(field, toggle.checked);
+        if (result && result.unavailable) {
+          showToast('Preferência salva neste aparelho. A sincronização ficará pendente até atualizar o banco.');
+        } else if (result && result.localOnly) {
+          showToast('Preferência salva neste aparelho. Entre na conta para sincronizar.');
+        } else if (result && !result.success) {
+          showToast('Preferência salva neste aparelho, mas não sincronizada. Tente novamente.');
+        } else {
+          showToast('Preferência de privacidade atualizada.');
+        }
       } catch (error) {
-        console.error('[GastoPro] Não foi possível atualizar a preferência de coleta:', error);
-        usageTelemetryToggle.checked = !usageTelemetryToggle.checked;
+        console.error('[GastoPro] Não foi possível atualizar a preferência de privacidade:', error);
+        toggle.checked = previous;
         showToast('Não foi possível salvar essa preferência neste aparelho.');
+      } finally {
+        consentToggles.forEach(input => { input.disabled = false; });
       }
     });
-  }
+  });
 
   /** Desliza o painel de perfil para a direita, tornando-o visível. */
   function openProfileDrawer() {
@@ -6629,7 +6883,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (userMenuBtn) {
       userMenuBtn.title = profile.name ? `Menu do Usuário (${profile.name})` : 'Menu do Usuário (Escreva seu nome)';
     }
-    if (usageTelemetryToggle) usageTelemetryToggle.checked = isUsageTelemetryEnabled();
+    const consent = window.GastoProConsent.getState();
+    if (adminVisibilityToggle) adminVisibilityToggle.checked = consent.adminVisibility;
+    if (usageTelemetryToggle) usageTelemetryToggle.checked = consent.telemetryEnabled;
 
     // Atualiza status de Conta & Autenticação no Drawer
     const accountGuestCard   = document.getElementById('accountGuestCard');
@@ -7161,6 +7417,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const sessionUser = await window.SupabaseAuth.getSessionUser();
         if (!sessionUser || sessionUser.id !== userId) return false;
 
+        try {
+          await syncConsentForUser(sessionUser);
+          renderUserProfile();
+        } catch (error) {
+          console.warn('[GastoPro] Não foi possível sincronizar preferências de privacidade:', error);
+        }
+
         const localSync = await FinanceData.prepareLocalDataForSync(userId);
         if (!localSync.success) return false;
 
@@ -7486,6 +7749,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
         const data = await window.SupabaseAuth.signUp(name, email, password);
+        const adminVisibilityConsent = document.getElementById('registerAdminVisibility')?.checked === true;
+        let consentStored = !adminVisibilityConsent;
+        if (adminVisibilityConsent) {
+          try {
+            storePendingConsent(email, window.GastoProConsent.createSignupState(true));
+            consentStored = true;
+          } catch (error) {
+            console.error('[GastoPro] Não foi possível salvar o consentimento do cadastro neste aparelho:', error);
+          }
+        }
         const profile = FinanceData.getProfile();
         profile.name = name;
         profile.email = email;
@@ -7494,12 +7767,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (data && data.session) {
           closeAuth();
-          showToast(`Conta criada com sucesso! Bem-vindo, ${name}!`);
           const user = data.session.user;
           const authenticatedProfile = await prepareAuthenticatedUser(user);
           if (authenticatedProfile) await syncUserDataFromCloud(authenticatedProfile.userId);
+          showToast(consentStored
+            ? `Conta criada com sucesso! Bem-vindo, ${name}!`
+            : 'Conta criada. A autorização opcional não foi registrada e permanece desligada.');
         } else {
-          showAuthAlert('Conta criada! A confirmação por e-mail pode demorar alguns minutos. Confira sua caixa de entrada e a pasta de spam.', true);
+          showAuthAlert(consentStored
+            ? 'Conta criada! A confirmação por e-mail pode demorar alguns minutos. Confira sua caixa de entrada e a pasta de spam.'
+            : 'Conta criada. A autorização opcional não foi registrada e permanece desligada. A confirmação por e-mail pode demorar alguns minutos.',
+          true);
         }
       } catch (err) {
         console.error('[GastoPro Auth] Erro no cadastro:', err);

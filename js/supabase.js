@@ -309,7 +309,7 @@ function sanitizeAdminAnalytics(data) {
   if (!data || typeof data !== 'object' ||
     !users || !records || !feedback || !usage ||
     !['total', 'newWeek', 'newMonth', 'active7Days', 'active30Days'].every(key => isCount(users[key])) ||
-    !['entries', 'accounts', 'cards', 'goals'].every(key => isCount(records[key])) ||
+    !['entries', 'fixedTemplates', 'accounts', 'cards', 'goals'].every(key => isCount(records[key])) ||
     !Array.isArray(registrations) || registrations.some(item =>
       !item || typeof item !== 'object' || !isPeriod(item.period) || !isCount(item.count) ||
       Object.keys(item).some(key => !['period', 'count'].includes(key))
@@ -325,7 +325,7 @@ function sanitizeAdminAnalytics(data) {
     !isMetricList(usage.errors, errorNames) ||
     Object.keys(data).some(key => !['users', 'registrations', 'records', 'feedback', 'usage'].includes(key)) ||
     Object.keys(users).some(key => !['total', 'newWeek', 'newMonth', 'active7Days', 'active30Days'].includes(key)) ||
-    Object.keys(records).some(key => !['entries', 'accounts', 'cards', 'goals'].includes(key)) ||
+    Object.keys(records).some(key => !['entries', 'fixedTemplates', 'accounts', 'cards', 'goals'].includes(key)) ||
     Object.keys(feedback).some(key => !['status', 'categories'].includes(key)) ||
     Object.keys(usage).some(key => !['uniqueUsers30Days', 'screens', 'importsByDay', 'errors'].includes(key))) {
     return null;
@@ -342,6 +342,7 @@ function sanitizeAdminAnalytics(data) {
     registrations: registrations.map(item => ({ period: item.period, count: item.count })),
     records: {
       entries: records.entries,
+      fixedTemplates: records.fixedTemplates,
       accounts: records.accounts,
       cards: records.cards,
       goals: records.goals
@@ -357,6 +358,50 @@ function sanitizeAdminAnalytics(data) {
       errors: usage.errors.map(item => ({ name: item.name, count: item.count }))
     }
   };
+}
+
+function sanitizeAdminUsers(data) {
+  if (!Array.isArray(data)) return null;
+  const users = [];
+  for (const item of data) {
+    if (!item || typeof item !== 'object' ||
+      !Number.isSafeInteger(item.user_number) || item.user_number < 1 ||
+      typeof item.display_name !== 'string' ||
+      typeof item.created_at !== 'string' ||
+      !(item.email === null || typeof item.email === 'string') ||
+      !(item.last_sign_in_at === null || typeof item.last_sign_in_at === 'string') ||
+      !(item.live_entries === null || Number.isSafeInteger(item.live_entries) && item.live_entries >= 0) ||
+      Object.keys(item).some(key => ![
+        'user_number', 'display_name', 'email', 'created_at', 'last_sign_in_at', 'live_entries'
+      ].includes(key))) return null;
+
+    const identityVisible = item.email !== null;
+    if (identityVisible && item.live_entries === null) return null;
+    if (!identityVisible && (item.last_sign_in_at !== null || item.live_entries !== null ||
+      item.display_name !== `Usuário nº ${item.user_number}`)) return null;
+    users.push({
+      userNumber: item.user_number,
+      displayName: item.display_name,
+      email: item.email,
+      createdAt: item.created_at,
+      lastSignInAt: item.last_sign_in_at,
+      liveEntries: item.live_entries
+    });
+  }
+  return users;
+}
+
+function isMissingConsentSchemaError(error) {
+  if (!error) return false;
+  const code = typeof error.code === 'string' ? error.code : '';
+  const message = [
+    error.message,
+    error.details,
+    error.hint
+  ].filter(Boolean).join(' ').toLowerCase();
+  return ['42P01', 'PGRST202', 'PGRST205', '42883'].includes(code) &&
+    (message.includes('user_consents') || message.includes('admin_list_users') ||
+      message.includes('schema cache') || message.includes('function'));
 }
 
 function buildFeedbackReplyPayload(reply, repliedAt) {
@@ -723,12 +768,101 @@ const SupabaseAuth = {
     }
   },
 
-  async fetchAdminAnalytics() {
+  async fetchUserConsent(expectedUserId) {
+    if (!this.client) return { success: false, error: 'Cliente Supabase não inicializado.' };
+    const userId = await this.getAuthenticatedUserId(expectedUserId);
+    if (!userId) return { success: false, error: 'Sessão inválida para carregar preferências de privacidade.' };
+    try {
+      const { data, error } = await this.client.from('user_consents')
+        .select('admin_visibility,telemetry_enabled,text_version,accepted_at,revoked_at,updated_at')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (error) {
+        if (isMissingConsentSchemaError(error)) return { success: false, unavailable: true };
+        return this.reportCloudError('Erro ao carregar preferências de privacidade', error);
+      }
+      if (!data) return { success: true, consent: null };
+      if (typeof data.admin_visibility !== 'boolean' || typeof data.telemetry_enabled !== 'boolean' ||
+        typeof data.updated_at !== 'string') {
+        return { success: false, error: 'As preferências de privacidade recebidas são inválidas.' };
+      }
+      return {
+        success: true,
+        consent: {
+          adminVisibility: data.admin_visibility,
+          telemetryEnabled: data.telemetry_enabled,
+          textVersion: typeof data.text_version === 'string' ? data.text_version : '',
+          acceptedAt: typeof data.accepted_at === 'string' ? data.accepted_at : null,
+          revokedAt: typeof data.revoked_at === 'string' ? data.revoked_at : null,
+          updatedAt: data.updated_at
+        }
+      };
+    } catch (error) {
+      if (isMissingConsentSchemaError(error)) return { success: false, unavailable: true };
+      return this.reportCloudError('Falha ao carregar preferências de privacidade', error);
+    }
+  },
+
+  async saveUserConsent(consent, expectedUserId) {
+    if (!this.client) return { success: false, error: 'Cliente Supabase não inicializado.' };
+    if (!consent || typeof consent.adminVisibility !== 'boolean' ||
+      typeof consent.telemetryEnabled !== 'boolean') {
+      return { success: false, error: 'As preferências de privacidade são inválidas.' };
+    }
+    const userId = await this.getAuthenticatedUserId(expectedUserId);
+    if (!userId) return { success: false, error: 'Sessão inválida para salvar preferências de privacidade.' };
+    const payload = {
+      user_id: userId,
+      admin_visibility: consent.adminVisibility,
+      telemetry_enabled: consent.telemetryEnabled,
+      text_version: typeof consent.textVersion === 'string' ? consent.textVersion : null,
+      accepted_at: typeof consent.acceptedAt === 'string' ? consent.acceptedAt : null,
+      revoked_at: typeof consent.revokedAt === 'string' ? consent.revokedAt : null,
+      updated_at: typeof consent.updatedAt === 'string' ? consent.updatedAt : new Date().toISOString()
+    };
+    try {
+      const { error } = await this.client.from('user_consents')
+        .upsert(payload, { onConflict: 'user_id' });
+      if (error) {
+        if (isMissingConsentSchemaError(error)) return { success: false, unavailable: true };
+        return this.reportCloudError('Erro ao salvar preferências de privacidade', error);
+      }
+      return { success: true };
+    } catch (error) {
+      if (isMissingConsentSchemaError(error)) return { success: false, unavailable: true };
+      return this.reportCloudError('Falha ao salvar preferências de privacidade', error);
+    }
+  },
+
+  async fetchAdminUsers() {
     if (!this.client || !(await this.checkIsAdmin())) {
       return { success: false, error: 'Área restrita.' };
     }
     try {
-      const { data, error } = await this.client.rpc('admin_analytics_summary');
+      const { data, error } = await this.client.rpc('admin_list_users');
+      if (error) {
+        if (isMissingConsentSchemaError(error)) return { success: false, unavailable: true };
+        return { success: false, error: this.getFeedbackErrorMessage(error) };
+      }
+      const users = sanitizeAdminUsers(data);
+      if (!users) return { success: false, error: 'A lista de usuários recebida do servidor é inválida.' };
+      return { success: true, users };
+    } catch (error) {
+      if (isMissingConsentSchemaError(error)) return { success: false, unavailable: true };
+      return { success: false, error: this.getFeedbackErrorMessage(error) };
+    }
+  },
+
+  async fetchAdminAnalytics(selectedMonth) {
+    if (!this.client || !(await this.checkIsAdmin())) {
+      return { success: false, error: 'Área restrita.' };
+    }
+    try {
+      const month = typeof selectedMonth === 'string' ? selectedMonth : null;
+      const { data, error } = await this.client.rpc(
+        'admin_analytics_summary',
+        month ? { p_month: month } : {}
+      );
       if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
       const analytics = sanitizeAdminAnalytics(data);
       if (!analytics) {
@@ -744,7 +878,8 @@ const SupabaseAuth = {
     if (!USAGE_EVENT_NAMES.includes(eventName)) {
       return { success: false, error: 'Evento de uso não permitido.' };
     }
-    if (window.GastoProUsageTelemetry &&
+    if (!window.GastoProUsageTelemetry ||
+      typeof window.GastoProUsageTelemetry.getEnabled !== 'function' ||
       !window.GastoProUsageTelemetry.getEnabled()) {
       return { success: true, skipped: true };
     }
@@ -757,7 +892,8 @@ const SupabaseAuth = {
       if (sessionState.status !== 'authenticated' || !sessionState.user.id) {
         return { success: false, error: 'Não foi possível verificar a sessão.' };
       }
-      if (window.GastoProUsageTelemetry &&
+      if (!window.GastoProUsageTelemetry ||
+        typeof window.GastoProUsageTelemetry.getEnabled !== 'function' ||
         !window.GastoProUsageTelemetry.getEnabled()) {
         return { success: true, skipped: true };
       }

@@ -129,7 +129,7 @@
 .drawer-section .account-desc,
 .drawer-section .user-data-description,
 .drawer-tip p,
-.usage-telemetry-setting small {
+.privacy-consent-setting small {
   color: var(--text-muted);
 }
 
@@ -3229,7 +3229,8 @@ button:active { transform: scale(0.98); }
   gap: 0.75rem;
   padding: 0.55rem 0;
   border-bottom: 1px solid var(--border);
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .admin-analytics-list li strong {
@@ -3237,41 +3238,83 @@ button:active { transform: scale(0.98); }
   color: var(--text-main);
 }
 
+.admin-user-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-user-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-main);
+}
+
+.admin-user-row > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.admin-user-row span,
+.admin-user-row small {
+  color: var(--text-muted);
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.admin-user-row > span {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
 .admin-analytics-empty {
   color: var(--text-dim);
   font-size: 0.85rem;
 }
 
-.usage-telemetry-setting {
+.privacy-consent-setting {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.75rem;
+  min-height: 48px;
+  padding: 0.5rem 0;
   cursor: pointer;
 }
 
-.usage-telemetry-setting input {
+.privacy-consent-setting input {
   flex: 0 0 auto;
-  width: 1.15rem;
-  height: 1.15rem;
-  margin-top: 0.1rem;
+  width: 1.25rem;
+  height: 1.25rem;
   accent-color: var(--primary);
 }
 
-.usage-telemetry-setting span {
+.privacy-consent-setting span {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
 
-.usage-telemetry-setting strong {
+.privacy-consent-setting strong {
   color: var(--text-main);
   font-size: 0.88rem;
 }
 
-.usage-telemetry-setting small {
+.privacy-consent-setting small {
   color: var(--text-dim);
   font-size: 0.78rem;
   line-height: 1.45;
+}
+
+.auth-optional-consent-label {
+  min-height: 44px;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
 }
 
 .admin-feedback-filters {

@@ -2141,9 +2141,9 @@ describe('Canal Fale comigo', () => {
     assertEqual(helpers.getAdminLabel(2), 'Mensagem #3');
   });
 
-  it('pluraliza o rótulo de usuários distintos no painel Admin', () => {
-    assertEqual(formatDistinctUsersCaption(1), '1 usuário distinto');
-    assertEqual(formatDistinctUsersCaption(2), '2 usuários distintos');
+  it('identifica usuários vinculados à conta sem usar rótulo anônimo', () => {
+    assertEqual(formatDistinctUsersCaption(1), '1 usuário vinculado à conta');
+    assertEqual(formatDistinctUsersCaption(2), '2 usuários vinculados à conta');
   });
 
   itAsync('checkIsAdmin falha fechado em erro ou resposta inesperada', async () => {
@@ -2167,13 +2167,14 @@ describe('Canal Fale comigo', () => {
     }
   });
 
-  itAsync('indicadores administrativos usam apenas RPC e removem campos não agregados', async () => {
+  itAsync('indicadores administrativos filtram as importações pelo mês e removem campos não agregados', async () => {
     const previousClient = window.SupabaseAuth.client;
     const rpcCalls = [];
+    let analyticsArguments = null;
     const summary = {
       users: { total: 12, newWeek: 2, newMonth: 4, active7Days: 5, active30Days: 8 },
       registrations: [{ period: '2026-10', count: 4 }],
-      records: { entries: 30, accounts: 8, cards: 3, goals: 5 },
+      records: { entries: 30, fixedTemplates: 7, accounts: 8, cards: 3, goals: 5 },
       feedback: {
         status: [{ name: 'new', count: 2 }],
         categories: [{ name: 'duvida', count: 1 }]
@@ -2192,16 +2193,19 @@ describe('Canal Fale comigo', () => {
           error: null
         })
       },
-      rpc: async name => {
+      rpc: async (name, args) => {
         rpcCalls.push(name);
+        if (name === 'admin_analytics_summary') analyticsArguments = args;
         return { data: name === 'is_admin' ? true : summary, error: null };
       }
     };
     try {
-      const result = await window.SupabaseAuth.fetchAdminAnalytics();
+      const result = await window.SupabaseAuth.fetchAdminAnalytics('2026-10');
       assertTrue(result.success);
       assertEqual(rpcCalls, ['is_admin', 'admin_analytics_summary']);
+      assertEqual(analyticsArguments, { p_month: '2026-10' });
       assertEqual(result.analytics.users.total, 12);
+      assertEqual(result.analytics.records.fixedTemplates, 7);
       assertEqual(result.analytics.usage.screens, [{ name: 'screen_dashboard', count: 10 }]);
       assertFalse(Object.prototype.hasOwnProperty.call(result.analytics, 'user_id'));
     } finally {
@@ -2214,7 +2218,7 @@ describe('Canal Fale comigo', () => {
     const summary = {
       users: { total: 1, newWeek: 0, newMonth: 0, active7Days: 0, active30Days: 0 },
       registrations: [],
-      records: { entries: 0, accounts: 0, cards: 0, goals: 0 },
+      records: { entries: 0, fixedTemplates: 0, accounts: 0, cards: 0, goals: 0 },
       feedback: { status: [], categories: [] },
       usage: { uniqueUsers30Days: 0, screens: [], importsByDay: [], errors: [] },
       user_id: 'não deve chegar ao painel'
@@ -2240,13 +2244,12 @@ describe('Canal Fale comigo', () => {
     }
   });
 
-  itAsync('envia apenas eventos permitidos com usuário e nome fixos', async () => {
+  itAsync('registra eventos somente quando a telemetria opcional está ativa', async () => {
     const previousClient = window.SupabaseAuth.client;
     const previousPreference = localStorage.getItem(window.GastoProUsageTelemetry.PREFERENCE_KEY);
     const inserted = [];
     localStorage.removeItem(window.GastoProUsageTelemetry.PREFERENCE_KEY);
-    assertTrue(window.GastoProUsageTelemetry.getEnabled());
-    window.GastoProUsageTelemetry.setEnabled(true);
+    assertFalse(window.GastoProUsageTelemetry.getEnabled());
     window.SupabaseAuth.client = {
       auth: {
         getSession: async () => ({
@@ -2265,9 +2268,29 @@ describe('Canal Fale comigo', () => {
       }
     };
     try {
+      const disabled = await window.SupabaseAuth.recordUsageEvent('screen_dashboard');
+      assertTrue(disabled.success);
+      assertTrue(disabled.skipped);
+      assertEqual(inserted, []);
+
+      localStorage.setItem(window.GastoProUsageTelemetry.PREFERENCE_KEY, JSON.stringify({
+        adminVisibility: false,
+        telemetryEnabled: true,
+        textVersion: '2026-11-02-v1',
+        acceptedAt: '2026-11-02T10:00:00.000Z',
+        revokedAt: null,
+        updatedAt: '2026-11-02T10:00:00.000Z'
+      }));
       assertTrue((await window.SupabaseAuth.recordUsageEvent('screen_dashboard')).success);
       assertFalse((await window.SupabaseAuth.recordUsageEvent('screen_secret')).success);
-      window.GastoProUsageTelemetry.setEnabled(false);
+      localStorage.setItem(window.GastoProUsageTelemetry.PREFERENCE_KEY, JSON.stringify({
+        adminVisibility: false,
+        telemetryEnabled: false,
+        textVersion: '2026-11-02-v1',
+        acceptedAt: '2026-11-02T10:00:00.000Z',
+        revokedAt: '2026-11-02T10:01:00.000Z',
+        updatedAt: '2026-11-02T10:01:00.000Z'
+      }));
       const optedOut = await window.SupabaseAuth.recordUsageEvent('screen_dashboard');
       assertTrue(optedOut.success);
       assertTrue(optedOut.skipped);
@@ -2282,6 +2305,240 @@ describe('Canal Fale comigo', () => {
       } else {
         localStorage.setItem(window.GastoProUsageTelemetry.PREFERENCE_KEY, previousPreference);
       }
+    }
+  });
+
+  itAsync('mantém consentimentos desligados por padrão e registra aceite e revogação', async () => {
+    const key = window.GastoProUsageTelemetry.PREFERENCE_KEY;
+    const previousState = localStorage.getItem(key);
+    const previousSave = window.SupabaseAuth.saveUserConsent;
+    localStorage.removeItem(key);
+    window.SupabaseAuth.saveUserConsent = async () => ({ success: true });
+    try {
+      const signupConsent = window.GastoProConsent.createSignupState(false);
+      assertFalse(signupConsent.adminVisibility);
+      assertFalse(signupConsent.telemetryEnabled);
+      assertNull(signupConsent.acceptedAt);
+      assertEqual(signupConsent.textVersion, '2026-11-02-v1');
+      assertFalse(window.GastoProConsent.getState().adminVisibility);
+      assertFalse(window.GastoProConsent.getState().telemetryEnabled);
+
+      await window.GastoProConsent.set('adminVisibility', true);
+      const accepted = window.GastoProConsent.getState();
+      assertTrue(accepted.adminVisibility);
+      assertTrue(Boolean(accepted.acceptedAt));
+      assertEqual(accepted.textVersion, '2026-11-02-v1');
+
+      await window.GastoProConsent.set('adminVisibility', false);
+      const revoked = window.GastoProConsent.getState();
+      assertFalse(revoked.adminVisibility);
+      assertTrue(Boolean(revoked.revokedAt));
+    } finally {
+      window.SupabaseAuth.saveUserConsent = previousSave;
+      if (previousState === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, previousState);
+    }
+  });
+
+  itAsync('mantém o consentimento local e sincroniza quando user_consents fica disponível', async () => {
+    const user = { id: '550e8400-e29b-41d4-a716-446655440099', email: 'pendente@example.com' };
+    const userKey = `gastopro_user_consents_v1:${user.id}`;
+    const pendingKey = `gastopro_user_consents_v1:pending:${encodeURIComponent(user.email)}`;
+    const previousUserState = localStorage.getItem(userKey);
+    const previousPendingState = localStorage.getItem(pendingKey);
+    const previousFetch = window.SupabaseAuth.fetchUserConsent;
+    const previousSave = window.SupabaseAuth.saveUserConsent;
+    let savedConsent = null;
+    localStorage.removeItem(userKey);
+    window.GastoProConsent.storePending(
+      user.email,
+      window.GastoProConsent.createSignupState(true)
+    );
+    window.SupabaseAuth.fetchUserConsent = async () => ({ success: false, unavailable: true });
+    window.SupabaseAuth.saveUserConsent = async consent => {
+      savedConsent = consent;
+      return { success: true };
+    };
+    try {
+      await window.GastoProConsent.syncForUser(user);
+      assertTrue(JSON.parse(localStorage.getItem(userKey)).adminVisibility);
+      assertTrue(Boolean(localStorage.getItem(pendingKey)));
+
+      window.SupabaseAuth.fetchUserConsent = async () => ({ success: true, consent: null });
+      await window.GastoProConsent.syncForUser(user);
+      assertTrue(savedConsent.adminVisibility);
+      assertNull(localStorage.getItem(pendingKey));
+    } finally {
+      window.SupabaseAuth.fetchUserConsent = previousFetch;
+      window.SupabaseAuth.saveUserConsent = previousSave;
+      if (previousUserState === null) localStorage.removeItem(userKey);
+      else localStorage.setItem(userKey, previousUserState);
+      if (previousPendingState === null) localStorage.removeItem(pendingKey);
+      else localStorage.setItem(pendingKey, previousPendingState);
+    }
+  });
+
+  itAsync('lê e grava consentimento somente para o usuário autenticado', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const userId = '550e8400-e29b-41d4-a716-446655440088';
+    const serverRow = {
+      admin_visibility: true,
+      telemetry_enabled: false,
+      text_version: '2026-11-02-v1',
+      accepted_at: '2026-11-02T10:00:00.000Z',
+      revoked_at: null,
+      updated_at: '2026-11-02T10:00:00.000Z'
+    };
+    let upsertPayload = null;
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: userId } } },
+          error: null
+        })
+      },
+      from(table) {
+        assertEqual(table, 'user_consents');
+        const query = {
+          select() { return query; },
+          eq(column, value) {
+            assertEqual(column, 'user_id');
+            assertEqual(value, userId);
+            return query;
+          },
+          maybeSingle: async () => ({ data: serverRow, error: null }),
+          upsert: async (payload, options) => {
+            upsertPayload = payload;
+            assertEqual(options, { onConflict: 'user_id' });
+            return { error: null };
+          }
+        };
+        return query;
+      }
+    };
+    try {
+      const loaded = await window.SupabaseAuth.fetchUserConsent(userId);
+      assertTrue(loaded.success);
+      assertTrue(loaded.consent.adminVisibility);
+      assertFalse(loaded.consent.telemetryEnabled);
+      assertEqual(loaded.consent.textVersion, '2026-11-02-v1');
+
+      const consent = {
+        adminVisibility: false,
+        telemetryEnabled: true,
+        textVersion: '2026-11-02-v1',
+        acceptedAt: serverRow.accepted_at,
+        revokedAt: '2026-11-02T11:00:00.000Z',
+        updatedAt: '2026-11-02T11:00:00.000Z'
+      };
+      const saved = await window.SupabaseAuth.saveUserConsent(consent, userId);
+      assertTrue(saved.success);
+      assertEqual(upsertPayload.user_id, userId);
+      assertFalse(upsertPayload.admin_visibility);
+      assertTrue(upsertPayload.telemetry_enabled);
+      assertEqual(upsertPayload.revoked_at, consent.revokedAt);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('permite cadastro sem marcar o consentimento opcional', async () => {
+    const response = await fetch('../index.html');
+    assertTrue(response.ok, 'Não foi possível carregar o formulário de cadastro.');
+    const source = await response.text();
+    const page = new DOMParser().parseFromString(source, 'text/html');
+    const form = page.getElementById('authRegisterForm');
+    const optionalConsent = page.getElementById('registerAdminVisibility');
+    assertTrue(Boolean(form));
+    assertTrue(Boolean(optionalConsent));
+    assertFalse(optionalConsent.checked);
+    assertFalse(optionalConsent.required);
+
+    [
+      ['registerName', 'Pessoa Teste'],
+      ['registerEmail', 'pessoa@example.com'],
+      ['registerEmailConfirmation', 'pessoa@example.com'],
+      ['registerPassword', 'senha-segura-123'],
+      ['registerConfirmPassword', 'senha-segura-123']
+    ].forEach(([id, value]) => { page.getElementById(id).value = value; });
+    page.getElementById('registerConsent').checked = true;
+    assertTrue(form.checkValidity(), 'O formulário deve ser válido sem consentimento opcional.');
+  });
+
+  itAsync('a Política descreve consentimentos e ativos locais sem provedores externos antigos', async () => {
+    const response = await fetch('../index.html');
+    assertTrue(response.ok);
+    const source = await response.text();
+    const page = new DOMParser().parseFromString(source, 'text/html');
+    const policy = page.querySelector('#privacyPolicyModal .privacy-body');
+    assertTrue(Boolean(policy));
+    const text = policy.textContent;
+    [
+      'profiles.avatar',
+      'user_consents',
+      '2026-11-02-v1',
+      'telemetria só é gravada quando você a ativa',
+      'O administrador não vê os registros individuais'
+    ].forEach(fragment => assertTrue(text.includes(fragment), `Política sem: ${fragment}`));
+    assertFalse(/Google Fonts|cdnjs|Font Awesome/i.test(text));
+  });
+
+  itAsync('a lista administrativa revela somente os campos permitidos por consentimento', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const rows = [
+      {
+        user_number: 1,
+        display_name: 'Pessoa autorizada',
+        email: 'pessoa@example.com',
+        created_at: '2026-11-01T10:00:00Z',
+        last_sign_in_at: null,
+        live_entries: 4
+      },
+      {
+        user_number: 2,
+        display_name: 'Usuário nº 2',
+        email: null,
+        created_at: '2026-11-02T10:00:00Z',
+        last_sign_in_at: null,
+        live_entries: null
+      }
+    ];
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: '550e8400-e29b-41d4-a716-446655440001' } } },
+          error: null
+        })
+      },
+      rpc: async name => ({
+        data: name === 'is_admin' ? true : rows,
+        error: null
+      })
+    };
+    try {
+      const result = await window.SupabaseAuth.fetchAdminUsers();
+      assertTrue(result.success);
+      assertEqual(result.users[0].email, 'pessoa@example.com');
+      assertEqual(result.users[0].liveEntries, 4);
+      assertEqual(result.users[1].displayName, 'Usuário nº 2');
+      assertNull(result.users[1].email);
+      assertNull(result.users[1].liveEntries);
+      assertFalse(Object.keys(result.users[0]).some(key =>
+        ['user_id', 'description', 'amount', 'account', 'goal', 'avatar'].includes(key)
+      ));
+
+      window.SupabaseAuth.client.rpc = async name => ({
+        data: name === 'is_admin' ? true : null,
+        error: name === 'is_admin' ? null : {
+          code: 'PGRST202',
+          message: 'Could not find function public.admin_list_users in the schema cache'
+        }
+      });
+      const migrationPending = await window.SupabaseAuth.fetchAdminUsers();
+      assertFalse(migrationPending.success);
+      assertTrue(migrationPending.unavailable);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
     }
   });
 
@@ -3591,10 +3848,10 @@ describe('Dashboard mobile', () => {
   });
 
   it('formata a versão exibida a partir do nome do cache do service worker', () => {
-    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.12'), 'v4.12');
+    assertEqual(window.GastoProAppVersion.formatCacheName('gastopro-v4.13'), 'v4.13');
     assertNull(window.GastoProAppVersion.formatCacheName('other-v4.7'));
     assertEqual(window.GastoProAppVersion.getDisplayedVersion(null), 'v…');
-    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.12'), 'v4.12');
+    assertEqual(window.GastoProAppVersion.getDisplayedVersion('gastopro-v4.13'), 'v4.13');
   });
 
   it('usa o saldo filtrado das contas e o resultado mensal existente no destaque', () => {
@@ -8076,6 +8333,47 @@ describe('Layout responsivo e tipografia mobile', () => {
           assertTrue(contrast(activeBadge.color, primaryStrong) >= 4.5,
             `${prefix}: contraste do contador na navegação ativa`);
           nav.classList.remove('active');
+        }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  itAsync('não corta texto no painel do usuário em 320px e 390px nos dois temas', async () => {
+    const response = await fetch('../index.html');
+    assertTrue(response.ok);
+    const source = await response.text();
+    const page = new DOMParser().parseFromString(source, 'text/html');
+    const drawerMarkup = page.getElementById('profileDrawer');
+    assertTrue(Boolean(drawerMarkup));
+    drawerMarkup.classList.add('open');
+    drawerMarkup.setAttribute('aria-hidden', 'false');
+    drawerMarkup.removeAttribute('inert');
+
+    const frame = await getResponsiveFixtureFrame(320);
+    const frameDocument = frame.contentDocument;
+    const app = frameDocument.getElementById('fixtureApp');
+    app.innerHTML = drawerMarkup.outerHTML;
+    try {
+      for (const theme of ['dark', 'light']) {
+        frameDocument.documentElement.dataset.theme = theme;
+        frameDocument.body.dataset.theme = theme;
+        for (const width of [320, 390]) {
+          await getResponsiveFixtureFrame(width);
+          const drawer = frameDocument.querySelector('.profile-drawer');
+          const overflowingText = [...drawer.querySelectorAll(
+            'h3, h4, h5, p, label, strong, span, small, a, button'
+          )].filter(element => {
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 &&
+              element.scrollWidth > element.clientWidth + 1;
+          }).map(element => `${element.className || element.tagName}: ${element.textContent.trim()}`);
+          assertEqual(overflowingText, [], `${theme} ${width}px: texto cortado`);
+          [...drawer.querySelectorAll('.privacy-consent-setting')].forEach(label => {
+            assertTrue(label.getBoundingClientRect().height >= 44,
+              `${theme} ${width}px: alvo de privacidade abaixo de 44px`);
+          });
         }
       }
     } finally {

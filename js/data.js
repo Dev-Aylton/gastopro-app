@@ -673,6 +673,7 @@ const FinanceData = {
         key !== STORAGE_TUTORIAL_SEEN && key !== STORAGE_ACCOUNT_SETUP_SEEN &&
         key !== 'gastopro_theme' && key !== 'gastopro_notification_preferences_v1' &&
         key !== 'gastopro_usage_telemetry_enabled_v1' &&
+        !key.startsWith('gastopro_user_consents_v1:') &&
         !key.startsWith(STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT + ':') &&
         !key.startsWith('gastopro_payment_method_preference_v1:') &&
         !key.startsWith('gastopro_paid_import_review_v1:')) keysToRemove.push(key);
