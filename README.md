@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.26-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.27-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-451%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-452%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -187,7 +187,7 @@ financeiro-app/
 │       ├── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
 │       └── 20261105_admin_consent.sql # Consentimentos e lista administrativa; criada, não aplicada
 ├── tests/
-│   ├── gastopro.test.js       # 451 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 452 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -458,7 +458,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 14 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
 | 15 | `20261105_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.26`. Suíte atual: **451 testes**.
+`CACHE_NAME` atual: `gastopro-v4.27`. Suíte atual: **452 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -478,7 +478,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **451 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
+Suite com **452 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mock do `localStorage`; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -676,6 +676,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 - Correção do reset: IDs remotos vivos de todas as coleções financeiras são buscados antes da limpeza local; exclusões descartadas pelo trigger são confirmadas e repetidas com versão posterior. Treze testes adicionados; suíte com 402 aprovados.
 - [x] RM-044 — Home unificada em desktop/mobile, resumo duplicado oculto, selects de pagamento alimentados por uma lista central, cartões de lançamentos reorganizados e avisos/reposicionamento do rodapé ajustados. Quatro testes adicionados; suíte com 389 aprovados.
+- [x] RM-045 — Sidebar e painel do usuário organizados por função, tema em um único local e acesso a Fale comigo sem duplicação. Um teste estrutural adicionado; suíte com 452 aprovados. Arquivos: `index.html`, `css/style.css`, `js/app.js`, `tests/gastopro.test.js`.
 - [x] RM-043 — Corrigido zoom automático iOS em controles, cartões de aviso em coluna, nome em largura total, cabeçalho mobile e barra inferior; limpeza da chave legada em `clearAll` e `deleteAllUserData`. Cinco testes adicionados; suíte com 385 aprovados.
 - [x] Home no celular: cabeçalho centralizado com logo existente, chip de mês, destaque financeiro, faixa de avisos, resumo dos cartões, barra inferior e contraste nos dois temas. Três testes novos; suíte com 368 aprovados.
 - [x] RM-039 — Saldo real em destaque com aviso informativo das saídas pendentes no mês atual; grade de quatro blocos, cabeçalho sem sobreposição, barra inferior sem quebra forçada e abertura de telas no topo. A restauração automática da rolagem após atualização do Service Worker foi removida; somente “Atualizar dados” preserva a posição. Quatro testes adicionados; suíte com 372 aprovados.
@@ -716,7 +717,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - Canal "Fale comigo": mensagens autenticadas e respostas armazenadas somente no Supabase, com exclusão pelo usuário, limite de envio e migração SQL pendente de aplicação manual.
 - Ajustes responsivos para telas estreitas e reorganização do Painel do Usuário: ações irreversíveis recolhidas por padrão, logout neutro e correções de alinhamento e overflow.
 
-### v4.26 — 01/11/2026 (versão atual)
+### v4.27 — 01/11/2026 (versão atual)
+
+- Sidebar reorganizado por tarefa, tema fixado em um só lugar e acesso a Fale comigo unificado no painel; preferências, conta, backup e ajuda separados; 452 testes.
+
+### v4.26 — 01/11/2026
 
 - Painel do usuário compacto, com avatar padrão/foto, tema único no sidebar e zona de perigo recolhível; CACHE_NAME atualizado e suíte com 451 testes.
 

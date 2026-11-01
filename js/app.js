@@ -882,27 +882,6 @@ window.GastoProImportHelpers = Object.freeze({
   applyFixedImportRules
 });
 
-function setupResponsiveThemeToggle() {
-  const button = document.getElementById('themeToggleBtn');
-  const placeholder = document.getElementById('themeToggleDesktopPlaceholder');
-  const sidebarFooter = document.querySelector('.sidebar-footer');
-  if (!button || !placeholder || !sidebarFooter) return;
-
-  const mobileQuery = window.matchMedia('(max-width: 900px)');
-  const updatePosition = () => {
-    if (mobileQuery.matches) {
-      sidebarFooter.appendChild(button);
-      button.classList.add('nav-item');
-    } else {
-      placeholder.parentNode.insertBefore(button, placeholder.nextSibling);
-      button.classList.remove('nav-item');
-    }
-  };
-  updatePosition();
-  mobileQuery.addEventListener('change', updatePosition);
-  window.addEventListener('resize', updatePosition);
-}
-
 window.GastoProViewHelpers = {
   restore(storedView, userId, isAdmin) {
     const ownerId = userId || null;
@@ -5213,7 +5192,6 @@ document.addEventListener('DOMContentLoaded', () => {
     bindBackToTopClick(backToTopBtn);
     updateBackToTopVisibility();
   }
-  setupResponsiveThemeToggle();
   setupEntryComposer();
   document.addEventListener('gastopro:themechange', () => {
     if (document.getElementById('categoryChart')) renderAll();

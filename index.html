@@ -63,11 +63,15 @@
       <nav class="sidebar-nav">
         <div class="sidebar-nav-groups">
           <section class="sidebar-group" aria-labelledby="sidebarDailyTitle">
-            <h3 class="sidebar-group-title" id="sidebarDailyTitle">Dia a dia</h3>
+            <h3 class="sidebar-group-title" id="sidebarDailyTitle">Visão geral</h3>
             <button class="nav-item active" data-view="dashboard" id="navDashboard">
               <i class="fa-solid fa-chart-pie"></i>
               <span>Dashboard & Saúde</span>
             </button>
+          </section>
+
+          <section class="sidebar-group" aria-labelledby="sidebarMovementTitle">
+            <h3 class="sidebar-group-title" id="sidebarMovementTitle">Movimentações</h3>
             <button class="nav-item nav-item-wizard" id="sidebarWizardBtn" title="Lançamento rápido guiado em 4 passos">
               <i class="fa-solid fa-wand-magic-sparkles"></i>
               <span>Lançamento Rápido</span>
@@ -82,26 +86,22 @@
               <span>Gastos do Mês</span>
               <span class="nav-badge" id="sidebarExpenseCount"></span>
             </button>
-            <button class="nav-item" data-view="cards" id="navCards">
-              <i class="fa-solid fa-credit-card"></i>
-              <span>Cartões</span>
-            </button>
           </section>
 
           <section class="sidebar-group" aria-labelledby="sidebarMoreTitle">
-            <h3 class="sidebar-group-title" id="sidebarMoreTitle">Mais</h3>
-            <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
-              <i class="fa-solid fa-file-import"></i>
-              <span>Importar Extrato</span>
-              <span class="nav-import-badge">Novo</span>
+            <h3 class="sidebar-group-title" id="sidebarMoreTitle">Organizar</h3>
+            <button class="nav-item" data-view="cards" id="navCards">
+              <i class="fa-solid fa-credit-card"></i>
+              <span>Cartões</span>
             </button>
             <button class="nav-item" data-view="accounts" id="navAccounts">
               <i class="fa-solid fa-building-columns"></i>
               <span>Contas</span>
             </button>
-            <button class="nav-item" data-view="contact" id="navContact">
-              <i class="fa-regular fa-comment-dots"></i>
-              <span>Fale comigo</span>
+            <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
+              <i class="fa-solid fa-file-import"></i>
+              <span>Importar Extrato</span>
+              <span class="nav-import-badge">Novo</span>
             </button>
           </section>
         </div>
@@ -111,6 +111,11 @@
             <i class="fa-solid fa-shield-halved"></i>
             <span>Admin</span>
             <span class="nav-badge admin-nav-badge" id="adminNewCount" aria-label="0 mensagens novas" hidden>0</span>
+          </button>
+          <button type="button" class="nav-item theme-toggle-btn" id="themeToggleBtn"
+            aria-label="Mudar para tema claro" aria-pressed="false" title="Mudar para tema claro">
+            <i class="fa-solid fa-moon" id="themeToggleIcon" aria-hidden="true"></i>
+            <span class="theme-toggle-label" id="themeToggleLabel">Mudar para tema claro</span>
           </button>
         </div>
       </nav>
@@ -195,11 +200,6 @@
           </button>
 
           <span id="themeToggleDesktopPlaceholder" hidden aria-hidden="true"></span>
-          <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Mudar para tema claro" aria-pressed="false" title="Mudar para tema claro">
-            <i class="fa-solid fa-moon" id="themeToggleIcon" aria-hidden="true"></i>
-            <span class="theme-toggle-label" id="themeToggleLabel">Mudar para tema claro</span>
-          </button>
-
           <button class="user-avatar-btn" id="userMenuBtn" title="Menu do Usuário" aria-label="Abrir menu do usuário" aria-haspopup="dialog" aria-expanded="false">
             <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" class="user-avatar-sm" id="topbarAvatarImg" />
           </button>
@@ -297,7 +297,7 @@
           </section>
 
           <section class="drawer-section drawer-privacy-section">
-            <h4 class="drawer-section-title">Privacidade</h4>
+            <h4 class="drawer-section-title">Preferências</h4>
             <label class="privacy-consent-setting" for="adminVisibilityEnabled">
               <input type="checkbox" id="adminVisibilityEnabled" />
               <span>
@@ -315,12 +315,12 @@
             <p class="privacy-sync-status" id="privacySyncStatus" role="status" aria-live="polite" hidden>
               Alteração ainda não enviada ao servidor
             </p>
+            <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Política de Privacidade</a>
           </section>
 
-          <section class="drawer-section drawer-data-section">
-            <h4 class="drawer-section-title">Dados e backup</h4>
+          <section class="drawer-section drawer-account-section">
+            <h4 class="drawer-section-title">Conta</h4>
             <div class="drawer-account-controls">
-            <h5 class="drawer-subsection-title">Conta e sincronização</h5>
             <div id="accountGuestCard" class="account-card">
               <p class="account-desc">Crie uma conta gratuita para sincronizar seus dados entre dispositivos.</p>
               <button type="button" id="openAuthModalBtn" class="btn-auth-trigger">
@@ -358,6 +358,10 @@
               </div>
             </button>
             </div>
+          </section>
+
+          <section class="drawer-section drawer-data-section">
+            <h4 class="drawer-section-title">Dados e backup</h4>
             <div class="drawer-backup-controls">
             <p class="user-data-description">
               A exportação inclui lançamentos, gastos fixos, metas, contas, cartões, compras no cartão,
@@ -396,11 +400,9 @@
           </section>
 
           <section class="drawer-section drawer-about-section">
-            <h4 class="drawer-section-title">Sobre</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.26</span></p>
-            <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Privacidade e LGPD</a>
+            <h4 class="drawer-section-title">Ajuda</h4>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.27</span></p>
             <div class="drawer-about-help">
-            <h5 class="drawer-subsection-title">Ajuda</h5>
             <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
               <div class="action-icon bg-primary-soft">
                 <i class="fa-solid fa-play text-primary" aria-hidden="true"></i>
@@ -410,8 +412,14 @@
                 <span>Rever as dicas de primeiro acesso</span>
               </div>
             </button>
-            <button type="button" class="btn-auth-trigger contact-shortcut" data-action="open-contact">
-              <i class="fa-regular fa-comment-dots" aria-hidden="true"></i> Fale comigo
+            <button type="button" id="navContact" class="drawer-action-btn contact-shortcut" data-action="open-contact">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-regular fa-comment-dots text-primary" aria-hidden="true"></i>
+              </div>
+              <div class="action-text">
+                <strong>Fale comigo</strong>
+                <span>Enviar mensagem e acompanhar respostas</span>
+              </div>
             </button>
             <div class="how-to-use-section">
               <h5 class="drawer-section-title">Como usar</h5>
@@ -1027,7 +1035,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.26</span>
+          <span class="badge badge-version">v4.27</span>
         </div>
       </footer>
 

@@ -9170,6 +9170,45 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     }
   });
 
+  itAsync('organiza sidebar e painel sem duplicar contato, tema ou perder IDs', async () => {
+    const response = await fetch('../index.html');
+    assertTrue(response.ok, 'Não foi possível carregar o HTML do app.');
+    const html = await response.text();
+    const appDocument = new DOMParser().parseFromString(html, 'text/html');
+    const sidebar = appDocument.getElementById('sidebar');
+    const drawer = appDocument.getElementById('profileDrawer');
+    const themeButton = appDocument.getElementById('themeToggleBtn');
+    const navContact = appDocument.getElementById('navContact');
+    const dangerZone = appDocument.getElementById('irreversibleActions');
+    const expectedIds = [
+      'navDashboard', 'sidebarWizardBtn', 'navIncomes', 'sidebarIncomeCount',
+      'navExpenses', 'sidebarExpenseCount', 'navCards', 'sidebarImportBtn',
+      'navAccounts', 'navContact', 'navAdmin', 'adminNewCount',
+      'themeToggleDesktopPlaceholder', 'themeToggleBtn', 'themeToggleIcon', 'themeToggleLabel',
+      'profileDrawerOverlay', 'profileDrawer', 'closeDrawerBtn', 'avatarGallery',
+      'removeProfilePhotoBtn', 'drawerPrivacyLink', 'accountGuestCard', 'accountLoggedCard',
+      'openAuthModalBtn', 'logoutBtn', 'refreshAppBtn', 'refreshIcon', 'drawerRefreshBtn',
+      'drawerRefreshIcon', 'exportBtn', 'restoreBackupBtn', 'restoreBackupFile',
+      'openReportModalBtn', 'reopenOnboardingBtn', 'howToUseTopics', 'irreversibleActions',
+      'clearDataBtn', 'deleteAllMyDataBtn', 'deleteAccountAction', 'deleteAccountBtn'
+    ];
+    const allIds = [...appDocument.querySelectorAll('[id]')].map(element => element.id);
+    const drawerSections = [...drawer.querySelectorAll(':scope > .drawer-body > .drawer-section, :scope > .drawer-body > details')]
+      .map(section => section.querySelector(':scope > .drawer-section-title, :scope > summary strong')?.textContent.trim());
+
+    assertTrue(sidebar.contains(themeButton), 'Tema fixado no sidebar');
+    assertEqual(appDocument.querySelectorAll('.theme-toggle-btn').length, 1, 'um botão de tema');
+    assertEqual(appDocument.querySelectorAll('#navContact').length, 1, 'um acesso a Fale comigo');
+    assertTrue(drawer.contains(navContact), 'Fale comigo dentro do painel');
+    assertFalse(sidebar.contains(navContact), 'Fale comigo fora do sidebar');
+    assertFalse(dangerZone.open, 'zona de perigo fechada inicialmente');
+    assertEqual(drawerSections, [
+      'Perfil', 'Preferências', 'Conta', 'Dados e backup', 'Ajuda', 'Zona de perigo'
+    ]);
+    assertEqual(expectedIds.filter(id => !allIds.includes(id)), [], 'IDs existentes preservados');
+    assertEqual(allIds.filter((id, index) => allIds.indexOf(id) !== index), [], 'IDs sem duplicação');
+  });
+
   itAsync('não corta textos do painel do usuário em 320px e 390px', async () => {
     const frame = await getResponsiveFixtureFrame(320, 844);
     const frameDocument = frame.contentDocument;
