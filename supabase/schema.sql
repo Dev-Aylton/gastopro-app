@@ -119,6 +119,17 @@ create table if not exists public.profiles (
   deleted_at timestamptz
 );
 
+-- Preferencias opcionais de privacidade por conta.
+create table if not exists public.user_consents (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  admin_visibility boolean not null default false,
+  telemetry_enabled boolean not null default false,
+  text_version text,
+  accepted_at timestamptz,
+  revoked_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.goals (
   user_id      uuid not null references auth.users(id) on delete cascade,
   category     text not null,
@@ -251,6 +262,7 @@ alter table public.goals
 alter table public.entries         enable row level security;
 alter table public.fixed_templates enable row level security;
 alter table public.profiles        enable row level security;
+alter table public.user_consents enable row level security;
 alter table public.goals           enable row level security;
 alter table public.accounts        enable row level security;
 alter table public.credit_cards   enable row level security;
@@ -277,6 +289,43 @@ create policy profiles_own on public.profiles
   for all to authenticated
   using ((select auth.uid()) = id)
   with check ((select auth.uid()) = id);
+
+revoke all on public.user_consents from public, anon, authenticated;
+grant select, insert, update on public.user_consents to authenticated;
+
+drop policy if exists user_consents_select_own on public.user_consents;
+create policy user_consents_select_own on public.user_consents
+  for select to authenticated
+  using (user_id = (select auth.uid()));
+
+drop policy if exists user_consents_insert_own on public.user_consents;
+create policy user_consents_insert_own on public.user_consents
+  for insert to authenticated
+  with check (user_id = (select auth.uid()));
+
+drop policy if exists user_consents_update_own on public.user_consents;
+create policy user_consents_update_own on public.user_consents
+  for update to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+create or replace function public.update_user_consents_timestamp()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists user_consents_updated_at on public.user_consents;
+create trigger user_consents_updated_at
+  before update on public.user_consents
+  for each row execute function public.update_user_consents_timestamp();
+
+revoke execute on function public.update_user_consents_timestamp() from public, anon, authenticated;
 
 drop policy if exists goals_own on public.goals;
 create policy goals_own on public.goals
@@ -359,7 +408,15 @@ create policy feedback_messages_update_admin on public.feedback_messages
 drop policy if exists usage_events_insert_own on public.usage_events;
 create policy usage_events_insert_own on public.usage_events
   for insert to authenticated
-  with check (user_id = (select auth.uid()));
+  with check (
+    user_id = (select auth.uid())
+    and exists (
+      select 1
+      from public.user_consents
+      where user_consents.user_id = (select auth.uid())
+        and user_consents.telemetry_enabled = true
+    )
+  );
 
 -- ============================================================
 -- ÍNDICES
@@ -590,7 +647,68 @@ $$;
 revoke execute on function public.delete_my_usage_events() from public, anon;
 grant execute on function public.delete_my_usage_events() to authenticated;
 
-create or replace function public.admin_analytics_summary()
+-- Lista apenas a identidade consentida; os demais usuários são apresentados por posição.
+create or replace function public.admin_list_users()
+returns table (
+  user_number bigint,
+  display_name text,
+  email text,
+  created_at timestamptz,
+  last_sign_in_at timestamptz,
+  live_entries bigint
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Admin access required' using errcode = '42501';
+  end if;
+
+  return query
+  with ordered_users as (
+    select
+      users.id,
+      users.email as account_email,
+      users.created_at as signup_at,
+      users.last_sign_in_at as last_seen_at,
+      users.raw_user_meta_data ->> 'name' as metadata_name,
+      row_number() over (order by users.created_at, users.id) as position,
+      coalesce(consents.admin_visibility, false) as can_show_identity
+    from auth.users as users
+    left join public.user_consents as consents on consents.user_id = users.id
+  )
+  select
+    ordered_users.position,
+    case
+      when ordered_users.can_show_identity
+        then coalesce(nullif(profiles.name, ''), nullif(ordered_users.metadata_name, ''), 'Nome não informado')
+      else 'Usuário nº ' || ordered_users.position::text
+    end,
+    case when ordered_users.can_show_identity then ordered_users.account_email else null end,
+    ordered_users.signup_at,
+    case when ordered_users.can_show_identity then ordered_users.last_seen_at else null end,
+    case when ordered_users.can_show_identity then (
+      select count(*)
+      from public.entries
+      where entries.user_id = ordered_users.id
+        and entries.deleted_at is null
+    ) else null end
+  from ordered_users
+  left join public.profiles as profiles on profiles.id = ordered_users.id
+  order by ordered_users.position;
+end;
+$$;
+
+revoke execute on function public.admin_list_users() from public, anon;
+grant execute on function public.admin_list_users() to authenticated;
+
+-- Substitui a função antiga sem argumentos para que o mês selecionado filtre as importações.
+drop function if exists public.admin_analytics_summary();
+
+create or replace function public.admin_analytics_summary(p_month text default null)
 returns jsonb
 language plpgsql
 stable
@@ -599,9 +717,18 @@ set search_path = ''
 as $$
 declare
   result jsonb;
+  selected_month date;
 begin
   if not public.is_admin() then
     raise exception 'Admin access required' using errcode = '42501';
+  end if;
+
+  if p_month is null then
+    selected_month := pg_catalog.date_trunc('month', current_date)::date;
+  elsif p_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$' then
+    selected_month := (p_month || '-01')::date;
+  else
+    raise exception 'Invalid month' using errcode = '22023';
   end if;
 
   with months as (
@@ -623,11 +750,12 @@ begin
       ) as event_count
     from months
   ),
-  days as (
+  -- Uma linha por dia do mês selecionado, inclusive dias sem importações.
+  selected_month_days as (
     select series.day_start::date as day_start
     from pg_catalog.generate_series(
-      current_date - 29,
-      current_date,
+      selected_month,
+      (selected_month + interval '1 month' - interval '1 day')::date,
       interval '1 day'
     ) as series(day_start)
   ),
@@ -641,9 +769,10 @@ begin
           and created_at >= days.day_start
           and created_at < days.day_start + interval '1 day'
       ) as event_count
-    from days
+    from selected_month_days as days
   )
   select pg_catalog.jsonb_build_object(
+    -- Conta usuários totais, novos e ativos pelo último acesso.
     'users', pg_catalog.jsonb_build_object(
       'total', (select pg_catalog.count(*) from auth.users),
       'newWeek', (
@@ -663,6 +792,7 @@ begin
         where last_sign_in_at >= now() - interval '30 days'
       )
     ),
+    -- Conta cadastros por mês nos últimos doze meses.
     'registrations', coalesce(
       (select pg_catalog.jsonb_agg(
         pg_catalog.jsonb_build_object('period', period, 'count', event_count)
@@ -670,12 +800,15 @@ begin
       ) from registration_months),
       '[]'::jsonb
     ),
+    -- Conta registros vivos por tipo, sem expor conteúdo ou valores.
     'records', pg_catalog.jsonb_build_object(
       'entries', (select pg_catalog.count(*) from public.entries where deleted_at is null),
+      'fixedTemplates', (select pg_catalog.count(*) from public.fixed_templates where deleted_at is null),
       'accounts', (select pg_catalog.count(*) from public.accounts where deleted_at is null),
       'cards', (select pg_catalog.count(*) from public.credit_cards where deleted_at is null),
       'goals', (select pg_catalog.count(*) from public.goals where deleted_at is null)
     ),
+    -- Conta mensagens por status e categoria, sem incluir seus textos.
     'feedback', pg_catalog.jsonb_build_object(
       'status', coalesce((
         select pg_catalog.jsonb_agg(
@@ -700,6 +833,7 @@ begin
         ) as feedback_category
       ), '[]'::jsonb)
     ),
+    -- Conta eventos consentidos por período; não devolve IDs nem dados financeiros.
     'usage', pg_catalog.jsonb_build_object(
       'uniqueUsers30Days', (
         select pg_catalog.count(distinct user_id)
@@ -746,8 +880,8 @@ begin
 end;
 $$;
 
-revoke execute on function public.admin_analytics_summary() from public, anon;
-grant execute on function public.admin_analytics_summary() to authenticated;
+revoke execute on function public.admin_analytics_summary(text) from public, anon;
+grant execute on function public.admin_analytics_summary(text) to authenticated;
 
 create or replace function public.prune_usage_events()
 returns bigint
