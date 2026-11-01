@@ -182,10 +182,10 @@ financeiro-app/
 │       ├── 20261029_feedback.sql # Canal de contato; aplicada no Supabase
 │       ├── 20261031_admin_analytics.sql # Painel admin, eventos de uso e retenção de 12 meses; aplicada
 │       ├── 20261101_sync_versioning.sql # Etapa 1 da sincronização; aplicada no Supabase
-│       ├── 20261102_admin_consent.sql # Consentimentos e lista administrativa; criada, não aplicada
 │       ├── 20261102_sync_realtime_publication.sql # Etapa 2 Realtime; aplicada no Supabase
 │       ├── 20261103_sync_transactions.sql # Etapa 3; aplicada no Supabase
-│       └── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
+│       ├── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
+│       └── 20261105_admin_consent.sql # Consentimentos e lista administrativa; criada, não aplicada
 ├── tests/
 │   ├── gastopro.test.js       # 439 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
@@ -454,15 +454,15 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 10 | `20261031_admin_analytics.sql` | Aplicada |
 | 11 | `20261101_sync_versioning.sql` | Aplicada |
 | 12 | `20261102_sync_realtime_publication.sql` | Aplicada |
-| 13 | `20261102_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
-| 14 | `20261103_sync_transactions.sql` | Aplicada e conferida no Supabase |
-| 15 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
+| 13 | `20261103_sync_transactions.sql` | Aplicada e conferida no Supabase |
+| 14 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
+| 15 | `20261105_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
 `CACHE_NAME` atual: `gastopro-v4.14`. Suíte atual: **439 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
-As oito tabelas sincronizadas são `entries`, `fixed_templates`, `profiles`, `goals`, `accounts`, `credit_cards`, `credit_card_purchases` e `fixed_import_rules`; todas são restritas ao dono por RLS. As migrations [`supabase/migrations/20261101_sync_versioning.sql`](./supabase/migrations/20261101_sync_versioning.sql) e [`supabase/migrations/20261102_sync_realtime_publication.sql`](./supabase/migrations/20261102_sync_realtime_publication.sql) estão aplicadas. A migration [`supabase/migrations/20261102_admin_consent.sql`](./supabase/migrations/20261102_admin_consent.sql) foi criada neste lote e ainda não foi aplicada. Exclusão total de dados e exclusão de conta continuam físicas.
+As oito tabelas sincronizadas são `entries`, `fixed_templates`, `profiles`, `goals`, `accounts`, `credit_cards`, `credit_card_purchases` e `fixed_import_rules`; todas são restritas ao dono por RLS. As migrations [`supabase/migrations/20261101_sync_versioning.sql`](./supabase/migrations/20261101_sync_versioning.sql) e [`supabase/migrations/20261102_sync_realtime_publication.sql`](./supabase/migrations/20261102_sync_realtime_publication.sql) estão aplicadas. A migration [`supabase/migrations/20261105_admin_consent.sql`](./supabase/migrations/20261105_admin_consent.sql) foi criada neste lote e ainda não foi aplicada. Exclusão total de dados e exclusão de conta continuam físicas.
 
 `public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) foi aplicada em produção. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) está aplicada.
 
@@ -470,7 +470,7 @@ O app envia nome e avatar para `profiles` ao editar o perfil autenticado; altera
 
 A migração [`supabase/migrations/20261029_feedback.sql`](./supabase/migrations/20261029_feedback.sql), aplicada no Supabase, cria `app_admins` e `feedback_messages`, as policies de RLS, `is_admin()` e o limite de cinco mensagens por usuário em 24 horas. O administrador pode ler mensagens e responder, mas não recebe acesso às tabelas financeiras nem a `profiles`; a lista de administradores é mantida diretamente pelo SQL Editor. Mensagens são obtidas sob demanda e não entram no localStorage, na fila financeira, no backup ou no Reset.
 
-A migration [`supabase/migrations/20261031_admin_analytics.sql`](./supabase/migrations/20261031_admin_analytics.sql) implementa `admin_analytics_summary()` com métricas agregadas, `usage_events` com lista permitida de eventos e limpeza automática após 12 meses via `pg_cron`. A migration não aplicada [`supabase/migrations/20261102_admin_consent.sql`](./supabase/migrations/20261102_admin_consent.sql) adiciona consentimentos opcionais, impede gravar eventos sem telemetria ativa e limita a lista de usuários administrativos a identidades consentidas. O painel também usa `app_admins`/`is_admin()` e o canal `feedback_messages`.
+A migration [`supabase/migrations/20261031_admin_analytics.sql`](./supabase/migrations/20261031_admin_analytics.sql) implementa `admin_analytics_summary()` com métricas agregadas, `usage_events` com lista permitida de eventos e limpeza automática após 12 meses via `pg_cron`. A migration não aplicada [`supabase/migrations/20261105_admin_consent.sql`](./supabase/migrations/20261105_admin_consent.sql) adiciona consentimentos opcionais, impede gravar eventos sem telemetria ativa e limita a lista de usuários administrativos a identidades consentidas. O painel também usa `app_admins`/`is_admin()` e o canal `feedback_messages`.
 
 Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Consulte também [Executar, configurar e publicar](#-executar-configurar-e-publicar).
 
