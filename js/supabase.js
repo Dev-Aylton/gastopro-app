@@ -20,6 +20,19 @@ const USAGE_EVENT_NAMES = Object.freeze([
 
 window.GastoProTelemetryConstants = { eventNames: USAGE_EVENT_NAMES };
 
+function hasAtMostTwoDecimalPlaces(value) {
+  const match = String(value).trim().match(/^[+-]?(?:\d+(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i);
+  if (!match) return false;
+  const fractionalDigits = match[1] !== undefined ? match[1].length : (match[2] || '').length;
+  return fractionalDigits - Number(match[3] || 0) <= 2;
+}
+
+window.GastoProMoneyScale = Object.freeze({
+  hasAtMostTwoDecimalPlaces,
+  hasLoanMoneyScale: value => hasAtMostTwoDecimalPlaces(value),
+  hasCloudLoanMoneyScale: value => hasAtMostTwoDecimalPlaces(value)
+});
+
 // Inicializa o cliente oficial do Supabase
 const sb = (typeof window !== 'undefined' && window.supabase)
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -223,10 +236,7 @@ function normalizeDueDay(value) {
 }
 
 function hasCloudLoanMoneyScale(value) {
-  const match = String(value).trim().match(/^[+-]?(?:\d+(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i);
-  if (!match) return false;
-  const fractionalDigits = match[1] !== undefined ? match[1].length : (match[2] || '').length;
-  return fractionalDigits - Number(match[3] || 0) <= 2;
+  return window.GastoProMoneyScale.hasAtMostTwoDecimalPlaces(value);
 }
 
 function normalizeTemplateDay(value) {

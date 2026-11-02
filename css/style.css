@@ -8366,6 +8366,147 @@ input[type="month"] {
   box-shadow: var(--shadow);
 }
 
+.install-app-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  color: var(--text-main);
+  box-shadow: var(--shadow);
+}
+
+.install-app-card[hidden],
+.install-app-ios-steps[hidden],
+.install-app-primary[hidden] {
+  display: none;
+}
+
+.install-app-content,
+.install-app-copy,
+.install-app-step {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.install-app-content {
+  gap: 0.85rem;
+}
+
+.install-app-mark {
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--primary-bg);
+  color: var(--primary-text);
+}
+
+.install-app-mark svg,
+.install-app-step svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.install-app-copy {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.75rem;
+}
+
+.install-app-copy h2,
+.install-app-copy p {
+  margin: 0;
+}
+
+.install-app-copy h2 {
+  color: var(--text-main);
+  font-size: 1rem;
+}
+
+.install-app-copy p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.install-app-ios-steps {
+  flex-basis: 100%;
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.install-app-step {
+  gap: 0.45rem;
+  color: var(--text-main);
+  font-size: 0.88rem;
+}
+
+.install-app-step svg {
+  flex: 0 0 22px;
+  color: var(--primary-text);
+}
+
+.install-app-step-number {
+  display: grid;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary-bg);
+  color: var(--primary-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.install-app-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.install-app-actions button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.install-app-dismiss {
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+
+.install-app-primary {
+  border-color: var(--primary-strong);
+  background: var(--primary-strong);
+  color: #ffffff;
+}
+
+.install-app-actions button:focus-visible {
+  outline: 2px solid var(--primary-text);
+  outline-offset: 2px;
+}
+
 .dashboard-highlight-value {
   display: grid;
   gap: 0.35rem;
@@ -8597,6 +8738,27 @@ input[type="month"] {
     gap: 0.65rem;
     margin-bottom: 0;
     padding: 0.9rem;
+  }
+
+  .install-app-card {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 0.85rem;
+  }
+
+  .install-app-content {
+    align-items: flex-start;
+  }
+
+  .install-app-copy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .install-app-actions {
+    align-self: flex-end;
   }
 
   .dashboard-highlight-value .dashboard-balance-action {

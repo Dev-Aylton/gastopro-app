@@ -506,6 +506,40 @@
             </div>
           </section>
 
+          <section class="install-app-card" id="installAppCard" aria-labelledby="installAppTitle" hidden>
+            <div class="install-app-content">
+              <div class="install-app-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
+                </svg>
+              </div>
+              <div class="install-app-copy">
+                <h2 id="installAppTitle">Instalar o app</h2>
+                <p>Tenha o GastoPro à mão na tela inicial do celular.</p>
+                <div class="install-app-ios-steps" id="installAppIosInstructions" hidden>
+                  <div class="install-app-step">
+                    <span class="install-app-step-number">1</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
+                    </svg>
+                    <span>Toque em <strong>Compartilhar</strong> no Safari.</span>
+                  </div>
+                  <div class="install-app-step">
+                    <span class="install-app-step-number">2</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5M9 5h6" />
+                    </svg>
+                    <span>Escolha <strong>Adicionar à Tela de Início</strong>.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="install-app-actions">
+              <button type="button" class="install-app-dismiss" id="dismissInstallAppButton">Agora não</button>
+              <button type="button" class="install-app-primary" id="installAppButton" hidden>Instalar</button>
+            </div>
+          </section>
+
           <!-- KPIs do Mês -->
           <div class="kpi-grid">
             <!-- Resultado do mês -->

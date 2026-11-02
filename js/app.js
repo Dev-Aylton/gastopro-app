@@ -61,6 +61,40 @@ window.GastoProSessionHelpers = {
   }
 };
 
+const INSTALL_CARD_VISITS_KEY = 'gastopro_install_card_visits_v1';
+const INSTALL_CARD_DISMISSED_KEY = 'gastopro_install_card_dismissed_v1';
+
+function decideInstallCard({
+  isMobile, standalone, visitCount, dismissed, onboardingOpen, userAgent, canPromptInstall
+}) {
+  if (!isMobile || standalone || visitCount < 2 || dismissed || onboardingOpen) return null;
+  const agent = String(userAgent || '');
+  if (/Android/i.test(agent)) return canPromptInstall ? 'android' : null;
+  if (!/iPhone|iPod/i.test(agent) ||
+    /(CriOS|FxiOS|EdgiOS|FBAN|FBAV|Instagram|Line\/|LinkedInApp|WhatsApp|TikTok)/i.test(agent) ||
+    !/Safari/i.test(agent)) return null;
+  return 'ios';
+}
+
+function recordInstallCardVisit(storage) {
+  const storedCount = Number.parseInt(storage.getItem(INSTALL_CARD_VISITS_KEY) || '0', 10);
+  const visitCount = Number.isSafeInteger(storedCount) && storedCount >= 0 ? storedCount + 1 : 1;
+  storage.setItem(INSTALL_CARD_VISITS_KEY, String(visitCount));
+  return visitCount;
+}
+
+function dismissInstallCard(storage) {
+  storage.setItem(INSTALL_CARD_DISMISSED_KEY, 'true');
+}
+
+window.GastoProInstallCardHelpers = Object.freeze({
+  decide: decideInstallCard,
+  recordVisit: recordInstallCardVisit,
+  dismiss: dismissInstallCard,
+  visitsKey: INSTALL_CARD_VISITS_KEY,
+  dismissedKey: INSTALL_CARD_DISMISSED_KEY
+});
+
 window.GastoProProfileHelpers = {
   getInitialName(localName, cloudName, metadataName, emailPrefix) {
     return (typeof cloudName === 'string' && cloudName.trim()) ||
@@ -4560,6 +4594,100 @@ function initOnboarding() {
   if (tutorial.shouldShowOnFirstAccess()) openTutorial();
 }
 
+function initInstallCard() {
+  const card = document.getElementById('installAppCard');
+  if (!card) return;
+
+  const installButton = document.getElementById('installAppButton');
+  const dismissButton = document.getElementById('dismissInstallAppButton');
+  const iosInstructions = document.getElementById('installAppIosInstructions');
+  const onboardingModal = document.getElementById('onboardingModal');
+  const accountSetupModal = document.getElementById('accountOnboardingModal');
+  let visitCount;
+  let deferredInstallPrompt = null;
+  try {
+    visitCount = window.GastoProInstallCardHelpers.recordVisit(window.localStorage);
+  } catch (error) {
+    console.error('[GastoPro] Não foi possível registrar a visita para instalação:', error);
+    return;
+  }
+
+  const updateCard = () => {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+      navigator.standalone === true;
+    const onboardingOpen = [onboardingModal, accountSetupModal].some(modal =>
+      modal && (modal.classList.contains('active') || modal.getAttribute('aria-hidden') === 'false'));
+    let dismissed = false;
+    try {
+      dismissed = window.localStorage.getItem(INSTALL_CARD_DISMISSED_KEY) === 'true';
+    } catch (error) {
+      console.error('[GastoPro] Não foi possível consultar a preferência do cartão de instalação:', error);
+      card.hidden = true;
+      return;
+    }
+    const isMobile = navigator.userAgentData?.mobile === true ||
+      /Android.*Mobile|iPhone|iPod/i.test(navigator.userAgent);
+    const cardType = window.GastoProInstallCardHelpers.decide({
+      isMobile,
+      standalone,
+      visitCount,
+      dismissed,
+      onboardingOpen,
+      userAgent: navigator.userAgent,
+      canPromptInstall: Boolean(deferredInstallPrompt)
+    });
+    card.hidden = !cardType;
+    card.dataset.installType = cardType || '';
+    if (installButton) installButton.hidden = cardType !== 'android';
+    if (iosInstructions) iosInstructions.hidden = cardType !== 'ios';
+  };
+
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    updateCard();
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    card.hidden = true;
+  });
+  window.addEventListener('gastopro:tutorial-closed', updateCard);
+  if (typeof MutationObserver === 'function') {
+    const onboardingObserver = new MutationObserver(updateCard);
+    [onboardingModal, accountSetupModal].forEach(modal => {
+      if (modal) onboardingObserver.observe(modal, {
+        attributes: true,
+        attributeFilter: ['aria-hidden', 'class']
+      });
+    });
+  }
+  if (dismissButton) dismissButton.addEventListener('click', () => {
+    try {
+      window.GastoProInstallCardHelpers.dismiss(window.localStorage);
+      updateCard();
+    } catch (error) {
+      console.error('[GastoPro] Não foi possível salvar a dispensa do cartão de instalação:', error);
+    }
+  });
+  if (installButton) installButton.addEventListener('click', async () => {
+    if (!deferredInstallPrompt) {
+      updateCard();
+      return;
+    }
+    const prompt = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    try {
+      await prompt.prompt();
+      await prompt.userChoice;
+    } catch (error) {
+      console.error('[GastoPro] Não foi possível abrir o convite de instalação:', error);
+    } finally {
+      updateCard();
+    }
+  });
+  updateCard();
+}
+
 function initAccountOnboarding() {
   const tutorial = window.GastoProOnboarding;
   const modal = document.getElementById('accountOnboardingModal');
@@ -7265,13 +7393,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const loanFirstMonth = document.getElementById('expenseLoanFirstMonth');
   const loanError = document.getElementById('expenseLoanError');
 
-  function hasAtMostTwoDecimalPlaces(value) {
-    const match = String(value).trim().match(/^[+-]?(?:\d+(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i);
-    if (!match) return false;
-    const fractionalDigits = match[1] !== undefined ? match[1].length : (match[2] || '').length;
-    return fractionalDigits - Number(match[3] || 0) <= 2;
-  }
-
   function checkDebtVisibility() {
     if (!expenseEndMonthWrapper || !expenseTypeSelect) return;
     const isLoan = expenseTypeSelect.value === 'loan';
@@ -7329,7 +7450,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const count = Number(loanInstallmentCount.value);
     const received = loanReceivedAmount.value === '' ? null : Number(loanReceivedAmount.value);
     const rawAmounts = [loanReceivedAmount.value, loanTotalPayable.value];
-    if (rawAmounts.some(value => value !== '' && !hasAtMostTwoDecimalPlaces(value))) {
+    if (rawAmounts.some(value =>
+      value !== '' && !window.GastoProMoneyScale.hasAtMostTwoDecimalPlaces(value))) {
       loanInstallmentAmount.value = '';
       if (loanError) {
         loanError.textContent = 'Os valores recebido, total a pagar e parcela devem ter no máximo 2 casas decimais.';
@@ -7420,7 +7542,8 @@ document.addEventListener('DOMContentLoaded', () => {
       let accountId = document.getElementById('expenseAccount').value;
       let loanMessage = '';
       if ([loanReceivedAmount.value, loanTotalPayable.value, loanInstallmentAmount.value]
-        .some(value => value !== '' && !hasAtMostTwoDecimalPlaces(value))) {
+        .some(value => value !== '' &&
+          !window.GastoProMoneyScale.hasAtMostTwoDecimalPlaces(value))) {
         loanMessage = 'Os valores recebido, total a pagar e parcela devem ter no máximo 2 casas decimais.';
       } else if (!Number.isFinite(received) || received < 0 ||
         received > 9999999999.99 || !Number.isFinite(total) ||
@@ -11804,6 +11927,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── 13. Metas por Categoria — Event Listeners ─────────────────
   initGoalModalListeners();
   initOnboarding();
+  initInstallCard();
   initAccountOnboarding();
 });
 

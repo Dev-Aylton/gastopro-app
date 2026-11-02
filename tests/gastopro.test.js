@@ -2007,7 +2007,6 @@ describe('FinanceData — Contas Bancárias', () => {
     );
     assertTrue(Boolean(FinanceData.add(loan)));
     assertEqual(FinanceData.getTemplates().length, 1);
-
     const cloudLoan = {
       ...loan,
       id: '550e8400-e29b-41d4-a716-446655440001',
@@ -2020,6 +2019,22 @@ describe('FinanceData — Contas Bancárias', () => {
     invalidLoans.forEach(overrides =>
       assertTrue(window.validateCloudPayload({ ...cloudLoan, ...overrides }, 'templates'))
     );
+  });
+
+  it('mantém a mesma regra de duas casas decimais nos três consumidores', () => {
+    const cases = [
+      [181.24, true],
+      [181.245, false],
+      [0.1 + 0.2, false],
+      [-181.24, true],
+      ['181.24', true],
+      [Number.NaN, false]
+    ];
+    cases.forEach(([value, expected]) => {
+      assertEqual(window.GastoProMoneyScale.hasAtMostTwoDecimalPlaces(value), expected);
+      assertEqual(window.GastoProMoneyScale.hasLoanMoneyScale(value), expected);
+      assertEqual(window.GastoProMoneyScale.hasCloudLoanMoneyScale(value), expected);
+    });
   });
 
   itAsync('mantém total informado no saldo devedor e no custo com parcela arredondada', async () => {
@@ -11004,6 +11019,110 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       if (previousDiagnosticLog === null) localStorage.removeItem(window.GastoProDiagnostics.key);
       else localStorage.setItem(window.GastoProDiagnostics.key, previousDiagnosticLog);
     }
+  });
+
+  it('mostra instalação Android somente a partir da segunda visita com convite disponível', () => {
+    const values = new Map();
+    const storage = {
+      getItem: key => values.has(key) ? values.get(key) : null,
+      setItem: (key, value) => values.set(key, String(value))
+    };
+    const decide = window.GastoProInstallCardHelpers.decide;
+    const base = {
+      isMobile: true,
+      standalone: false,
+      dismissed: false,
+      onboardingOpen: false,
+      userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36',
+      canPromptInstall: true
+    };
+    const firstVisit = window.GastoProInstallCardHelpers.recordVisit(storage);
+    assertEqual(firstVisit, 1);
+    assertNull(decide({ ...base, visitCount: firstVisit }));
+    const secondVisit = window.GastoProInstallCardHelpers.recordVisit(storage);
+    assertEqual(secondVisit, 2);
+    assertEqual(decide({ ...base, visitCount: secondVisit }), 'android');
+  });
+
+  it('não mostra instalação dentro do app em modo standalone nem no iOS standalone', () => {
+    const decide = window.GastoProInstallCardHelpers.decide;
+    const base = {
+      isMobile: true,
+      standalone: true,
+      visitCount: 2,
+      dismissed: false,
+      onboardingOpen: false,
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
+      canPromptInstall: false
+    };
+    assertNull(decide(base));
+    assertNull(decide({ ...base, standalone: false, isMobile: false }));
+  });
+
+  it('não mostra o cartão enquanto o onboarding está aberto', () => {
+    assertNull(window.GastoProInstallCardHelpers.decide({
+      isMobile: true,
+      standalone: false,
+      visitCount: 2,
+      dismissed: false,
+      onboardingOpen: true,
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
+      canPromptInstall: false
+    }));
+  });
+
+  it('mostra instruções somente no Safari do iPhone e exclui navegadores embutidos', () => {
+    const decide = window.GastoProInstallCardHelpers.decide;
+    const base = {
+      isMobile: true,
+      standalone: false,
+      visitCount: 2,
+      dismissed: false,
+      onboardingOpen: false,
+      canPromptInstall: false
+    };
+    const safari = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
+    assertEqual(decide({ ...base, userAgent: safari }), 'ios');
+    assertNull(decide({
+      ...base,
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 CriOS/130.0.0.0 Mobile/15E148 Safari/604.1'
+    }));
+    assertNull(decide({
+      ...base,
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (Instagram) Version/18.0 Mobile/15E148 Safari/604.1'
+    }));
+  });
+
+  it('persiste para sempre a dispensa em Agora não', () => {
+    const values = new Map();
+    const storage = {
+      getItem: key => values.has(key) ? values.get(key) : null,
+      setItem: (key, value) => values.set(key, String(value))
+    };
+    const helpers = window.GastoProInstallCardHelpers;
+    helpers.dismiss(storage);
+    assertEqual(storage.getItem(helpers.dismissedKey), 'true');
+    assertNull(helpers.decide({
+      isMobile: true,
+      standalone: false,
+      visitCount: 20,
+      dismissed: storage.getItem(helpers.dismissedKey) === 'true',
+      onboardingOpen: false,
+      userAgent: 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36',
+      canPromptInstall: true
+    }));
+  });
+
+  it('não oferece o botão Instalar no Android sem beforeinstallprompt', () => {
+    assertNull(window.GastoProInstallCardHelpers.decide({
+      isMobile: true,
+      standalone: false,
+      visitCount: 2,
+      dismissed: false,
+      onboardingOpen: false,
+      userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36',
+      canPromptInstall: false
+    }));
   });
 
   it('Metas rola ao painel e Mais abre o menu sem trocar a tela', () => {

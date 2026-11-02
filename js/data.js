@@ -154,10 +154,7 @@ function validateLoanTemplate(template) {
 }
 
 function hasLoanMoneyScale(value) {
-  const match = String(value).trim().match(/^[+-]?(?:\d+(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i);
-  if (!match) return false;
-  const fractionalDigits = match[1] !== undefined ? match[1].length : (match[2] || '').length;
-  return fractionalDigits - Number(match[3] || 0) <= 2;
+  return window.GastoProMoneyScale.hasAtMostTwoDecimalPlaces(value);
 }
 
 function getLoanEndMonth(startMonth, installmentCount) {
