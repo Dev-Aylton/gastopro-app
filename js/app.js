@@ -1725,7 +1725,7 @@ function updateAdminNavigation() {
   const isAdmin = adminViewState.access === 'allowed';
   navItem.hidden = !isAdmin;
   badge.textContent = String(adminViewState.newCount);
-  badge.setAttribute('aria-label', `${adminViewState.newCount} mensagens novas`);
+  badge.setAttribute('aria-label', `${adminViewState.newCount} mensagens novas não lidas`);
   badge.hidden = !isAdmin || adminViewState.newCount === 0;
 }
 
@@ -2026,7 +2026,9 @@ function resetAdminSession() {
   adminViewState.draftReply = '';
   adminViewState.newCount = 0;
   adminViewState.notice = '';
+  syncAdminFeedbackNotifications([]);
   updateAdminNavigation();
+  renderNotificationCenter();
   if (state.currentView === 'admin') {
     renderAdminView();
     renderAdminAnalytics();
@@ -2047,13 +2049,17 @@ function renderAdminView() {
   const helper = window.GastoProFeedbackHelpers;
   const cards = adminViewState.messages.map((message, index) => {
     const label = helper.getAdminLabel(index);
+    const authorName = message.author.displayName;
+    const authorEmail = message.author.email;
     const category = helper.categories[message.category] || 'Mensagem';
     const editing = adminViewState.editingId === message.id;
     return `
       <article class="manage-item-card admin-feedback-card">
         <div class="feedback-message-content">
           <div class="feedback-message-heading">
-            <strong>${escapeHtml(label)}</strong>
+            <strong class="admin-feedback-author">${escapeHtml(authorName)}</strong>
+            ${authorEmail ? `<span class="admin-feedback-author-email">${escapeHtml(authorEmail).replace(/([.@_-])/g, '$1<wbr>')}</span>` : ''}
+            <span class="tag-badge">${escapeHtml(label)}</span>
             <span class="tag-badge">${escapeHtml(category)}</span>
             <span class="tag-badge feedback-status-badge ${message.status === 'answered' ? 'is-answered' : ''}">
               ${message.status === 'answered' ? 'Respondida' : 'Nova'}
@@ -2069,7 +2075,7 @@ function renderAdminView() {
           ` : ''}
           ${editing ? `
             <div class="admin-reply-editor">
-              <label for="adminReplyText">Resposta para ${escapeHtml(label)}</label>
+              <label for="adminReplyText">Resposta para ${escapeHtml(authorName)}</label>
               <textarea id="adminReplyText" maxlength="2000" rows="5">${escapeHtml(adminViewState.draftReply)}</textarea>
               <div class="feedback-text-meta">
                 <span id="adminReplyCount" aria-live="polite">${helper.getCharacterCount(adminViewState.draftReply)}/2000</span>
@@ -2130,17 +2136,12 @@ async function refreshAdminBadge() {
       adminViewState.newCount = 0;
       adminViewState.messages = [];
       adminViewState.editingId = null;
-    } else {
-      const result = await window.SupabaseAuth.countNewFeedback();
-      if (requestId !== adminViewState.requestId) return false;
-      if (result.success) {
-        adminViewState.newCount = result.count;
-      } else {
-        adminViewState.newCount = 0;
-        console.warn('[GastoPro] Não foi possível atualizar o contador de mensagens novas:', result.error);
-      }
+      syncAdminFeedbackNotifications([]);
+    } else if (!(await refreshAdminFeedbackNotifications())) {
+      console.warn('[GastoPro] Não foi possível atualizar os avisos de mensagens novas.');
     }
     updateAdminNavigation();
+    renderNotificationCenter();
     if (state.currentView === 'admin') renderAdminView();
     if (state.currentView === 'admin') renderAdminAnalytics();
     return isAdmin;
@@ -2153,6 +2154,24 @@ async function refreshAdminBadge() {
       buttonVisibleAfter: Boolean(currentNavItem && !currentNavItem.hidden)
     });
   }
+}
+
+let adminFeedbackNotificationsRequestId = 0;
+
+async function refreshAdminFeedbackNotifications() {
+  if (adminViewState.access !== 'allowed') return false;
+  const requestId = ++adminFeedbackNotificationsRequestId;
+  const result = await window.SupabaseAuth.countNewFeedback();
+  if (requestId !== adminFeedbackNotificationsRequestId) return false;
+  if (!result.success) {
+    console.warn('[GastoPro] Não foi possível atualizar os avisos de mensagens novas:', result.error);
+    return false;
+  }
+  syncAdminFeedbackNotifications(result.ids);
+  adminViewState.newCount = getUnreadAdminFeedbackCount();
+  updateAdminNavigation();
+  renderNotificationCenter();
+  return true;
 }
 
 async function loadAdminMessages({ reset = false } = {}) {
@@ -3363,7 +3382,8 @@ const NOTIFICATION_TYPES = Object.freeze({
   anomaly: 'Gastos fora do padrão',
   cardLimit: 'Limite do cartão',
   forecast: 'Previsão do fim do mês',
-  importReview: 'Pagamentos importados para conferir'
+  importReview: 'Pagamentos importados para conferir',
+  adminFeedback: 'Novas mensagens do Fale comigo'
 });
 const NOTIFICATION_PRIORITY_RANK = Object.freeze({ critical: 3, attention: 2, info: 1 });
 const NOTIFICATION_PRIORITY_PRESENTATION = Object.freeze({
@@ -3501,7 +3521,9 @@ function getVisibleNotifications(scope = 'all') {
   return getStoredNotifications().filter(item =>
     !item.dismissed &&
     preferences[item.type] &&
-    (item.scope || 'all') === scope
+    (item.type === 'adminFeedback'
+      ? adminViewState.access === 'allowed'
+      : (item.scope || 'all') === scope)
   ).sort((left, right) =>
     NOTIFICATION_PRIORITY_RANK[getNotificationPriority(right)] -
       NOTIFICATION_PRIORITY_RANK[getNotificationPriority(left)] ||
@@ -3511,6 +3533,36 @@ function getVisibleNotifications(scope = 'all') {
 
 function getNotificationUnreadCount(scope = 'all') {
   return getVisibleNotifications(scope).filter(item => !item.read).length;
+}
+
+function getUnreadAdminFeedbackCount() {
+  return getVisibleNotifications('all').filter(item =>
+    item.type === 'adminFeedback' && !item.read
+  ).length;
+}
+
+function syncAdminFeedbackNotifications(ids) {
+  const activeIds = new Set((Array.isArray(ids) ? ids : [])
+    .filter(id => typeof id === 'string'));
+  const stored = getStoredNotifications();
+  const filtered = stored.filter(item =>
+    item.type !== 'adminFeedback' ||
+    activeIds.has(item.eventKey.slice('adminFeedback:'.length))
+  );
+  if (filtered.length !== stored.length) storeNotifications(filtered);
+
+  if (adminViewState.access !== 'allowed') return [];
+  const candidates = [...activeIds].map(id => ({
+    eventKey: `adminFeedback:${id}`,
+    scope: 'all',
+    type: 'adminFeedback',
+    priority: 'attention',
+    title: 'Nova mensagem no Fale comigo',
+    message: 'Há uma mensagem nova para responder no painel Admin.',
+    destination: { screen: 'admin', month: '', ids: [] }
+  }));
+  syncNotificationEvents(candidates);
+  return getStoredNotifications().filter(item => item.type === 'adminFeedback');
 }
 
 function markNotificationAsRead(eventKey) {
@@ -3662,6 +3714,8 @@ function renderNotificationCenter() {
   const visible = getVisibleNotifications(scope);
   const unreadItems = visible.filter(item => !item.read);
   const unread = unreadItems.length;
+  adminViewState.newCount = getUnreadAdminFeedbackCount();
+  updateAdminNavigation();
   if (mobileSummary) mobileSummary.textContent = getMobileNotificationSummary(unread);
   const highestPriority = unreadItems.length ? getNotificationPriority(unreadItems[0]) : 'none';
   count.textContent = unread > 99 ? '99+' : String(unread);
@@ -3730,6 +3784,8 @@ window.GastoProNotificationCenter = {
   syncEvents: syncNotificationEvents,
   getVisible: getVisibleNotifications,
   getUnreadCount: getNotificationUnreadCount,
+  syncAdminFeedback: syncAdminFeedbackNotifications,
+  getAdminFeedbackUnreadCount: getUnreadAdminFeedbackCount,
   markRead: markNotificationAsRead,
   dismiss: dismissNotification,
   clearAll: clearAllNotifications,
@@ -6378,7 +6434,14 @@ document.addEventListener('DOMContentLoaded', () => {
           if (opening) closeProfileDrawer();
           panel.hidden = !opening;
           trigger.setAttribute('aria-expanded', String(opening));
-          if (opening) renderNotificationCenter();
+          if (opening) {
+            renderNotificationCenter();
+            if (adminViewState.access === 'allowed') {
+              refreshAdminFeedbackNotifications().catch(error => {
+                console.error('[GastoPro] Falha ao atualizar avisos de feedback:', error);
+              });
+            }
+          }
         }
         break;
       }

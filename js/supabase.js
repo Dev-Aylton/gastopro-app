@@ -507,6 +507,7 @@ function isMissingConsentSchemaError(error) {
   ].filter(Boolean).join(' ').toLowerCase();
   return ['42P01', 'PGRST202', 'PGRST205', '42883'].includes(code) &&
     (message.includes('user_consents') || message.includes('admin_list_users') ||
+      message.includes('admin_feedback_authors') ||
       message.includes('schema cache') || message.includes('function'));
 }
 
@@ -542,6 +543,31 @@ function sortFeedbackMessages(messages, status = 'all') {
 
 function countNewFeedback(messages) {
   return messages.filter(message => message.status === 'new').length;
+}
+
+function sanitizeAdminFeedbackAuthors(data) {
+  if (!Array.isArray(data)) return null;
+  const authors = [];
+  const seenUserIds = new Set();
+  for (const item of data) {
+    if (!item || typeof item !== 'object' ||
+      !isValidCloudUuid(item.user_id) || seenUserIds.has(item.user_id) ||
+      !Number.isSafeInteger(item.user_number) || item.user_number < 1 ||
+      typeof item.display_name !== 'string' ||
+      !(item.email === null || typeof item.email === 'string') ||
+      Object.keys(item).some(key =>
+        !['user_id', 'user_number', 'display_name', 'email'].includes(key)
+      )) return null;
+
+    seenUserIds.add(item.user_id);
+    authors.push({
+      userId: item.user_id,
+      userNumber: item.user_number,
+      displayName: item.display_name,
+      email: item.email
+    });
+  }
+  return authors;
 }
 
 function getFeedbackAdminLabel(index) {
@@ -1039,11 +1065,16 @@ const SupabaseAuth = {
       return { success: false, error: 'Acesso restrito.' };
     }
     try {
-      const { count, error } = await this.client.from('feedback_messages')
-        .select('id', { count: 'exact', head: true })
+      const { data, error } = await this.client.from('feedback_messages')
+        .select('id')
         .eq('status', 'new');
       if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
-      return { success: true, count: Number(count) || 0 };
+      if (!Array.isArray(data) || data.some(item =>
+        !item || !isValidCloudUuid(item.id) || Object.keys(item).some(key => key !== 'id')
+      )) {
+        return { success: false, error: 'A resposta do servidor contém mensagens novas inválidas.' };
+      }
+      return { success: true, count: data.length, ids: data.map(item => item.id) };
     } catch (error) {
       return { success: false, error: this.getFeedbackErrorMessage(error) };
     }
@@ -1059,19 +1090,50 @@ const SupabaseAuth = {
       return { success: false, error: 'Área restrita.' };
     }
     try {
-      let query = this.client.from('feedback_messages')
-        .select('id, category, message, status, reply, replied_at, created_at')
-        .order('created_at', { ascending: status === 'new' });
-      if (status !== 'all') query = query.eq('status', status);
-      const { data, error } = await query.range(safeOffset, safeOffset + safeLimit - 1);
+      const [feedbackResult, authorsResult] = await Promise.all([
+        (async () => {
+          let query = this.client.from('feedback_messages')
+            .select('id, user_id, category, message, status, reply, replied_at, created_at')
+            .order('created_at', { ascending: status === 'new' });
+          if (status !== 'all') query = query.eq('status', status);
+          return query.range(safeOffset, safeOffset + safeLimit - 1);
+        })(),
+        this.client.rpc('admin_feedback_authors')
+      ]);
+      const { data, error } = feedbackResult;
       if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
+      if (authorsResult.error) {
+        if (isMissingConsentSchemaError(authorsResult.error)) {
+          return { success: false, unavailable: true, error: this.getFeedbackErrorMessage(authorsResult.error) };
+        }
+        return { success: false, error: this.getFeedbackErrorMessage(authorsResult.error) };
+      }
+      const authors = sanitizeAdminFeedbackAuthors(authorsResult.data);
+      if (!authors) {
+        return { success: false, error: 'A resposta do servidor contém autores inválidos.' };
+      }
+      const authorsById = new Map(authors.map(author => [author.userId, author]));
       if (!Array.isArray(data) || data.some(item =>
         !item || typeof item !== 'object' ||
-        ['user_id', 'name', 'email'].some(key => Object.prototype.hasOwnProperty.call(item, key))
+        !isValidCloudUuid(item.user_id) || !authorsById.has(item.user_id) ||
+        ['name', 'email', 'description', 'amount', 'account', 'goal', 'avatar'].some(key =>
+          Object.prototype.hasOwnProperty.call(item, key)
+        )
       )) {
         return { success: false, error: 'A resposta do servidor contém dados inesperados.' };
       }
-      return { success: true, messages: data };
+      const messages = data.map(({ user_id: userId, ...message }) => {
+        const author = authorsById.get(userId);
+        return {
+          ...message,
+          author: {
+            userNumber: author.userNumber,
+            displayName: author.displayName,
+            email: author.email
+          }
+        };
+      });
+      return { success: true, messages };
     } catch (error) {
       return { success: false, error: this.getFeedbackErrorMessage(error) };
     }

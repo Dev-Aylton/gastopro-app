@@ -3330,6 +3330,15 @@ button:active { transform: scale(0.98); }
   font-size: 0.85rem;
 }
 
+.admin-feedback-author,
+.admin-feedback-author-email {
+  color: var(--text-main);
+}
+
+.admin-feedback-author-email {
+  font-size: 0.875rem;
+}
+
 .feedback-status-badge {
   color: var(--warning);
 }

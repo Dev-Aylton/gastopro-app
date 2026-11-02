@@ -3676,18 +3676,39 @@ describe('Canal Fale comigo', () => {
     }
   });
 
-  itAsync('lista administrativa seleciona apenas campos sem identificador do autor', async () => {
+  itAsync('lista administrativa mostra autores consentidos e anonimiza os demais', async () => {
     const previousClient = window.SupabaseAuth.client;
+    const previousAccess = adminViewState.access;
+    const previousMessages = adminViewState.messages;
+    const previousEditingId = adminViewState.editingId;
+    const previousDraftReply = adminViewState.draftReply;
+    const host = document.createElement('div');
+    const userWithoutConsent = '550e8400-e29b-41d4-a716-446655440003';
+    const userWithConsent = '550e8400-e29b-41d4-a716-446655440004';
     let selectedColumns = '';
     const rows = [{
       id: '550e8400-e29b-41d4-a716-446655440002',
+      user_id: userWithoutConsent,
       category: 'duvida',
       message: 'Mensagem de teste',
       status: 'new',
       reply: null,
       replied_at: null,
       created_at: '2026-10-29T12:00:00Z'
+    }, {
+      id: '550e8400-e29b-41d4-a716-446655440005',
+      user_id: userWithConsent,
+      category: 'sugestao',
+      message: 'Mensagem autorizada',
+      status: 'new',
+      reply: null,
+      replied_at: null,
+      created_at: '2026-10-30T12:00:00Z'
     }];
+    const authors = [
+      { user_id: userWithoutConsent, user_number: 2, display_name: 'Usuário nº 2', email: null },
+      { user_id: userWithConsent, user_number: 3, display_name: 'Pessoa autorizada', email: 'pessoa@example.com' }
+    ];
     window.SupabaseAuth.client = {
       auth: {
         getSession: async () => ({
@@ -3695,7 +3716,10 @@ describe('Canal Fale comigo', () => {
           error: null
         })
       },
-      rpc: async () => ({ data: true, error: null }),
+      rpc: async name => ({
+        data: name === 'is_admin' ? true : authors,
+        error: null
+      }),
       from(table) {
         assertEqual(table, 'feedback_messages');
         return {
@@ -3712,9 +3736,83 @@ describe('Canal Fale comigo', () => {
     try {
       const result = await window.SupabaseAuth.fetchAllFeedback({ status: 'new', limit: 20, offset: 0 });
       assertTrue(result.success);
-      assertEqual(selectedColumns, 'id, category, message, status, reply, replied_at, created_at');
-      assertFalse(selectedColumns.includes('user_id'));
-      assertEqual(result.messages, rows);
+      assertEqual(selectedColumns, 'id, user_id, category, message, status, reply, replied_at, created_at');
+      assertEqual(result.messages[0].author, {
+        userNumber: 2,
+        displayName: 'Usuário nº 2',
+        email: null
+      });
+      assertEqual(result.messages[1].author, {
+        userNumber: 3,
+        displayName: 'Pessoa autorizada',
+        email: 'pessoa@example.com'
+      });
+      assertFalse(Object.prototype.hasOwnProperty.call(result.messages[0], 'user_id'));
+      assertFalse(Object.prototype.hasOwnProperty.call(result.messages[1], 'user_id'));
+      assertFalse(Object.keys(result.messages[0].author).includes('userId'));
+      assertFalse(selectedColumns.includes('amount'));
+
+      host.innerHTML = '<div id="adminContent"></div>';
+      document.body.appendChild(host);
+      adminViewState.access = 'allowed';
+      adminViewState.messages = result.messages;
+      adminViewState.editingId = rows[1].id;
+      adminViewState.draftReply = '';
+      renderAdminView();
+      assertTrue(host.querySelector('#adminContent').textContent.includes('Usuário nº 2'));
+      assertTrue(host.querySelector('#adminContent').textContent.includes('pessoa@example.com'));
+      assertEqual(host.querySelector('.admin-reply-editor label').textContent, 'Resposta para Pessoa autorizada');
+    } finally {
+      host.remove();
+      adminViewState.access = previousAccess;
+      adminViewState.messages = previousMessages;
+      adminViewState.editingId = previousEditingId;
+      adminViewState.draftReply = previousDraftReply;
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('busca IDs de feedback novo para sincronizar avisos lidos', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const feedbackIds = [
+      '550e8400-e29b-41d4-a716-446655440002',
+      '550e8400-e29b-41d4-a716-446655440005'
+    ];
+    let selectedColumns = '';
+    let statusFilter = '';
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: '550e8400-e29b-41d4-a716-446655440001' } } },
+          error: null
+        })
+      },
+      rpc: async () => ({ data: true, error: null }),
+      from(table) {
+        assertEqual(table, 'feedback_messages');
+        return {
+          select(columns) {
+            selectedColumns = columns;
+            return this;
+          },
+          eq(column, value) {
+            assertEqual(column, 'status');
+            statusFilter = value;
+            return Promise.resolve({
+              data: feedbackIds.map(id => ({ id })),
+              error: null
+            });
+          }
+        };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.countNewFeedback();
+      assertTrue(result.success);
+      assertEqual(selectedColumns, 'id');
+      assertEqual(statusFilter, 'new');
+      assertEqual(result.count, 2);
+      assertEqual(result.ids, feedbackIds);
     } finally {
       window.SupabaseAuth.client = previousClient;
     }
@@ -6341,7 +6439,8 @@ describe('Central de avisos local', () => {
     setupMockLocalStorage();
     assertTrue(Object.values(notifications.getPreferences()).every(Boolean));
     assertEqual(Object.keys(notifications.TYPES), [
-      'dueSoon', 'insufficientBalance', 'anomaly', 'cardLimit', 'forecast', 'importReview'
+      'dueSoon', 'insufficientBalance', 'anomaly', 'cardLimit', 'forecast', 'importReview',
+      'adminFeedback'
     ]);
     notifications.syncEvents([
       { eventKey: 'due-pf', scope: 'PF', type: 'dueSoon', title: 'Vencimento', message: 'Há um gasto próximo.' },
@@ -6775,7 +6874,74 @@ describe('Central de avisos local', () => {
     assertEqual(notifications.getUnreadCount('all'), 0);
   });
 
-  it('renderiza estado vazio e seis opções acessíveis de configuração', () => {
+  it('mostra feedback novo no sino apenas para Admin', () => {
+    setupMockLocalStorage();
+    const previousAccess = adminViewState.access;
+    const previousNewCount = adminViewState.newCount;
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <nav id="navAdmin"><span id="adminNewCount"></span></nav>
+      <button id="notificationsTrigger"></button>
+      <span id="notificationsUnreadCount"></span>
+      <p id="notificationsUnreadLabel"></p>
+      <div id="notificationsList"></div>
+      <div id="notificationSettingsList"></div>`;
+    document.body.appendChild(host);
+    try {
+      adminViewState.access = 'allowed';
+      notifications.syncAdminFeedback(['550e8400-e29b-41d4-a716-446655440002']);
+      notifications.render();
+      assertTrue(host.querySelector('#notificationsList').textContent.includes('Nova mensagem no Fale comigo'));
+      assertEqual(host.querySelector('#notificationsUnreadCount').textContent, '1');
+      assertFalse(host.querySelector('#navAdmin').hidden);
+
+      adminViewState.access = 'denied';
+      notifications.render();
+      assertFalse(host.querySelector('#notificationsList').textContent.includes('Nova mensagem no Fale comigo'));
+      assertTrue(host.querySelector('#navAdmin').hidden);
+      assertTrue(host.querySelector('#adminNewCount').hidden);
+    } finally {
+      adminViewState.access = previousAccess;
+      adminViewState.newCount = previousNewCount;
+      host.remove();
+    }
+  });
+
+  it('mantém o contador do menu Admin igual aos feedbacks não lidos no sino', () => {
+    setupMockLocalStorage();
+    const previousAccess = adminViewState.access;
+    const previousNewCount = adminViewState.newCount;
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <nav id="navAdmin"><span id="adminNewCount"></span></nav>
+      <button id="notificationsTrigger"></button>
+      <span id="notificationsUnreadCount"></span>
+      <p id="notificationsUnreadLabel"></p>
+      <div id="notificationsList"></div>
+      <div id="notificationSettingsList"></div>`;
+    document.body.appendChild(host);
+    try {
+      adminViewState.access = 'allowed';
+      notifications.syncAdminFeedback([
+        '550e8400-e29b-41d4-a716-446655440002',
+        '550e8400-e29b-41d4-a716-446655440005'
+      ]);
+      notifications.render();
+      assertEqual(host.querySelector('#adminNewCount').textContent, '2');
+      assertEqual(host.querySelector('#notificationsUnreadCount').textContent, '2');
+
+      notifications.markRead('adminFeedback:550e8400-e29b-41d4-a716-446655440002');
+      notifications.render();
+      assertEqual(host.querySelector('#adminNewCount').textContent, '1');
+      assertEqual(host.querySelector('#notificationsUnreadCount').textContent, '1');
+    } finally {
+      adminViewState.access = previousAccess;
+      adminViewState.newCount = previousNewCount;
+      host.remove();
+    }
+  });
+
+  it('renderiza estado vazio e sete opções acessíveis de configuração', () => {
     setupMockLocalStorage();
     const host = document.createElement('div');
     host.innerHTML = `
@@ -6788,7 +6954,7 @@ describe('Central de avisos local', () => {
     try {
       notifications.render();
       assertEqual(host.querySelector('#notificationsList').textContent.trim(), 'Nenhum aviso por enquanto.');
-      assertEqual(host.querySelectorAll('#notificationSettingsList input[type="checkbox"]').length, 6);
+      assertEqual(host.querySelectorAll('#notificationSettingsList input[type="checkbox"]').length, 7);
       assertTrue([...host.querySelectorAll('#notificationSettingsList input')].every(input => input.checked));
       assertTrue(host.querySelector('#notificationsUnreadCount').hidden);
     } finally {
