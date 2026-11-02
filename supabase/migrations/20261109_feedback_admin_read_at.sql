@@ -2,6 +2,7 @@
 alter table public.feedback_messages
   add column if not exists admin_read_at timestamptz;
 
+revoke all on public.feedback_messages from public, anon;
 revoke update (admin_read_at) on public.feedback_messages from public, anon, authenticated;
 grant update (admin_read_at) on public.feedback_messages to authenticated;
 

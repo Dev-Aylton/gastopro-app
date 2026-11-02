@@ -549,6 +549,7 @@ revoke all on public.feedback_messages from authenticated;
 grant select, delete on public.feedback_messages to authenticated;
 grant insert (user_id, category, message) on public.feedback_messages to authenticated;
 grant update (reply, status, replied_at) on public.feedback_messages to authenticated;
+revoke all on public.feedback_messages from public, anon;
 revoke update (admin_read_at) on public.feedback_messages from public, anon, authenticated;
 grant update (admin_read_at) on public.feedback_messages to authenticated;
 revoke truncate, references, trigger on public.app_admins, public.feedback_messages from authenticated;
