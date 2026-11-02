@@ -12673,6 +12673,94 @@ describe('Filtro de contas na home e relatório do contador', () => {
   });
 });
 
+describe('Login OAuth com Google', () => {
+  itAsync('usa provider google e redirectTo da origem e caminho atuais', async () => {
+    const previousClient = SupabaseAuth.client;
+    let receivedOptions = null;
+    SupabaseAuth.client = {
+      auth: {
+        signInWithOAuth: async options => {
+          receivedOptions = options;
+          return { data: { provider: options.provider }, error: null };
+        }
+      }
+    };
+    try {
+      const result = await SupabaseAuth.signInWithGoogle();
+      assertEqual(receivedOptions.provider, 'google');
+      assertEqual(receivedOptions.options.redirectTo,
+        `${window.location.origin}${window.location.pathname}`);
+      assertEqual(window.GastoProGoogleAuthHelpers.getRedirectTo({
+        origin: 'https://dev-aylton.github.io',
+        pathname: '/gastopro-app/'
+      }), 'https://dev-aylton.github.io/gastopro-app/');
+      assertEqual(window.GastoProGoogleAuthHelpers.getRedirectTo({
+        origin: 'http://127.0.0.1:5500',
+        pathname: '/index.html'
+      }), 'http://127.0.0.1:5500/index.html');
+      assertEqual(result.provider, 'google');
+    } finally {
+      SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('impede chamadas duplicadas enquanto OAuth está em andamento', async () => {
+    const button = { disabled: false };
+    let resolveSignIn;
+    let calls = 0;
+    const handler = window.GastoProGoogleAuthHelpers.createSignInHandler(
+      button,
+      () => {
+        calls++;
+        return new Promise(resolve => { resolveSignIn = resolve; });
+      },
+      () => {}
+    );
+
+    const firstCall = handler();
+    const duplicateCall = await handler();
+    assertFalse(duplicateCall);
+    assertEqual(calls, 1);
+    assertTrue(button.disabled);
+    resolveSignIn();
+    assertTrue(await firstCall);
+    assertTrue(button.disabled);
+  });
+
+  itAsync('destrava após erro e mostra mensagem fixa também no retorno cancelado', async () => {
+    const button = { disabled: false };
+    const messages = [];
+    const handler = window.GastoProGoogleAuthHelpers.createSignInHandler(
+      button,
+      async () => { throw new Error('detalhe interno'); },
+      message => messages.push(message)
+    );
+    assertFalse(await handler());
+    assertFalse(button.disabled);
+    assertEqual(messages, [
+      'Não foi possível entrar com Google. Tente novamente ou use e-mail e senha.'
+    ]);
+    assertTrue(window.GastoProGoogleAuthHelpers.hasOAuthError(
+      '?error=access_denied', ''
+    ));
+    assertTrue(window.GastoProGoogleAuthHelpers.hasOAuthError(
+      '', '#error_description=cancelled'
+    ));
+    assertFalse(window.GastoProGoogleAuthHelpers.hasOAuthError('', ''));
+    assertEqual(window.GastoProGoogleAuthHelpers.errorMessage, messages[0]);
+    assertFalse(window.GastoProGoogleAuthHelpers.canStartSignIn(true, false));
+    assertTrue(window.GastoProGoogleAuthHelpers.canStartSignIn(true, true));
+    assertTrue(window.GastoProGoogleAuthHelpers.canStartSignIn(false, false));
+  });
+
+  it('não embute e-mail nem credencial no método OAuth', () => {
+    const source = SupabaseAuth.signInWithGoogle.toString();
+    assertFalse(source.includes('@'));
+    assertFalse(source.toLowerCase().includes('secret'));
+    assertFalse(source.toLowerCase().includes('password'));
+  });
+});
+
 // ================================================================
 // RELATÓRIO FINAL
 // ================================================================

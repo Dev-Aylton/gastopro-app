@@ -3515,6 +3515,51 @@ function filterFinancialItemsByAccount(items, accounts, filter) {
   return items;
 }
 
+const GOOGLE_SIGN_IN_ERROR_MESSAGE =
+  'Não foi possível entrar com Google. Tente novamente ou use e-mail e senha.';
+
+function getGoogleOAuthRedirectTo(location) {
+  return `${location.origin}${location.pathname}`;
+}
+
+function hasGoogleOAuthError(search, hash) {
+  const searchParams = new URLSearchParams(search || '');
+  const hashParams = new URLSearchParams(String(hash || '').replace(/^#/, ''));
+  return ['error', 'error_description'].some(key =>
+    searchParams.has(key) || hashParams.has(key)
+  );
+}
+
+function canStartGoogleSignIn(isRegistering, privacyConsentAccepted) {
+  return !isRegistering || privacyConsentAccepted === true;
+}
+
+function createGoogleSignInHandler(button, signIn, showError) {
+  let inProgress = false;
+  return async function handleGoogleSignIn() {
+    if (inProgress) return false;
+    inProgress = true;
+    button.disabled = true;
+    try {
+      await signIn();
+      return true;
+    } catch (error) {
+      showError(GOOGLE_SIGN_IN_ERROR_MESSAGE);
+      inProgress = false;
+      button.disabled = false;
+      return false;
+    }
+  };
+}
+
+window.GastoProGoogleAuthHelpers = Object.freeze({
+  errorMessage: GOOGLE_SIGN_IN_ERROR_MESSAGE,
+  getRedirectTo: getGoogleOAuthRedirectTo,
+  hasOAuthError: hasGoogleOAuthError,
+  canStartSignIn: canStartGoogleSignIn,
+  createSignInHandler: createGoogleSignInHandler
+});
+
 function getDashboardAccountSummary(items, accounts, filter) {
   const filteredItems = filterFinancialItemsByAccount(items, accounts, filter);
   const incomes = filteredItems.filter(item => item.type === 'income');
@@ -8519,6 +8564,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const tabRegisterBtn       = document.getElementById('tabRegisterBtn');
   const authLoginForm        = document.getElementById('authLoginForm');
   const authRegisterForm     = document.getElementById('authRegisterForm');
+  const googleSignInBtn      = document.getElementById('googleSignInBtn');
   const authSubtitleText     = document.getElementById('authSubtitleText');
   const authAlertBanner      = document.getElementById('authAlertBanner');
   const authAlertText        = document.getElementById('authAlertText');
@@ -8694,6 +8740,35 @@ document.addEventListener('DOMContentLoaded', () => {
   function openAuth(tab = 'login') {
     setAuthTab(tab);
     if (authModal) authModal.classList.add('active');
+  }
+
+  if (hasGoogleOAuthError(window.location.search, window.location.hash)) {
+    openAuth('login');
+    showAuthAlert(GOOGLE_SIGN_IN_ERROR_MESSAGE);
+  }
+
+  if (googleSignInBtn) {
+    const handleGoogleSignIn = createGoogleSignInHandler(
+      googleSignInBtn,
+      async () => {
+        if (!window.SupabaseAuth || !window.SupabaseAuth.client) {
+          throw new Error('Serviço de autenticação indisponível.');
+        }
+        await window.SupabaseAuth.signInWithGoogle();
+      },
+      showAuthAlert
+    );
+    googleSignInBtn.addEventListener('click', () => {
+      const isRegistering = authRegisterForm &&
+        authRegisterForm.style.display !== 'none';
+      const privacyConsentAccepted =
+        document.getElementById('registerConsent')?.checked === true;
+      if (!canStartGoogleSignIn(isRegistering, privacyConsentAccepted)) {
+        showAuthAlert('Para criar uma conta, leia e aceite a Política de Privacidade.');
+        return;
+      }
+      handleGoogleSignIn();
+    });
   }
 
   function closeDiscardPendingModal() {

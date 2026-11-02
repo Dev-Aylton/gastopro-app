@@ -467,7 +467,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.44`. Suíte atual: **546 testes**.
+`CACHE_NAME` atual: `gastopro-v4.45`. Suíte atual: **550 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -689,6 +689,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-064 — Cabeçalho explícito da zona de perigo** / Descrição: cabeçalho recolhível mostra ações internas, chevron giratório e estado `aria-expanded`; botões críticos, handlers e confirmações permanecem inalterados. / Critério de pronto: 514 testes aprovados; testes não medem layout real; visual/toque e layout em larguras/temas não verificados em tela. / Arquivos: `index.html`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-065 — Helpers puros para totais mensais de dívidas** / Descrição: adiciona o resumo de parcelas em atraso, mês atual, próximo mês, saldo restante e dívidas sem data final; separa gastos fixos recorrentes sem fim e mantém ganhos fora dos totais. / Critério de pronto: 530 testes aprovados no test-runner; visual/toque e layout não verificados em tela. / Arquivos: `js/app.js`, `js/data.js`, `tests/gastopro.test.js`, `index.html`, `css/style.css`, `sw.js`, `README.md`.
 - [x] **RM-066 — Filtro de conta na home e relatório financeiro CSV/PDF** / Descrição: filtra os totais e listas do dashboard por todas as contas, PF/PJ ou conta individual; exporta localmente lançamentos do período filtrado em CSV com escape e neutralização de fórmulas, e em PDF com o gerador local existente. / Critério de pronto: 546 testes aprovados, zero falhas/pendências; aparência/toque e layout não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/report.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
+- [x] **RM-067 — Login Google via OAuth** / Descrição: inicia autenticação com provider Google pelo cliente Supabase e callback local da aplicação; mantém o processamento de sessão existente, exige consentimento de privacidade no cadastro e mostra mensagem fixa sem expor detalhes de erro. / Critério de pronto: 550 testes aprovados com Supabase mockado; fluxo real com Google e visual/toque não verificados. / Arquivos: `index.html`, `js/app.js`, `js/supabase.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 
 ### Em dúvida
 
@@ -700,7 +701,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.44 — 02/11/2026 (versão atual)
+### v4.45 — 02/11/2026 (versão atual)
+
+- RM-067: botão de acesso Google usa OAuth do Supabase, callback na origem/caminho do app e tratamento fixo de erro/cancelamento; cadastro preserva o consentimento explícito. Test-runner com Supabase mockado: 550 aprovados, zero falhas/pendências; fluxo real com Google e tela não verificados.
+
+### v4.44 — 02/11/2026
 
 - RM-066: filtro de conta na home e exportação CSV/PDF local dos lançamentos do período, com conta PF/PJ, tratamento de campos CSV e aviso sobre informe de rendimentos. Test-runner: 546 aprovados, zero falhas/pendências; visual/toque e layout não verificados em tela.
 

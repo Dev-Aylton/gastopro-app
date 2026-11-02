@@ -1378,6 +1378,21 @@ const SupabaseAuth = {
     return data;
   },
 
+  async signInWithGoogle() {
+    const client = this.client;
+    if (!client || !client.auth || typeof client.auth.signInWithOAuth !== 'function') {
+      throw new Error('Cliente Supabase não inicializado.');
+    }
+    const { data, error } = await client.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}${window.location.pathname}`
+      }
+    });
+    if (error) throw error;
+    return data;
+  },
+
   async signOut(scope = 'global') {
     if (!sb) return;
     const { error } = await sb.auth.signOut({ scope });
