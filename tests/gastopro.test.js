@@ -10336,6 +10336,31 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     }
   });
 
+  itAsync('mantém o avatar feminino em SVG XML válido, original e selecionável', async () => {
+    const response = await fetch('../assets/default_avatar_fem.svg');
+    assertTrue(response.ok, 'arquivo SVG acessível');
+    const source = await response.text();
+    const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
+    const svgNamespace = 'http://www.w3.org/2000/svg';
+    const root = parsed.documentElement;
+    assertFalse(parsed.getElementsByTagName('parsererror').length > 0, 'XML sem erro de parse');
+    assertEqual(root.localName, 'svg');
+    assertEqual(root.getAttribute('viewBox'), '0 0 256 256');
+    assertEqual(parsed.getElementsByTagNameNS(svgNamespace, 'script').length, 0);
+    assertEqual(parsed.getElementsByTagNameNS(svgNamespace, 'image').length, 0);
+    [...parsed.querySelectorAll('*')].forEach(element => {
+      ['href', 'xlink:href'].forEach(attribute => {
+        const value = element.getAttribute(attribute);
+        assertTrue(!value || value.startsWith('#'), `referência sem recurso embutido/externo: ${attribute}`);
+      });
+    });
+
+    const gallery = window.GastoProAvatarGallery;
+    assertTrue(gallery.isPreset('preset:feminine-default'));
+    assertEqual(gallery.getSource('preset:feminine-default'), 'assets/default_avatar_fem.svg');
+    assertEqual(gallery.selectPreset({}, 'preset:feminine-default').avatar, 'preset:feminine-default');
+  });
+
   it('salva e recupera a escolha do avatar feminino no perfil local', () => {
     const previousProfile = FinanceData.getProfile();
     try {
