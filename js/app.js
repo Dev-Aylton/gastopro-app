@@ -31,7 +31,12 @@
 let returnToImportAfterAccountModal = false;
 let importAccountCreatedId = null;
 let accountOnboardingDataReady = false;
+let firstEntryAccountRequest = null;
 let mobileBottomSelection = 'home';
+
+if (document.getElementById('incomeForm') && document.getElementById('expenseForm')) {
+  FinanceData.requireExplicitAccount = true;
+}
 
 window.GastoProSessionHelpers = {
   shouldClearLocalData(status, hasLocalUserId, hasPendingSync = false) {
@@ -2761,7 +2766,7 @@ function updateAccountSelects() {
     const selectedId = select.value;
     const options = accounts.length
       ? buildAccountSelectOptions(accounts)
-      : [{ value: '', label: 'Conta principal será criada ao salvar' }];
+      : [{ value: '', label: 'Confirme uma conta para continuar' }];
     select.innerHTML = options.map(option =>
       `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
     ).join('');
@@ -2781,7 +2786,7 @@ function updateAccountSelects() {
     const selectedId = wizardSelect.value;
     const options = accounts.length
       ? buildAccountSelectOptions(accounts)
-      : [{ value: '', label: 'Conta principal será criada ao salvar' }];
+      : [{ value: '', label: 'Confirme uma conta para continuar' }];
     wizardSelect.innerHTML = options.map(option =>
       `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
     ).join('');
@@ -5193,19 +5198,22 @@ function deleteCreditCard(id) {
 function openAdjustAccountModal(id = '') {
   const accounts = FinanceData.getAccounts();
   if (!accounts.length) {
-    showToast('Cadastre uma conta para informar o saldo real.');
-    openAccountModal();
+    showToast('Cadastre uma conta antes de ajustar o saldo.');
     return;
   }
-  const account = accounts.find(item => item.id === id) || null;
   const accountSelect = document.getElementById('adjustAccountId');
+  updateAccountSelects();
+  const account = accounts.length === 1
+    ? accounts[0]
+    : null;
   accountSelect.value = account ? account.id : '';
-  document.getElementById('adjustAccountName').textContent = account
-    ? `Saldo real em ${account.balanceDate || getTodayString()}`
-    : 'Selecione a conta e informe o saldo real na data escolhida.';
-  document.getElementById('adjustAccountBalance').value = account
-    ? FinanceData.getAccountBalance(account.id)
-    : '';
+  if (!accountSelect.dataset.adjustBalanceBound) {
+    accountSelect.addEventListener('change', () =>
+      updateAdjustAccountFields(accountSelect.value)
+    );
+    accountSelect.dataset.adjustBalanceBound = 'true';
+  }
+  updateAdjustAccountFields(account ? account.id : '');
   document.getElementById('adjustAccountBalanceDate').value = account
     ? account.balanceDate || getTodayString()
     : getTodayString();
@@ -5216,9 +5224,151 @@ function openAdjustAccountModal(id = '') {
   setTimeout(() => (account ? document.getElementById('adjustAccountBalance') : accountSelect).focus(), 100);
 }
 
+function updateAdjustAccountFields(accountId) {
+  const accounts = FinanceData.getAccounts();
+  const account = accounts.find(item => item.id === accountId) || null;
+  const saveButton = document.getElementById('saveAdjustAccountBtn');
+  if (saveButton) saveButton.disabled = accounts.length > 1 && !account;
+  const balanceInput = document.getElementById('adjustAccountBalance');
+  if (balanceInput) {
+    balanceInput.value = account ? FinanceData.getAccountBalance(account.id) : '';
+  }
+  const dateInput = document.getElementById('adjustAccountBalanceDate');
+  if (dateInput) dateInput.value = account ? account.balanceDate || getTodayString() : getTodayString();
+  const name = document.getElementById('adjustAccountName');
+  if (name) {
+    name.textContent = account
+      ? `Saldo real em ${account.balanceDate || getTodayString()}`
+      : 'Selecione a conta e informe o saldo real na data escolhida.';
+  }
+}
+
 function closeAdjustAccountModal() {
   document.getElementById('adjustAccountModal').classList.remove('active');
 }
+
+function requestFirstEntryAccount() {
+  if (FinanceData.getAccounts().length) return Promise.resolve(null);
+  if (firstEntryAccountRequest) return firstEntryAccountRequest.promise;
+
+  const modal = document.getElementById('firstEntryAccountModal');
+  const form = document.getElementById('firstEntryAccountForm');
+  const nameInput = document.getElementById('firstEntryAccountName');
+  const typeInput = document.getElementById('firstEntryAccountType');
+  const balanceInput = document.getElementById('firstEntryAccountBalance');
+  const error = document.getElementById('firstEntryAccountError');
+  const saveButton = document.getElementById('confirmFirstEntryAccountBtn');
+  const cancelButton = document.getElementById('cancelFirstEntryAccountBtn');
+  const closeButton = document.getElementById('closeFirstEntryAccountBtn');
+  if (!modal || !form || !nameInput || !typeInput || !balanceInput || !error || !saveButton ||
+    !cancelButton || !closeButton) {
+    return Promise.reject(new Error('O formulário de confirmação da conta não está disponível.'));
+  }
+
+  nameInput.value = 'Conta principal';
+  typeInput.value = 'PF';
+  balanceInput.value = '0';
+  error.textContent = '';
+  error.hidden = true;
+  modal.classList.add('active');
+  modal.setAttribute('aria-hidden', 'false');
+
+  let resolveRequest;
+  const promise = new Promise(resolve => {
+    resolveRequest = resolve;
+  });
+  firstEntryAccountRequest = { promise, resolve: resolveRequest };
+  let submitting = false;
+
+  function close(accountId = null) {
+    if (submitting) return;
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+    const request = firstEntryAccountRequest;
+    firstEntryAccountRequest = null;
+    if (request) request.resolve(accountId);
+  }
+
+  if (!form.dataset.firstEntryAccountBound) {
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (submitting) return;
+      const name = nameInput.value.trim();
+      const balanceRaw = balanceInput.value;
+      const balance = Number(balanceRaw);
+      if (!name || name.length > 100 || balanceRaw === '' || !Number.isFinite(balance) ||
+        Math.abs(balance) > 9999999999.99 || !['PF', 'PJ'].includes(typeInput.value)) {
+        error.textContent = 'Informe um nome, tipo e saldo válidos para a conta.';
+        error.hidden = false;
+        return;
+      }
+
+      const previousIds = new Set(FinanceData.getAccounts().map(account => account.id));
+      submitting = true;
+      saveButton.disabled = true;
+      cancelButton.disabled = true;
+      closeButton.disabled = true;
+      error.hidden = true;
+      try {
+        const result = await FinanceData.addAccount({
+          name,
+          type: typeInput.value,
+          initialBalance: balance,
+          balanceDate: null
+        });
+        const created = FinanceData.getAccounts().find(account =>
+          !previousIds.has(account.id)
+        );
+        if (!created) {
+          error.textContent = result.error && result.error.message ||
+            result.error || 'Não foi possível cadastrar a conta.';
+          error.hidden = false;
+          return;
+        }
+        if (!result.success) {
+          showToast('Conta salva neste aparelho; a sincronização ficou pendente.');
+        }
+        submitting = false;
+        close(created.id);
+      } catch (saveError) {
+        console.error('[GastoPro] Falha ao confirmar a conta do primeiro lançamento:', saveError);
+        error.textContent = `Não foi possível cadastrar a conta: ${saveError.message || saveError}`;
+        error.hidden = false;
+      } finally {
+        submitting = false;
+        saveButton.disabled = false;
+        cancelButton.disabled = false;
+        closeButton.disabled = false;
+      }
+    });
+    form.dataset.firstEntryAccountBound = 'true';
+    cancelButton.addEventListener('click', () => close());
+    closeButton.addEventListener('click', () => close());
+    modal.addEventListener('click', event => {
+      if (event.target === modal && !submitting) close();
+    });
+    modal.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !submitting) close();
+    });
+  }
+
+  setTimeout(() => nameInput.focus(), 0);
+  return promise;
+}
+
+async function withNewEntryAccount(selectedAccountId, save) {
+  if (FinanceData.getAccounts().length) return save(selectedAccountId || null);
+  const accountId = await requestFirstEntryAccount();
+  if (!accountId) return null;
+  return save(accountId);
+}
+
+window.GastoProAccountFlow = {
+  requestFirstEntryAccount,
+  withNewEntryAccount,
+  openAdjustAccountModal,
+  updateAdjustAccountFields
+};
 
 function deleteAccount(id) {
   const account = FinanceData.getAccounts().find(item => item.id === id);
@@ -6269,14 +6419,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (e.target instanceof HTMLSelectElement && e.target.id === 'adjustAccountId') {
-      const account = FinanceData.getAccounts().find(item => item.id === e.target.value);
-      if (account) {
-        document.getElementById('adjustAccountBalance').value =
-          FinanceData.getAccountBalance(account.id);
-        document.getElementById('adjustAccountBalanceDate').value = account.balanceDate || getTodayString();
-        document.getElementById('adjustAccountName').textContent =
-          `Saldo real em ${account.balanceDate || getTodayString()}`;
-      }
+      updateAdjustAccountFields(e.target.value);
     }
     if (e.target instanceof HTMLSelectElement && e.target.id === 'feedbackCategory') {
       feedbackViewState.draftCategory = e.target.value;
@@ -6639,7 +6782,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const itemMonth = dateVal ? dateVal.substring(0, 7) : getYearMonthString(state.currentYear, state.currentMonth);
 
     const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
-    await withSaving(saveButton, async () => {
+    await withNewEntryAccount(
+      document.getElementById('incomeAccount').value || null,
+      accountId => withSaving(saveButton, async () => {
       try {
         const savedItem = FinanceData.add({
           month: itemMonth,
@@ -6649,7 +6794,7 @@ document.addEventListener('DOMContentLoaded', () => {
           category: category,
           paymentMethod,
           paid: isPaidByPaymentMethod(paymentMethod, dateVal),
-          accountId: document.getElementById('incomeAccount').value || null,
+          accountId,
           date: dateVal
         });
         if (!savedItem) {
@@ -6668,7 +6813,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Erro ao adicionar ganho:', err);
         alert('Ocorreu um erro ao salvar o ganho: ' + err.message);
       }
-    });
+    }));
   });
 
   // ── 6. Formulário de Novo Gasto ────────────────────────────────
@@ -6743,7 +6888,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dueDayWrapper) dueDayWrapper.hidden = !requiresDueDay;
     if (dueDayInput) dueDayInput.required = requiresDueDay;
     const accountSelect = document.getElementById('expenseAccount');
-    if (accountSelect) accountSelect.required = isLoan || FinanceData.getAccounts().length > 0;
+    if (accountSelect) accountSelect.required = FinanceData.getAccounts().length > 0;
     updateLoanInstallmentAmount();
   }
 
@@ -6841,7 +6986,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const count = loanInstallmentCount.value === '' ? NaN : Number(loanInstallmentCount.value);
       const installment = loanInstallmentAmount.value === '' ? NaN : Number(loanInstallmentAmount.value);
       const dueDay = dueDayValue === '' ? NaN : Number(dueDayValue);
-      const accountId = document.getElementById('expenseAccount').value;
+      let accountId = document.getElementById('expenseAccount').value;
       let loanMessage = '';
       if ([loanReceivedAmount.value, loanTotalPayable.value, loanInstallmentAmount.value]
         .some(value => value !== '' && !hasAtMostTwoDecimalPlaces(value))) {
@@ -6858,7 +7003,8 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (!isValidLoanDate(loanReceivedDate.value) ||
         !loanFirstMonth.value || !/^\d{4}-(0[1-9]|1[0-2])$/.test(loanFirstMonth.value)) {
         loanMessage = 'Informe uma data de recebimento e o mês da primeira parcela válidos.';
-      } else if (!accountId || !FinanceData.getAccounts().some(account => account.id === accountId)) {
+      } else if (FinanceData.getAccounts().length &&
+        (!accountId || !FinanceData.getAccounts().some(account => account.id === accountId))) {
         loanMessage = 'Escolha a conta que recebeu o empréstimo.';
       }
       if (loanMessage) {
@@ -6867,6 +7013,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       loanError.hidden = true;
+      if (!FinanceData.getAccounts().length) {
+        accountId = await requestFirstEntryAccount();
+        if (!accountId) return;
+      }
       const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
       await withSaving(saveButton, async () => {
         try {
@@ -6920,7 +7070,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const itemMonth = dateVal ? dateVal.substring(0, 7) : getYearMonthString(state.currentYear, state.currentMonth);
 
     const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
-    await withSaving(saveButton, async () => {
+    const selectedAccountId = paymentMethod === 'credit_card'
+      ? document.getElementById('expenseCreditAccount').value || null
+      : document.getElementById('expenseAccount').value || null;
+    await withNewEntryAccount(selectedAccountId, accountId => withSaving(saveButton, async () => {
       try {
         if (paymentMethod === 'credit_card') {
           const cardId = document.getElementById('expenseCreditCard').value;
@@ -6938,7 +7091,7 @@ document.addEventListener('DOMContentLoaded', () => {
             amount,
             category,
             purchaseDate: dateVal,
-            accountId: document.getElementById('expenseCreditAccount').value || null,
+            accountId,
             installmentCount: Number(document.getElementById('expenseInstallments').value)
           });
           if (!result.purchase) {
@@ -6966,7 +7119,7 @@ document.addEventListener('DOMContentLoaded', () => {
           paymentMethod: type === 'variable' ? paymentMethod : null,
           paid: isPaidByPaymentMethod(paymentMethod, dateVal),
           date: dateVal,
-          accountId: document.getElementById('expenseAccount').value || null,
+          accountId,
           dueDay,
           endMonth: endMonthVal || null
         });
@@ -6992,7 +7145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Erro ao adicionar gasto:', err);
         alert('Ocorreu um erro ao salvar o gasto: ' + err.message);
       }
-    });
+    }));
   });
 
   // ── 7. Filtros de Gastos ──────────────────────────────────────
@@ -7313,6 +7466,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('adjustAccountForm').addEventListener('submit', async e => {
     e.preventDefault();
     const errorEl = document.getElementById('adjustAccountError');
+    const accountId = document.getElementById('adjustAccountId').value;
+    if (!FinanceData.getAccounts().some(account => account.id === accountId)) {
+      errorEl.textContent = 'Selecione uma conta para ajustar o saldo.';
+      errorEl.hidden = false;
+      return;
+    }
     const rawBalance = document.getElementById('adjustAccountBalance').value;
     const balance = Number(rawBalance);
     const balanceDate = document.getElementById('adjustAccountBalanceDate').value;
@@ -7335,7 +7494,7 @@ document.addEventListener('DOMContentLoaded', () => {
     errorEl.hidden = true;
     try {
       const result = await FinanceData.adjustAccountBalance(
-        document.getElementById('adjustAccountId').value,
+        accountId,
         balance,
         balanceDate
       );
@@ -7353,7 +7512,8 @@ document.addEventListener('DOMContentLoaded', () => {
       errorEl.textContent = `Não foi possível ajustar o saldo: ${error.message || error}`;
       errorEl.hidden = false;
     } finally {
-      saveButton.disabled = false;
+      saveButton.disabled = FinanceData.getAccounts().length > 1 &&
+        !FinanceData.getAccounts().some(account => account.id === document.getElementById('adjustAccountId').value);
     }
   });
 
@@ -9593,7 +9753,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!importTargetAccount) return;
     const accounts = FinanceData.getAccounts();
     importTargetAccount.innerHTML = [
-      `<option value="">${accounts.length ? 'Selecione uma conta' : 'Conta principal será criada ao importar'}</option>`,
+      `<option value="">${accounts.length ? 'Selecione uma conta' : 'Confirme uma conta para continuar'}</option>`,
       ...accounts.map(account =>
         `<option value="${escapeHtml(account.id)}">${escapeHtml(account.name)}</option>`
       )
@@ -9967,10 +10127,15 @@ document.addEventListener('DOMContentLoaded', () => {
   async function handleConfirmImport() {
     if (!importPreviewTbody || _importParsedRows.length === 0) return;
     syncImportPreviewControls();
-    const accountId = window.GastoProImportHelpers.getImportAccountId(
+    let accountId = window.GastoProImportHelpers.getImportAccountId(
       importTargetAccount ? importTargetAccount.value : '',
       FinanceData.getAccounts()
     );
+    if (!FinanceData.getAccounts().length) {
+      accountId = await requestFirstEntryAccount();
+      if (!accountId) return;
+      updateImportAccountSelector(accountId);
+    }
     if (!accountId && FinanceData.getAccounts().length) {
       const message = 'Selecione uma conta de destino antes de importar.';
       if (importTargetAccountError) {
@@ -10866,12 +11031,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (!FinanceData.getAccounts().length) {
-      const account = FinanceData.ensureAccountForLaunch(null);
-      if (!account.success) {
-        showToast(account.error || 'Não foi possível criar a Conta principal.');
-        return;
-      }
-      accountId = account.accountId;
+      accountId = await requestFirstEntryAccount();
+      if (!accountId) return;
     }
     let saved = 0;
 

@@ -950,19 +950,161 @@ describe('Estados vazios das telas', () => {
 describe('FinanceData — Contas Bancárias', () => {
   setupMockLocalStorage();
 
-  itAsync('cria a Conta principal uma única vez para o primeiro lançamento', async () => {
-    setupMockLocalStorage();
-    const first = FinanceData.add(makeIncome({ accountId: null }));
-    const account = FinanceData.getAccounts()[0];
-    const second = FinanceData.add(makeIncome({ accountId: account.id, desc: 'Outra renda' }));
+  function makeAccountFlowFixture() {
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div class="modal-overlay" id="firstEntryAccountModal" aria-hidden="true">
+        <div role="dialog">
+          <button type="button" id="closeFirstEntryAccountBtn"></button>
+          <form id="firstEntryAccountForm">
+            <input id="firstEntryAccountName" />
+            <select id="firstEntryAccountType">
+              <option value="PF">PF</option><option value="PJ">PJ</option>
+            </select>
+            <input id="firstEntryAccountBalance" />
+            <p id="firstEntryAccountError" hidden></p>
+            <button type="button" id="cancelFirstEntryAccountBtn"></button>
+            <button type="submit" id="confirmFirstEntryAccountBtn"></button>
+          </form>
+        </div>
+      </div>
+      <div class="modal-overlay" id="adjustAccountModal">
+        <div role="dialog">
+          <form id="adjustAccountForm">
+            <select id="adjustAccountId"></select>
+            <p id="adjustAccountName"></p>
+            <input id="adjustAccountBalance" />
+            <input id="adjustAccountBalanceDate" />
+            <p id="adjustAccountError" hidden></p>
+            <button type="submit" id="saveAdjustAccountBtn"></button>
+          </form>
+        </div>
+      </div>`;
+    document.body.appendChild(host);
+    return host;
+  }
 
-    await Promise.resolve();
-    assertTrue(Boolean(first));
-    assertTrue(Boolean(second));
-    assertEqual(account.name, 'Conta principal');
-    assertEqual(account.initialBalance, 0);
-    assertEqual(FinanceData.getAccounts().length, 1);
-    assertEqual(FinanceData.getEntries().map(entry => entry.accountId), [account.id, account.id]);
+  itAsync('exige confirmação para criar a conta e então salva o primeiro lançamento', async () => {
+    setupMockLocalStorage();
+    assertEqual(FinanceData.getAccounts(), []);
+    const host = makeAccountFlowFixture();
+    try {
+      const save = window.GastoProAccountFlow.withNewEntryAccount(null, accountId =>
+        FinanceData.add(makeIncome({ accountId }))
+      );
+      const form = host.querySelector('#firstEntryAccountForm');
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      const saved = await save;
+      assertTrue(Boolean(saved));
+      const account = FinanceData.getAccounts()[0];
+      assertEqual(account.name, 'Conta principal');
+      assertEqual(account.type, 'PF');
+      assertEqual(account.initialBalance, 0);
+      assertEqual(FinanceData.getEntries().map(entry => entry.accountId), [account.id]);
+    } finally {
+      host.remove();
+    }
+  });
+
+  itAsync('bloqueia criação implícita de conta na camada de dados do app', async () => {
+    setupMockLocalStorage();
+    const previous = FinanceData.requireExplicitAccount;
+    FinanceData.requireExplicitAccount = true;
+    try {
+      assertNull(FinanceData.add(makeIncome({ accountId: null })));
+      assertEqual(FinanceData.getAccounts(), []);
+      assertEqual(FinanceData.getEntries(), []);
+    } finally {
+      FinanceData.requireExplicitAccount = previous;
+    }
+  });
+
+  itAsync('cancelar a conta guiada não cria conta nem salva o lançamento', async () => {
+    setupMockLocalStorage();
+    const host = makeAccountFlowFixture();
+    try {
+      const save = window.GastoProAccountFlow.withNewEntryAccount(null, accountId =>
+        FinanceData.add(makeIncome({ accountId }))
+      );
+      host.querySelector('#cancelFirstEntryAccountBtn').click();
+      assertNull(await save);
+      assertEqual(FinanceData.getAccounts(), []);
+      assertEqual(FinanceData.getEntries(), []);
+    } finally {
+      host.remove();
+    }
+  });
+
+  itAsync('pré-preenche os padrões definidos na confirmação guiada da conta', async () => {
+    setupMockLocalStorage();
+    const host = makeAccountFlowFixture();
+    try {
+      const request = window.GastoProAccountFlow.requestFirstEntryAccount();
+      assertEqual(host.querySelector('#firstEntryAccountName').value, 'Conta principal');
+      assertEqual(host.querySelector('#firstEntryAccountType').value, 'PF');
+      assertEqual(host.querySelector('#firstEntryAccountBalance').value, '0');
+      host.querySelector('#closeFirstEntryAccountBtn').click();
+      assertNull(await request);
+      assertEqual(FinanceData.getAccounts(), []);
+    } finally {
+      host.remove();
+    }
+  });
+
+  itAsync('com uma conta, abre o ajuste selecionado com saldo calculado', async () => {
+    setupMockLocalStorage();
+    const account = await FinanceData.addAccount({
+      name: 'Conta única',
+      type: 'PF',
+      initialBalance: 125,
+      balanceDate: '2026-11-02'
+    });
+    const host = makeAccountFlowFixture();
+    try {
+      window.GastoProAccountFlow.openAdjustAccountModal();
+      assertEqual(host.querySelector('#adjustAccountId').value, account.account.id);
+      assertEqual(Number(host.querySelector('#adjustAccountBalance').value),
+        FinanceData.getAccountBalance(account.account.id));
+      assertFalse(host.querySelector('#saveAdjustAccountBtn').disabled);
+    } finally {
+      host.remove();
+    }
+  });
+
+  itAsync('com várias contas, não pré-seleciona e bloqueia salvar até escolher', async () => {
+    setupMockLocalStorage();
+    const first = await FinanceData.addAccount({ name: 'Conta A', type: 'PF' });
+    await FinanceData.addAccount({ name: 'Conta B', type: 'PJ' });
+    const host = makeAccountFlowFixture();
+    try {
+      window.GastoProAccountFlow.openAdjustAccountModal(first.account.id);
+      const select = host.querySelector('#adjustAccountId');
+      const saveButton = host.querySelector('#saveAdjustAccountBtn');
+      assertEqual(select.value, '');
+      assertTrue(saveButton.disabled);
+      select.value = first.account.id;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      assertFalse(saveButton.disabled);
+      assertEqual(Number(host.querySelector('#adjustAccountBalance').value),
+        FinanceData.getAccountBalance(first.account.id));
+    } finally {
+      host.remove();
+    }
+  });
+
+  itAsync('sem contas, ajuste de saldo não abre cadastro nem cria dados', async () => {
+    setupMockLocalStorage();
+    const host = makeAccountFlowFixture();
+    const originalToast = window.showToast;
+    window.showToast = () => {};
+    try {
+      window.GastoProAccountFlow.openAdjustAccountModal();
+      assertFalse(host.querySelector('#adjustAccountModal').classList.contains('active'));
+      assertEqual(FinanceData.getAccounts(), []);
+    } finally {
+      window.showToast = originalToast;
+      host.remove();
+    }
   });
 
   itAsync('exige uma conta de destino quando já existem contas', async () => {

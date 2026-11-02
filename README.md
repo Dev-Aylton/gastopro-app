@@ -460,7 +460,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 15 | `20261105_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 16 | `20261106_single_loan.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.33`. Suíte atual: **479 testes**.
+`CACHE_NAME` atual: `gastopro-v4.34`. Suíte atual: **485 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -671,6 +671,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-053 — Origem do vencimento de boleto e aviso de mês curto** / Descrição: identifica dias lidos do fator de boletos, mantém sem dia linhas sem vencimento explícito e avisa quando dia 31 altera a data da linha. / Critério de pronto: 472 testes aprovados; regras de contraste, controles e alvos verificadas no CSS. A medição real da prévia não foi executada. / Arquivos: `js/app.js`, `js/importer.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-054 — Saldo principal do dashboard acionável** / Descrição: transforma o saldo principal do dashboard em botão acessível que abre o ajuste da conta. / Critério de pronto: 473 testes aprovados em três execuções; clique real validado no navegador com zero, uma e duas contas. O saldo superior permaneceu oculto pela regra CSS existente e não foi alterado. / Arquivos: `index.html`, `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-055 — Empréstimo como lançamento único** / Descrição: armazena empréstimo em template com crédito de recebimento fora da renda, parcelas baixadas manualmente, custo no Centro de Dívidas e sincronização com a nuvem; remove a contagem individual de lançamentos no Admin. / Critério de pronto: 479 testes aprovados; migration criada e não aplicada. Medição geométrica da tela real não realizada. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/report.js`, `js/supabase.js`, `css/style.css`, `supabase/schema.sql`, `supabase/migrations/20261106_single_loan.sql`, `tests/gastopro.test.js`.
+- [x] **RM-056 — Confirmação de conta no primeiro lançamento e seletor no ajuste** / Descrição: ao salvar sem conta, pede confirmação da Conta principal antes de gravar ganhos, gastos comuns, fixos, dívidas, empréstimos, parcelamentos, boletos, assistente inicial ou importação; cancelar não cria nem salva. A camada de dados bloqueia criação implícita, exceto na migração de lançamentos antigos, fora deste item. Ajuste de saldo abre direto com uma conta, exige escolha sem pré-seleção com várias e não cria conta quando não há nenhuma. / Critério de pronto: 485 testes aprovados; formulários medidos em 320, 390 e 1280 px nos temas claro/escuro, sem corte, com controles de 44 px e campos de 16 px ou mais; contraste mínimo atendido. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `sw.js`, `tests/gastopro.test.js`, `README.md`.
 
 ### Em dúvida
 
@@ -681,6 +682,10 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 ---
 
 ## 📋 Changelog
+
+### v4.34 — 02/11/2026 (versão atual)
+
+- RM-056: criação da primeira conta exige confirmação antes de salvar lançamento; cancelamento mantém o formulário e não cria dados. Ganhos, gastos comuns, fixos, dívidas, empréstimos, parcelamentos, boletos, assistente inicial e importação usam a confirmação. A camada de dados bloqueia a criação implícita, exceto na migração de registros antigos. Ajuste de saldo seleciona a conta com segurança e não cria conta sem dados. Seis testes adicionados; suíte com 485 testes aprovados. Formulários medidos em 320, 390 e 1280 px, nos dois temas, com alvos >= 44 px, campos >= 16 px, sem corte e contraste conforme os limites.
 
 ### v4.33 — 02/11/2026 (versão atual)
 

@@ -401,7 +401,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.33</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.34</span></p>
             <div class="drawer-about-help">
             <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
               <div class="action-icon bg-primary-soft">
@@ -1111,7 +1111,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.33</span>
+          <span class="badge badge-version">v4.34</span>
         </div>
       </footer>
 
@@ -1372,6 +1372,37 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="firstEntryAccountModal" aria-hidden="true">
+    <div class="modal-content account-modal-content first-entry-account-content" role="dialog" aria-modal="true" aria-labelledby="firstEntryAccountTitle" tabindex="-1">
+      <div class="modal-header">
+        <h3 id="firstEntryAccountTitle">Confirme sua primeira conta</h3>
+        <button type="button" class="modal-close-btn" id="closeFirstEntryAccountBtn" aria-label="Fechar confirmação da conta">&times;</button>
+      </div>
+      <p class="account-adjust-hint">O lançamento só será salvo depois que você confirmar a conta.</p>
+      <form id="firstEntryAccountForm" novalidate>
+        <div class="form-group">
+          <label for="firstEntryAccountName">Nome</label>
+          <input type="text" id="firstEntryAccountName" maxlength="100" required autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label for="firstEntryAccountType">Tipo</label>
+          <select id="firstEntryAccountType" required>
+            <option value="PF">PF — Pessoa Física</option>
+            <option value="PJ">PJ — Pessoa Jurídica</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="firstEntryAccountBalance">Saldo inicial (R$)</label>
+          <input type="number" id="firstEntryAccountBalance" step="0.01" min="-9999999999.99" max="9999999999.99" required />
+        </div>
+        <p class="form-error account-form-error" id="firstEntryAccountError" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="cancelFirstEntryAccountBtn">Cancelar</button>
+          <button type="submit" class="btn-primary" id="confirmFirstEntryAccountBtn">Confirmar conta e salvar lançamento</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- ====================================================
        MODAL DE CONFIRMAÇÃO ELEGANTE

@@ -665,6 +665,7 @@ function calculatePendingOutflows(items, accountFilter = 'all', accounts = []) {
 }
 
 const FinanceData = {
+  requireExplicitAccount: false,
 
   getSyncMetadata() {
     try {
@@ -675,9 +676,15 @@ const FinanceData = {
     }
   },
 
-  ensureAccountForLaunch(accountId) {
+  ensureAccountForLaunch(accountId, allowLegacyMigration = false) {
     let accounts = this.getAccounts();
     if (!accounts.length) {
+      if (this.requireExplicitAccount && !allowLegacyMigration) {
+        return {
+          success: false,
+          error: 'Confirme uma conta antes de salvar o lançamento.'
+        };
+      }
       const created = {
         id: crypto.randomUUID(),
         name: 'Conta principal',
@@ -749,7 +756,7 @@ const FinanceData = {
     const unassigned = this.getUnassignedAccountItems();
     if (!unassigned.length) return { success: true, count: 0, migrated: false };
     if (this.getAccounts().length) return { success: true, count: unassigned.length, migrated: false };
-    const account = this.ensureAccountForLaunch(null);
+    const account = this.ensureAccountForLaunch(null, true);
     if (!account.success) return account;
     const entries = this.getEntries().map(item =>
       item.accountId ? item : { ...item, accountId: account.accountId }

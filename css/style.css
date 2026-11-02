@@ -3047,6 +3047,16 @@ button:active { transform: scale(0.98); }
   font-size: 16px;
 }
 
+.first-entry-account-content input,
+.first-entry-account-content select {
+  min-height: 44px;
+}
+
+.first-entry-account-content .modal-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .account-form-error {
   padding: 0.7rem 0.85rem;
   color: var(--danger);
