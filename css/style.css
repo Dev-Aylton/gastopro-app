@@ -1702,6 +1702,18 @@ body {
   text-align: center;
 }
 
+.irreversible-actions-chevron {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  transition: transform 160ms ease;
+}
+
+.irreversible-actions[open] > .irreversible-actions-summary > .irreversible-actions-chevron {
+  transform: rotate(180deg);
+}
+
 .irreversible-action {
   display: flex;
   flex-direction: column;

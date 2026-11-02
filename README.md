@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.41-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.42-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-510%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-514%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -467,7 +467,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.41`. Suíte atual: **510 testes**.
+`CACHE_NAME` atual: `gastopro-v4.42`. Suíte atual: **514 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -686,6 +686,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-061 — Refinamento do avatar feminino** / Descrição: rosto, pescoço e ombros refinados; cabelo em camadas roxo/turquesa; traços faciais, sombra de luz e detalhe na roupa. / Critério de pronto: 504 testes aprovados; seleção coberta; visual em tela não verificado. / Arquivos: `assets/default_avatar_fem.jpg`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 - [x] **RM-062 — Avatar feminino em JPEG** / Descrição: substitui o recurso feminino pelo JPEG 256x256 sem alterar o ID persistido, remove o SVG de avatar e mantém o JPG no cache. / Critério de pronto: 504 testes aprovados no test-runner; visual do avatar não verificado em tela. / Arquivos: `assets/default_avatar_fem.jpg`, `js/app.js`, `js/cache-assets.js`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 - [x] **RM-063 — Leitura na nuvem do feedback Admin** / Descrição: `admin_read_at` controla lista e contagem de mensagens não lidas; abrir resposta ou marcar como lida grava somente essa coluna, enquanto avisos de contas continuam locais. Sem Realtime ou polling. / Critério de pronto: 510 testes aprovados; testes da API Supabase usam mock; RLS/tipos reais não verificados e visual/toque não verificados em tela. / Arquivos: `js/app.js`, `js/supabase.js`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
+- [x] **RM-064 — Cabeçalho explícito da zona de perigo** / Descrição: cabeçalho recolhível mostra ações internas, chevron giratório e estado `aria-expanded`; botões críticos, handlers e confirmações permanecem inalterados. / Critério de pronto: 514 testes aprovados; testes não medem layout real; visual/toque e layout em larguras/temas não verificados em tela. / Arquivos: `index.html`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 
 ### Em dúvida
 
@@ -697,8 +698,9 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.41 — 02/11/2026 (versão atual)
+### v4.42 — 02/11/2026 (versão atual)
 
+- RM-064: cabeçalho da Zona de perigo agora explica as ações, mostra chevron e sincroniza `aria-expanded` ao abrir/fechar; conteúdo e handlers preservados. Test-runner: 514 aprovados, zero falhas; layout real e visual/toque não verificados.
 - RM-063: leitura das mensagens do Admin gravada em `feedback_messages.admin_read_at`; lista, badge e contagem usam o estado remoto; avisos de contas seguem locais. Test-runner com código real: 510 aprovados, zero falhas; Supabase mockado, RLS/tipos reais e visual/toque em tela não verificados.
 - RM-062: avatar feminino passou a ser JPEG 256x256; ID do preset preservado, escolha local sincronizável pelo campo de perfil existente, arquivo no cache e referências ao recurso vetorial removidas. Test-runner com código real: 504 aprovados, zero falhas; visual do avatar não verificado em tela.
 - RM-061: acabamento do avatar feminino com rosto e pescoço mais estreitos, cabelo em camadas, orelhas, sobrancelhas, nariz, sombra lateral e detalhe turquesa; seleção coberta. Test-runner com código real: 504 aprovados, zero falhas; visual do avatar não verificado em tela.

@@ -10989,6 +10989,93 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     );
   });
 
+  itAsync('mostra seta e resumo das ações na zona de perigo, recolhida inicialmente', async () => {
+    const response = await fetch('../index.html');
+    assertTrue(response.ok, 'Não foi possível carregar o HTML do app.');
+    const appDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const details = appDocument.getElementById('irreversibleActions');
+    const summary = details?.querySelector('summary');
+    const chevron = summary?.querySelector('svg.irreversible-actions-chevron');
+    const hint = summary?.querySelector('.action-text span');
+
+    assertTrue(details && summary, 'Cabeçalho da zona de perigo existente');
+    assertFalse(details.open, 'Zona de perigo começa recolhida');
+    assertEqual(summary.getAttribute('aria-expanded'), 'false');
+    assertEqual(chevron?.getAttribute('aria-hidden'), 'true');
+    assertEqual(hint?.textContent.trim(), 'Zerar ou apagar dados; excluir conta.');
+  });
+
+  itAsync('alterna aria-expanded ao clicar no cabeçalho da zona de perigo', async () => {
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <details class="irreversible-actions">
+        <summary class="irreversible-actions-summary" aria-expanded="false">
+          <span class="action-text"><strong>Zona de perigo</strong><span>Zerar ou apagar dados; excluir conta.</span></span>
+          <svg class="irreversible-actions-chevron" aria-hidden="true"></svg>
+        </summary>
+      </details>`;
+    document.body.appendChild(host);
+    const details = host.querySelector('details');
+    const summary = details.querySelector('summary');
+
+    try {
+      assertFalse(details.open, 'O cabeçalho inicia recolhido');
+      assertTrue(bindDetailsExpandedState(details), 'Sincronização de aria-expanded ligada');
+      assertEqual(summary.getAttribute('aria-expanded'), 'false');
+
+      let toggled = new Promise(resolve => details.addEventListener('toggle', resolve, { once: true }));
+      summary.click();
+      await toggled;
+      assertTrue(details.open);
+      assertEqual(summary.getAttribute('aria-expanded'), 'true');
+
+      toggled = new Promise(resolve => details.addEventListener('toggle', resolve, { once: true }));
+      summary.click();
+      await toggled;
+      assertFalse(details.open);
+      assertEqual(summary.getAttribute('aria-expanded'), 'false');
+    } finally {
+      host.remove();
+    }
+  });
+
+  itAsync('preserva botões e handlers das ações críticas', async () => {
+    const [htmlResponse, appResponse] = await Promise.all([
+      fetch('../index.html'),
+      fetch('../js/app.js')
+    ]);
+    assertTrue(htmlResponse.ok && appResponse.ok, 'Não foi possível carregar os arquivos do app.');
+    const appDocument = new DOMParser().parseFromString(await htmlResponse.text(), 'text/html');
+    const appSource = await appResponse.text();
+    const actions = [
+      ['clearDataBtn', '1'],
+      ['deleteAllMyDataBtn', '2'],
+      ['deleteAccountBtn', '3']
+    ];
+
+    actions.forEach(([id, riskLevel]) => {
+      const button = appDocument.getElementById(id);
+      assertTrue(button, `${id} permanece no HTML`);
+      assertEqual(button.dataset.riskLevel, riskLevel, `${id}: nível de risco preservado`);
+    });
+    assertTrue(appSource.includes("document.getElementById('clearDataBtn').addEventListener('click', () => {"));
+    assertTrue(appSource.includes('deleteAccountBtn.addEventListener(\'click\', openDeleteAccountModal)'));
+    assertTrue(appSource.includes('deleteAllMyDataBtn.addEventListener(\'click\', openDeleteAllMyDataModal)'));
+  });
+
+  itAsync('usa chevron que gira sem adicionar !important', async () => {
+    const response = await fetch('../css/style.css');
+    assertTrue(response.ok, 'Não foi possível carregar o CSS do app.');
+    const css = await response.text();
+    const chevronStyles = css.match(/\.irreversible-actions-chevron\s*\{([^}]+)\}/);
+
+    assertTrue(chevronStyles, 'Estilos próprios do chevron');
+    assertTrue(chevronStyles[1].includes('transition: transform'));
+    assertFalse(chevronStyles[1].includes('!important'));
+    assertTrue(css.includes('.irreversible-actions[open] > .irreversible-actions-summary > .irreversible-actions-chevron'));
+    assertTrue(css.includes('transform: rotate(180deg)'));
+  });
+
   itAsync('remove o encaixe e o reposicionamento responsivo obsoletos do tema', async () => {
     const [htmlResponse, appResponse] = await Promise.all([
       fetch('../index.html'),
