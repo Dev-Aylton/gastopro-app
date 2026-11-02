@@ -115,6 +115,47 @@ function isValidCivilDate(value) {
   return day <= monthDays[month - 1];
 }
 
+function validateLoanTemplate(template) {
+  const fields = [
+    template.loanReceivedAmount,
+    template.loanReceivedDate,
+    template.loanTotalPayable,
+    template.loanInstallmentCount
+  ];
+  if (fields.every(value => value == null)) return null;
+  const received = template.loanReceivedAmount;
+  const total = template.loanTotalPayable;
+  const count = template.loanInstallmentCount;
+  const installment = Number(template.amount);
+  if (typeof received !== 'number' || !Number.isFinite(received) ||
+    received < 0 || received > MAX_ACCOUNT_BALANCE ||
+    typeof total !== 'number' || !Number.isFinite(total) ||
+    total < received || total > MAX_ACCOUNT_BALANCE ||
+    !Number.isInteger(count) || count < 1 || count > 480 ||
+    !Number.isFinite(installment) || installment < 0 ||
+    Math.round(installment * count * 100) !== Math.round(total * 100) ||
+    !isValidCivilDate(template.loanReceivedDate) ||
+    !isValidCivilMonth(template.startMonth) ||
+    !isValidCivilMonth(template.endMonth) ||
+    !Number.isInteger(Number(template.day)) || Number(template.day) < 1 ||
+    Number(template.day) > 31 || !isUuid(template.accountId)) {
+    return 'Confira valores, conta, data, parcelas, vencimento e mês inicial do empréstimo.';
+  }
+  const expectedEndMonth = getLoanEndMonth(template.startMonth, count);
+  if (template.endMonth !== expectedEndMonth) {
+    return 'O mês final do empréstimo não corresponde à quantidade de parcelas.';
+  }
+  return null;
+}
+
+function getLoanEndMonth(startMonth, installmentCount) {
+  const [year, month] = startMonth.split('-').map(Number);
+  const monthIndex = year * 12 + month - 1 + installmentCount - 1;
+  const endYear = Math.floor(monthIndex / 12);
+  const endMonth = monthIndex % 12 + 1;
+  return `${String(endYear).padStart(4, '0')}-${String(endMonth).padStart(2, '0')}`;
+}
+
 function getCreditCardInstallments(purchase) {
   const purchaseDate = purchase && purchase.purchaseDate;
   const count = Number(purchase && purchase.installmentCount);
@@ -497,6 +538,8 @@ function validateBackupText(text) {
     if (item.accountId != null) {
       item.accountId = accountIds.get(String(item.accountId)) || null;
     }
+    const loanError = validateLoanTemplate(item);
+    if (loanError) return { error: recordError('templates', item, loanError) };
   }
   const goalCategories = new Set();
   for (const [index, goal] of goals.entries()) {
@@ -1790,6 +1833,10 @@ const FinanceData = {
    */
   async saveTemplates(templates, options = {}) {
     try {
+      for (const template of templates) {
+        const loanError = validateLoanTemplate(template);
+        if (loanError) return { success: false, error: loanError };
+      }
       const previousTemplates = this.getTemplates();
       localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
       this.queueLocalChanges('templates', previousTemplates, templates);
@@ -2395,6 +2442,11 @@ const FinanceData = {
       activity += entry.type === 'income' ? Number(entry.amount) : -Number(entry.amount);
     });
     this.getTemplates().forEach(template => {
+      if (template.accountId === accountId && template.loanReceivedAmount != null &&
+        isValidCivilDate(template.loanReceivedDate) && template.loanReceivedDate <= today &&
+        (!balanceDate || template.loanReceivedDate >= balanceDate)) {
+        activity += Number(template.loanReceivedAmount);
+      }
       if (template.accountId !== accountId || !template.paidMonths) return;
       const paidCount = Object.entries(template.paidMonths).filter(([ym, paid]) => {
         if (paid !== true || !isValidCivilMonth(ym)) return false;
@@ -2407,6 +2459,9 @@ const FinanceData = {
         const dueDay = Number(template.day);
         if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return false;
         const paidDate = `${ym}-${String(Math.min(dueDay, daysInMonth)).padStart(2, '0')}`;
+        if (template.loanReceivedAmount != null) {
+          return !balanceDate || paidDate >= balanceDate;
+        }
         return paidDate <= today && (!balanceDate || paidDate >= balanceDate);
       }).length;
       activity -= Number(template.amount) * paidCount;
@@ -2447,6 +2502,11 @@ const FinanceData = {
       activity += entry.type === 'income' ? Number(entry.amount) : -Number(entry.amount);
     });
     this.getTemplates().forEach(template => {
+      if (template.accountId === accountId && template.loanReceivedAmount != null &&
+        isValidCivilDate(template.loanReceivedDate) && template.loanReceivedDate <= today &&
+        template.loanReceivedDate >= balanceDate) {
+        activity += Number(template.loanReceivedAmount);
+      }
       if (template.accountId !== accountId || !template.paidMonths) return;
       const paidCount = Object.entries(template.paidMonths).filter(([ym, paid]) => {
         if (paid !== true || !isValidCivilMonth(ym)) return false;
@@ -2459,6 +2519,7 @@ const FinanceData = {
         const dueDay = Number(template.day);
         if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return false;
         const paidDate = `${ym}-${String(Math.min(dueDay, daysInMonth)).padStart(2, '0')}`;
+        if (template.loanReceivedAmount != null) return paidDate >= balanceDate;
         return paidDate <= today && paidDate >= balanceDate;
       }).length;
       activity -= Number(template.amount) * paidCount;
@@ -2542,6 +2603,11 @@ const FinanceData = {
         const validDueDay = Number.isInteger(storedDay) && storedDay >= 1 && storedDay <= 31;
         // Verifica se houve baixa de pagamento especificamente neste mês
         const isPaidThisMonth = Boolean(tpl.paidMonths && tpl.paidMonths[yearMonth]);
+        const isLoan = tpl.loanReceivedAmount != null;
+        const installmentNumber = isLoan
+          ? (Number(yearMonth.slice(0, 4)) - Number(tpl.startMonth.slice(0, 4))) * 12 +
+            Number(yearMonth.slice(5, 7)) - Number(tpl.startMonth.slice(5, 7)) + 1
+          : null;
 
         // Cria a projeção do template para o mês (objeto auxiliar, não modifica o template)
         fixedForMonth.push({
@@ -2562,7 +2628,16 @@ const FinanceData = {
           startMonth: tpl.startMonth,
           endMonth:   tpl.endMonth || null,
           accountId:  tpl.accountId || null,
-          paid:       isPaidThisMonth
+          paid:       isPaidThisMonth,
+          isLoan,
+          loanInstallmentNumber: isLoan ? installmentNumber : null,
+          loanReceivedAmount: tpl.loanReceivedAmount ?? null,
+          loanReceivedDate: tpl.loanReceivedDate ?? null,
+          loanTotalPayable: tpl.loanTotalPayable ?? null,
+          loanInstallmentCount: tpl.loanInstallmentCount ?? null,
+          loanCost: tpl.loanTotalPayable == null || tpl.loanReceivedAmount == null
+            ? null
+            : Number(tpl.loanTotalPayable) - Number(tpl.loanReceivedAmount)
         });
       }
     });
@@ -2794,6 +2869,38 @@ const FinanceData = {
    * @returns {Object} Item criado com ID gerado automaticamente.
    */
   add(item) {
+    if (item.type === 'loan') {
+      const received = Number(item.loanReceivedAmount);
+      const total = Number(item.loanTotalPayable);
+      const count = Number(item.loanInstallmentCount);
+      const dueDay = Number(item.dueDay);
+      const account = this.getAccounts().some(existing => existing.id === item.accountId)
+        ? { success: true, accountId: item.accountId }
+        : { success: false, error: 'Selecione a conta que recebeu o empréstimo.' };
+      const firstMonth = item.startMonth;
+      const loanTemplate = {
+        ...item,
+        amount: Number(item.amount),
+        category: 'Empréstimo',
+        type: 'loan',
+        isDebt: true,
+        active: true,
+        startMonth: firstMonth,
+        endMonth: isValidCivilMonth(firstMonth) && Number.isInteger(count)
+          ? getLoanEndMonth(firstMonth, count)
+          : null,
+        day: dueDay,
+        accountId: account.success ? account.accountId : null,
+        loanReceivedAmount: received,
+        loanReceivedDate: item.loanReceivedDate,
+        loanTotalPayable: total,
+        loanInstallmentCount: count,
+        paidMonths: {}
+      };
+      if (!account.success || validateLoanTemplate(loanTemplate)) return null;
+      return this.addTemplate(loanTemplate);
+    }
+
     const dueDayValue = item.dueDay;
     const dueDay = dueDayValue === '' || dueDayValue == null ? null : Number(dueDayValue);
     const dueDayRequired = item.type === 'fixed' || item.type === 'debt' ||
@@ -2870,8 +2977,14 @@ const FinanceData = {
       day:        dayValue,
       date:       dateStr,
       accountId:  account.accountId,
-      paidMonths: tpl.paid === true ? { [startMonth]: true } : {}
+      paidMonths: tpl.paid === true ? { [startMonth]: true } : {},
+      loanReceivedAmount: tpl.loanReceivedAmount ?? null,
+      loanReceivedDate: tpl.loanReceivedDate ?? null,
+      loanTotalPayable: tpl.loanTotalPayable ?? null,
+      loanInstallmentCount: tpl.loanInstallmentCount ?? null
     };
+    const loanError = validateLoanTemplate(newTemplate);
+    if (loanError) return null;
 
     templates.push(newTemplate);
     this.saveTemplates(templates);
@@ -2917,7 +3030,9 @@ const FinanceData = {
       updatedFields.day = String(dueDay).padStart(2, '0');
       updatedFields.accountId = account.accountId;
       delete updatedFields.dueDay;
-      templates[tplIdx] = { ...templates[tplIdx], ...updatedFields };
+      const updatedTemplate = { ...templates[tplIdx], ...updatedFields };
+      if (validateLoanTemplate(updatedTemplate)) return null;
+      templates[tplIdx] = updatedTemplate;
       this.saveTemplates(templates);
       return templates[tplIdx];
     }

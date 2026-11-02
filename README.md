@@ -458,14 +458,15 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 13 | `20261103_sync_transactions.sql` | Aplicada e conferida no Supabase |
 | 14 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
 | 15 | `20261105_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
+| 16 | `20261106_single_loan.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.32`. Suíte atual: **473 testes**.
+`CACHE_NAME` atual: `gastopro-v4.33`. Suíte atual: **476 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
 As oito tabelas sincronizadas são `entries`, `fixed_templates`, `profiles`, `goals`, `accounts`, `credit_cards`, `credit_card_purchases` e `fixed_import_rules`; todas são restritas ao dono por RLS. As migrations [`supabase/migrations/20261101_sync_versioning.sql`](./supabase/migrations/20261101_sync_versioning.sql) e [`supabase/migrations/20261102_sync_realtime_publication.sql`](./supabase/migrations/20261102_sync_realtime_publication.sql) estão aplicadas. A migration [`supabase/migrations/20261105_admin_consent.sql`](./supabase/migrations/20261105_admin_consent.sql) foi criada neste lote e ainda não foi aplicada. Exclusão total de dados e exclusão de conta continuam físicas.
 
-`public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) foi aplicada em produção. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) está aplicada.
+`public.accounts` contém `id`, `user_id`, `name`, `institution`, `type`, `initial_balance`, `created_at` e `updated_at`; `entries` e `fixed_templates` podem referenciar uma conta por `account_id`, com chave estrangeira composta que impede vínculo entre usuários. Empréstimos são templates com valor/data recebidos, total, número de parcelas, parcela e vencimento; o recebimento compõe somente o saldo da conta e `paid_months` registra baixas manuais. A migração [`supabase/migrations/20261106_single_loan.sql`](./supabase/migrations/20261106_single_loan.sql) define esses campos e ainda não foi aplicada. A migração [`supabase/migrations/20261028_accounts.sql`](./supabase/migrations/20261028_accounts.sql) foi aplicada em produção. A função `public.delete_my_account()` remove a conta Auth do usuário autenticado e depende dos `ON DELETE CASCADE` existentes; sua migração [`supabase/migrations/20261028_delete_my_account.sql`](./supabase/migrations/20261028_delete_my_account.sql) está aplicada.
 
 O app envia nome e avatar para `profiles` ao editar o perfil autenticado; alterações locais são preservadas para nova tentativa de sincronização. `entries.debt_info` é um JSONB opcional, sem estrutura definida pelo código atual.
 
@@ -669,6 +670,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-052 — Contas obrigatórias, vencimento explícito e acesso a ganhos** / Descrição: cria Conta principal somente quando necessário, exige destino nos lançamentos e mantém antigos sem conta para escolha; valida dias de vencimento sem fallback; ajuste de saldo usa o valor calculado e a navegação de Ganhos abre o formulário correspondente. / Critério de pronto: 467 testes aprovados e medições geométricas nas sete larguras e nos dois temas. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/importer.js`, `js/supabase.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-053 — Origem do vencimento de boleto e aviso de mês curto** / Descrição: identifica dias lidos do fator de boletos, mantém sem dia linhas sem vencimento explícito e avisa quando dia 31 altera a data da linha. / Critério de pronto: 472 testes aprovados; regras de contraste, controles e alvos verificadas no CSS. A medição real da prévia não foi executada. / Arquivos: `js/app.js`, `js/importer.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-054 — Saldo principal do dashboard acionável** / Descrição: transforma o saldo principal do dashboard em botão acessível que abre o ajuste da conta. / Critério de pronto: 473 testes aprovados em três execuções; clique real validado no navegador com zero, uma e duas contas. O saldo superior permaneceu oculto pela regra CSS existente e não foi alterado. / Arquivos: `index.html`, `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
+- [x] **RM-055 — Empréstimo como lançamento único** / Descrição: armazena empréstimo em template com crédito de recebimento fora da renda, parcelas baixadas manualmente, custo no Centro de Dívidas e sincronização com a nuvem; remove a contagem individual de lançamentos no Admin. / Critério de pronto: 476 testes aprovados; migration criada e não aplicada. Medição geométrica da tela real não realizada. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/report.js`, `js/supabase.js`, `css/style.css`, `supabase/schema.sql`, `supabase/migrations/20261106_single_loan.sql`, `tests/gastopro.test.js`.
 
 ### Em dúvida
 
@@ -680,7 +682,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.32 — 02/11/2026 (versão atual)
+### v4.33 — 02/11/2026 (versão atual)
+
+- RM-055: empréstimo como um template, valor recebido no saldo e fora da renda, parcelas pagas manualmente, custo e cronograma no Centro de Dívidas; Admin sem contagem individual de lançamentos. Criada `20261106_single_loan.sql` (não aplicada). Três testes adicionados; suíte com 476 testes aprovados. Layout real nas sete larguras e nos dois temas não medido.
+
+### v4.32 — 02/11/2026
 
 - RM-053: a prévia identifica “Dia lido do boleto” apenas para fator válido em boleto de 47 dígitos, mantém vencimento 31 ao avisar sobre mês curto e exclui linhas a pagar sem dia válido sem interromper as válidas. Cinco testes adicionados; suíte com 472 testes aprovados. Medição geométrica real da prévia não realizada.
 - RM-054: o saldo principal do dashboard agora é um botão acessível e abre o ajuste de saldo; um teste de regressão reproduziu a falta de ação anterior. Suíte atual: 473 testes.

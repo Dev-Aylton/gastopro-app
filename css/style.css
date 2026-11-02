@@ -4232,6 +4232,43 @@ input[type="month"] {
   cursor: pointer;
 }
 
+.loan-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+
+.loan-fields[hidden] {
+  display: none;
+}
+
+.loan-fields-intro,
+.loan-fields .form-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.loan-fields .loan-fields-intro {
+  color: var(--text-main);
+  opacity: 1;
+}
+
+.debt-card-loan-details {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--text-main);
+  font-size: 0.875rem;
+}
+
+.debt-card-loan-details strong {
+  color: var(--text-main);
+}
+
 input[type="date"]::-webkit-datetime-edit {
   text-align: left;
 }

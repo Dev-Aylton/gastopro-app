@@ -898,8 +898,7 @@ describe('Estados vazios das telas', () => {
         userList: [{
           displayName: 'Usuário de teste',
           email: 'nome.muito.longo.para.medir.larguras@example.invalid',
-          createdAt: '2026-10-01T00:00:00Z',
-          liveEntries: 23
+          createdAt: '2026-10-01T00:00:00Z'
         }]
       });
 
@@ -912,8 +911,11 @@ describe('Estados vazios das telas', () => {
           const chart = host.querySelector('#adminGrowthChart');
           const chartArea = chart.parentElement;
           const userEmail = host.querySelector('.admin-user-row > div > span');
+          const userRow = host.querySelector('.admin-user-row');
           const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
           const background = getComputedStyle(document.documentElement).getPropertyValue('--bg-card').trim();
+          assertFalse(userRow.textContent.includes('lançamento(s) ativo(s)'),
+            `${width}px ${theme}: lista por usuário sem contagem de lançamentos`);
           assertEqual(userEmail.textContent, 'nome.muito.longo.para.medir.larguras@example.invalid',
             `${width}px ${theme}: e-mail permanece íntegro`);
           assertTrue(userEmail.querySelectorAll('wbr').length >= 2,
@@ -1694,6 +1696,125 @@ describe('FinanceData — Contas Bancárias', () => {
     }]);
 
     assertEqual(FinanceData.getAccountBalance(account.account.id), 145);
+  });
+
+  itAsync('salva empréstimo único, exclui o recebido da renda e baixa parcelas no saldo', async () => {
+    setupMockLocalStorage();
+    const today = getTodayString();
+    const firstMonth = GastoProImporter.shiftMonth(today.slice(0, 7), 1);
+    const account = await FinanceData.addAccount({
+      name: 'Conta fictícia do empréstimo', type: 'PF', initialBalance: 0, balanceDate: today
+    });
+    const loan = FinanceData.add({
+      type: 'loan',
+      desc: 'Empréstimo fictício',
+      accountId: account.account.id,
+      loanReceivedAmount: 1000,
+      loanReceivedDate: today,
+      loanTotalPayable: 1120,
+      loanInstallmentCount: 4,
+      amount: 280,
+      dueDay: 15,
+      startMonth: firstMonth
+    });
+
+    assertTrue(Boolean(loan));
+    assertEqual(FinanceData.getTemplates().length, 1);
+    assertEqual(FinanceData.getEntries().length, 0);
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 1000);
+    assertEqual(FinanceData.getByMonth(firstMonth).find(item => item.isLoan).paid, false);
+
+    const report = buildReportData({
+      type: 'month', from: firstMonth, to: firstMonth, includeDetails: true
+    });
+    assertEqual(report.totals.income, 0);
+    assertEqual(report.totals.debts, 280);
+    assertEqual(report.monthly[0].expenses, 280);
+
+    const debt = window.GastoProReportHelpers.getDebtCenterData(firstMonth).items[0];
+    assertEqual(debt.remainingAmount, 1120);
+    assertEqual(debt.loanCost, 120);
+    assertEqual(debt.nextInstallmentMonth, firstMonth);
+    assertEqual(debt.nextInstallmentAmount, 280);
+    assertEqual(debt.forecastMonth, GastoProImporter.shiftMonth(firstMonth, 3));
+
+    for (let index = 0; index < 4; index += 1) {
+      const month = GastoProImporter.shiftMonth(firstMonth, index);
+      FinanceData.togglePaid(loan.id, month);
+      assertEqual(FinanceData.getAccountBalance(account.account.id), 1000 - 280 * (index + 1));
+    }
+    const finishedDebt = window.GastoProReportHelpers.getDebtCenterData(firstMonth).items[0];
+    assertEqual(finishedDebt.remainingAmount, 0);
+    assertEqual(finishedDebt.remainingMonths, 0);
+    assertNull(finishedDebt.nextInstallmentMonth);
+  });
+
+  itAsync('bloqueia empréstimo com total menor que recebido ou vencimento inválido', async () => {
+    setupMockLocalStorage();
+    const today = getTodayString();
+    const account = await FinanceData.addAccount({
+      name: 'Conta fictícia de validação', type: 'PF'
+    });
+    const baseLoan = {
+      type: 'loan',
+      desc: 'Empréstimo fictício inválido',
+      accountId: account.account.id,
+      loanReceivedAmount: 1000,
+      loanReceivedDate: today,
+      loanTotalPayable: 1120,
+      loanInstallmentCount: 4,
+      amount: 280,
+      dueDay: 15,
+      startMonth: GastoProImporter.shiftMonth(today.slice(0, 7), 1)
+    };
+    [
+      { loanTotalPayable: 900, amount: 225 },
+      { dueDay: null },
+      { dueDay: 0 },
+      { dueDay: 32 }
+    ].forEach(overrides => assertNull(FinanceData.add({ ...baseLoan, ...overrides })));
+    assertEqual(FinanceData.getTemplates().length, 0);
+  });
+
+  it('mapeia todos os campos do empréstimo na sincronização com a nuvem', () => {
+    const helpers = window.GastoProSyncFieldHelpers;
+    const template = {
+      id: 'template-loan',
+      desc: 'Empréstimo fictício',
+      amount: 280,
+      category: 'Empréstimo',
+      type: 'fixed',
+      isDebt: true,
+      active: true,
+      startMonth: '2027-01',
+      endMonth: '2027-04',
+      day: '15',
+      paidMonths: {},
+      accountId: '550e8400-e29b-41d4-a716-446655440001',
+      loanReceivedAmount: 1000,
+      loanReceivedDate: '2026-12-01',
+      loanTotalPayable: 1120,
+      loanInstallmentCount: 4
+    };
+    const cloud = helpers.templateToCloud(template);
+    assertEqual(cloud.loan_received_amount, 1000);
+    assertEqual(cloud.loan_received_date, '2026-12-01');
+    assertEqual(cloud.loan_total_payable, 1120);
+    assertEqual(cloud.loan_installment_count, 4);
+    assertEqual(helpers.templateFromCloud({
+      id: template.id,
+      ...cloud,
+      description: cloud.description,
+      start_month: cloud.start_month,
+      end_month: cloud.end_month,
+      paid_months: cloud.paid_months,
+      account_id: cloud.account_id,
+      is_debt: cloud.is_debt,
+      loan_received_amount: cloud.loan_received_amount,
+      loan_received_date: cloud.loan_received_date,
+      loan_total_payable: cloud.loan_total_payable,
+      loan_installment_count: cloud.loan_installment_count
+    }), template);
   });
 
   itAsync('filtra movimentos pagos pela data-base e usa o dia de vencimento nos meses pagos', async () => {
@@ -3224,16 +3345,14 @@ describe('Canal Fale comigo', () => {
         display_name: 'Pessoa autorizada',
         email: 'pessoa@example.com',
         created_at: '2026-11-01T10:00:00Z',
-        last_sign_in_at: null,
-        live_entries: 4
+        last_sign_in_at: null
       },
       {
         user_number: 2,
         display_name: 'Usuário nº 2',
         email: null,
         created_at: '2026-11-02T10:00:00Z',
-        last_sign_in_at: null,
-        live_entries: null
+        last_sign_in_at: null
       }
     ];
     window.SupabaseAuth.client = {
@@ -3252,10 +3371,10 @@ describe('Canal Fale comigo', () => {
       const result = await window.SupabaseAuth.fetchAdminUsers();
       assertTrue(result.success);
       assertEqual(result.users[0].email, 'pessoa@example.com');
-      assertEqual(result.users[0].liveEntries, 4);
+      assertFalse(Object.prototype.hasOwnProperty.call(result.users[0], 'liveEntries'));
       assertEqual(result.users[1].displayName, 'Usuário nº 2');
       assertNull(result.users[1].email);
-      assertNull(result.users[1].liveEntries);
+      assertFalse(Object.prototype.hasOwnProperty.call(result.users[1], 'liveEntries'));
       assertFalse(Object.keys(result.users[0]).some(key =>
         ['user_id', 'description', 'amount', 'account', 'goal', 'avatar'].includes(key)
       ));

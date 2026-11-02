@@ -190,6 +190,12 @@
         category: item.category,
         remainingAmount: roundMoney(item.remainingAmount),
         remainingInstallments: item.remainingMonths,
+        isLoan: item.isLoan,
+        loanCost: item.isLoan ? roundMoney(item.loanCost) : null,
+        nextInstallmentMonth: item.nextInstallmentMonth,
+        nextInstallmentAmount: item.nextInstallmentAmount == null
+          ? null
+          : roundMoney(item.nextInstallmentAmount),
         forecastMonth: item.forecastMonth,
         isFinished: item.isFinished,
         isOverdue: item.isOverdue,

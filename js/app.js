@@ -1812,7 +1812,6 @@ function renderAdminAnalytics() {
           ${user.email ? `<span>${escapeHtml(user.email).replace(/([.@])/g, '$1<wbr>')}</span>` : ''}
           <small>Cadastro: ${escapeHtml(new Date(user.createdAt).toLocaleDateString('pt-BR'))}</small>
         </div>
-        ${user.email ? `<span>${user.liveEntries} lançamento(s) ativo(s)</span>` : ''}
       </li>
     `).join('')
     : '';
@@ -2469,7 +2468,11 @@ function clearEntryFormFields(type) {
   const fields = type === 'income'
     ? ['incomeDesc', 'incomeAmount', 'incomeAccount']
     : type === 'expense'
-      ? ['expenseDesc', 'expenseAmount', 'expenseAccount', 'expenseEndMonth', 'expenseDueDay', 'expenseCreditAccount']
+      ? [
+        'expenseDesc', 'expenseAmount', 'expenseAccount', 'expenseEndMonth', 'expenseDueDay',
+        'expenseCreditAccount', 'expenseLoanReceivedAmount', 'expenseLoanTotalPayable',
+        'expenseLoanInstallmentCount', 'expenseLoanInstallmentAmount', 'expenseLoanFirstMonth'
+      ]
       : null;
   if (!fields) return false;
 
@@ -2479,6 +2482,8 @@ function clearEntryFormFields(type) {
   });
   const date = document.getElementById(`${type}Date`);
   if (date) date.value = getTodayString();
+  const receivedDate = document.getElementById('expenseLoanReceivedDate');
+  if (receivedDate) receivedDate.value = getTodayString();
   return true;
 }
 
@@ -4513,10 +4518,24 @@ function getDebtCenterData(currentYm, templates = FinanceData.getTemplates()) {
 
   const items = debtTemplates.map(tpl => {
     const paidMonthsCount = tpl.paidMonths ? Object.values(tpl.paidMonths).filter(Boolean).length : 0;
+    const isLoan = tpl.loanReceivedAmount != null;
     let totalMonths = 0;
     let remainingMonths = 0;
+    let nextInstallmentMonth = null;
 
-    if (tpl.endMonth && tpl.startMonth) {
+    if (isLoan) {
+      totalMonths = tpl.loanInstallmentCount;
+      remainingMonths = Math.max(0, totalMonths - paidMonthsCount);
+      for (let offset = 0; offset < totalMonths; offset += 1) {
+        const [year, month] = tpl.startMonth.split('-').map(Number);
+        const monthIndex = year * 12 + month - 1 + offset;
+        const installmentMonth = `${String(Math.floor(monthIndex / 12)).padStart(4, '0')}-${String(monthIndex % 12 + 1).padStart(2, '0')}`;
+        if (!tpl.paidMonths || tpl.paidMonths[installmentMonth] !== true) {
+          nextInstallmentMonth = installmentMonth;
+          break;
+        }
+      }
+    } else if (tpl.endMonth && tpl.startMonth) {
       const [sYear, sMonth] = tpl.startMonth.split('-').map(Number);
       const [eYear, eMonth] = tpl.endMonth.split('-').map(Number);
       totalMonths = Math.max(1, (eYear - sYear) * 12 + (eMonth - sMonth) + 1);
@@ -4538,6 +4557,12 @@ function getDebtCenterData(currentYm, templates = FinanceData.getTemplates()) {
       description: tpl.desc,
       category: tpl.category || 'Empréstimo',
       amount: tpl.amount,
+      isLoan,
+      loanCost: isLoan
+        ? Math.round((Number(tpl.loanTotalPayable) - Number(tpl.loanReceivedAmount)) * 100) / 100
+        : null,
+      nextInstallmentMonth,
+      nextInstallmentAmount: nextInstallmentMonth ? Number(tpl.amount) : null,
       paidMonthsCount,
       totalMonths,
       remainingMonths,
@@ -4571,8 +4596,8 @@ function renderDebtCenter(currentYm) {
       <div class="empty-state-debt" style="grid-column: 1 / -1; text-align: center; padding: 2rem 1rem; color: var(--text-muted); opacity: 0.85;">
         <i class="fa-solid fa-flag-checkered" style="font-size: 2rem; margin-bottom: 0.6rem; opacity: 0.4;"></i>
         <p style="font-weight: 500; margin-bottom: 0.25rem;">Nenhum parcelamento ou empréstimo em andamento</p>
-        <span style="font-size: 0.85rem;">Ao cadastrar um gasto fixo com data final ou categoria de empréstimo/parcelamento, o cronograma de quitação aparecerá aqui automaticamente.</span>
-        <small class="empty-state-tip">Informe a data final no cadastro para ver a previsão de término.</small>
+        <span style="font-size: 0.85rem;">Cadastre um empréstimo ou um gasto fixo com data final para acompanhar as parcelas e a quitação.</span>
+        <small class="empty-state-tip">No empréstimo, a previsão é calculada pelo mês inicial e pelo número de parcelas.</small>
         <button type="button" class="btn-primary empty-state-action" data-goto="expenses">
           Ir para lançamentos
         </button>
@@ -4598,6 +4623,14 @@ function renderDebtCenter(currentYm) {
           <span>Resta: <strong>${formatCurrency(debt.remainingAmount)}</strong></span>
           <span>${debt.forecastMonth ? `Previsão: ${escapeHtml(debt.forecastMonth.split('-').reverse().join('/'))}` : 'Gasto Ativo'}</span>
         </div>
+        ${debt.isLoan ? `
+          <div class="debt-card-loan-details">
+            <span>Custo: <strong>${formatCurrency(debt.loanCost)}</strong></span>
+            <span>Próxima parcela: <strong>${debt.nextInstallmentMonth
+              ? `${formatCurrency(debt.nextInstallmentAmount)} em ${escapeHtml(debt.nextInstallmentMonth.split('-').reverse().join('/'))}`
+              : 'Nenhuma'}</strong></span>
+          </div>
+        ` : ''}
       </div>
     `;
   }).join('');
@@ -5441,6 +5474,13 @@ function escapeHtml(str) {
  * @param {string|null} dateStr - Data no formato YYYY-MM-DD.
  * @returns {string} Data no formato DD/MM, ou string vazia se inválida.
  */
+function isValidLoanDate(value) {
+  if (typeof value !== 'string' ||
+    !/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function formatDate(dateStr) {
   if (!dateStr) return '';
   const parts = dateStr.split('-');
@@ -6632,28 +6672,104 @@ document.addEventListener('DOMContentLoaded', () => {
   const expenseTypeSelect     = document.getElementById('expenseType');
   const expenseCatSelect      = document.getElementById('expenseCategory');
   const expenseEndMonthWrapper = document.getElementById('expenseEndMonthWrapper');
+  const loanFields = document.getElementById('expenseLoanFields');
+  const loanReceivedAmount = document.getElementById('expenseLoanReceivedAmount');
+  const loanReceivedDate = document.getElementById('expenseLoanReceivedDate');
+  const loanTotalPayable = document.getElementById('expenseLoanTotalPayable');
+  const loanInstallmentCount = document.getElementById('expenseLoanInstallmentCount');
+  const loanInstallmentAmount = document.getElementById('expenseLoanInstallmentAmount');
+  const loanFirstMonth = document.getElementById('expenseLoanFirstMonth');
+  const loanError = document.getElementById('expenseLoanError');
 
   function checkDebtVisibility() {
-    if (!expenseEndMonthWrapper) return;
-    const isDebt = (expenseTypeSelect && expenseTypeSelect.value === 'debt') || 
+    if (!expenseEndMonthWrapper || !expenseTypeSelect) return;
+    const isLoan = expenseTypeSelect.value === 'loan';
+    const isDebt = (expenseTypeSelect.value === 'debt') ||
                    (expenseCatSelect && (expenseCatSelect.value === 'Empréstimo' || expenseCatSelect.value === 'Parcelamento'));
-    expenseEndMonthWrapper.style.display = isDebt ? 'block' : 'none';
+    expenseEndMonthWrapper.style.display = isDebt && !isLoan ? 'block' : 'none';
+    const amountGroup = document.getElementById('expenseAmountGroup');
+    const dateGroup = document.getElementById('expenseDateGroup');
+    const categoryGroup = document.getElementById('expenseCategoryGroup');
+    const paymentMethodGroup = document.getElementById('expensePaymentMethodGroup');
+    const amountInput = document.getElementById('expenseAmount');
+    const dateInput = document.getElementById('expenseDate');
+    if (loanFields) loanFields.hidden = !isLoan;
+    if (amountGroup) amountGroup.hidden = isLoan;
+    if (dateGroup) dateGroup.hidden = isLoan;
+    if (categoryGroup) categoryGroup.hidden = isLoan;
+    if (paymentMethodGroup) paymentMethodGroup.hidden = isLoan;
+    if (amountInput) amountInput.required = !isLoan;
+    if (dateInput) dateInput.required = !isLoan;
+    if (expenseCatSelect) {
+      if (isLoan) expenseCatSelect.value = 'Empréstimo';
+      expenseCatSelect.required = !isLoan;
+    }
+    if (loanReceivedAmount) loanReceivedAmount.required = isLoan;
+    if (loanReceivedDate) {
+      loanReceivedDate.required = isLoan;
+      if (isLoan && !loanReceivedDate.value) loanReceivedDate.value = getTodayString();
+    }
+    if (loanTotalPayable) loanTotalPayable.required = isLoan;
+    if (loanInstallmentCount) loanInstallmentCount.required = isLoan;
+    if (loanInstallmentAmount) loanInstallmentAmount.required = isLoan;
+    if (loanFirstMonth) loanFirstMonth.required = isLoan;
     const paymentMethod = document.getElementById('expensePaymentMethod');
-    if (paymentMethod && paymentMethod.value === 'credit_card' &&
+    if (!isLoan && paymentMethod && paymentMethod.value === 'credit_card' &&
       expenseTypeSelect && expenseTypeSelect.value !== 'variable') {
       expenseTypeSelect.value = 'variable';
     }
     updateCreditCardPurchaseFields();
     const dateVal = document.getElementById('expenseDate').value || getTodayString();
-    const requiresDueDay = expenseTypeSelect.value === 'fixed' || expenseTypeSelect.value === 'debt' ||
+    const requiresDueDay = isLoan || expenseTypeSelect.value === 'fixed' || expenseTypeSelect.value === 'debt' ||
       (expenseTypeSelect.value === 'variable' && paymentMethod.value !== 'credit_card' &&
         !isPaidByPaymentMethod(paymentMethod.value, dateVal));
     const dueDayWrapper = document.getElementById('expenseDueDayWrapper');
     const dueDayInput = document.getElementById('expenseDueDay');
     if (dueDayWrapper) dueDayWrapper.hidden = !requiresDueDay;
     if (dueDayInput) dueDayInput.required = requiresDueDay;
+    const accountSelect = document.getElementById('expenseAccount');
+    if (accountSelect) accountSelect.required = isLoan || FinanceData.getAccounts().length > 0;
+    updateLoanInstallmentAmount();
   }
 
+  function updateLoanInstallmentAmount() {
+    if (!loanTotalPayable || !loanInstallmentCount || !loanInstallmentAmount) return;
+    const total = Number(loanTotalPayable.value);
+    const count = Number(loanInstallmentCount.value);
+    const received = loanReceivedAmount.value === '' ? null : Number(loanReceivedAmount.value);
+    if (loanTotalPayable.value === '' || loanInstallmentCount.value === '' ||
+      !Number.isFinite(total) || total < 0 || total > 9999999999.99 ||
+      !Number.isInteger(count) || count < 1 || count > 480) {
+      loanInstallmentAmount.value = '';
+      if (loanError) loanError.hidden = true;
+      return;
+    }
+    if (received != null && (!Number.isFinite(received) || received < 0 ||
+      received > 9999999999.99 || total < received)) {
+      loanInstallmentAmount.value = '';
+      if (loanError) {
+        loanError.textContent = 'O total a pagar deve ser maior ou igual ao valor recebido.';
+        loanError.hidden = false;
+      }
+      return;
+    }
+    const cents = Math.round(total * 100);
+    if (cents % count !== 0) {
+      loanInstallmentAmount.value = '';
+      if (loanError) {
+        loanError.textContent = 'O total precisa ser divisível igualmente pelo número de parcelas, em centavos.';
+        loanError.hidden = false;
+      }
+      return;
+    }
+    loanInstallmentAmount.value = (cents / count / 100).toFixed(2);
+    if (loanError) loanError.hidden = true;
+  }
+
+  [loanTotalPayable, loanInstallmentCount].forEach(input =>
+    input?.addEventListener('input', updateLoanInstallmentAmount)
+  );
+  loanReceivedAmount?.addEventListener('input', updateLoanInstallmentAmount);
   if (expenseTypeSelect) expenseTypeSelect.addEventListener('change', checkDebtVisibility);
   if (expenseCatSelect) expenseCatSelect.addEventListener('change', checkDebtVisibility);
   if (expenseDateInput) expenseDateInput.addEventListener('change', checkDebtVisibility);
@@ -6692,6 +6808,67 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!desc) {
       alert('Por favor, informe a descrição do gasto.');
+      return;
+    }
+    if (type === 'loan') {
+      const received = loanReceivedAmount.value === '' ? NaN : Number(loanReceivedAmount.value);
+      const total = loanTotalPayable.value === '' ? NaN : Number(loanTotalPayable.value);
+      const count = loanInstallmentCount.value === '' ? NaN : Number(loanInstallmentCount.value);
+      const installment = loanInstallmentAmount.value === '' ? NaN : Number(loanInstallmentAmount.value);
+      const dueDay = dueDayValue === '' ? NaN : Number(dueDayValue);
+      const accountId = document.getElementById('expenseAccount').value;
+      let loanMessage = '';
+      if (!Number.isFinite(received) || received < 0 ||
+        received > 9999999999.99 || !Number.isFinite(total) ||
+        total < received || total > 9999999999.99 ||
+        !Number.isInteger(count) || count < 1 || count > 480 ||
+        !Number.isFinite(installment) || Math.round(installment * count * 100) !== Math.round(total * 100)) {
+        loanMessage = 'Informe valores válidos; o total a pagar deve cobrir o valor recebido e ser divisível pelo número de parcelas.';
+      } else if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
+        loanMessage = 'Informe um dia de vencimento entre 1 e 31.';
+      } else if (!isValidLoanDate(loanReceivedDate.value) ||
+        !loanFirstMonth.value || !/^\d{4}-(0[1-9]|1[0-2])$/.test(loanFirstMonth.value)) {
+        loanMessage = 'Informe uma data de recebimento e o mês da primeira parcela válidos.';
+      } else if (!accountId || !FinanceData.getAccounts().some(account => account.id === accountId)) {
+        loanMessage = 'Escolha a conta que recebeu o empréstimo.';
+      }
+      if (loanMessage) {
+        loanError.textContent = loanMessage;
+        loanError.hidden = false;
+        return;
+      }
+      loanError.hidden = true;
+      const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
+      await withSaving(saveButton, async () => {
+        try {
+          const savedLoan = FinanceData.add({
+            type: 'loan',
+            desc,
+            amount: installment,
+            accountId,
+            dueDay,
+            startMonth: loanFirstMonth.value,
+            loanReceivedAmount: received,
+            loanReceivedDate: loanReceivedDate.value,
+            loanTotalPayable: total,
+            loanInstallmentCount: count
+          });
+          if (!savedLoan) {
+            loanError.textContent = 'Não foi possível salvar. Confira a conta e os dados do empréstimo.';
+            loanError.hidden = false;
+            return;
+          }
+          completeEntrySave('expense');
+          checkDebtVisibility();
+          document.getElementById('expenseDesc').focus();
+          renderAll();
+          await waitForAuthenticatedSave();
+        } catch (error) {
+          console.error('Erro ao adicionar empréstimo:', error);
+          loanError.textContent = 'Ocorreu um erro ao salvar o empréstimo. Tente novamente.';
+          loanError.hidden = false;
+        }
+      });
       return;
     }
     if (isNaN(amount) || amount <= 0) {

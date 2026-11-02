@@ -401,7 +401,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.32</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.33</span></p>
             <div class="drawer-about-help">
             <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
               <div class="action-icon bg-primary-soft">
@@ -858,7 +858,7 @@
                 <input type="text" id="expenseDesc" placeholder="Ex: Supermercado / Aluguel" required />
               </div>
 
-              <div>
+              <div id="expenseAmountGroup">
                 <label for="expenseAmount">Valor (R$)</label>
                 <div class="input-currency-wrapper">
                   <span class="prefix">R$</span>
@@ -870,9 +870,40 @@
                 <label for="expenseType">Tipo de Gasto</label>
                 <select id="expenseType" required>
                   <option value="fixed">🔒 Gasto Fixo Contínuo</option>
-                  <option value="debt">💳 Dívida / Empréstimo / Parcela</option>
+                  <option value="loan">💳 Empréstimo</option>
                   <option value="variable">🛒 Variável / Dia a dia</option>
                 </select>
+              </div>
+
+              <div id="expenseLoanFields" class="loan-fields" hidden>
+                <p class="form-hint loan-fields-intro">
+                  O valor recebido entra no saldo da conta, mas não é renda. As parcelas ficam pendentes até você marcá-las como pagas.
+                </p>
+                <div>
+                  <label for="expenseLoanReceivedAmount">Valor recebido (R$)</label>
+                  <input type="number" id="expenseLoanReceivedAmount" min="0" max="9999999999.99" step="0.01" inputmode="decimal" required />
+                </div>
+                <div>
+                  <label for="expenseLoanReceivedDate">Data do recebimento</label>
+                  <input type="date" id="expenseLoanReceivedDate" required />
+                </div>
+                <div>
+                  <label for="expenseLoanTotalPayable">Total a pagar (R$)</label>
+                  <input type="number" id="expenseLoanTotalPayable" min="0" max="9999999999.99" step="0.01" inputmode="decimal" required />
+                </div>
+                <div>
+                  <label for="expenseLoanInstallmentCount">Número de parcelas</label>
+                  <input type="number" id="expenseLoanInstallmentCount" min="1" max="480" step="1" inputmode="numeric" required />
+                </div>
+                <div>
+                  <label for="expenseLoanInstallmentAmount">Valor da parcela (R$)</label>
+                  <input type="number" id="expenseLoanInstallmentAmount" min="0" max="9999999999.99" step="0.01" inputmode="decimal" readonly required />
+                </div>
+                <div>
+                  <label for="expenseLoanFirstMonth">Mês da primeira parcela</label>
+                  <input type="month" id="expenseLoanFirstMonth" required />
+                </div>
+                <p id="expenseLoanError" class="form-error" role="alert" hidden></p>
               </div>
 
               <div id="expenseEndMonthWrapper" style="display: none;">
@@ -886,17 +917,17 @@
                 inputmode="numeric" placeholder="1 a 31" />
               </div>
 
-              <div>
+              <div id="expenseCategoryGroup">
                 <label for="expenseCategory">Categoria</label>
                 <select id="expenseCategory"></select>
               </div>
 
-              <div>
+              <div id="expenseDateGroup">
                 <label for="expenseDate">Data do Gasto</label>
                 <input type="date" id="expenseDate" required />
               </div>
 
-              <div class="payment-method-field">
+              <div id="expensePaymentMethodGroup" class="payment-method-field">
                 <label for="expensePaymentMethod">Forma de pagamento</label>
                 <select id="expensePaymentMethod" class="payment-method-select"></select>
               </div>
@@ -1080,7 +1111,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.32</span>
+          <span class="badge badge-version">v4.33</span>
         </div>
       </footer>
 

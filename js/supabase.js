@@ -179,6 +179,33 @@ function validateCloudPayload(item, kind) {
       return 'Informe um dia de vencimento entre 1 e 31.';
     }
     if (item.accountId != null && !isValidCloudUuid(item.accountId)) return 'A conta do template deve ter um UUID válido.';
+    const loanFields = [
+      item.loanReceivedAmount,
+      item.loanReceivedDate,
+      item.loanTotalPayable,
+      item.loanInstallmentCount
+    ];
+    if (loanFields.some(value => value != null)) {
+      const received = item.loanReceivedAmount;
+      const total = item.loanTotalPayable;
+      const count = item.loanInstallmentCount;
+      const installment = Number(item.amount);
+      if (typeof received !== 'number' || !Number.isFinite(received) || received < 0 ||
+        received > 9999999999.99 ||
+        typeof total !== 'number' || !Number.isFinite(total) || total < received ||
+        total > 9999999999.99 ||
+        !Number.isInteger(count) || count < 1 || count > 480 ||
+        !Number.isFinite(installment) || installment < 0 ||
+        Math.round(installment * count * 100) !== Math.round(total * 100) ||
+        !isValidCloudDate(item.loanReceivedDate) || !item.day ||
+        !isValidCloudUuid(item.accountId)) {
+        return 'Os dados do empréstimo são inválidos ou incompletos.';
+      }
+      const [year, month] = item.startMonth.split('-').map(Number);
+      const endMonthIndex = year * 12 + month - 1 + count - 1;
+      const expectedEnd = `${String(Math.floor(endMonthIndex / 12)).padStart(4, '0')}-${String(endMonthIndex % 12 + 1).padStart(2, '0')}`;
+      if (item.endMonth !== expectedEnd) return 'O mês final não corresponde à quantidade de parcelas.';
+    }
     return null;
   }
 
@@ -237,6 +264,47 @@ function mapEntryToCloud(entry) {
   };
 }
 
+function mapTemplateFromCloud(row) {
+  return {
+    id: row.id,
+    desc: row.description,
+    amount: Number(row.amount),
+    category: row.category,
+    type: row.type || 'fixed',
+    isDebt: Boolean(row.is_debt),
+    active: row.active !== false,
+    startMonth: row.start_month,
+    endMonth: row.end_month || null,
+    day: normalizeTemplateDay(row.day),
+    paidMonths: row.paid_months || {},
+    accountId: row.account_id || null,
+    loanReceivedAmount: row.loan_received_amount == null ? null : Number(row.loan_received_amount),
+    loanReceivedDate: row.loan_received_date || null,
+    loanTotalPayable: row.loan_total_payable == null ? null : Number(row.loan_total_payable),
+    loanInstallmentCount: row.loan_installment_count == null ? null : Number(row.loan_installment_count)
+  };
+}
+
+function mapTemplateToCloud(template) {
+  return {
+    description: template.desc,
+    amount: template.amount,
+    category: template.category,
+    type: template.type || 'fixed',
+    is_debt: Boolean(template.isDebt),
+    active: template.active !== false,
+    start_month: template.startMonth,
+    end_month: template.endMonth || null,
+    day: template.day || null,
+    paid_months: template.paidMonths || {},
+    loan_received_amount: template.loanReceivedAmount ?? null,
+    loan_received_date: template.loanReceivedDate ?? null,
+    loan_total_payable: template.loanTotalPayable ?? null,
+    loan_installment_count: template.loanInstallmentCount ?? null,
+    account_id: template.accountId || null
+  };
+}
+
 function mapCreditCardFromCloud(row) {
   return {
     id: row.id,
@@ -275,6 +343,8 @@ window.GastoProSyncFieldHelpers = {
   entryToCloud: mapEntryToCloud,
   templateDayFromCloud: normalizeTemplateDay,
   dueDayFromCloud: normalizeDueDay,
+  templateFromCloud: mapTemplateFromCloud,
+  templateToCloud: mapTemplateToCloud,
   creditCardFromCloud: mapCreditCardFromCloud,
   creditCardToCloud: mapCreditCardToCloud
 };
@@ -397,22 +467,19 @@ function sanitizeAdminUsers(data) {
       typeof item.created_at !== 'string' ||
       !(item.email === null || typeof item.email === 'string') ||
       !(item.last_sign_in_at === null || typeof item.last_sign_in_at === 'string') ||
-      !(item.live_entries === null || Number.isSafeInteger(item.live_entries) && item.live_entries >= 0) ||
       Object.keys(item).some(key => ![
-        'user_number', 'display_name', 'email', 'created_at', 'last_sign_in_at', 'live_entries'
+        'user_number', 'display_name', 'email', 'created_at', 'last_sign_in_at'
       ].includes(key))) return null;
 
     const identityVisible = item.email !== null;
-    if (identityVisible && item.live_entries === null) return null;
-    if (!identityVisible && (item.last_sign_in_at !== null || item.live_entries !== null ||
+    if (!identityVisible && (item.last_sign_in_at !== null ||
       item.display_name !== `Usuário nº ${item.user_number}`)) return null;
     users.push({
       userNumber: item.user_number,
       displayName: item.display_name,
       email: item.email,
       createdAt: item.created_at,
-      lastSignInAt: item.last_sign_in_at,
-      liveEntries: item.live_entries
+      lastSignInAt: item.last_sign_in_at
     });
   }
   return users;
@@ -566,12 +633,7 @@ const SupabaseAuth = {
       case 'entries':
         return { ...base, kind: 'entries', item: mapEntryFromCloud(row) };
       case 'fixed_templates':
-        return { ...base, kind: 'templates', item: {
-          id: row.id, desc: row.description, amount: Number(row.amount), category: row.category,
-          type: row.type || 'fixed', isDebt: Boolean(row.is_debt), active: row.active !== false,
-          startMonth: row.start_month, endMonth: row.end_month || null, day: normalizeTemplateDay(row.day),
-          paidMonths: row.paid_months || {}, accountId: row.account_id || null
-        } };
+        return { ...base, kind: 'templates', item: mapTemplateFromCloud(row) };
       case 'profiles':
         return { ...base, kind: 'profiles', item: {
           id: row.id, name: row.name || '', avatar: row.avatar || null
@@ -1240,17 +1302,7 @@ const SupabaseAuth = {
       }));
       const templatePayload = templates.map(template => ({
         id: template.id,
-        description: template.desc,
-        amount: template.amount,
-        category: template.category,
-        type: template.type || 'fixed',
-        is_debt: Boolean(template.isDebt),
-        active: template.active !== false,
-        start_month: template.startMonth,
-        end_month: template.endMonth || null,
-        day: template.day || null,
-        paid_months: template.paidMonths || {},
-        account_id: template.accountId || null,
+        ...mapTemplateToCloud(template),
         client_edited_at: window.FinanceData.getClientEditedAt('templates', template.id)
       }));
       const paymentPayload = payments.map(payment => ({
@@ -1490,20 +1542,7 @@ const SupabaseAuth = {
         .range(from, to));
       if (!data) return null;
 
-      return (data || []).map(row => ({
-        id: row.id,
-        desc: row.description,
-        amount: Number(row.amount),
-        category: row.category,
-        type: row.type || 'fixed',
-        isDebt: Boolean(row.is_debt),
-        active: row.active !== false,
-        startMonth: row.start_month,
-        endMonth: row.end_month || null,
-        day: normalizeTemplateDay(row.day),
-        paidMonths: row.paid_months || {},
-        accountId: row.account_id || null
-      }));
+      return (data || []).map(mapTemplateFromCloud);
     } catch (e) {
       console.warn('[Supabase] Falha ao buscar templates:', e);
       return null;
@@ -1541,19 +1580,9 @@ const SupabaseAuth = {
       const payload = validTemplates.map(tpl => ({
         id: tpl.id,
         user_id: sessionUserId,
-        description: tpl.desc,
-        amount: tpl.amount,
-        category: tpl.category,
-        type: tpl.type || 'fixed',
-        is_debt: Boolean(tpl.isDebt),
-        active: tpl.active !== false,
-        start_month: tpl.startMonth,
-        end_month: tpl.endMonth || null,
-        day: tpl.day || null,
-        paid_months: tpl.paidMonths || {},
-        account_id: tpl.accountId || null
-        ,client_edited_at: window.FinanceData?.getClientEditedAt('templates', tpl.id)
-        ,deleted_at: null
+        ...mapTemplateToCloud(tpl),
+        client_edited_at: window.FinanceData?.getClientEditedAt('templates', tpl.id),
+        deleted_at: null
       }));
       if (payload.length) {
         const result = await this.upsertWithFallback(
