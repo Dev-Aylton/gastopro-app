@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.42-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.46-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-514%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-563%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -467,7 +467,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.45`. Suíte atual: **550 testes**.
+`CACHE_NAME` atual: `gastopro-v4.46`. Suíte atual: **563 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -690,6 +690,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-065 — Helpers puros para totais mensais de dívidas** / Descrição: adiciona o resumo de parcelas em atraso, mês atual, próximo mês, saldo restante e dívidas sem data final; separa gastos fixos recorrentes sem fim e mantém ganhos fora dos totais. / Critério de pronto: 530 testes aprovados no test-runner; visual/toque e layout não verificados em tela. / Arquivos: `js/app.js`, `js/data.js`, `tests/gastopro.test.js`, `index.html`, `css/style.css`, `sw.js`, `README.md`.
 - [x] **RM-066 — Filtro de conta na home e relatório financeiro CSV/PDF** / Descrição: filtra os totais e listas do dashboard por todas as contas, PF/PJ ou conta individual; exporta localmente lançamentos do período filtrado em CSV com escape e neutralização de fórmulas, e em PDF com o gerador local existente. / Critério de pronto: 546 testes aprovados, zero falhas/pendências; aparência/toque e layout não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/report.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-067 — Login Google via OAuth** / Descrição: inicia autenticação com provider Google pelo cliente Supabase e callback local da aplicação; mantém o processamento de sessão existente, exige consentimento de privacidade no cadastro e mostra mensagem fixa sem expor detalhes de erro. / Critério de pronto: 550 testes aprovados com Supabase mockado; fluxo real com Google e visual/toque não verificados. / Arquivos: `index.html`, `js/app.js`, `js/supabase.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
+- [x] **RM-068 — Aviso de saída com backup único e reset financeiro seguro** / Descrição: oculta corretamente o botão secundário de backup quando não há ação secundária; o reset já percorre exclusões por registro, sem enviar listas grandes de IDs. / Critério de pronto: 563 testes aprovados, zero falhas/pendências; testes de exclusão usam Supabase mockado; visual/toque não verificados em tela. / Arquivos: `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 
 ### Em dúvida
 
@@ -701,7 +702,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.45 — 02/11/2026 (versão atual)
+### v4.46 — 02/11/2026 (versão atual)
+
+- RM-068: correção do botão oculto de backup no aviso de saída; reset confirmado como exclusões remotas individuais, sem lote de IDs. Test-runner: 563 aprovados, zero falhas/pendências; Supabase mockado nos testes; visual/toque não verificados em tela.
+
+### v4.45 — 02/11/2026
 
 - RM-067: botão de acesso Google usa OAuth do Supabase, callback na origem/caminho do app e tratamento fixo de erro/cancelamento; cadastro preserva o consentimento explícito. Test-runner com Supabase mockado: 550 aprovados, zero falhas/pendências; fluxo real com Google e tela não verificados.
 

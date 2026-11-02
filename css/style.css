@@ -4645,6 +4645,10 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   margin-top: 1.75rem;
 }
 
+.confirm-actions > button[hidden] {
+  display: none;
+}
+
 .confirm-actions .btn-secondary,
 .confirm-actions .btn-danger {
   min-width: 120px;

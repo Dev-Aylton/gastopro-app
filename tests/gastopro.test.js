@@ -4873,6 +4873,44 @@ describe('FinanceData — clearAll()', () => {
     }
   });
 
+  itAsync('markCloudDeleted envia mais de 100 IDs em atualizações individuais mockadas', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const ids = Array.from({ length: 205 }, () => crypto.randomUUID());
+    const requests = [];
+    window.SupabaseAuth.client = {
+      from(table) {
+        let id = null;
+        const query = {
+          update() { return this; },
+          eq(column, value) {
+            if (column === 'id') id = value;
+            return this;
+          },
+          select() { return this; },
+          then(resolve, reject) {
+            requests.push({ table, id });
+            return Promise.resolve({
+              data: [{ id, deleted_at: '2026-11-02T00:00:00.000Z' }],
+              error: null
+            }).then(resolve, reject);
+          }
+        };
+        return { update: () => query };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.markCloudDeleted(
+        'entries', 'id', ids, 'entries', 'reset-user'
+      );
+      assertTrue(result.success);
+      assertEqual(requests.length, ids.length);
+      assertEqual(requests.map(request => request.id), ids);
+      assertTrue(requests.every(request => request.table === 'entries'));
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
   itAsync('clearAll mantém a pendência quando o retry da exclusão remota falha', async () => {
     setupMockLocalStorage();
     const userId = 'user-reset-delete-failure';
@@ -12414,6 +12452,51 @@ describe('Correções de formulários, cards e rodapé', () => {
       assertFalse(fixture.querySelector('#confirmModal').classList.contains('active'));
       assertEqual(FinanceData.getTemplates().map(item => item.id), [template.id]);
     } finally {
+      fixture.remove();
+    }
+  });
+
+  itAsync('aviso de saída mostra um único botão de backup e mantém a ação', async () => {
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <div id="confirmModal">
+        <div id="confirmIconWrapper"><i id="confirmIcon"></i></div>
+        <h2 id="confirmTitle"></h2><p id="confirmMessage"></p>
+        <div id="confirmPhraseGroup"><input id="confirmPhraseInput"><label id="confirmPhraseLabel"></label></div>
+        <div id="confirmRememberOption"><input id="confirmRememberCheckbox"><span id="confirmRememberLabel"></span></div>
+        <div class="modal-actions confirm-actions">
+          <button type="button" class="btn-secondary" id="confirmBackupBtn" hidden>Baixar backup JSON</button>
+        </div>
+        <div class="modal-actions confirm-actions">
+          <button type="button" class="btn-secondary" id="confirmCancelBtn">Cancelar</button>
+          <button type="button" class="btn-danger" id="confirmOkBtn">Confirmar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(fixture);
+    const previousExport = FinanceData.exportJSON;
+    let exportCount = 0;
+    FinanceData.exportJSON = () => { exportCount++; };
+    try {
+      window.showConfirm({
+        title: 'Não foi possível sincronizar',
+        message: 'Baixe um backup JSON antes de tentar sair novamente.',
+        okLabel: 'Baixar backup JSON',
+        okBtnClass: 'btn-primary',
+        onConfirm: () => FinanceData.exportJSON()
+      });
+      const backupButtons = [...fixture.querySelectorAll('button')].filter(button =>
+        button.textContent.trim() === 'Baixar backup JSON' &&
+        getComputedStyle(button).display !== 'none'
+      );
+      assertEqual(backupButtons.length, 1);
+      assertTrue(backupButtons[0].classList.contains('btn-primary'));
+      assertTrue(backupButtons[0].getBoundingClientRect().height >= 44);
+      backupButtons[0].click();
+      await Promise.resolve();
+      assertEqual(exportCount, 1);
+    } finally {
+      FinanceData.exportJSON = previousExport;
       fixture.remove();
     }
   });
