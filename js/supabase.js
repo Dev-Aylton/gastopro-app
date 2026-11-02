@@ -196,7 +196,7 @@ function validateCloudPayload(item, kind) {
         total > 9999999999.99 ||
         !Number.isInteger(count) || count < 1 || count > 480 ||
         !Number.isFinite(installment) || installment < 0 ||
-        Math.round(installment * count * 100) !== Math.round(total * 100) ||
+        Math.abs(Math.round(installment * 100) * count - Math.round(total * 100)) > count ||
         !isValidCloudDate(item.loanReceivedDate) || !item.day ||
         !isValidCloudUuid(item.accountId)) {
         return 'Os dados do empréstimo são inválidos ou incompletos.';

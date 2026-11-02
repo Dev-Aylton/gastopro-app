@@ -4547,9 +4547,17 @@ function getDebtCenterData(currentYm, templates = FinanceData.getTemplates()) {
       remainingMonths = tpl.paidMonths && tpl.paidMonths[currentYm] ? 0 : 1;
     }
 
-    const remainingAmount = remainingMonths * tpl.amount;
-    const paidAmount = paidMonthsCount * tpl.amount;
-    const totalProgressAmount = remainingAmount + paidAmount || tpl.amount * totalMonths;
+    const remainingAmount = isLoan
+      ? remainingMonths === 0
+        ? 0
+        : Math.max(0, Math.round((Number(tpl.loanTotalPayable) - paidMonthsCount * Number(tpl.amount)) * 100) / 100)
+      : remainingMonths * tpl.amount;
+    const paidAmount = isLoan
+      ? Math.min(Number(tpl.loanTotalPayable), paidMonthsCount * Number(tpl.amount))
+      : paidMonthsCount * tpl.amount;
+    const totalProgressAmount = isLoan
+      ? Number(tpl.loanTotalPayable)
+      : remainingAmount + paidAmount || tpl.amount * totalMonths;
     const isFinished = remainingMonths === 0;
     const isOverdue = Boolean(tpl.endMonth && currentYm > tpl.endMonth && remainingMonths > 0);
     return {
@@ -6754,15 +6762,16 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const cents = Math.round(total * 100);
-    if (cents % count !== 0) {
+    const installmentCents = Math.round(cents / count);
+    if (Math.abs(installmentCents * count - cents) > count) {
       loanInstallmentAmount.value = '';
       if (loanError) {
-        loanError.textContent = 'O total precisa ser divisível igualmente pelo número de parcelas, em centavos.';
+        loanError.textContent = 'A diferença entre o total e as parcelas excede a tolerância de R$ 0,01 por parcela.';
         loanError.hidden = false;
       }
       return;
     }
-    loanInstallmentAmount.value = (cents / count / 100).toFixed(2);
+    loanInstallmentAmount.value = (installmentCents / 100).toFixed(2);
     if (loanError) loanError.hidden = true;
   }
 
@@ -6822,8 +6831,9 @@ document.addEventListener('DOMContentLoaded', () => {
         received > 9999999999.99 || !Number.isFinite(total) ||
         total < received || total > 9999999999.99 ||
         !Number.isInteger(count) || count < 1 || count > 480 ||
-        !Number.isFinite(installment) || Math.round(installment * count * 100) !== Math.round(total * 100)) {
-        loanMessage = 'Informe valores válidos; o total a pagar deve cobrir o valor recebido e ser divisível pelo número de parcelas.';
+        !Number.isFinite(installment) ||
+        Math.abs(Math.round(installment * 100) * count - Math.round(total * 100)) > count) {
+        loanMessage = 'Informe valores válidos; a diferença entre o total e as parcelas não pode exceder R$ 0,01 por parcela.';
       } else if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
         loanMessage = 'Informe um dia de vencimento entre 1 e 31.';
       } else if (!isValidLoanDate(loanReceivedDate.value) ||

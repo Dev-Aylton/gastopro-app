@@ -31,7 +31,8 @@ begin
           and loan_total_payable >= loan_received_amount
           and loan_installment_count between 1 and 480
           and amount >= 0
-          and amount * loan_installment_count = loan_total_payable
+          and abs(amount * loan_installment_count - loan_total_payable)
+            <= 0.01::numeric * loan_installment_count
           and account_id is not null
           and is_debt
           and day is not null

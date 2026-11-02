@@ -1776,6 +1776,88 @@ describe('FinanceData — Contas Bancárias', () => {
     assertEqual(FinanceData.getTemplates().length, 0);
   });
 
+  itAsync('aceita arredondamento de parcelas dentro da tolerância do total', async () => {
+    setupMockLocalStorage();
+    const today = getTodayString();
+    const account = await FinanceData.addAccount({
+      name: 'Conta fictícia da tolerância', type: 'PF'
+    });
+    const baseLoan = {
+      type: 'loan',
+      desc: 'Empréstimo fictício arredondado',
+      accountId: account.account.id,
+      loanReceivedAmount: 50,
+      loanReceivedDate: today,
+      loanTotalPayable: 100,
+      loanInstallmentCount: 3,
+      amount: 33.33,
+      dueDay: 15,
+      startMonth: GastoProImporter.shiftMonth(today.slice(0, 7), 1)
+    };
+
+    assertTrue(Boolean(FinanceData.add(baseLoan)));
+    assertTrue(Boolean(FinanceData.add({
+      ...baseLoan,
+      desc: 'Empréstimo fictício exato',
+      loanInstallmentCount: 4,
+      amount: 25
+    })));
+    assertTrue(Boolean(FinanceData.add({
+      ...baseLoan,
+      desc: 'Empréstimo fictício no limite',
+      loanInstallmentCount: 4,
+      amount: 24.99
+    })));
+    assertNull(FinanceData.add({
+      ...baseLoan,
+      desc: 'Empréstimo fictício abaixo da tolerância',
+      amount: 33
+    }));
+    assertNull(FinanceData.add({
+      ...baseLoan,
+      desc: 'Empréstimo fictício acima do limite',
+      loanInstallmentCount: 4,
+      amount: 24.98
+    }));
+    assertEqual(FinanceData.getTemplates().length, 3);
+  });
+
+  itAsync('mantém total informado no saldo devedor e no custo com parcela arredondada', async () => {
+    setupMockLocalStorage();
+    const today = getTodayString();
+    const firstMonth = GastoProImporter.shiftMonth(today.slice(0, 7), 1);
+    const account = await FinanceData.addAccount({
+      name: 'Conta fictícia do saldo arredondado', type: 'PF', initialBalance: 0, balanceDate: today
+    });
+    const loan = FinanceData.add({
+      type: 'loan',
+      desc: 'Empréstimo fictício com diferença de centavos',
+      accountId: account.account.id,
+      loanReceivedAmount: 50,
+      loanReceivedDate: today,
+      loanTotalPayable: 100,
+      loanInstallmentCount: 3,
+      amount: 33.33,
+      dueDay: 15,
+      startMonth: firstMonth
+    });
+
+    assertTrue(Boolean(loan));
+    assertEqual(FinanceData.getAccountBalance(account.account.id), 50);
+    const debt = window.GastoProReportHelpers.getDebtCenterData(firstMonth).items[0];
+    assertEqual(debt.remainingAmount, 100);
+    assertEqual(debt.loanCost, 50);
+    for (let index = 0; index < 3; index += 1) {
+      const month = GastoProImporter.shiftMonth(firstMonth, index);
+      FinanceData.togglePaid(loan.id, month);
+      assertEqual(FinanceData.getAccountBalance(account.account.id),
+        Math.round((50 - 33.33 * (index + 1)) * 100) / 100);
+      const updatedDebt = window.GastoProReportHelpers.getDebtCenterData(firstMonth).items[0];
+      assertEqual(updatedDebt.remainingAmount, index === 2 ? 0 : 100 - 33.33 * (index + 1));
+      assertEqual(updatedDebt.loanCost, 50);
+    }
+  });
+
   it('mapeia todos os campos do empréstimo na sincronização com a nuvem', () => {
     const helpers = window.GastoProSyncFieldHelpers;
     const template = {

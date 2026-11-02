@@ -133,7 +133,7 @@ function validateLoanTemplate(template) {
     total < received || total > MAX_ACCOUNT_BALANCE ||
     !Number.isInteger(count) || count < 1 || count > 480 ||
     !Number.isFinite(installment) || installment < 0 ||
-    Math.round(installment * count * 100) !== Math.round(total * 100) ||
+    Math.abs(Math.round(installment * 100) * count - Math.round(total * 100)) > count ||
     !isValidCivilDate(template.loanReceivedDate) ||
     !isValidCivilMonth(template.startMonth) ||
     !isValidCivilMonth(template.endMonth) ||
