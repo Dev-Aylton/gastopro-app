@@ -1136,7 +1136,7 @@ $$;
 -- ============================================================
 -- PENDENTE
 -- ============================================================
--- * Supabase Storage para o avatar (hoje é Base64 em profiles.avatar)
+-- * Supabase Storage para fotos enviadas pelo usuário; fotos Google usam URL em profiles.avatar.
 
 create or replace function public.import_financial_batch(
   p_entries jsonb,

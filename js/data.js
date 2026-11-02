@@ -11,7 +11,7 @@
    CHAVES DO LOCALSTORAGE:
    • STORAGE_ENTRIES   → Lançamentos pontuais (ganhos e gastos variáveis)
    • STORAGE_TEMPLATES → Templates de gastos fixos recorrentes
-   • STORAGE_PROFILE   → Dados de perfil do usuário (nome e avatar Base64)
+   • STORAGE_PROFILE   → Dados de perfil (nome, avatar Base64 ou URL da foto Google)
    • STORAGE_GOALS     → Metas por categoria
    • STORAGE_ACCOUNTS  → Contas bancárias PF/PJ
    • STORAGE_LAST_UID  → UID dono dos dados locais ativos
