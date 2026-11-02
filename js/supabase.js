@@ -1072,26 +1072,27 @@ const SupabaseAuth = {
     }
   },
 
-  async countNewFeedback() {
+  async countUnreadFeedback() {
     if (!this.client || !(await this.checkIsAdmin())) {
       return { success: false, error: 'Acesso restrito.' };
     }
     try {
       const { data, error } = await this.client.from('feedback_messages')
-        .select('id')
-        .eq('status', 'new');
+        .select('id, admin_read_at')
+        .is('admin_read_at', null);
       if (error) {
-        recordAdminQueryFailure('feedback_messages.count_new', error);
+        recordAdminQueryFailure('feedback_messages.count_unread', error);
         return { success: false, error: this.getFeedbackErrorMessage(error) };
       }
       if (!Array.isArray(data) || data.some(item =>
-        !item || !isValidCloudUuid(item.id) || Object.keys(item).some(key => key !== 'id')
+        !item || !isValidCloudUuid(item.id) || item.admin_read_at !== null ||
+        Object.keys(item).some(key => !['id', 'admin_read_at'].includes(key))
       )) {
-        return { success: false, error: 'A resposta do servidor contém mensagens novas inválidas.' };
+        return { success: false, error: 'A resposta do servidor contém mensagens não lidas inválidas.' };
       }
       return { success: true, count: data.length, ids: data.map(item => item.id) };
     } catch (error) {
-      recordAdminQueryFailure('feedback_messages.count_new', error);
+      recordAdminQueryFailure('feedback_messages.count_unread', error);
       return { success: false, error: this.getFeedbackErrorMessage(error) };
     }
   },
@@ -1109,7 +1110,7 @@ const SupabaseAuth = {
       const feedbackQuery = (async () => {
         try {
           let query = this.client.from('feedback_messages')
-            .select('id, user_id, category, message, status, reply, replied_at, created_at')
+            .select('id, user_id, category, message, status, reply, replied_at, admin_read_at, created_at')
             .order('created_at', { ascending: status === 'new' });
           if (status !== 'all') query = query.eq('status', status);
           return await query.range(safeOffset, safeOffset + safeLimit - 1);
@@ -1166,6 +1167,28 @@ const SupabaseAuth = {
       });
       return { success: true, messages };
     } catch (error) {
+      return { success: false, error: this.getFeedbackErrorMessage(error) };
+    }
+  },
+
+  async markFeedbackRead(id) {
+    if (!isValidCloudUuid(id)) return { success: false, error: 'A mensagem selecionada é inválida.' };
+    if (!this.client || !(await this.checkIsAdmin())) {
+      return { success: false, error: 'Área restrita.' };
+    }
+    const readAt = new Date().toISOString();
+    try {
+      const { error } = await this.client.from('feedback_messages')
+        .update({ admin_read_at: readAt })
+        .eq('id', id)
+        .is('admin_read_at', null);
+      if (error) {
+        recordAdminQueryFailure('feedback_messages.mark_read', error);
+        return { success: false, error: this.getFeedbackErrorMessage(error) };
+      }
+      return { success: true, readAt };
+    } catch (error) {
+      recordAdminQueryFailure('feedback_messages.mark_read', error);
       return { success: false, error: this.getFeedbackErrorMessage(error) };
     }
   },

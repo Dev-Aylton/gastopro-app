@@ -3694,6 +3694,7 @@ describe('Canal Fale comigo', () => {
       status: 'new',
       reply: null,
       replied_at: null,
+      admin_read_at: null,
       created_at: '2026-10-29T12:00:00Z'
     }, {
       id: '550e8400-e29b-41d4-a716-446655440005',
@@ -3703,6 +3704,7 @@ describe('Canal Fale comigo', () => {
       status: 'new',
       reply: null,
       replied_at: null,
+      admin_read_at: '2026-10-30T12:30:00Z',
       created_at: '2026-10-30T12:00:00Z'
     }];
     const authors = [
@@ -3736,7 +3738,7 @@ describe('Canal Fale comigo', () => {
     try {
       const result = await window.SupabaseAuth.fetchAllFeedback({ status: 'new', limit: 20, offset: 0 });
       assertTrue(result.success);
-      assertEqual(selectedColumns, 'id, user_id, category, message, status, reply, replied_at, created_at');
+      assertEqual(selectedColumns, 'id, user_id, category, message, status, reply, replied_at, admin_read_at, created_at');
       assertEqual(result.messages[0].author, {
         userNumber: 2,
         displayName: 'Usuário nº 2',
@@ -3751,6 +3753,8 @@ describe('Canal Fale comigo', () => {
       assertFalse(Object.prototype.hasOwnProperty.call(result.messages[1], 'user_id'));
       assertFalse(Object.keys(result.messages[0].author).includes('userId'));
       assertFalse(selectedColumns.includes('amount'));
+      assertNull(result.messages[0].admin_read_at);
+      assertEqual(result.messages[1].admin_read_at, '2026-10-30T12:30:00Z');
 
       host.innerHTML = '<div id="adminContent"></div>';
       document.body.appendChild(host);
@@ -3761,6 +3765,10 @@ describe('Canal Fale comigo', () => {
       renderAdminView();
       assertTrue(host.querySelector('#adminContent').textContent.includes('Usuário nº 2'));
       assertTrue(host.querySelector('#adminContent').textContent.includes('pessoa@example.com'));
+      assertEqual(
+        [...host.querySelectorAll('.admin-feedback-read-badge')].map(badge => badge.textContent.trim()),
+        ['Não lida', 'Lida']
+      );
       assertEqual(host.querySelector('.admin-reply-editor label').textContent, 'Resposta para Pessoa autorizada');
     } finally {
       host.remove();
@@ -3781,7 +3789,7 @@ describe('Canal Fale comigo', () => {
     const previousAnalyticsState = { ...adminAnalyticsState };
     const previousMethods = {
       checkIsAdmin: window.SupabaseAuth.checkIsAdmin,
-      countNewFeedback: window.SupabaseAuth.countNewFeedback,
+      countUnreadFeedback: window.SupabaseAuth.countUnreadFeedback,
       fetchAdminAnalytics: window.SupabaseAuth.fetchAdminAnalytics,
       fetchAdminUsers: window.SupabaseAuth.fetchAdminUsers,
       fetchAllFeedback: window.SupabaseAuth.fetchAllFeedback
@@ -3794,7 +3802,7 @@ describe('Canal Fale comigo', () => {
       if (callback) callback('admin');
       return true;
     };
-    window.SupabaseAuth.countNewFeedback = async () => ({ success: true, ids: [] });
+    window.SupabaseAuth.countUnreadFeedback = async () => ({ success: true, ids: [] });
     window.SupabaseAuth.fetchAdminAnalytics = async () => ({ success: true, analytics: {} });
     window.SupabaseAuth.fetchAdminUsers = async () => ({ success: true, users: [] });
     window.SupabaseAuth.fetchAllFeedback = async ({ status }) => {
@@ -3865,6 +3873,12 @@ describe('Canal Fale comigo', () => {
             }
             return this;
           },
+          is() {
+            return Promise.resolve({
+              data: [],
+              error: countFailure
+            });
+          },
           range: async () => ({ data: [], error: feedbackFailure })
         };
       }
@@ -3887,7 +3901,7 @@ describe('Canal Fale comigo', () => {
       assertEqual(authorsResult.error, 'Não foi possível concluir esta ação agora. Tente novamente mais tarde.');
 
       countFailure = feedbackError;
-      const countResult = await window.SupabaseAuth.countNewFeedback();
+      const countResult = await window.SupabaseAuth.countUnreadFeedback();
       assertFalse(countResult.success);
       assertEqual(countResult.error, 'Não foi possível concluir esta ação agora. Tente novamente mais tarde.');
 
@@ -3897,7 +3911,7 @@ describe('Canal Fale comigo', () => {
         'admin_list_users',
         'feedback_messages.select',
         'admin_feedback_authors',
-        'feedback_messages.count_new'
+        'feedback_messages.count_unread'
       ]);
       entries.forEach(entry => {
         assertEqual(entry.data.code, '42501');
@@ -3955,14 +3969,14 @@ describe('Canal Fale comigo', () => {
     }
   });
 
-  itAsync('busca IDs de feedback novo para sincronizar avisos lidos', async () => {
+  itAsync('busca IDs de feedback não lido usando admin_read_at', async () => {
     const previousClient = window.SupabaseAuth.client;
     const feedbackIds = [
       '550e8400-e29b-41d4-a716-446655440002',
       '550e8400-e29b-41d4-a716-446655440005'
     ];
     let selectedColumns = '';
-    let statusFilter = '';
+    let readAtFilter;
     window.SupabaseAuth.client = {
       auth: {
         getSession: async () => ({
@@ -3978,11 +3992,11 @@ describe('Canal Fale comigo', () => {
             selectedColumns = columns;
             return this;
           },
-          eq(column, value) {
-            assertEqual(column, 'status');
-            statusFilter = value;
+          is(column, value) {
+            assertEqual(column, 'admin_read_at');
+            readAtFilter = value;
             return Promise.resolve({
-              data: feedbackIds.map(id => ({ id })),
+              data: feedbackIds.map(id => ({ id, admin_read_at: null })),
               error: null
             });
           }
@@ -3990,14 +4004,247 @@ describe('Canal Fale comigo', () => {
       }
     };
     try {
-      const result = await window.SupabaseAuth.countNewFeedback();
+      const result = await window.SupabaseAuth.countUnreadFeedback();
       assertTrue(result.success);
-      assertEqual(selectedColumns, 'id');
-      assertEqual(statusFilter, 'new');
+      assertEqual(selectedColumns, 'id, admin_read_at');
+      assertNull(readAtFilter);
       assertEqual(result.count, 2);
       assertEqual(result.ids, feedbackIds);
     } finally {
       window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('grava admin_read_at em uma única coluna e apenas para mensagens ainda não lidas', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const previousCheckIsAdmin = window.SupabaseAuth.checkIsAdmin;
+    const messageId = '550e8400-e29b-41d4-a716-446655440006';
+    const calls = { update: 0, id: null, column: null, value: undefined, payload: null };
+    window.SupabaseAuth.checkIsAdmin = async () => true;
+    window.SupabaseAuth.client = {
+      from(table) {
+        assertEqual(table, 'feedback_messages');
+        return {
+          update(payload) {
+            calls.update++;
+            calls.payload = payload;
+            return this;
+          },
+          eq(column, value) {
+            calls.id = value;
+            assertEqual(column, 'id');
+            return this;
+          },
+          is(column, value) {
+            calls.column = column;
+            calls.value = value;
+            assertEqual(column, 'admin_read_at');
+            return Promise.resolve({ error: null });
+          }
+        };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.markFeedbackRead(messageId);
+      assertTrue(result.success);
+      assertEqual(calls.update, 1);
+      assertEqual(calls.id, messageId);
+      assertEqual(calls.column, 'admin_read_at');
+      assertNull(calls.value);
+      assertEqual(Object.keys(calls.payload), ['admin_read_at']);
+      assertTrue(Number.isFinite(Date.parse(calls.payload.admin_read_at)));
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+      window.SupabaseAuth.checkIsAdmin = previousCheckIsAdmin;
+    }
+  });
+
+  itAsync('não envia outra gravação quando a mensagem já está lida', async () => {
+    const previousState = { ...adminViewState };
+    const previousMarkFeedbackRead = window.SupabaseAuth.markFeedbackRead;
+    let writes = 0;
+    const messageId = '550e8400-e29b-41d4-a716-446655440007';
+    adminViewState.messages = [{ id: messageId, admin_read_at: '2026-11-02T10:00:00Z' }];
+    window.SupabaseAuth.markFeedbackRead = async () => {
+      writes++;
+      return { success: true };
+    };
+    try {
+      const result = await window.GastoProNotificationCenter.markFeedbackRead(messageId);
+      assertTrue(result.success);
+      assertTrue(result.alreadyRead);
+      assertEqual(writes, 0);
+    } finally {
+      Object.assign(adminViewState, previousState);
+      window.SupabaseAuth.markFeedbackRead = previousMarkFeedbackRead;
+    }
+  });
+
+  itAsync('mantém mensagem e aviso não lidos quando a gravação falha', async () => {
+    const previousState = { ...adminViewState };
+    const notifications = window.GastoProNotificationCenter;
+    const previousItems = localStorage.getItem(notifications.ITEMS_KEY);
+    const previousUnreadIds = notifications.getAdminFeedbackUnreadIds();
+    const previousMarkFeedbackRead = window.SupabaseAuth.markFeedbackRead;
+    const messageId = '550e8400-e29b-41d4-a716-446655440008';
+    const host = document.createElement('div');
+    host.innerHTML = '<div id="adminContent"></div>';
+    document.body.appendChild(host);
+    adminViewState.access = 'allowed';
+    adminViewState.messages = [{
+      id: messageId,
+      admin_read_at: null,
+      status: 'new',
+      category: 'duvida',
+      message: 'Mensagem de teste não lida',
+      created_at: '2026-11-02T10:00:00Z',
+      author: { displayName: 'Usuário nº 1', email: null }
+    }];
+    notifications.syncAdminFeedback([messageId]);
+    window.SupabaseAuth.markFeedbackRead = async () => ({
+      success: false,
+      error: 'Sem conexão'
+    });
+    try {
+      const result = await notifications.markFeedbackRead(messageId);
+      assertFalse(result.success);
+      assertNull(adminViewState.messages[0].admin_read_at);
+      assertEqual(notifications.getAdminFeedbackUnreadCount(), 1);
+      assertFalse(notifications.getItems().find(item =>
+        item.eventKey === `adminFeedback:${messageId}`
+      ).read);
+      renderAdminView();
+      assertTrue(host.querySelector('.admin-feedback-read-badge').textContent.includes('Não lida'));
+    } finally {
+      host.remove();
+      Object.assign(adminViewState, previousState);
+      notifications.syncAdminFeedback(previousUnreadIds);
+      if (previousItems === null) localStorage.removeItem(notifications.ITEMS_KEY);
+      else localStorage.setItem(notifications.ITEMS_KEY, previousItems);
+      window.SupabaseAuth.markFeedbackRead = previousMarkFeedbackRead;
+    }
+  });
+
+  itAsync('conta o feedback não lido a partir dos IDs retornados pela nuvem', async () => {
+    const previousState = { ...adminViewState };
+    const previousClient = window.SupabaseAuth.client;
+    const previousCheckIsAdmin = window.SupabaseAuth.checkIsAdmin;
+    const notifications = window.GastoProNotificationCenter;
+    const previousItems = localStorage.getItem(notifications.ITEMS_KEY);
+    const previousUnreadIds = notifications.getAdminFeedbackUnreadIds();
+    const messageIds = [
+      '550e8400-e29b-41d4-a716-446655440009',
+      '550e8400-e29b-41d4-a716-446655440010'
+    ];
+    adminViewState.access = 'allowed';
+    window.SupabaseAuth.checkIsAdmin = async () => true;
+    window.SupabaseAuth.client = {
+      from() {
+        return {
+          select(columns) {
+            assertEqual(columns, 'id, admin_read_at');
+            return this;
+          },
+          is(column, value) {
+            assertEqual(column, 'admin_read_at');
+            assertNull(value);
+            return Promise.resolve({
+              data: messageIds.map(id => ({ id, admin_read_at: null })),
+              error: null
+            });
+          }
+        };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.countUnreadFeedback();
+      assertTrue(result.success);
+      notifications.syncAdminFeedback(result.ids);
+      assertEqual(notifications.getAdminFeedbackUnreadIds(), messageIds);
+      assertEqual(notifications.getAdminFeedbackUnreadCount(), 2);
+    } finally {
+      Object.assign(adminViewState, previousState);
+      notifications.syncAdminFeedback(previousUnreadIds);
+      if (previousItems === null) localStorage.removeItem(notifications.ITEMS_KEY);
+      else localStorage.setItem(notifications.ITEMS_KEY, previousItems);
+      window.SupabaseAuth.client = previousClient;
+      window.SupabaseAuth.checkIsAdmin = previousCheckIsAdmin;
+    }
+  });
+
+  it('mantém o lembrete dueSoon local ao marcar lido, sem chamar a API de feedback', () => {
+    const notifications = window.GastoProNotificationCenter;
+    const previousItems = localStorage.getItem(notifications.ITEMS_KEY);
+    const previousMarkFeedbackRead = window.SupabaseAuth.markFeedbackRead;
+    let writes = 0;
+    notifications.syncEvents([{
+      eventKey: 'dueSoon:local-entry:2026-11',
+      type: 'dueSoon',
+      title: 'Vencimento próximo',
+      message: 'Lembrete local de teste'
+    }]);
+    window.SupabaseAuth.markFeedbackRead = async () => {
+      writes++;
+      return { success: false };
+    };
+    try {
+      notifications.markRead('dueSoon:local-entry:2026-11');
+      assertEqual(writes, 0);
+      assertTrue(notifications.getItems().find(item =>
+        item.eventKey === 'dueSoon:local-entry:2026-11'
+      ).read);
+    } finally {
+      if (previousItems === null) localStorage.removeItem(notifications.ITEMS_KEY);
+      else localStorage.setItem(notifications.ITEMS_KEY, previousItems);
+      window.SupabaseAuth.markFeedbackRead = previousMarkFeedbackRead;
+    }
+  });
+
+  itAsync('marca feedback sem iniciar Realtime, polling ou intervalos', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const previousCheckIsAdmin = window.SupabaseAuth.checkIsAdmin;
+    const previousSetInterval = window.setInterval;
+    let realtimeCalls = 0;
+    let intervalCalls = 0;
+    window.SupabaseAuth.checkIsAdmin = async () => true;
+    window.setInterval = () => {
+      intervalCalls++;
+      return 1;
+    };
+    window.SupabaseAuth.client = {
+      channel() {
+        realtimeCalls++;
+        throw new Error('Realtime não deve ser iniciado.');
+      },
+      from() {
+        let operation = '';
+        return {
+          select() {
+            operation = 'select';
+            return this;
+          },
+          update() {
+            operation = 'update';
+            return this;
+          },
+          eq() { return this; },
+          is() {
+            return Promise.resolve(operation === 'select'
+              ? { data: [], error: null }
+              : { error: null });
+          }
+        };
+      }
+    };
+    try {
+      await window.SupabaseAuth.countUnreadFeedback();
+      await window.SupabaseAuth.markFeedbackRead('550e8400-e29b-41d4-a716-446655440011');
+      assertEqual(realtimeCalls, 0);
+      assertEqual(intervalCalls, 0);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+      window.SupabaseAuth.checkIsAdmin = previousCheckIsAdmin;
+      window.setInterval = previousSetInterval;
     }
   });
 
@@ -7090,10 +7337,12 @@ describe('Central de avisos local', () => {
     }
   });
 
-  it('mantém o contador do menu Admin igual aos feedbacks não lidos no sino', () => {
+  itAsync('mantém o contador do menu Admin igual aos feedbacks não lidos no sino', async () => {
     setupMockLocalStorage();
     const previousAccess = adminViewState.access;
     const previousNewCount = adminViewState.newCount;
+    const previousUnreadIds = notifications.getAdminFeedbackUnreadIds();
+    const previousMarkFeedbackRead = window.SupabaseAuth.markFeedbackRead;
     const host = document.createElement('div');
     host.innerHTML = `
       <nav id="navAdmin"><span id="adminNewCount"></span></nav>
@@ -7103,6 +7352,10 @@ describe('Central de avisos local', () => {
       <div id="notificationsList"></div>
       <div id="notificationSettingsList"></div>`;
     document.body.appendChild(host);
+    window.SupabaseAuth.markFeedbackRead = async () => ({
+      success: true,
+      readAt: '2026-11-02T10:00:00Z'
+    });
     try {
       adminViewState.access = 'allowed';
       notifications.syncAdminFeedback([
@@ -7113,13 +7366,15 @@ describe('Central de avisos local', () => {
       assertEqual(host.querySelector('#adminNewCount').textContent, '2');
       assertEqual(host.querySelector('#notificationsUnreadCount').textContent, '2');
 
-      notifications.markRead('adminFeedback:550e8400-e29b-41d4-a716-446655440002');
+      await notifications.markRead('adminFeedback:550e8400-e29b-41d4-a716-446655440002');
       notifications.render();
       assertEqual(host.querySelector('#adminNewCount').textContent, '1');
       assertEqual(host.querySelector('#notificationsUnreadCount').textContent, '1');
     } finally {
       adminViewState.access = previousAccess;
       adminViewState.newCount = previousNewCount;
+      notifications.syncAdminFeedback(previousUnreadIds);
+      window.SupabaseAuth.markFeedbackRead = previousMarkFeedbackRead;
       host.remove();
     }
   });

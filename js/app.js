@@ -303,6 +303,9 @@ const adminViewState = {
   requestId: 0
 };
 
+const adminUnreadFeedbackIds = new Set();
+const adminFeedbackReadRequests = new Set();
+
 const adminAnalyticsState = {
   data: null,
   userList: null,
@@ -407,7 +410,7 @@ function normalizeDiagnosticData(type, data) {
       normalized[key] = value;
     } else if (key === 'query' &&
       ['admin_feedback_authors', 'admin_list_users', 'feedback_messages.select',
-        'feedback_messages.count_new'].includes(value)) {
+        'feedback_messages.count_unread', 'feedback_messages.mark_read'].includes(value)) {
       normalized[key] = value;
     } else if (key === 'code' &&
       typeof value === 'string' && /^[A-Z0-9]{1,16}$/.test(value)) {
@@ -2080,6 +2083,9 @@ function renderAdminView() {
             <span class="tag-badge feedback-status-badge ${message.status === 'answered' ? 'is-answered' : ''}">
               ${message.status === 'answered' ? 'Respondida' : 'Nova'}
             </span>
+            <span class="tag-badge admin-feedback-read-badge" data-read="${message.admin_read_at ? 'true' : 'false'}">
+              ${message.admin_read_at ? 'Lida' : 'Não lida'}
+            </span>
             <time datetime="${escapeHtml(message.created_at || '')}">${escapeHtml(formatFeedbackDate(message.created_at))}</time>
           </div>
           <p class="feedback-message-text">${escapeHtml(message.message)}</p>
@@ -2104,6 +2110,11 @@ function renderAdminView() {
               </div>
             </div>
           ` : `
+            ${message.admin_read_at ? '' : `
+              <button type="button" class="btn-secondary admin-action-button" data-action="admin-mark-read" data-id="${escapeHtml(message.id)}">
+                Marcar como lida
+              </button>
+            `}
             <button type="button" class="btn-secondary admin-action-button" data-action="admin-reply" data-id="${escapeHtml(message.id)}">
               ${message.reply ? 'Editar resposta' : 'Responder'}
             </button>
@@ -2177,7 +2188,7 @@ let adminFeedbackNotificationsRequestId = 0;
 async function refreshAdminFeedbackNotifications() {
   if (adminViewState.access !== 'allowed') return false;
   const requestId = ++adminFeedbackNotificationsRequestId;
-  const result = await window.SupabaseAuth.countNewFeedback();
+  const result = await window.SupabaseAuth.countUnreadFeedback();
   if (requestId !== adminFeedbackNotificationsRequestId) return false;
   if (!result.success) {
     console.warn('[GastoPro] Não foi possível atualizar os avisos de mensagens novas:', result.error);
@@ -2188,6 +2199,40 @@ async function refreshAdminFeedbackNotifications() {
   updateAdminNavigation();
   renderNotificationCenter();
   return true;
+}
+
+async function markAdminFeedbackRead(id) {
+  const message = adminViewState.messages.find(item => item.id === id);
+  if (message && message.admin_read_at) {
+    adminUnreadFeedbackIds.delete(id);
+    syncAdminFeedbackNotifications([...adminUnreadFeedbackIds]);
+    adminViewState.newCount = getUnreadAdminFeedbackCount();
+    updateAdminNavigation();
+    renderNotificationCenter();
+    return { success: true, alreadyRead: true };
+  }
+  if (adminFeedbackReadRequests.has(id)) return { success: true, pending: true };
+  adminFeedbackReadRequests.add(id);
+  try {
+    const result = await window.SupabaseAuth.markFeedbackRead(id);
+    if (!result.success) {
+      console.warn('[GastoPro] Não foi possível marcar a mensagem como lida:', result.error);
+      return result;
+    }
+    if (message) message.admin_read_at = result.readAt || new Date().toISOString();
+    adminUnreadFeedbackIds.delete(id);
+    syncAdminFeedbackNotifications([...adminUnreadFeedbackIds]);
+    adminViewState.newCount = getUnreadAdminFeedbackCount();
+    updateAdminNavigation();
+    renderNotificationCenter();
+    if (state.currentView === 'admin') renderAdminView();
+    return result;
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível marcar a mensagem como lida:', error);
+    return { success: false, error: window.SupabaseAuth.getFeedbackErrorMessage(error) };
+  } finally {
+    adminFeedbackReadRequests.delete(id);
+  }
 }
 
 async function loadAdminMessages({ reset = false } = {}) {
@@ -3542,7 +3587,7 @@ function syncNotificationEvents(candidates) {
       title: candidate.title,
       message: candidate.message,
       createdAt: previous ? previous.createdAt : candidate.createdAt || new Date().toISOString(),
-      read: previous ? previous.read : false,
+      read: candidate.type === 'adminFeedback' ? false : previous ? previous.read : false,
       dismissed: previous ? previous.dismissed : false,
       ...(candidate.destination ? { destination: candidate.destination } : {})
     });
@@ -3578,14 +3623,14 @@ function getNotificationUnreadCount(scope = 'all') {
 }
 
 function getUnreadAdminFeedbackCount() {
-  return getVisibleNotifications('all').filter(item =>
-    item.type === 'adminFeedback' && !item.read
-  ).length;
+  return adminViewState.access === 'allowed' ? adminUnreadFeedbackIds.size : 0;
 }
 
 function syncAdminFeedbackNotifications(ids) {
   const activeIds = new Set((Array.isArray(ids) ? ids : [])
     .filter(id => typeof id === 'string'));
+  adminUnreadFeedbackIds.clear();
+  activeIds.forEach(id => adminUnreadFeedbackIds.add(id));
   const stored = getStoredNotifications();
   const filtered = stored.filter(item =>
     item.type !== 'adminFeedback' ||
@@ -3600,7 +3645,7 @@ function syncAdminFeedbackNotifications(ids) {
     type: 'adminFeedback',
     priority: 'attention',
     title: 'Nova mensagem no Fale comigo',
-    message: 'Há uma mensagem nova para responder no painel Admin.',
+    message: 'Há uma mensagem não lida no painel Admin.',
     destination: { screen: 'admin', month: '', ids: [] }
   }));
   syncNotificationEvents(candidates);
@@ -3608,17 +3653,25 @@ function syncAdminFeedbackNotifications(ids) {
 }
 
 function markNotificationAsRead(eventKey) {
+  const notification = getStoredNotifications().find(item => item.eventKey === eventKey);
+  if (notification && notification.type === 'adminFeedback') {
+    return markAdminFeedbackRead(eventKey.slice('adminFeedback:'.length));
+  }
   return updateStoredNotification(eventKey, { read: true });
 }
 
 function dismissNotification(eventKey) {
+  const notification = getStoredNotifications().find(item => item.eventKey === eventKey);
+  if (notification && notification.type === 'adminFeedback') {
+    return updateStoredNotification(eventKey, { dismissed: true });
+  }
   return updateStoredNotification(eventKey, { read: true, dismissed: true });
 }
 
 function clearAllNotifications() {
   return storeNotifications(getStoredNotifications().map(item => ({
     ...item,
-    read: true,
+    read: item.type === 'adminFeedback' ? false : true,
     dismissed: true
   })));
 }
@@ -3828,6 +3881,8 @@ window.GastoProNotificationCenter = {
   getUnreadCount: getNotificationUnreadCount,
   syncAdminFeedback: syncAdminFeedbackNotifications,
   getAdminFeedbackUnreadCount: getUnreadAdminFeedbackCount,
+  getAdminFeedbackUnreadIds: () => [...adminUnreadFeedbackIds],
+  markFeedbackRead: markAdminFeedbackRead,
   markRead: markNotificationAsRead,
   dismiss: dismissNotification,
   clearAll: clearAllNotifications,
@@ -3853,7 +3908,11 @@ function navigateToNotification(eventKey) {
     state.currentYear = year;
     state.currentMonth = month;
   }
-  markNotificationAsRead(eventKey);
+  if (notice.type === 'adminFeedback') {
+    markAdminFeedbackRead(eventKey.slice('adminFeedback:'.length));
+  } else {
+    markNotificationAsRead(eventKey);
+  }
   const notificationsPanel = document.getElementById('notificationsPanel');
   const notificationsTrigger = document.getElementById('notificationsTrigger');
   if (notificationsPanel) notificationsPanel.hidden = true;
@@ -6367,6 +6426,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (adminViewState.access !== 'allowed') break;
         const message = adminViewState.messages.find(item => item.id === id);
         if (!message) break;
+        if (!message.admin_read_at) markAdminFeedbackRead(id);
         adminViewState.editingId = id;
         adminViewState.draftReply = message.reply || '';
         adminViewState.notice = '';
@@ -6374,6 +6434,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('adminReplyText')?.focus();
         break;
       }
+      case 'admin-mark-read':
+        if (adminViewState.access === 'allowed' && id) markAdminFeedbackRead(id);
+        break;
       case 'admin-send-reply':
         saveAdminReply(id);
         break;
@@ -6489,8 +6552,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       case 'notification-mark-read':
         if (actionElement.dataset.eventKey) {
-          markNotificationAsRead(actionElement.dataset.eventKey);
-          renderNotificationCenter();
+          const notification = getStoredNotifications().find(item =>
+            item.eventKey === actionElement.dataset.eventKey
+          );
+          if (notification && notification.type === 'adminFeedback') {
+            markAdminFeedbackRead(actionElement.dataset.eventKey.slice('adminFeedback:'.length));
+          } else {
+            markNotificationAsRead(actionElement.dataset.eventKey);
+            renderNotificationCenter();
+          }
         }
         break;
       case 'notification-navigate':
