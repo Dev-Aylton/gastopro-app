@@ -190,6 +190,11 @@ function validateCloudPayload(item, kind) {
       const total = item.loanTotalPayable;
       const count = item.loanInstallmentCount;
       const installment = Number(item.amount);
+      if ([received, total, installment].some(value =>
+        typeof value === 'number' && Number.isFinite(value) && !hasCloudLoanMoneyScale(value)
+      )) {
+        return 'Os valores recebido, total a pagar e parcela devem ter no máximo 2 casas decimais.';
+      }
       if (typeof received !== 'number' || !Number.isFinite(received) || received < 0 ||
         received > 9999999999.99 ||
         typeof total !== 'number' || !Number.isFinite(total) || total < received ||
@@ -215,6 +220,13 @@ function validateCloudPayload(item, kind) {
 function normalizeDueDay(value) {
   const day = typeof value === 'number' ? value : Number.NaN;
   return Number.isInteger(day) && day >= 1 && day <= 31 ? day : null;
+}
+
+function hasCloudLoanMoneyScale(value) {
+  const match = String(value).trim().match(/^[+-]?(?:\d+(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i);
+  if (!match) return false;
+  const fractionalDigits = match[1] !== undefined ? match[1].length : (match[2] || '').length;
+  return fractionalDigits - Number(match[3] || 0) <= 2;
 }
 
 function normalizeTemplateDay(value) {

@@ -460,7 +460,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 15 | `20261105_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 16 | `20261106_single_loan.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.33`. Suíte atual: **478 testes**.
+`CACHE_NAME` atual: `gastopro-v4.33`. Suíte atual: **479 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -670,7 +670,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-052 — Contas obrigatórias, vencimento explícito e acesso a ganhos** / Descrição: cria Conta principal somente quando necessário, exige destino nos lançamentos e mantém antigos sem conta para escolha; valida dias de vencimento sem fallback; ajuste de saldo usa o valor calculado e a navegação de Ganhos abre o formulário correspondente. / Critério de pronto: 467 testes aprovados e medições geométricas nas sete larguras e nos dois temas. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/importer.js`, `js/supabase.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-053 — Origem do vencimento de boleto e aviso de mês curto** / Descrição: identifica dias lidos do fator de boletos, mantém sem dia linhas sem vencimento explícito e avisa quando dia 31 altera a data da linha. / Critério de pronto: 472 testes aprovados; regras de contraste, controles e alvos verificadas no CSS. A medição real da prévia não foi executada. / Arquivos: `js/app.js`, `js/importer.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-054 — Saldo principal do dashboard acionável** / Descrição: transforma o saldo principal do dashboard em botão acessível que abre o ajuste da conta. / Critério de pronto: 473 testes aprovados em três execuções; clique real validado no navegador com zero, uma e duas contas. O saldo superior permaneceu oculto pela regra CSS existente e não foi alterado. / Arquivos: `index.html`, `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
-- [x] **RM-055 — Empréstimo como lançamento único** / Descrição: armazena empréstimo em template com crédito de recebimento fora da renda, parcelas baixadas manualmente, custo no Centro de Dívidas e sincronização com a nuvem; remove a contagem individual de lançamentos no Admin. / Critério de pronto: 478 testes aprovados; migration criada e não aplicada. Medição geométrica da tela real não realizada. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/report.js`, `js/supabase.js`, `css/style.css`, `supabase/schema.sql`, `supabase/migrations/20261106_single_loan.sql`, `tests/gastopro.test.js`.
+- [x] **RM-055 — Empréstimo como lançamento único** / Descrição: armazena empréstimo em template com crédito de recebimento fora da renda, parcelas baixadas manualmente, custo no Centro de Dívidas e sincronização com a nuvem; remove a contagem individual de lançamentos no Admin. / Critério de pronto: 479 testes aprovados; migration criada e não aplicada. Medição geométrica da tela real não realizada. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/report.js`, `js/supabase.js`, `css/style.css`, `supabase/schema.sql`, `supabase/migrations/20261106_single_loan.sql`, `tests/gastopro.test.js`.
 
 ### Em dúvida
 
@@ -684,7 +684,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ### v4.33 — 02/11/2026 (versão atual)
 
-- RM-055: empréstimo como um template, valor recebido no saldo e fora da renda, parcelas pagas manualmente, custo e cronograma no Centro de Dívidas; Admin sem contagem individual de lançamentos. A tolerância de arredondamento aceita diferenças de até R$ 0,01 por parcela, mantendo o total informado como autoritativo. Criada `20261106_single_loan.sql` (não aplicada). Cinco testes adicionados; suíte com 478 testes aprovados. Layout real nas sete larguras e nos dois temas não medido.
+- RM-055: empréstimo como um template, valor recebido no saldo e fora da renda, parcelas pagas manualmente, custo e cronograma no Centro de Dívidas; Admin sem contagem individual de lançamentos. A tolerância de arredondamento aceita diferenças de até R$ 0,01 por parcela, mantendo o total informado como autoritativo; campos monetários aceitam no máximo duas casas decimais. Criada `20261106_single_loan.sql` (não aplicada). Seis testes adicionados; suíte com 479 testes aprovados. Layout real nas sete larguras e nos dois temas não medido.
 
 ### v4.32 — 02/11/2026
 

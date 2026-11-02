@@ -6689,6 +6689,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const loanFirstMonth = document.getElementById('expenseLoanFirstMonth');
   const loanError = document.getElementById('expenseLoanError');
 
+  function hasAtMostTwoDecimalPlaces(value) {
+    const match = String(value).trim().match(/^[+-]?(?:\d+(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i);
+    if (!match) return false;
+    const fractionalDigits = match[1] !== undefined ? match[1].length : (match[2] || '').length;
+    return fractionalDigits - Number(match[3] || 0) <= 2;
+  }
+
   function checkDebtVisibility() {
     if (!expenseEndMonthWrapper || !expenseTypeSelect) return;
     const isLoan = expenseTypeSelect.value === 'loan';
@@ -6745,6 +6752,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const total = Number(loanTotalPayable.value);
     const count = Number(loanInstallmentCount.value);
     const received = loanReceivedAmount.value === '' ? null : Number(loanReceivedAmount.value);
+    const rawAmounts = [loanReceivedAmount.value, loanTotalPayable.value];
+    if (rawAmounts.some(value => value !== '' && !hasAtMostTwoDecimalPlaces(value))) {
+      loanInstallmentAmount.value = '';
+      if (loanError) {
+        loanError.textContent = 'Os valores recebido, total a pagar e parcela devem ter no máximo 2 casas decimais.';
+        loanError.hidden = false;
+      }
+      return;
+    }
     if (loanTotalPayable.value === '' || loanInstallmentCount.value === '' ||
       !Number.isFinite(total) || total < 0 || total > 9999999999.99 ||
       !Number.isInteger(count) || count < 1 || count > 480) {
@@ -6827,7 +6843,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const dueDay = dueDayValue === '' ? NaN : Number(dueDayValue);
       const accountId = document.getElementById('expenseAccount').value;
       let loanMessage = '';
-      if (!Number.isFinite(received) || received < 0 ||
+      if ([loanReceivedAmount.value, loanTotalPayable.value, loanInstallmentAmount.value]
+        .some(value => value !== '' && !hasAtMostTwoDecimalPlaces(value))) {
+        loanMessage = 'Os valores recebido, total a pagar e parcela devem ter no máximo 2 casas decimais.';
+      } else if (!Number.isFinite(received) || received < 0 ||
         received > 9999999999.99 || !Number.isFinite(total) ||
         total < received || total > 9999999999.99 ||
         !Number.isInteger(count) || count < 1 || count > 480 ||

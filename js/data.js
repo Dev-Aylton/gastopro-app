@@ -127,6 +127,11 @@ function validateLoanTemplate(template) {
   const total = template.loanTotalPayable;
   const count = template.loanInstallmentCount;
   const installment = Number(template.amount);
+  if ([received, total, installment].some(value =>
+    typeof value === 'number' && Number.isFinite(value) && !hasLoanMoneyScale(value)
+  )) {
+    return 'Os valores recebido, total a pagar e parcela devem ter no máximo 2 casas decimais.';
+  }
   if (typeof received !== 'number' || !Number.isFinite(received) ||
     received < 0 || received > MAX_ACCOUNT_BALANCE ||
     typeof total !== 'number' || !Number.isFinite(total) ||
@@ -146,6 +151,13 @@ function validateLoanTemplate(template) {
     return 'O mês final do empréstimo não corresponde à quantidade de parcelas.';
   }
   return null;
+}
+
+function hasLoanMoneyScale(value) {
+  const match = String(value).trim().match(/^[+-]?(?:\d+(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i);
+  if (!match) return false;
+  const fractionalDigits = match[1] !== undefined ? match[1].length : (match[2] || '').length;
+  return fractionalDigits - Number(match[3] || 0) <= 2;
 }
 
 function getLoanEndMonth(startMonth, installmentCount) {

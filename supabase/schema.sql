@@ -163,57 +163,50 @@ alter table public.fixed_templates
 alter table public.fixed_templates
   alter column day drop default;
 
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint
-    where conrelid = 'public.fixed_templates'::regclass
-      and conname = 'fixed_templates_loan_fields_consistent'
-  ) then
-    alter table public.fixed_templates
-      add constraint fixed_templates_loan_fields_consistent check (
-        (
-          loan_received_amount is null
-          and loan_received_date is null
-          and loan_total_payable is null
-          and loan_installment_count is null
-        )
-        or (
-          loan_received_amount is not null
-          and loan_received_date is not null
-          and loan_total_payable is not null
-          and loan_installment_count is not null
-          and loan_received_amount >= 0
-          and loan_total_payable >= loan_received_amount
-          and loan_installment_count between 1 and 480
-          and amount >= 0
-          and abs(amount * loan_installment_count - loan_total_payable)
-            <= 0.01::numeric * loan_installment_count
-          and account_id is not null
-          and is_debt
-          and day is not null
-          and day ~ '^(0?[1-9]|[12][0-9]|3[01])$'
-          and start_month is not null
-          and end_month is not null
-          and start_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'
+alter table public.fixed_templates
+  drop constraint if exists fixed_templates_loan_fields_consistent;
+
+alter table public.fixed_templates
+  add constraint fixed_templates_loan_fields_consistent check (
+    (
+      loan_received_amount is null
+      and loan_received_date is null
+      and loan_total_payable is null
+      and loan_installment_count is null
+    )
+    or (
+      loan_received_amount is not null
+      and loan_received_date is not null
+      and loan_total_payable is not null
+      and loan_installment_count is not null
+      and loan_received_amount >= 0
+      and loan_total_payable >= loan_received_amount
+      and loan_installment_count between 1 and 480
+      and amount >= 0
+      and abs(amount * loan_installment_count - loan_total_payable)
+        <= 0.01::numeric * loan_installment_count
+      and account_id is not null
+      and is_debt
+      and day is not null
+      and day ~ '^(0?[1-9]|[12][0-9]|3[01])$'
+      and start_month is not null
+      and end_month is not null
+      and start_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'
+      and end_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'
+      and case
+        when start_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'
           and end_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'
-          and case
-            when start_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'
-              and end_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'
-            then substring(start_month from 1 for 4)::integer > 0
-              and substring(end_month from 1 for 4)::integer > 0
-              and to_char(
-                to_date(start_month || '-01', 'YYYY-MM-DD')
-                  + (loan_installment_count - 1) * interval '1 month',
-                'YYYY-MM'
-              ) = end_month
-            else false
-          end
-        )
-      );
-  end if;
-end;
-$$;
+        then substring(start_month from 1 for 4)::integer > 0
+          and substring(end_month from 1 for 4)::integer > 0
+          and to_char(
+            to_date(start_month || '-01', 'YYYY-MM-DD')
+              + (loan_installment_count - 1) * interval '1 month',
+            'YYYY-MM'
+          ) = end_month
+        else false
+      end
+    )
+  );
 
 create table if not exists public.profiles (
   id         uuid primary key references auth.users(id) on delete cascade,
@@ -1207,10 +1200,14 @@ begin
           v_template.day is not distinct from nullif(v_item->>'day', '') and
           v_template.paid_months is not distinct from coalesce(v_item->'paid_months', '{}'::jsonb) and
           v_template.account_id is not distinct from nullif(v_item->>'account_id', '')::uuid and
-          v_template.loan_received_amount is not distinct from nullif(v_item->>'loan_received_amount', '')::numeric and
-          v_template.loan_received_date is not distinct from nullif(v_item->>'loan_received_date', '')::date and
-          v_template.loan_total_payable is not distinct from nullif(v_item->>'loan_total_payable', '')::numeric and
-          v_template.loan_installment_count is not distinct from nullif(v_item->>'loan_installment_count', '')::integer then
+          (not (v_item ? 'loan_received_amount') or
+            v_template.loan_received_amount is not distinct from nullif(v_item->>'loan_received_amount', '')::numeric) and
+          (not (v_item ? 'loan_received_date') or
+            v_template.loan_received_date is not distinct from nullif(v_item->>'loan_received_date', '')::date) and
+          (not (v_item ? 'loan_total_payable') or
+            v_template.loan_total_payable is not distinct from nullif(v_item->>'loan_total_payable', '')::numeric) and
+          (not (v_item ? 'loan_installment_count') or
+            v_template.loan_installment_count is not distinct from nullif(v_item->>'loan_installment_count', '')::integer) then
           null;
         elsif v_client_edited_at <= v_template.updated_at then
           v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object('kind', 'templates', 'id', v_template.id));
@@ -1227,10 +1224,18 @@ begin
             day = nullif(v_item->>'day', ''),
             paid_months = coalesce(v_item->'paid_months', '{}'::jsonb),
             account_id = nullif(v_item->>'account_id', '')::uuid,
-            loan_received_amount = nullif(v_item->>'loan_received_amount', '')::numeric,
-            loan_received_date = nullif(v_item->>'loan_received_date', '')::date,
-            loan_total_payable = nullif(v_item->>'loan_total_payable', '')::numeric,
-            loan_installment_count = nullif(v_item->>'loan_installment_count', '')::integer,
+            loan_received_amount = case when v_item ? 'loan_received_amount'
+              then nullif(v_item->>'loan_received_amount', '')::numeric
+              else v_template.loan_received_amount end,
+            loan_received_date = case when v_item ? 'loan_received_date'
+              then nullif(v_item->>'loan_received_date', '')::date
+              else v_template.loan_received_date end,
+            loan_total_payable = case when v_item ? 'loan_total_payable'
+              then nullif(v_item->>'loan_total_payable', '')::numeric
+              else v_template.loan_total_payable end,
+            loan_installment_count = case when v_item ? 'loan_installment_count'
+              then nullif(v_item->>'loan_installment_count', '')::integer
+              else v_template.loan_installment_count end,
             client_edited_at = v_client_edited_at
           where id = v_template.id and user_id = v_user_id;
           v_touched := v_touched || (v_item->>'id')::uuid;

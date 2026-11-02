@@ -1799,12 +1799,14 @@ describe('FinanceData — Contas Bancárias', () => {
     assertTrue(Boolean(FinanceData.add({
       ...baseLoan,
       desc: 'Empréstimo fictício exato',
+      loanTotalPayable: 100,
       loanInstallmentCount: 4,
       amount: 25
     })));
     assertTrue(Boolean(FinanceData.add({
       ...baseLoan,
       desc: 'Empréstimo fictício no limite',
+      loanTotalPayable: 100,
       loanInstallmentCount: 4,
       amount: 24.99
     })));
@@ -1816,10 +1818,56 @@ describe('FinanceData — Contas Bancárias', () => {
     assertNull(FinanceData.add({
       ...baseLoan,
       desc: 'Empréstimo fictício acima do limite',
+      loanTotalPayable: 100,
       loanInstallmentCount: 4,
       amount: 24.98
     }));
     assertEqual(FinanceData.getTemplates().length, 3);
+  });
+
+  itAsync('rejeita valores de empréstimo com mais de duas casas decimais', async () => {
+    setupMockLocalStorage();
+    const today = getTodayString();
+    const account = await FinanceData.addAccount({
+      name: 'Conta fictícia da precisão decimal', type: 'PF'
+    });
+    const firstMonth = GastoProImporter.shiftMonth(today.slice(0, 7), 1);
+    const loan = {
+      type: 'loan',
+      desc: 'Empréstimo fictício de precisão',
+      category: 'Empréstimo',
+      accountId: account.account.id,
+      loanReceivedAmount: 50.25,
+      loanReceivedDate: today,
+      loanTotalPayable: 100.01,
+      loanInstallmentCount: 3,
+      amount: 33.33,
+      dueDay: 15,
+      startMonth: firstMonth
+    };
+    const invalidLoans = [
+      { loanReceivedAmount: 50.251 },
+      { loanTotalPayable: 100.011 },
+      { amount: 33.331 }
+    ];
+    invalidLoans.forEach(overrides =>
+      assertNull(FinanceData.add({ ...loan, ...overrides }))
+    );
+    assertTrue(Boolean(FinanceData.add(loan)));
+    assertEqual(FinanceData.getTemplates().length, 1);
+
+    const cloudLoan = {
+      ...loan,
+      id: '550e8400-e29b-41d4-a716-446655440001',
+      type: 'fixed',
+      isDebt: true,
+      day: '15',
+      endMonth: GastoProImporter.shiftMonth(firstMonth, 2)
+    };
+    assertNull(window.validateCloudPayload(cloudLoan, 'templates'));
+    invalidLoans.forEach(overrides =>
+      assertTrue(window.validateCloudPayload({ ...cloudLoan, ...overrides }, 'templates'))
+    );
   });
 
   itAsync('mantém total informado no saldo devedor e no custo com parcela arredondada', async () => {
