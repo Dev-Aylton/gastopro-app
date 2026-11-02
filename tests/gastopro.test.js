@@ -5538,6 +5538,83 @@ describe('Bloco 2 — dívida, orçamento, diagnóstico e categorias', () => {
     assertEqual(summary.nextMonth.openAmount, 0);
   });
 
+  it('renderiza os blocos mensais com atraso, valores e total único', () => {
+    const templates = [{
+      type: 'fixed', isDebt: true, active: true, amount: 50,
+      startMonth: '2026-10', endMonth: '2026-12', paidMonths: {}
+    }];
+    const model = getDebtCenterViewModel(templates, '2026-11', '2026-11');
+    const html = renderDebtCenterSummary(model);
+    assertTrue(html.includes('data-debt-summary-block="Em atraso"'));
+    assertTrue(html.includes('data-debt-summary-block="Este mês"'));
+    assertTrue(html.includes('data-debt-summary-block="Próximo mês"'));
+    assertTrue(html.includes('data-debt-total'));
+    assertTrue(html.includes(formatCurrency(150)));
+    assertEqual((html.match(/data-debt-total/g) || []).length, 1);
+  });
+
+  it('renderiza estado de mês atual totalmente pago e mês seguinte sem parcelas', () => {
+    const model = getDebtCenterViewModel([{
+      type: 'fixed', isDebt: true, active: true, amount: 50,
+      startMonth: '2026-11', endMonth: '2026-11',
+      paidMonths: { '2026-11': true }
+    }], '2026-11', '2026-11');
+    const html = renderDebtCenterSummary(model);
+    assertTrue(html.includes('Tudo pago neste mês'));
+    assertTrue(html.includes('Nenhuma parcela no próximo mês'));
+    assertFalse(html.includes('data-debt-summary-block="Em atraso"'));
+  });
+
+  it('renderiza o estado sem parcelas e omite o atraso quando não existe', () => {
+    const model = getDebtCenterViewModel([{
+      type: 'fixed', isDebt: true, active: true, amount: 50,
+      startMonth: '2026-08', endMonth: '2026-09',
+      paidMonths: { '2026-08': true, '2026-09': true }
+    }], '2026-11', '2026-11');
+    const html = renderDebtCenterSummary(model);
+    assertTrue(html.includes('Nenhuma parcela neste mês'));
+    assertTrue(html.includes('Nenhuma parcela no próximo mês'));
+    assertFalse(html.includes('data-debt-summary-block="Em atraso"'));
+  });
+
+  it('mantém alerta de custos fixos separado do total e mostra dívida sem prazo', () => {
+    const templates = [
+      { type: 'fixed', category: 'Moradia', active: true, amount: 125, endMonth: null },
+      { type: 'fixed', category: 'Empréstimo', isDebt: true, active: true,
+        amount: 80, startMonth: '2026-01', endMonth: null }
+    ];
+    const model = getDebtCenterViewModel(templates, '2026-11', '2026-11');
+    const html = renderDebtCenterSummary(model);
+    assertEqual((html.match(/data-debt-total/g) || []).length, 1);
+    assertTrue(html.includes('Custos fixos por mês'));
+    assertTrue(html.includes('Não entram no total que falta pagar.'));
+    assertTrue(html.includes('Dívidas sem prazo definido'));
+    assertTrue(html.includes(formatCurrency(125)));
+    assertTrue(html.includes('data-goto="expenses"'));
+    assertEqual(model.debtBreakdown.totalRemaining, 0);
+  });
+
+  it('omite o alerta mensal quando não há custo fixo nem dívida sem prazo', () => {
+    const model = getDebtCenterViewModel([{
+      type: 'fixed', isDebt: true, active: true, amount: 25,
+      startMonth: '2026-11', endMonth: '2026-11', paidMonths: {}
+    }], '2026-11', '2026-11');
+    const html = renderDebtCenterSummary(model);
+    assertFalse(html.includes('debt-cost-alert'));
+  });
+
+  it('usa o mês real recebido pelo render model em vez do mês selecionado', () => {
+    const model = getDebtCenterViewModel([{
+      type: 'fixed', isDebt: true, active: true, amount: 50,
+      startMonth: '2026-11', endMonth: '2026-11', paidMonths: {}
+    }], '2026-09', '2026-11');
+    const html = renderDebtCenterSummary(model);
+    assertEqual(model.selectedYm, '2026-09');
+    assertEqual(model.realYm, '2026-11');
+    assertTrue(html.includes(formatCurrency(50)));
+    assertFalse(html.includes('Tudo pago neste mês'));
+  });
+
   it('calcula orçamento diário para mês passado, atual e futuro', () => {
     assertEqual(getDailyBudgetInfo(310, 2026, 8, new Date(2026, 9, 2)), {
       status: 'past', days: 0, dailyAmount: null, message: 'Mês encerrado'

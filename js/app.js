@@ -4886,12 +4886,80 @@ window.GastoProReportHelpers.getDebtMonthBreakdown = getDebtMonthBreakdown;
 window.GastoProReportHelpers.getRecurringFixedCosts = getRecurringFixedCosts;
 window.GastoProReportHelpers.isDebtCenterTemplate = isDebtCenterTemplate;
 
+function getDebtCenterViewModel(templates, selectedYm, realYm) {
+  const debtBreakdown = getDebtMonthBreakdown(templates, realYm);
+  const recurringFixedCosts = getRecurringFixedCosts(templates);
+  return { selectedYm, realYm, debtBreakdown, recurringFixedCosts };
+}
+
+function renderDebtCenterSummary(viewModel) {
+  const { debtBreakdown, recurringFixedCosts } = viewModel;
+  const monthStatus = (month, label, period) => {
+    if (month.totalCount === 0) {
+      return `<div class="debt-summary-row" data-debt-summary-block="${label}">
+        <span class="debt-summary-label">${label}</span>
+        <span class="debt-summary-value">Nenhuma parcela ${period}</span>
+      </div>`;
+    }
+    if (month.openCount === 0) {
+      return `<div class="debt-summary-row" data-debt-summary-block="${label}">
+        <span class="debt-summary-label">${label}</span>
+        <span class="debt-summary-value">Tudo pago ${period}</span>
+      </div>`;
+    }
+    return `<div class="debt-summary-row" data-debt-summary-block="${label}">
+      <span class="debt-summary-label">${label}</span>
+      <span class="debt-summary-value">${formatCurrency(month.openAmount)} · ${month.openCount} em aberto</span>
+    </div>`;
+  };
+  const recurringAmount = recurringFixedCosts.monthlyAmount;
+  const noEndDebtAmount = debtBreakdown.noEndDebts.monthlyAmount;
+  const showCostsAlert = recurringAmount > 0 || debtBreakdown.noEndDebts.count > 0;
+  const costsAlert = showCostsAlert ? `
+    <aside class="debt-cost-alert" aria-label="Custos fixos por mês">
+      <div class="debt-cost-alert-heading">
+        <strong>Custos fixos por mês</strong>
+      </div>
+      <p>Não entram no total que falta pagar.</p>
+      ${recurringAmount > 0 ? `<p>Gastos fixos recorrentes: ${formatCurrency(recurringAmount)}.</p>` : ''}
+      ${debtBreakdown.noEndDebts.count > 0
+        ? `<p>Dívidas sem prazo definido: ${debtBreakdown.noEndDebts.count} · ${formatCurrency(noEndDebtAmount)} por mês.</p>`
+        : ''}
+      <a class="debt-cost-link" href="#view-expenses" data-goto="expenses">Ver gastos</a>
+    </aside>
+  ` : '';
+
+  return `
+    <section class="debt-month-breakdown" aria-label="Resumo de parcelas">
+      ${debtBreakdown.overdue.count > 0 ? `
+        <div class="debt-summary-row debt-summary-overdue" data-debt-summary-block="Em atraso">
+          <span class="debt-summary-label">Em atraso</span>
+          <span class="debt-summary-value">${formatCurrency(debtBreakdown.overdue.amount)} · ${debtBreakdown.overdue.count} parcelas</span>
+        </div>
+      ` : ''}
+      ${monthStatus(debtBreakdown.currentMonth, 'Este mês', 'neste mês')}
+      ${monthStatus(debtBreakdown.nextMonth, 'Próximo mês', 'no próximo mês')}
+      <div class="debt-summary-row debt-summary-total" data-debt-total>
+        <span class="debt-summary-label">Total que falta pagar</span>
+        <span class="debt-summary-value">${formatCurrency(debtBreakdown.totalRemaining)}</span>
+      </div>
+    </section>
+    ${costsAlert}
+  `;
+}
+
 function renderDebtCenter(currentYm) {
   const container = document.getElementById('debtCardsGrid');
-  const totalRemainingEl = document.getElementById('totalDebtRemaining');
+  const summaryContainer = document.getElementById('debtCenterSummary');
   if (!container) return;
 
-  const debtData = getDebtCenterData(currentYm);
+  const templates = FinanceData.getTemplates();
+  const realYm = getLocalDateString().substring(0, 7);
+  const viewModel = getDebtCenterViewModel(templates, currentYm, realYm);
+  const debtData = getDebtCenterData(realYm, templates.filter(template =>
+    !isExcludedOrInactiveTemplate(template) && !isIncomeTemplate(template)
+  ));
+  if (summaryContainer) summaryContainer.innerHTML = renderDebtCenterSummary(viewModel);
 
   if (debtData.items.length === 0) {
     container.innerHTML = `
@@ -4905,7 +4973,6 @@ function renderDebtCenter(currentYm) {
         </button>
       </div>
     `;
-    if (totalRemainingEl) totalRemainingEl.textContent = formatCurrency(0);
     return;
   }
 
@@ -4938,9 +5005,6 @@ function renderDebtCenter(currentYm) {
   }).join('');
 
   container.innerHTML = cardsHtml;
-  if (totalRemainingEl) {
-    totalRemainingEl.textContent = formatCurrency(debtData.totalRemaining);
-  }
 }
 
 // ================================================================

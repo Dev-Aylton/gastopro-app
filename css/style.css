@@ -2403,6 +2403,82 @@ html {
 }
 .debt-total-badge strong { color: var(--warning); }
 
+.debt-month-summary {
+  display: grid;
+  gap: 0.75rem;
+  color: var(--text-main);
+}
+
+.debt-month-breakdown {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.35rem 1rem;
+}
+
+.debt-summary-row,
+.debt-cost-alert-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.65rem 0;
+}
+
+.debt-summary-row + .debt-summary-row {
+  border-top: 1px solid var(--border);
+}
+
+.debt-summary-label,
+.debt-summary-value,
+.debt-cost-alert-heading > * {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.debt-summary-label {
+  font-weight: 600;
+}
+
+.debt-summary-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.debt-summary-overdue .debt-summary-label {
+  color: var(--danger-text);
+}
+
+.debt-summary-total {
+  font-weight: 700;
+}
+
+.debt-cost-alert {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.75rem 1rem;
+  color: var(--text-main);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.debt-cost-alert p {
+  margin: 0;
+}
+
+.debt-cost-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  width: fit-content;
+  color: var(--text-main);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
 .debt-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
@@ -2453,6 +2529,25 @@ html {
   justify-content: space-between;
   font-size: 0.75rem;
   color: var(--text-dim);
+}
+
+@media (max-width: 480px) {
+  .debt-summary-row,
+  .debt-cost-alert-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .debt-summary-label,
+  .debt-summary-value,
+  .debt-cost-alert-heading > * {
+    white-space: normal;
+  }
+
+  .debt-summary-value {
+    text-align: left;
+  }
 }
 
 /* ================================================================
