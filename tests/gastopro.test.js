@@ -5615,6 +5615,97 @@ describe('Bloco 2 — dívida, orçamento, diagnóstico e categorias', () => {
     assertFalse(html.includes('Tudo pago neste mês'));
   });
 
+  it('renderiza saldo de 181,24 com novembro pago e uma parcela em dezembro', () => {
+    const model = getDebtCenterViewModel([{
+      type: 'fixed',
+      active: true,
+      amount: 181.24,
+      startMonth: '2026-11',
+      endMonth: '2026-12',
+      day: '01',
+      paidMonths: { '2026-11': true },
+      loanReceivedAmount: null,
+      loanReceivedDate: null,
+      loanTotalPayable: null,
+      loanInstallmentCount: null
+    }], '2026-11', '2026-11');
+    const html = renderDebtCenterSummary(model);
+    assertEqual(model.debtBreakdown.totalRemaining, 181.24);
+    assertEqual(model.debtBreakdown.currentMonth, {
+      openAmount: 0, openCount: 0, totalCount: 1
+    });
+    assertEqual(model.debtBreakdown.nextMonth, {
+      openAmount: 181.24, openCount: 1, totalCount: 1
+    });
+    assertTrue(html.includes('Tudo pago neste mês'));
+    assertTrue(html.includes(formatCurrency(181.24)));
+    assertTrue(html.includes('1 em aberto'));
+    assertEqual(html.match(/data-debt-total/g).length, 1);
+  });
+
+  it('renderiza dívida sem mês final somente no alerta com prazo indefinido', () => {
+    const model = getDebtCenterViewModel([{
+      type: 'fixed',
+      category: 'Empréstimo',
+      isDebt: true,
+      active: true,
+      amount: 181.24,
+      startMonth: '2026-11',
+      endMonth: null,
+      paidMonths: {}
+    }], '2026-11', '2026-11');
+    const html = renderDebtCenterSummary(model);
+    assertEqual(model.debtBreakdown.totalRemaining, 0);
+    assertEqual(model.debtBreakdown.currentMonth.totalCount, 0);
+    assertEqual(model.debtBreakdown.nextMonth.totalCount, 0);
+    assertTrue(html.includes('Custos fixos por mês'));
+    assertTrue(html.includes('Dívidas sem prazo definido'));
+    assertFalse(html.includes('data-debt-summary-block="Em atraso"'));
+    assertEqual(html.match(/data-debt-total/g).length, 1);
+    const totalValue = html.match(/data-debt-total[^]*?debt-summary-value">([^<]+)/);
+    assertTrue(Boolean(totalValue));
+    assertTrue(totalValue[1].includes(formatCurrency(0)));
+  });
+
+  it('renderiza o atalho do alerta para a aba Gastos', () => {
+    const model = getDebtCenterViewModel([{
+      type: 'fixed',
+      category: 'Empréstimo',
+      isDebt: true,
+      active: true,
+      amount: 181.24,
+      startMonth: '2026-11',
+      endMonth: null,
+      paidMonths: {}
+    }], '2026-11', '2026-11');
+    const host = document.createElement('div');
+    host.innerHTML = renderDebtCenterSummary(model);
+    const link = host.querySelector('.debt-cost-link');
+    assertTrue(Boolean(link));
+    assertEqual(link.dataset.goto, 'expenses');
+    assertEqual(link.textContent.trim(), 'Ver gastos');
+    host.remove();
+  });
+
+  it('mantém todos os blocos iguais quando muda apenas o mês selecionado', () => {
+    const templates = [{
+      type: 'fixed',
+      isDebt: true,
+      active: true,
+      amount: 181.24,
+      startMonth: '2026-10',
+      endMonth: '2026-12',
+      paidMonths: { '2026-10': true }
+    }];
+    const before = renderDebtCenterSummary(
+      getDebtCenterViewModel(templates, '2026-11', '2026-11')
+    );
+    const after = renderDebtCenterSummary(
+      getDebtCenterViewModel(templates, '2027-03', '2026-11')
+    );
+    assertEqual(after, before);
+  });
+
   it('calcula orçamento diário para mês passado, atual e futuro', () => {
     assertEqual(getDailyBudgetInfo(310, 2026, 8, new Date(2026, 9, 2)), {
       status: 'past', days: 0, dailyAmount: null, message: 'Mês encerrado'
