@@ -188,7 +188,8 @@ financeiro-app/
 │       ├── 20261104_payment_method.sql # Formas de pagamento e gasto anterior; aplicada no Supabase
 │       ├── 20261105_admin_consent.sql # Consentimentos e lista administrativa; criada, não aplicada
 │       ├── 20261106_single_loan.sql # Empréstimo único; criada, não aplicada
-│       └── 20261107_admin_feedback_authors.sql # Autores de feedback para Admin; criada, não aplicada
+│       ├── 20261107_admin_feedback_authors.sql # Autores de feedback para Admin; criada, não aplicada
+│       └── 20261108_admin_email_text_cast.sql # Corrige tipo do e-mail nas funções administrativas; criada, não aplicada
 ├── tests/
 │   ├── gastopro.test.js       # 467 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
@@ -462,6 +463,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 15 | `20261105_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 16 | `20261106_single_loan.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 17 | `20261107_admin_feedback_authors.sql` | Criada neste lote; não aplicada, aguarda revisão |
+| 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
 `CACHE_NAME` atual: `gastopro-v4.36`. Suíte atual: **494 testes**.
 

@@ -786,7 +786,7 @@ begin
         then coalesce(nullif(profiles.name, ''), nullif(ordered_users.metadata_name, ''), 'Nome não informado')
       else 'Usuário nº ' || ordered_users.position::text
     end,
-    case when ordered_users.can_show_identity then ordered_users.account_email else null end,
+    case when ordered_users.can_show_identity then ordered_users.account_email::text else null end,
     ordered_users.signup_at,
     case when ordered_users.can_show_identity then ordered_users.last_seen_at else null end
   from ordered_users
@@ -834,7 +834,7 @@ begin
         then coalesce(nullif(profiles.name, ''), nullif(ordered_users.metadata_name, ''), 'Nome não informado')
       else 'Usuário nº ' || ordered_users.position::text
     end,
-    case when ordered_users.can_show_identity then ordered_users.account_email else null end
+    case when ordered_users.can_show_identity then ordered_users.account_email::text else null end
   from ordered_users
   left join public.profiles as profiles on profiles.id = ordered_users.id
   where exists (
