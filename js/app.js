@@ -71,7 +71,8 @@ window.GastoProProfileHelpers = {
 };
 
 const PROFILE_AVATAR_PRESETS = Object.freeze([
-  { id: 'neutral-default', label: 'Avatar padrão' }
+  { id: 'neutral-default', label: 'Avatar padrão' },
+  { id: 'feminine-default', label: 'Avatar feminino' }
 ]);
 
 function getProfileAvatarPreset(value) {
@@ -110,7 +111,9 @@ window.GastoProAvatarGallery = Object.freeze({
   getSource(value) {
     const preset = getProfileAvatarPreset(value);
     if (preset || typeof value !== 'string' || !value || value.startsWith('preset:')) {
-      return 'assets/default_avatar.jpg';
+      return preset && preset.id === 'feminine-default'
+        ? 'assets/default_avatar_fem.svg'
+        : 'assets/default_avatar.jpg';
     }
     return value;
   }
@@ -343,7 +346,7 @@ const DIAGNOSTIC_LOG_LIMIT = 100;
 const DIAGNOSTIC_EVENT_TYPES = new Set([
   'auth-state', 'view-switch', 'page-load', 'pageshow', 'visibilitychange',
   'focus', 'online', 'offline', 'sync', 'refresh', 'controllerchange', 'admin-check',
-  'admin-query-error'
+  'admin-query-error', 'app-update-notice'
 ]);
 const DIAGNOSTIC_VIEW_IDS = new Set(Object.keys(VIEW_TITLES));
 const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
@@ -359,7 +362,8 @@ const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
   refresh: ['phase', 'result'],
   controllerchange: [],
   'admin-check': ['phase', 'result', 'buttonVisibleBefore', 'buttonVisibleAfter'],
-  'admin-query-error': ['query', 'code', 'message']
+  'admin-query-error': ['query', 'code', 'message'],
+  'app-update-notice': []
 });
 
 function getLocalDiagnosticTime(date = new Date()) {
@@ -409,13 +413,7 @@ function normalizeDiagnosticData(type, data) {
       typeof value === 'string' && /^[A-Z0-9]{1,16}$/.test(value)) {
       normalized[key] = value;
     } else if (key === 'message' && typeof value === 'string') {
-      normalized[key] = value
-        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
-        .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '[id]')
-        .replace(/(['"`]).*?\1/g, '[redacted]')
-        .replace(/\b\d+\b/g, '[number]')
-        .replace(/\s+/g, ' ')
-        .slice(0, 200);
+      normalized[key] = 'Falha na consulta.';
     }
   });
   return normalized;
@@ -2625,6 +2623,31 @@ function scrollToGoalsDashboardPanel() {
   });
   return true;
 }
+
+function showAppUpdateNoticeIfWaiting(registration, notice = document.getElementById('appUpdateNotice')) {
+  if (!registration || !registration.waiting || !notice) return false;
+  const shouldRecord = notice.hidden;
+  notice.hidden = false;
+  if (shouldRecord) window.GastoProDiagnostics.record('app-update-notice');
+  return true;
+}
+
+function watchForWaitingAppUpdate(registration) {
+  const checkWaiting = () => showAppUpdateNoticeIfWaiting(registration);
+  checkWaiting();
+  registration.addEventListener('updatefound', () => {
+    const worker = registration.installing;
+    if (!worker) return;
+    worker.addEventListener('statechange', () => {
+      if (worker.state === 'installed' && navigator.serviceWorker.controller) checkWaiting();
+    });
+  });
+}
+
+window.GastoProAppUpdate = Object.freeze({
+  showIfWaiting: showAppUpdateNoticeIfWaiting,
+  watch: watchForWaitingAppUpdate
+});
 
 // ================================================================
 // 5. ORQUESTRADOR CENTRAL DE RENDERIZAÇÃO
@@ -9692,6 +9715,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (refreshAppBtn) refreshAppBtn.addEventListener('click', handleAppRefresh);
   if (drawerRefreshBtn) drawerRefreshBtn.addEventListener('click', handleAppVersionCheck);
+  const appUpdateCheckBtn = document.getElementById('appUpdateCheckBtn');
+  if (appUpdateCheckBtn) appUpdateCheckBtn.addEventListener('click', handleAppVersionCheck);
 
   // ── 13. MÓDULO DE IMPORTAÇÃO DE EXTRATOS ─────────────────────────
   // Controlador do modal de importação CSV / Texto Bruto.
@@ -11518,7 +11543,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // A falha é esperada quando o app é aberto via file:// (sem servidor),
   // então é tratada silenciosamente para não poluir o console do usuário.
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(err => {
+    navigator.serviceWorker.register('sw.js').then(registration => {
+      watchForWaitingAppUpdate(registration);
+    }).catch(err => {
       console.info('[GastoPro] Service Worker não registrado (normal em file://):', err.message);
     });
     updateDisplayedAppVersion();

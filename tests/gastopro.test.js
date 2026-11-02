@@ -10317,9 +10317,15 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
 
   it('usa o avatar padrão e converte presets antigos removidos sem erro', () => {
     const gallery = window.GastoProAvatarGallery;
-    assertEqual(gallery.presets.map(preset => preset.id), ['neutral-default']);
+    assertEqual(gallery.presets.map(preset => preset.id), ['neutral-default', 'feminine-default']);
     assertFalse(gallery.isPreset('preset:fem-2'));
     assertEqual(gallery.getSource('preset:fem-2'), 'assets/default_avatar.jpg');
+    assertEqual(gallery.getSource('preset:feminine-default'), 'assets/default_avatar_fem.svg');
+    assertTrue(window.GastoProCacheAssets.optional.includes('./assets/default_avatar_fem.svg'));
+    assertEqual(gallery.selectPreset({}, 'preset:feminine-default'), {
+      avatar: 'preset:feminine-default',
+      avatarPreset: 'preset:feminine-default'
+    });
     const previousProfile = FinanceData.getProfile();
     try {
       const legacyProfile = { ...previousProfile, avatar: 'preset:fem-2', avatarPreset: 'preset:fem-2' };
@@ -10327,6 +10333,61 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       assertEqual(gallery.removePhoto(legacyProfile).avatar, 'preset:neutral-default');
     } finally {
       FinanceData.saveProfile(previousProfile);
+    }
+  });
+
+  it('salva e recupera a escolha do avatar feminino no perfil local', () => {
+    const previousProfile = FinanceData.getProfile();
+    try {
+      const selectedProfile = window.GastoProAvatarGallery.selectPreset(
+        previousProfile,
+        'preset:feminine-default'
+      );
+      assertTrue(FinanceData.saveProfile(selectedProfile).success);
+      assertEqual(FinanceData.getProfile().avatar, 'preset:feminine-default');
+      assertEqual(window.GastoProAvatarGallery.getSource(FinanceData.getProfile().avatar),
+        'assets/default_avatar_fem.svg');
+    } finally {
+      FinanceData.saveProfile(previousProfile);
+    }
+  });
+
+  itAsync('sincroniza o avatar feminino pelo campo de perfil existente', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const profileId = '00000000-0000-4000-8000-000000000001';
+    let savedProfile = null;
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: profileId } } },
+          error: null
+        })
+      },
+      from(table) {
+        assertEqual(table, 'profiles');
+        return {
+          upsert(profile) {
+            savedProfile = profile;
+            return {
+              select: async () => ({
+                data: [{ id: profileId, updated_at: null }],
+                error: null
+              })
+            };
+          }
+        };
+      }
+    };
+    try {
+      const selectedProfile = window.GastoProAvatarGallery.selectPreset(
+        { name: 'Pessoa', userId: profileId },
+        'preset:feminine-default'
+      );
+      const result = await window.SupabaseAuth.saveCloudProfile(selectedProfile, profileId);
+      assertTrue(result.success);
+      assertEqual(savedProfile.avatar, 'preset:feminine-default');
+    } finally {
+      window.SupabaseAuth.client = previousClient;
     }
   });
 
@@ -10340,8 +10401,92 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     assertEqual(gallery.removePhoto({ avatar: oldPhoto }).avatar, 'preset:neutral-default');
   });
 
+  it('sanitiza mensagens administrativas usando somente categorias fixas', () => {
+    const previousDiagnosticLog = localStorage.getItem(window.GastoProDiagnostics.key);
+    try {
+      window.GastoProDiagnostics.clear();
+      window.GastoProDiagnostics.record('admin-query-error', {
+        query: 'admin_feedback_authors',
+        code: '42501',
+        message: 'permission denied for user maria@example.com, 550e8400-e29b-41d4-a716-446655440001: "texto privado"',
+        details: 'value: outro@example.com e mensagem sensível',
+        hint: '550e8400-e29b-41d4-a716-446655440002'
+      });
+      const entries = window.GastoProDiagnostics.list();
+      const event = entries[entries.length - 1];
+      assertEqual(event.data.message, 'Falha na consulta.');
+      assertEqual(event.data.code, '42501');
+      assertFalse(JSON.stringify(event).includes('example.com'));
+      assertFalse(JSON.stringify(event).includes('550e8400'));
+      assertFalse(JSON.stringify(event).includes('texto privado'));
+      assertFalse(JSON.stringify(event).includes('sensível'));
+      assertTrue(event.data.message.length <= 200);
+    } finally {
+      if (previousDiagnosticLog === null) localStorage.removeItem(window.GastoProDiagnostics.key);
+      else localStorage.setItem(window.GastoProDiagnostics.key, previousDiagnosticLog);
+    }
+  });
+
+  it('exibe o aviso de atualização somente quando há service worker aguardando', () => {
+    const previousDiagnosticLog = localStorage.getItem(window.GastoProDiagnostics.key);
+    const host = document.createElement('div');
+    host.innerHTML = '<div id="appUpdateNotice" hidden></div>';
+    document.body.appendChild(host);
+    try {
+      window.GastoProDiagnostics.clear();
+      const notice = host.firstElementChild;
+      assertFalse(window.GastoProAppUpdate.showIfWaiting({ waiting: null }, notice));
+      assertTrue(notice.hidden);
+      assertTrue(window.GastoProAppUpdate.showIfWaiting({ waiting: {} }, notice));
+      assertFalse(notice.hidden);
+      window.GastoProAppUpdate.showIfWaiting({ waiting: {} }, notice);
+      assertEqual(window.GastoProDiagnostics.list()
+        .filter(event => event.type === 'app-update-notice').length, 1);
+    } finally {
+      host.remove();
+      if (previousDiagnosticLog === null) localStorage.removeItem(window.GastoProDiagnostics.key);
+      else localStorage.setItem(window.GastoProDiagnostics.key, previousDiagnosticLog);
+    }
+  });
+
+  it('Metas rola ao painel e Mais abre o menu sem trocar a tela', () => {
+    const previousSwitchToView = window.switchToView;
+    const previousRequestAnimationFrame = window.requestAnimationFrame;
+    const previousScrollToGoalsDashboardPanel = window.scrollToGoalsDashboardPanel;
+    const host = document.createElement('div');
+    host.innerHTML = '<button id="menuToggleBtn" type="button"></button>';
+    document.body.appendChild(host);
+    const menuButton = host.firstElementChild;
+    let switchedView = null;
+    let scrolled = false;
+    let menuOpened = false;
+    const onMenuClick = () => { menuOpened = true; };
+    menuButton.addEventListener('click', onMenuClick);
+    try {
+      window.switchToView = view => { switchedView = view; };
+      window.requestAnimationFrame = callback => {
+        callback();
+        return 0;
+      };
+      window.scrollToGoalsDashboardPanel = () => { scrolled = true; };
+      assertTrue(navigateMobileBottomItem('goals'));
+      assertEqual(switchedView, 'dashboard');
+      assertTrue(scrolled);
+      switchedView = null;
+      assertTrue(navigateMobileBottomItem('more'));
+      assertEqual(switchedView, null);
+      assertTrue(menuOpened);
+    } finally {
+      menuButton.removeEventListener('click', onMenuClick);
+      window.switchToView = previousSwitchToView;
+      window.requestAnimationFrame = previousRequestAnimationFrame;
+      window.scrollToGoalsDashboardPanel = previousScrollToGoalsDashboardPanel;
+      host.remove();
+    }
+  });
+
   itAsync('mantém o seletor compacto e legível nos dois temas', async () => {
-    const frame = await getResponsiveFixtureFrame(390, 844);
+    let frame = await getResponsiveFixtureFrame(320, 844);
     const frameDocument = frame.contentDocument;
     const frameWindow = frame.contentWindow;
     const ratio = (first, second) => {
@@ -10359,23 +10504,76 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       return (values[0] + 0.05) / (values[1] + 0.05);
     };
     frameDocument.getElementById('fixtureApp').innerHTML =
-      '<div class="drawer-section"><div class="avatar-gallery" id="gallery"><button class="avatar-preset-option"><img src="assets/default_avatar.jpg" alt=""><span>Avatar padrão</span></button></div></div>';
+      '<div class="drawer-section"><div class="avatar-gallery" id="gallery">' +
+      '<button class="avatar-preset-option" aria-label="Escolher avatar Avatar padrão"><img src="assets/default_avatar.jpg" alt=""><span>Avatar padrão</span></button>' +
+      '<button class="avatar-preset-option" aria-label="Escolher avatar Avatar feminino"><img src="assets/default_avatar_fem.svg" alt=""><span>Avatar feminino</span></button>' +
+      '</div></div>';
     try {
-      for (const theme of ['light', 'dark']) {
-        frameDocument.documentElement.dataset.theme = theme;
-        frameDocument.body.dataset.theme = theme;
-        const gallery = frameDocument.getElementById('gallery');
-        const controls = [...gallery.querySelectorAll('.avatar-preset-option')];
-        assertEqual(controls.length, 1, `${theme}: somente avatar padrão`);
-        controls.forEach(button => {
-          const style = frameWindow.getComputedStyle(button);
-          assertTrue(ratio(style.color, style.backgroundColor) >= 4.5,
-            `${theme}: contraste do rótulo ${button.textContent}`);
-          assertTrue(button.getBoundingClientRect().height >= 44,
-            `${theme}: seletor com alvo mínimo de 44px`);
-          assertTrue(button.scrollWidth <= button.clientWidth,
-            `${theme}: rótulo do avatar sem corte`);
+      for (const width of [320, 390, 1280]) {
+        frame = await getResponsiveFixtureFrame(width, 844);
+        for (const theme of ['light', 'dark']) {
+          frameDocument.documentElement.dataset.theme = theme;
+          frameDocument.body.dataset.theme = theme;
+          const gallery = frameDocument.getElementById('gallery');
+          const controls = [...gallery.querySelectorAll('.avatar-preset-option')];
+          assertEqual(controls.length, 2, `${width}px ${theme}: opções de avatar padrão e feminino`);
+          controls.forEach(button => {
+            const style = frameWindow.getComputedStyle(button);
+            assertTrue(ratio(style.color, style.backgroundColor) >= 4.5,
+              `${width}px ${theme}: contraste do rótulo ${button.textContent}`);
+            assertTrue(button.getBoundingClientRect().height >= 44,
+              `${width}px ${theme}: seletor com alvo mínimo de 44px`);
+            assertTrue(button.scrollWidth <= button.clientWidth,
+              `${width}px ${theme}: rótulo do avatar sem corte`);
+          });
+        }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  itAsync('mantém o aviso de atualização legível e acionável nos dois temas', async () => {
+    let frame = await getResponsiveFixtureFrame(320, 844);
+    const frameDocument = frame.contentDocument;
+    const frameWindow = frame.contentWindow;
+    const ratio = (first, second) => {
+      const luminance = color => {
+        const channels = color.startsWith('#')
+          ? color.slice(1).match(/.{2}/g).map(value => parseInt(value, 16))
+          : color.match(/[0-9.]+/g).slice(0, 3).map(Number);
+        const linearChannels = channels.map(value => {
+          const normalized = value / 255;
+          return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
         });
+        return linearChannels[0] * 0.2126 + linearChannels[1] * 0.7152 + linearChannels[2] * 0.0722;
+      };
+      const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
+      return (values[0] + 0.05) / (values[1] + 0.05);
+    };
+    frameDocument.getElementById('fixtureApp').innerHTML =
+      '<div class="app-update-notice"><span>Nova versão disponível.</span>' +
+      '<button class="btn-secondary">Atualizar</button></div>';
+    try {
+      for (const width of [320, 390, 1280]) {
+        frame = await getResponsiveFixtureFrame(width, 844);
+        for (const theme of ['light', 'dark']) {
+          frameDocument.documentElement.dataset.theme = theme;
+          frameDocument.body.dataset.theme = theme;
+          const notice = frameDocument.querySelector('.app-update-notice');
+          const label = notice.querySelector('span');
+          const button = notice.querySelector('button');
+          const noticeStyle = frameWindow.getComputedStyle(notice);
+          const labelStyle = frameWindow.getComputedStyle(label);
+          const buttonStyle = frameWindow.getComputedStyle(button);
+          assertTrue(label.scrollWidth <= label.clientWidth, `${width}px ${theme}: texto sem corte`);
+          assertTrue(button.scrollWidth <= button.clientWidth, `${width}px ${theme}: botão sem corte`);
+          assertTrue(button.getBoundingClientRect().height >= 44, `${width}px ${theme}: alvo de 44px`);
+          assertTrue(ratio(labelStyle.color, noticeStyle.backgroundColor) >= 4.5,
+            `${width}px ${theme}: contraste do aviso`);
+          assertTrue(ratio(buttonStyle.color, buttonStyle.backgroundColor) >= 4.5,
+            `${width}px ${theme}: contraste do botão`);
+        }
       }
     } finally {
       removeResponsiveFixtureFrame();

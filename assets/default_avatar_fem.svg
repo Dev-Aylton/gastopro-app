@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="hair" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b66cff"/>
+      <stop offset="1" stop-color="#31d6c6"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#ffd9c5"/>
+      <stop offset="1" stop-color="#f0a98d"/>
+    </linearGradient>
+    <linearGradient id="shirt" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8b55d9"/>
+      <stop offset="1" stop-color="#26bdb4"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#211832"/>
+  <path d="M37 256c7-41 35-68 75-77h32c40 9 68 36 75 77z" fill="url(#shirt)"/>
+  <path d="M76 104c-13 12-17 33-15 58 2 24 11 45 24 51l14-20-4-91zM180 104c13 12 17 33 15 58-2 24-11 45-24 51l-14-20 4-91z" fill="url(#hair)"/>
+  <path d="M105 163h46v37c0 14-10 24-23 24s-23-10-23-24z" fill="url(#skin)"/>
+  <path d="M79 105c0-34 19-57 49-57s49 23 49 57v31c0 37-21 62-49 62s-49-25-49-62z" fill="url(#skin)"/>
+  <path d="M76 116c-7-42 14-76 51-76 36 0 58 29 53 73-10-8-18-22-20-37-15 17-44 27-82 23z" fill="url(#hair)"/>
+  <path d="M90 128q11 10 22 0M144 128q11 10 22 0" fill="none" stroke="#563d57" stroke-linecap="round" stroke-width="4"/>
+  <path d="M116 153q12 13 24 0" fill="none" stroke="#aa5668" stroke-linecap="round" stroke-width="4"/>
+  <path d="M80 109c-9 13-11 28-8 43M176 108c9 13 11 28 8 43" fill="none" stroke="url(#hair)" stroke-linecap="round" stroke-width="13"/>
+</svg>

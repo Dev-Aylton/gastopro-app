@@ -1234,6 +1234,7 @@ body {
 
 .avatar-gallery {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   width: 100%;
@@ -1432,6 +1433,33 @@ body {
   border-radius: 0.65rem;
   padding: 0.65rem;
   background: var(--bg-input);
+}
+
+.app-update-notice {
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+}
+
+.app-update-notice[hidden] {
+  display: none;
+}
+
+.app-update-notice > span,
+.app-update-notice > button {
+  white-space: nowrap;
+}
+
+.app-update-notice > button {
+  min-height: 44px;
 }
 
 .diagnostic-details > summary {
