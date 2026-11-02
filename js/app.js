@@ -1022,10 +1022,46 @@ function updateImportDueDayField(row, selectedType, label, input, status, instal
     input.setAttribute('aria-invalid', String(missing));
   }
   if (status) {
-    status.hidden = !missing;
-    status.textContent = missing ? 'Falta o dia' : '';
+    const fromBoleto = !missing && row && row.dueDaySource === 'boleto';
+    status.hidden = !missing && !fromBoleto;
+    status.dataset.status = fromBoleto ? 'source' : 'missing';
+    status.textContent = missing ? 'Falta o dia' : fromBoleto ? 'Dia lido do boleto' : '';
   }
   return { required, missing };
+}
+
+function getImportDueDayMonthWarning(row, selectedType) {
+  if (!row || !['fixed', 'debt'].includes(selectedType) || row.dueDay !== 31) return '';
+  const month = row.startMonth || (row.date && row.date.slice(0, 7));
+  const match = typeof month === 'string' && month.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return '';
+  const lastDay = new Date(Number(match[1]), Number(match[2]), 0).getDate();
+  if (lastDay >= 31) return '';
+  return `Dia 31: a data da linha vira ${String(lastDay).padStart(2, '0')}/${match[2]} ` +
+    '(último dia do mês); o vencimento continua 31';
+}
+
+function updateImportDueDay(row, value) {
+  if (!row) return;
+  row.dueDay = value === '' ? null : Number(value);
+  delete row.dueDaySource;
+}
+
+function getImportDueDayExclusionIndexes(rows) {
+  const indexes = new Set();
+  rows.forEach(({ index, row, type, installmentDebt, candidate, candidateDecision }) => {
+    if (!getImportDueDayIssue(row, type, installmentDebt)) return;
+    if (candidateDecision && candidateDecision.type === 'fixed' && candidate) {
+      candidate.indexes.forEach(candidateIndex => indexes.add(candidateIndex));
+    } else {
+      indexes.add(index);
+    }
+  });
+  return [...indexes];
+}
+
+function getImportDueDayExcludedMessage(count) {
+  return `${count} linha(s) sem dia válido ficaram fora da importação.`;
 }
 
 function buildRecurringImportTemplate(candidate, rows, decision, currentMonth) {
@@ -1132,6 +1168,10 @@ window.GastoProImportHelpers = Object.freeze({
   requiresDueDay: isImportDueDayRequired,
   getDueDayIssue: getImportDueDayIssue,
   updateDueDayField: updateImportDueDayField,
+  getDueDayMonthWarning: getImportDueDayMonthWarning,
+  updateDueDay: updateImportDueDay,
+  getDueDayExclusionIndexes: getImportDueDayExclusionIndexes,
+  getDueDayExcludedMessage: getImportDueDayExcludedMessage,
   requiresImportPaymentReview,
   getImportAccountId,
   normalizeFixedDescription,
@@ -1149,7 +1189,9 @@ window.GastoProViewHelpers = {
     if (storedView.view === 'admin' && isAdmin !== true) return 'dashboard';
     return storedView.view;
   },
+  migrateLegacyAccountAssignments,
   scrollToTop: scrollToViewTop,
+  scrollToViewTop,
   resetInitialPosition: resetInitialViewPosition
 };
 
@@ -2601,7 +2643,7 @@ function renderAll() {
 }
 
 let accountMigrationInProgress = false;
-function migrateLegacyAccountAssignments() {
+function migrateLegacyAccountAssignments(render = renderAll) {
   if (accountMigrationInProgress || FinanceData.getAccounts().length ||
     !FinanceData.getUnassignedAccountItems().length) return;
   accountMigrationInProgress = true;
@@ -2620,7 +2662,7 @@ function migrateLegacyAccountAssignments() {
       if (result.syncResult && !result.syncResult.success) {
         showToast('Lançamentos salvos neste aparelho; a sincronização com a nuvem ficará pendente.');
       }
-      renderAll();
+      render();
     }
   }).catch(error => {
     console.error('[GastoPro] Erro ao migrar lançamentos sem conta:', error);
@@ -5597,6 +5639,12 @@ window.GastoProAppVersion = {
   getDisplayedVersion: getDisplayedAppVersion
 };
 
+document.addEventListener('click', (event) => {
+  if (!(event.target instanceof Element)) return;
+  const legacyBalance = event.target.closest('#dashboardCurrentBalance');
+  if (legacyBalance && !legacyBalance.dataset.action) openAdjustAccountModal();
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   const backToTopBtn = document.getElementById('backToTopBtn');
   if (backToTopBtn) {
@@ -5878,7 +5926,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const actionElement = e.target.closest('[data-action]');
     if (!actionElement) return;
 
-    const { action, id } = actionElement.dataset;
+    const action = actionElement.dataset.action;
+    const { id } = actionElement.dataset;
+    if (!action) return;
     switch (action) {
       case 'open-irreversible-actions': {
         const details = document.getElementById('irreversibleActions');
@@ -9465,8 +9515,9 @@ document.addEventListener('DOMContentLoaded', () => {
           <input type="number" class="import-due-day-input" id="importDueDay${i}"
             data-row="${i}" min="1" max="31" step="1" inputmode="numeric"
             value="${row.dueDay == null ? '' : escapeHtml(row.dueDay)}" aria-label="Dia do vencimento do lançamento ${i + 1}" />
-          <span class="import-due-day-status" data-row="${i}" hidden>Falta o dia</span>
+          <span class="import-due-day-status" data-row="${i}" hidden></span>
         </label>`;
+      const dueDayMonthWarning = getImportDueDayMonthWarning(row, selectedType);
       const paymentPeriodDisplay = (row.type === 'fixed' || row.type === 'debt') && row.startMonth
         ? `<small class="import-row-reason">${escapeHtml(row.endMonth
           ? `A pagar de ${row.startMonth.slice(5, 7)}/${row.startMonth.slice(0, 4)} até ${row.endMonth.slice(5, 7)}/${row.endMonth.slice(0, 4)}`
@@ -9487,6 +9538,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ${installmentDisplay}
           ${paymentPeriodDisplay}
           ${dueDayDisplay}
+          <small class="import-due-day-warning">${escapeHtml(dueDayMonthWarning)}</small>
           ${row.invalidReason ? `<small class="import-row-reason">${escapeHtml(row.invalidReason)}</small>` : ''}
         </td>
         <td class="col-category">
@@ -9530,6 +9582,8 @@ document.addEventListener('DOMContentLoaded', () => {
           row, e.target.value, dueDayField, dueDayInput, dueDayStatus,
           Boolean(row.installment)
         );
+        const warning = tr.querySelector('.import-due-day-warning');
+        if (warning) warning.textContent = getImportDueDayMonthWarning(row, e.target.value);
       });
       const dueDayInput = tr.querySelector('.import-due-day-input');
       if (dueDayInput) {
@@ -9540,11 +9594,17 @@ document.addEventListener('DOMContentLoaded', () => {
           Boolean(row.installment)
         );
         dueDayInput.addEventListener('input', event => {
-          row.dueDay = event.target.value === '' ? null : Number(event.target.value);
+          updateImportDueDay(row, event.target.value);
           updateImportDueDayField(
             row, tr.querySelector('.import-type-select').value,
             dueDayField, dueDayInput, dueDayStatus, Boolean(row.installment)
           );
+          const warning = tr.querySelector('.import-due-day-warning');
+          if (warning) {
+            warning.textContent = getImportDueDayMonthWarning(
+              row, tr.querySelector('.import-type-select').value
+            );
+          }
         });
       }
 
@@ -9591,7 +9651,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeSelect && typeSelect.value !== (row.previewType || getImportPreviewType(row))) {
         row.previewType = typeSelect.value;
       }
-      if (dueDayInput) row.dueDay = dueDayInput.value === '' ? null : Number(dueDayInput.value);
+      if (dueDayInput) updateImportDueDay(row, dueDayInput.value);
     });
     _importSourceRows = rows.map(row => ({ ...row }));
     const templates = FinanceData.getTemplates();
@@ -9721,7 +9781,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dueDayInputs = importPreviewTbody.querySelectorAll('.import-due-day-input');
     dueDayInputs.forEach(input => {
       const row = _importParsedRows[Number(input.dataset.row)];
-      if (row) row.dueDay = input.value === '' ? null : Number(input.value);
+      if (row) updateImportDueDay(row, input.value);
     });
 
     const items = [];
@@ -9757,6 +9817,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const now = new Date();
     const currentMonth = getYearMonthString(now.getFullYear(), now.getMonth() + 1);
+    const dueDayValidationRows = [];
     for (let index = 0; index < checkboxes.length; index++) {
       const sourceRow = _importParsedRows[index];
       if (!checkboxes[index].checked || sourceRow.invalid) continue;
@@ -9779,19 +9840,18 @@ document.addEventListener('DOMContentLoaded', () => {
         sourceRow.installment && installmentCheckbox && installmentCheckbox.checked &&
         !sourceRow.linkedTemplateId
       );
-      const dueDayIssue = getImportDueDayIssue(
-        sourceRow, type, createsInstallmentDebt
-      );
-      if (dueDayIssue) {
-        if (candidateDecision && candidateDecision.type === 'fixed' && candidate) {
-          candidate.indexes.forEach(excludeImportRow);
-        } else {
-          excludeImportRow(index);
-        }
-      }
+      dueDayValidationRows.push({
+        index,
+        row: sourceRow,
+        type,
+        installmentDebt: createsInstallmentDebt,
+        candidate,
+        candidateDecision
+      });
     }
+    getImportDueDayExclusionIndexes(dueDayValidationRows).forEach(excludeImportRow);
     if (excludedDueDayRows) {
-      showToast(`${excludedDueDayRows} linha(s) sem dia válido ficaram fora da importação.`);
+      showToast(getImportDueDayExcludedMessage(excludedDueDayRows));
     }
     checkboxes.forEach((cb, i) => {
       const sourceRow = _importParsedRows[i];

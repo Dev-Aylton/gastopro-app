@@ -1001,6 +1001,79 @@ describe('FinanceData — Contas Bancárias', () => {
     assertEqual(FinanceData.getAccounts().map(item => item.id), [account.account.id]);
   });
 
+  itAsync('lista lançamentos Sem conta para vincular e avisa ao migrar sem contas', async () => {
+    setupMockLocalStorage();
+    const account = await FinanceData.addAccount({ name: 'Conta fictícia', type: 'PF' });
+    const unassigned = makeIncome({ id: crypto.randomUUID(), accountId: null });
+    FinanceData.saveEntries([unassigned]);
+
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div id="accountsPageTotal"></div>
+      <div id="accountsList"></div>
+      <section id="unassignedEntriesPanel"><div id="unassignedEntriesList"></div></section>`;
+    document.body.appendChild(host);
+    try {
+      renderAccountsView();
+      const select = host.querySelector('[data-action="assign-unassigned-account"]');
+      assertFalse(host.querySelector('#unassignedEntriesPanel').hidden);
+      assertTrue(Boolean(select));
+      assertEqual(select.options[0].textContent, 'Selecione uma conta');
+      assertEqual(select.options[1].value, account.account.id);
+    } finally {
+      host.remove();
+    }
+
+    setupMockLocalStorage();
+    FinanceData.saveEntries([
+      makeIncome({ id: crypto.randomUUID(), accountId: null })
+    ]);
+    const notices = [];
+    const originalShowToast = window.showToast;
+    window.showToast = message => notices.push(message);
+    try {
+      window.GastoProViewHelpers.migrateLegacyAccountAssignments(() => {});
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assertEqual(FinanceData.getAccounts().map(item => item.name), ['Conta principal']);
+      assertTrue(notices.some(message => message.includes(
+        '1 lançamento(s) sem conta foram atribuídos à Conta principal.'
+      )));
+    } finally {
+      window.showToast = originalShowToast;
+    }
+  });
+
+  itAsync('abre ajuste ao tocar no saldo atual do dashboard', async () => {
+    setupMockLocalStorage();
+    const account = await FinanceData.addAccount({
+      name: 'Conta teste saldo',
+      type: 'PF',
+      initialBalance: 100,
+      balanceDate: '2026-11-02'
+    });
+    assertTrue(account.success);
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <strong id="dashboardCurrentBalance">R$ 100,00</strong>
+      <div id="adjustAccountModal" class="modal-overlay">
+        <select id="adjustAccountId"></select>
+        <p id="adjustAccountName"></p>
+        <input id="adjustAccountBalance" />
+        <input id="adjustAccountBalanceDate" />
+        <p id="adjustAccountError"></p>
+      </div>`;
+    document.body.appendChild(fixture);
+
+    try {
+      document.getElementById('dashboardCurrentBalance').click();
+      await new Promise(resolve => setTimeout(resolve, 120));
+      assertTrue(document.getElementById('adjustAccountModal').classList.contains('active'));
+    } finally {
+      closeAdjustAccountModal();
+      fixture.remove();
+    }
+  });
+
   itAsync('cria, edita e valida contas PF/PJ', async () => {
     setupMockLocalStorage();
     const created = await FinanceData.addAccount({
@@ -1702,6 +1775,7 @@ describe('FinanceData — Contas Bancárias', () => {
     FinanceData.add(makeVariable({
       accountId: created.account.id, amount: 10, date: today, paid: true
     }));
+    const entryCountBeforeAdjustment = FinanceData.getEntries().length;
 
     const host = document.createElement('div');
     host.innerHTML = `
@@ -1724,6 +1798,12 @@ describe('FinanceData — Contas Bancárias', () => {
       assertTrue(host.querySelector('.account-adjust-hint').textContent.includes(
         'Lançamentos anteriores à data escolhida deixam de entrar no cálculo'
       ));
+      const adjusted = await FinanceData.adjustAccountBalance(
+        created.account.id, 125, today
+      );
+      assertTrue(adjusted.success);
+      assertEqual(FinanceData.getEntries().length, entryCountBeforeAdjustment);
+      assertFalse(FinanceData.getEntries().some(entry => entry.type === 'adjustment'));
       await new Promise(resolve => setTimeout(resolve, 120));
     } finally {
       document.getElementById = originalGetElementById;
@@ -6751,6 +6831,7 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     const label = fixture.querySelector('label');
     const input = fixture.querySelector('input');
     const status = fixture.querySelector('span');
+    const originalInput = input;
 
     try {
       helper.updateDueDayField(row, 'income', label, input, status);
@@ -6759,6 +6840,8 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
       helper.updateDueDayField(row, 'variable_pending', label, input, status);
       assertFalse(label.hidden);
       assertTrue(input.required);
+      assertEqual(fixture.querySelector('input'), originalInput);
+      assertTrue(input.isConnected);
       assertFalse(status.hidden);
       assertEqual(status.textContent, 'Falta o dia');
 
@@ -6772,6 +6855,108 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     } finally {
       fixture.remove();
     }
+  });
+
+  it('marca o dia derivado do fator do boleto e limpa a origem quando editado', () => {
+    const digits = `001${'0'.repeat(30)}10000000012345`;
+    const row = GastoProImporter.parseBoletoLine(
+      digits, new Date(2025, 1, 22)
+    )[0];
+    assertEqual(digits.length, 47);
+    assertEqual(row.dueDay, 22);
+    assertEqual(row.dueDaySource, 'boleto');
+
+    const fixture = document.createElement('div');
+    fixture.innerHTML = '<label><input type="number"><span hidden></span></label>';
+    const label = fixture.querySelector('label');
+    const input = fixture.querySelector('input');
+    const status = fixture.querySelector('span');
+    window.GastoProImportHelpers.updateDueDayField(
+      row, 'variable_pending', label, input, status
+    );
+    assertEqual(status.textContent, 'Dia lido do boleto');
+    assertFalse(status.hidden);
+    window.GastoProImportHelpers.updateDueDay(row, '22');
+    assertFalse(Object.prototype.hasOwnProperty.call(row, 'dueDaySource'));
+  });
+
+  it('mantém sem dia boletos de 48 dígitos e de 47 com fator zero', () => {
+    const digits48 = Array(48).fill('0');
+    digits48[0] = '8';
+    digits48[2] = '6';
+    digits48[10] = '1';
+    const noFactor47 = `001${'0'.repeat(34)}0000012345`;
+    const rows = [
+      GastoProImporter.parseBoletoLine(digits48.join(''), new Date(2025, 1, 22))[0],
+      GastoProImporter.parseBoletoLine(noFactor47, new Date(2025, 1, 22))[0]
+    ];
+    assertEqual(digits48.join('').length, 48);
+    assertEqual(noFactor47.length, 47);
+    rows.forEach(row => {
+      assertNull(row.dueDay);
+      assertFalse(Object.prototype.hasOwnProperty.call(row, 'dueDaySource'));
+      assertEqual(window.GastoProImportHelpers.getDueDayIssue(row, 'variable_pending'), 'missing');
+    });
+  });
+
+  it('avisa que vencimento 31 em fevereiro muda a data da linha, não o vencimento', () => {
+    const row = {
+      date: '2026-02-10',
+      startMonth: '2026-02',
+      dueDay: 31,
+      desc: 'Conta fictícia',
+      amount: 50,
+      category: 'Contas'
+    };
+    assertEqual(
+      window.GastoProImportHelpers.getDueDayMonthWarning(row, 'fixed'),
+      'Dia 31: a data da linha vira 28/02 (último dia do mês); o vencimento continua 31'
+    );
+    const entry = GastoProImporter.buildEntry(row, 'fixed');
+    assertEqual(entry.date, '2026-02-28');
+    assertEqual(entry.dueDay, 31);
+  });
+
+  itAsync('confirma importação mista, exclui pendente sem dia e salva as linhas válidas', async () => {
+    setupMockLocalStorage();
+    const account = await FinanceData.addAccount({ name: 'Conta fictícia', type: 'PF' });
+    const rows = [
+      {
+        index: 0,
+        row: { dueDay: null, desc: 'Conta pendente fictícia' },
+        type: 'variable_pending'
+      },
+      {
+        index: 1,
+        row: { dueDay: null, desc: 'Compra paga fictícia' },
+        type: 'variable'
+      },
+      {
+        index: 2,
+        row: { dueDay: null, desc: 'Ganho fictício' },
+        type: 'income'
+      }
+    ];
+    const excludedIndexes = window.GastoProImportHelpers.getDueDayExclusionIndexes(rows);
+    assertEqual(excludedIndexes, [0]);
+    const validRows = rows.filter(item => !excludedIndexes.includes(item.index));
+    const result = await FinanceData.importBatch(validRows.map(({ row, type }) =>
+      GastoProImporter.buildEntry({
+        ...row,
+        amount: 25,
+        category: 'Outros',
+        date: '2026-11-02',
+        accountId: account.account.id
+      }, type, true)
+    ));
+    assertTrue(result.success);
+    assertEqual(FinanceData.getEntries().map(entry => entry.desc), [
+      'Compra paga fictícia', 'Ganho fictício'
+    ]);
+    assertEqual(
+      window.GastoProImportHelpers.getDueDayExcludedMessage(excludedIndexes.length),
+      '1 linha(s) sem dia válido ficaram fora da importação.'
+    );
   });
 
   it('sugere descrição recorrente limpa sem converter linhas em gasto fixo', () => {

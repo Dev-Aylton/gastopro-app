@@ -5964,6 +5964,21 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   font-weight: 700;
 }
 
+.import-due-day-status[data-status="source"] {
+  color: var(--primary-text);
+}
+
+.import-due-day-warning {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  white-space: normal;
+}
+
+.import-due-day-warning:empty {
+  display: none;
+}
+
 .import-preview-table .col-category select {
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -8040,10 +8055,23 @@ input[type="month"] {
   font-weight: 600;
 }
 
-.dashboard-highlight-value strong {
+.dashboard-highlight-value .dashboard-balance-action {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
   font-size: 1.5rem;
   line-height: 1.15;
-  min-width: 0;
+  text-align: left;
+  white-space: normal;
+  justify-content: flex-start;
+}
+
+.dashboard-balance-action:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
   max-width: 100%;
   white-space: nowrap;
 }
@@ -8248,7 +8276,7 @@ input[type="month"] {
     padding: 0.9rem;
   }
 
-  .dashboard-highlight-value strong {
+  .dashboard-highlight-value .dashboard-balance-action {
     font-size: clamp(1.3rem, 7.2vw, 2.1rem);
   }
 
@@ -8426,7 +8454,7 @@ input[type="month"] {
   }
 
   .mobile-brand span,
-  .dashboard-highlight-value strong,
+  .dashboard-highlight-value .dashboard-balance-action,
   .kpi-title,
   .kpi-badge,
   .kpi-value,

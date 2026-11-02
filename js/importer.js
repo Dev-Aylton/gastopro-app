@@ -949,6 +949,7 @@ const GastoProImporter = (() => {
       category: autoDetectCategory(desc),
       type: 'variable',
       dueDay,
+      ...(dueDay != null && digits.length === 47 ? { dueDaySource: 'boleto' } : {}),
       invalid: Boolean(invalidReason),
       invalidReason,
       raw: truncateText(digits, MAX_LINE_CHARS),

@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.31-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.32-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-467%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-473%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -459,7 +459,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 14 | `20261104_payment_method.sql` | Aplicada e conferida no Supabase |
 | 15 | `20261105_admin_consent.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.31`. Suíte atual: **467 testes**.
+`CACHE_NAME` atual: `gastopro-v4.32`. Suíte atual: **473 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -667,6 +667,8 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-050 — Zona de perigo e textos longos resilientes** / Descrição: descrições originais das ações destrutivas restauradas; e-mails longos do Admin podem quebrar em separadores sem overflow horizontal. / Critério de pronto: suíte automatizada aprovada e conferência responsiva nos dois temas.
 - [x] **RM-051 — Diagnóstico local temporário de sessão e navegação** / Descrição: registro circular local com eventos de autenticação, navegação, ciclo de vida, sincronização, Service Worker e Admin; leitura, cópia e limpeza no Painel do Usuário, sem armazenar identificadores pessoais. / Critério de pronto: 458 testes aprovados e medições geométricas nas sete larguras e nos dois temas. / Arquivos: `index.html`, `js/app.js`, `js/supabase.js`, `css/style.css`, `tests/gastopro.test.js`.
 - [x] **RM-052 — Contas obrigatórias, vencimento explícito e acesso a ganhos** / Descrição: cria Conta principal somente quando necessário, exige destino nos lançamentos e mantém antigos sem conta para escolha; valida dias de vencimento sem fallback; ajuste de saldo usa o valor calculado e a navegação de Ganhos abre o formulário correspondente. / Critério de pronto: 467 testes aprovados e medições geométricas nas sete larguras e nos dois temas. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/importer.js`, `js/supabase.js`, `css/style.css`, `tests/gastopro.test.js`.
+- [x] **RM-053 — Origem do vencimento de boleto e aviso de mês curto** / Descrição: identifica dias lidos do fator de boletos, mantém sem dia linhas sem vencimento explícito e avisa quando dia 31 altera a data da linha. / Critério de pronto: 472 testes aprovados; regras de contraste, controles e alvos verificadas no CSS. A medição real da prévia não foi executada. / Arquivos: `js/app.js`, `js/importer.js`, `css/style.css`, `tests/gastopro.test.js`.
+- [x] **RM-054 — Saldo principal do dashboard acionável** / Descrição: transforma o saldo principal do dashboard em botão acessível que abre o ajuste da conta. / Critério de pronto: 473 testes aprovados em três execuções; clique real validado no navegador com zero, uma e duas contas. O saldo superior permaneceu oculto pela regra CSS existente e não foi alterado. / Arquivos: `index.html`, `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
 
 ### Em dúvida
 
@@ -678,7 +680,12 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.31 — 01/11/2026 (versão atual)
+### v4.32 — 02/11/2026 (versão atual)
+
+- RM-053: a prévia identifica “Dia lido do boleto” apenas para fator válido em boleto de 47 dígitos, mantém vencimento 31 ao avisar sobre mês curto e exclui linhas a pagar sem dia válido sem interromper as válidas. Cinco testes adicionados; suíte com 472 testes aprovados. Medição geométrica real da prévia não realizada.
+- RM-054: o saldo principal do dashboard agora é um botão acessível e abre o ajuste de saldo; um teste de regressão reproduziu a falta de ação anterior. Suíte atual: 473 testes.
+
+### v4.31 — 01/11/2026
 
 - RM-052: destino obrigatório nos lançamentos, Conta principal automática apenas sem contas existentes, seleção manual para registros antigos sem vínculo e dia de vencimento validado entre 1 e 31 sem assumir o dia 01. Saldo real abre com o saldo calculado, Ganhos leva ao formulário na opção correta e falhas de migração ficam sinalizadas como sincronização pendente. Nove testes adicionados; suíte com 467 testes aprovados.
 
