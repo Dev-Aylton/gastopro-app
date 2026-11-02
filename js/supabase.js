@@ -1441,8 +1441,11 @@ const SupabaseAuth = {
   // SINCRONIZAÇÃO DE DADOS NA NUVEM (PostgreSQL com RLS)
   // ================================================================
 
-  async importFinancialBatch(entries, templates, payments, userId) {
+  async importFinancialBatch(entries, templates, payments, userId, importBatchId) {
     if (!this.client) return this.reportCloudError('Cliente não inicializado ao importar em lote', new Error('Cliente Supabase não inicializado.'));
+    if (!isValidCloudUuid(importBatchId)) {
+      return this.reportCloudError('Identificador de importação inválido', new Error('O lote de importação precisa de um identificador válido.'));
+    }
     try {
       const sessionUserId = await this.getAuthenticatedUserId(userId);
       if (!sessionUserId) {
@@ -1451,22 +1454,26 @@ const SupabaseAuth = {
       const entryPayload = entries.map(entry => ({
         id: entry.id,
         ...mapEntryToCloud(entry),
+        import_batch_id: importBatchId,
         client_edited_at: window.FinanceData.getClientEditedAt('entries', entry.id)
       }));
       const templatePayload = templates.map(template => ({
         id: template.id,
         ...mapTemplateToCloud(template),
+        import_batch_id: importBatchId,
         client_edited_at: window.FinanceData.getClientEditedAt('templates', template.id)
       }));
       const paymentPayload = payments.map(payment => ({
         id: payment.id,
         ym: payment.ym,
+        import_batch_id: importBatchId,
         client_edited_at: window.FinanceData.getClientEditedAt('templates', payment.id)
       }));
       const { data, error } = await this.client.rpc('import_financial_batch', {
         p_entries: entryPayload,
         p_templates: templatePayload,
-        p_payments: paymentPayload
+        p_payments: paymentPayload,
+        p_import_batch_id: importBatchId
       });
       if (error) return this.reportCloudError('Falha ao importar lote na nuvem', error);
       if (!data || !data.success) {

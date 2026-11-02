@@ -1069,6 +1069,24 @@ function getImportDueDayIssue(row, selectedType, installmentDebt = false) {
   return selectedType !== 'income' && invalid ? 'invalid' : null;
 }
 
+function getImportDueDayPreview(rows) {
+  const missing = (Array.isArray(rows) ? rows : []).filter(row => {
+    if (!row || row.invalid || row.selected === false) return false;
+    const type = row.previewType || getImportPreviewType(row);
+    const installmentDebt = Boolean(
+      row.installment && row.installment.current < row.installment.total &&
+      !row.linkedTemplateId
+    );
+    return getImportDueDayIssue(row, type, installmentDebt) === 'missing';
+  });
+  return {
+    count: missing.length,
+    descriptions: missing.slice(0, 3).map(row =>
+      String(row.desc || 'Lançamento sem descrição').slice(0, 70)
+    )
+  };
+}
+
 function updateImportDueDayField(row, selectedType, label, input, status, installmentDebt = false) {
   const required = isImportDueDayRequired(row, selectedType, installmentDebt);
   const issue = getImportDueDayIssue(row, selectedType, installmentDebt);
@@ -1229,6 +1247,7 @@ window.GastoProImportHelpers = Object.freeze({
   updateDueDay: updateImportDueDay,
   getDueDayExclusionIndexes: getImportDueDayExclusionIndexes,
   getDueDayExcludedMessage: getImportDueDayExcludedMessage,
+  getDueDayPreview: getImportDueDayPreview,
   requiresImportPaymentReview,
   getImportAccountId,
   normalizeFixedDescription,
@@ -3554,6 +3573,22 @@ function canStartGoogleSignIn(isRegistering, privacyConsentAccepted) {
   return !isRegistering || privacyConsentAccepted === true;
 }
 
+function applyGoogleAuthPriority(documentRef) {
+  const loginTab = documentRef.getElementById('tabLoginBtn');
+  const googleButton = documentRef.getElementById('googleSignInBtn');
+  const tabs = loginTab && loginTab.parentElement;
+  if (!tabs || !googleButton) return false;
+  tabs.insertAdjacentElement('afterend', googleButton);
+  googleButton.classList.add('btn-primary');
+  ['submitLoginBtn', 'submitRegisterBtn'].forEach(id => {
+    const button = documentRef.getElementById(id);
+    if (!button) return;
+    button.classList.remove('btn-primary');
+    button.classList.add('btn-secondary');
+  });
+  return true;
+}
+
 function createGoogleSignInHandler(button, signIn, showError) {
   let inProgress = false;
   return async function handleGoogleSignIn() {
@@ -3577,7 +3612,8 @@ window.GastoProGoogleAuthHelpers = Object.freeze({
   getRedirectTo: getGoogleOAuthRedirectTo,
   hasOAuthError: hasGoogleOAuthError,
   canStartSignIn: canStartGoogleSignIn,
-  createSignInHandler: createGoogleSignInHandler
+  createSignInHandler: createGoogleSignInHandler,
+  applyPriority: applyGoogleAuthPriority
 });
 
 function getDashboardAccountSummary(items, accounts, filter) {
@@ -6492,6 +6528,7 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
+  applyGoogleAuthPriority(document);
   const backToTopBtn = document.getElementById('backToTopBtn');
   if (backToTopBtn) {
     window.addEventListener('scroll', updateBackToTopVisibility, { passive: true });
@@ -10562,12 +10599,25 @@ document.addEventListener('DOMContentLoaded', () => {
     resetImportDecisionFlow();
   }
 
+  function renderImportDueDaySummary(rows) {
+    const summary = document.getElementById('importDueDaySummary');
+    if (!summary) return;
+    const preview = window.GastoProImportHelpers.getDueDayPreview(rows);
+    summary.hidden = preview.count === 0;
+    summary.textContent = preview.count
+      ? `${preview.count} lançamento(s) a pagar sem dia de vencimento${
+        preview.descriptions.length ? `: ${preview.descriptions.join(', ')}` : ''
+      }. Informe o dia antes de confirmar; não assumiremos dia 01.`
+      : '';
+  }
+
   /**
    * Renderiza a tabela de preview com as linhas parseadas.
    * @param {Array} rows - Resultado de parseCSV() ou parseRawText().
    */
   function renderImportPreview(rows) {
     const installmentHint = document.getElementById('importInstallmentHint');
+    renderImportDueDaySummary(rows);
     if (installmentHint) installmentHint.hidden = !rows || !rows.some(row => row.installment);
     if (!importPreviewTbody) return;
     importPreviewTbody.innerHTML = '';
@@ -10680,6 +10730,7 @@ document.addEventListener('DOMContentLoaded', () => {
       rowCheckbox.addEventListener('change', event => {
         row.selected = event.target.checked;
         row.selectionTouched = true;
+        renderImportDueDaySummary(_importParsedRows);
       });
       tr.querySelector('.import-cat-select').addEventListener('change', event => {
         row.category = event.target.value;
@@ -10698,6 +10749,7 @@ document.addEventListener('DOMContentLoaded', () => {
           row, e.target.value, dueDayField, dueDayInput, dueDayStatus,
           Boolean(row.installment)
         );
+        renderImportDueDaySummary(_importParsedRows);
         const warning = tr.querySelector('.import-due-day-warning');
         if (warning) warning.textContent = getImportDueDayMonthWarning(row, e.target.value);
       });
@@ -10711,6 +10763,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         dueDayInput.addEventListener('input', event => {
           updateImportDueDay(row, event.target.value);
+          renderImportDueDaySummary(_importParsedRows);
           updateImportDueDayField(
             row, tr.querySelector('.import-type-select').value,
             dueDayField, dueDayInput, dueDayStatus, Boolean(row.installment)
@@ -11230,6 +11283,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ? `${duplicateCount} possíveis duplicados ficaram desmarcados.`
             : '';
       }
+      renderImportDueDaySummary(_importParsedRows);
     });
   }
 

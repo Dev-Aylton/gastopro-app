@@ -75,6 +75,7 @@ const STORAGE_LAST_UID = 'gastopro_last_uid';
 const STORAGE_PENDING_SYNC = 'gastopro_pending_sync_v1';
 const STORAGE_SYNC_METADATA = 'gastopro_sync_metadata_v1';
 const MAX_TRANSACTIONAL_IMPORT_ROWS = 500;
+const IMPORT_BATCH_CHUNK_SIZE = 100;
 const STORAGE_TUTORIAL_SEEN = 'gastopro_tutorial_seen';
 const STORAGE_ACCOUNT_SETUP_SEEN = 'gastopro_account_setup_seen';
 const MAX_ACCOUNT_BALANCE = 9999999999.99;
@@ -88,6 +89,30 @@ const CREDIT_CARD_ISSUERS = [
 ];
 const DEFAULT_CREDIT_CARD_COLOR = '#6366f1';
 const CREDIT_CARD_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+
+function createImportBatchChunks(operation) {
+  const entries = Array.isArray(operation && operation.entries) ? operation.entries : [];
+  const templates = Array.isArray(operation && operation.templates) ? operation.templates : [];
+  const payments = Array.isArray(operation && operation.payments) ? operation.payments : [];
+  const rows = [
+    ...entries.map(item => ({ kind: 'entries', item })),
+    ...templates.map(item => ({ kind: 'templates', item })),
+    ...payments.map(item => ({ kind: 'payments', item }))
+  ];
+  const chunks = [];
+  for (let offset = 0; offset < rows.length; offset += IMPORT_BATCH_CHUNK_SIZE) {
+    const chunk = { entries: [], templates: [], payments: [] };
+    rows.slice(offset, offset + IMPORT_BATCH_CHUNK_SIZE).forEach(({ kind, item }) => {
+      chunk[kind].push(item);
+    });
+    chunks.push(chunk);
+  }
+  return chunks;
+}
+
+window.GastoProImportBatchHelpers = Object.freeze({
+  createChunks: createImportBatchChunks
+});
 
 function getLocalDateString(date = new Date()) {
   const year = date.getFullYear();
@@ -1445,14 +1470,43 @@ const FinanceData = {
             synced
           };
         }
-        const result = await auth.importFinancialBatch(entries, templates, operation.payments, userId);
-        if (!result || !result.success) {
-          return {
-            success: false,
-            error: result && result.error || new Error('A importação transacional falhou.'),
-            conflicts: result && result.conflicts || [],
-            synced
-          };
+        const importBatchId = operation.importBatchId || operation.operationId;
+        const chunks = createImportBatchChunks({
+          entries,
+          templates,
+          payments: operation.payments
+        });
+        const completedChunks = new Set(operation.completedChunks || []);
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          if (completedChunks.has(chunkIndex)) continue;
+          const chunk = chunks[chunkIndex];
+          const result = await auth.importFinancialBatch(
+            chunk.entries,
+            chunk.templates,
+            chunk.payments,
+            userId,
+            importBatchId
+          );
+          if (!result || !result.success) {
+            return {
+              success: false,
+              error: result && result.error || new Error('A importação transacional falhou.'),
+              conflicts: result && result.conflicts || [],
+              synced
+            };
+          }
+
+          pending = this.getPendingSync();
+          const pendingOperation = pending.transactionalOperations.find(item =>
+            item.operationId === operation.operationId
+          );
+          if (pendingOperation) {
+            pendingOperation.completedChunks = [...new Set([
+              ...(pendingOperation.completedChunks || []),
+              chunkIndex
+            ])];
+            this.savePendingSync(pending);
+          }
         }
 
         pending = this.getPendingSync();
@@ -2724,7 +2778,7 @@ const FinanceData = {
       return {
         success: false,
         items: [],
-        error: `A importação excede o limite de ${MAX_TRANSACTIONAL_IMPORT_ROWS} linhas por transação. Reduza a seleção e tente novamente.`
+        error: 'Limite de 500 linhas por importação. Reduza a seleção e tente novamente.'
       };
     }
     if (!items.length && !payments.length) {
@@ -2832,11 +2886,13 @@ const FinanceData = {
       return {
         success: false,
         items: [],
-        error: `A importação excede o limite de ${MAX_TRANSACTIONAL_IMPORT_ROWS} linhas por transação. Reduza a seleção e tente novamente.`
+        error: 'Limite de 500 linhas por importação. Reduza a seleção e tente novamente.'
       };
     }
     const operation = {
       operationId: crypto.randomUUID(),
+      importBatchId: crypto.randomUUID(),
+      completedChunks: [],
       entries: newEntries,
       templates: batchTemplates,
       payments: normalizedPayments

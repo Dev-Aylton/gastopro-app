@@ -5279,12 +5279,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 .btn-auth-google {
   width: 100%;
   min-height: 46px;
-  margin: 0 0 1.1rem;
+  margin: 0;
   padding: 0.65rem 1rem;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-main);
+  background: var(--primary-strong);
+  color: var(--theme-text-ffffff);
   font: inherit;
   font-size: 0.95rem;
   font-weight: 700;
@@ -5293,7 +5293,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 }
 
 .btn-auth-google:hover:not(:disabled) {
-  background: var(--bg-card-hover);
+  background: var(--primary);
   border-color: var(--primary);
 }
 
@@ -5411,7 +5411,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   color: var(--text-main);
-  font-size: 0.92rem;
+  font-size: 16px;
   transition: all 0.2s ease;
 }
 
@@ -5519,10 +5519,39 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   margin-top: 0.25rem;
 }
 
+.btn-auth-submit.btn-secondary {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  box-shadow: none;
+}
+
+.auth-email-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.8rem 0 1.1rem;
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.auth-email-divider::before,
+.auth-email-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--border);
+}
+
 .btn-auth-submit:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 20px rgba(var(--theme-rgb-shadow-6366f1), 0.5);
   filter: brightness(1.05);
+}
+
+.btn-auth-submit.btn-secondary:hover {
+  border-color: var(--primary);
+  box-shadow: none;
 }
 
 .btn-auth-submit:active {
@@ -5974,6 +6003,17 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 .import-help > summary:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 3px;
+}
+
+.import-due-day-summary {
+  margin: 0.75rem 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .import-help-icon {

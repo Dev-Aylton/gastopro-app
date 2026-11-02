@@ -1649,7 +1649,8 @@
         </button>
       </div>
 
-      <button type="button" class="btn-auth-google" id="googleSignInBtn">Entrar com Google</button>
+      <button type="button" class="btn-auth-google btn-primary" id="googleSignInBtn">Entrar com Google</button>
+      <div class="auth-email-divider" aria-hidden="true"><span>ou</span></div>
 
       <!-- Banner de Alerta / Mensagens -->
       <div class="auth-alert-banner" id="authAlertBanner" role="alert" style="display: none;">
@@ -1685,7 +1686,7 @@
           </div>
         </div>
 
-        <button type="submit" class="btn-primary btn-auth-submit" id="submitLoginBtn">
+        <button type="submit" class="btn-secondary btn-auth-submit" id="submitLoginBtn">
           <span>Entrar no GastoPro</span>
           <i class="fa-solid fa-arrow-right"></i>
         </button>
@@ -1758,7 +1759,7 @@
           </label>
         </div>
 
-        <button type="submit" class="btn-primary btn-auth-submit" id="submitRegisterBtn">
+        <button type="submit" class="btn-secondary btn-auth-submit" id="submitRegisterBtn">
           <span>Criar Minha Conta Gratuita</span>
           <i class="fa-solid fa-user-plus"></i>
         </button>
@@ -1979,6 +1980,7 @@
           <span style="margin-left: auto; font-size: 0.75rem;">Ajuste categoria e tipo antes de importar</span>
         </div>
         <p class="import-help-note" id="importDuplicateSelectionNote" aria-live="polite" hidden></p>
+        <p class="import-due-day-summary" id="importDueDaySummary" role="status" aria-live="polite" hidden></p>
 
         <p class="import-help-note">Confira a categoria e o tipo de cada linha. Sugestões de gastos fixos não alteram os lançamentos sem sua decisão.</p>
 

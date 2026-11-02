@@ -1424,8 +1424,14 @@ describe('FinanceData — Contas Bancárias', () => {
     let genericWrites = 0;
     const previousAuth = window.SupabaseAuth;
     window.SupabaseAuth = {
-      importFinancialBatch: async (entries, templates, payments) => {
-        calls.push({ entries: entries.map(item => item.id), templates: templates.map(item => item.id), payments });
+      importFinancialBatch: async (entries, templates, payments, currentUserId, importBatchId) => {
+        calls.push({
+          entries: entries.map(item => item.id),
+          templates: templates.map(item => item.id),
+          payments,
+          currentUserId,
+          importBatchId
+        });
         attempt++;
         if (attempt === 1) return { success: false, error: 'falha antes do commit' };
         entries.forEach(item => committedIds.add(item.id));
@@ -1455,8 +1461,73 @@ describe('FinanceData — Contas Bancárias', () => {
       assertEqual(calls[1].entries, calls[2].entries);
       assertEqual(calls[0].templates, calls[2].templates);
       assertEqual(calls[0].payments, calls[2].payments);
+      assertTrue(calls[0].importBatchId);
+      assertEqual(calls[0].importBatchId, calls[2].importBatchId);
       assertEqual(FinanceData.getPendingSync().transactionalOperations, []);
       assertEqual(genericWrites, 0);
+    } finally {
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('retoma somente o pedaço que falhou e reenvia com o mesmo identificador sem duplicar', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-resumable-import';
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: '', email: '', avatar: null, userId }, { queueSync: false });
+    const entries = Array.from({ length: 205 }, (_, index) =>
+      makeIncome({
+        id: crypto.randomUUID(),
+        desc: `EXEMPLO FICTÍCIO ${index}`,
+        accountId: null
+      })
+    );
+    const calls = [];
+    const storedRows = new Map();
+    let duplicateAttempts = 0;
+    let invocation = 0;
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      importFinancialBatch: async (chunkEntries, templates, payments, currentUserId, importBatchId) => {
+        calls.push({
+          entryIds: chunkEntries.map(item => item.id),
+          templateIds: templates.map(item => item.id),
+          paymentCount: payments.length,
+          currentUserId,
+          importBatchId
+        });
+        [...chunkEntries, ...templates].forEach(item => {
+          const key = `${importBatchId}:${item.id}`;
+          if (storedRows.has(key)) duplicateAttempts++;
+          storedRows.set(key, item.id);
+        });
+        invocation++;
+        if (invocation === 2) return { success: false, error: 'resposta perdida após gravar' };
+        return { success: true };
+      },
+      saveCloudAccounts: async () => ({ success: true }),
+      saveCloudEntries: async () => ({ success: true }),
+      saveCloudTemplates: async () => ({ success: true })
+    };
+    try {
+      const firstAttempt = await FinanceData.importBatch(entries, []);
+      assertFalse(firstAttempt.success);
+      const queued = FinanceData.getPendingSync().transactionalOperations[0];
+      assertEqual(queued.completedChunks, [0]);
+      assertTrue(/^[0-9a-f-]{36}$/i.test(queued.importBatchId));
+      assertEqual(calls.map(call => call.entryIds.length), [100, 100]);
+
+      assertTrue((await FinanceData.flushPendingSync(userId)).success);
+      assertEqual(calls.map(call => call.entryIds.length), [100, 100, 100, 5]);
+      assertEqual(calls[0].importBatchId, calls[1].importBatchId);
+      assertEqual(calls[1].importBatchId, calls[2].importBatchId);
+      assertTrue(calls.slice(2).every(call => call.currentUserId === userId));
+      assertFalse(calls.slice(2).some(call =>
+        call.entryIds.some(id => calls[0].entryIds.includes(id))
+      ));
+      assertEqual(storedRows.size, 205);
+      assertEqual(duplicateAttempts, 100);
+      assertEqual(FinanceData.getPendingSync().transactionalOperations, []);
     } finally {
       window.SupabaseAuth = previousAuth;
     }
@@ -1469,8 +1540,9 @@ describe('FinanceData — Contas Bancárias', () => {
     );
     const result = await FinanceData.importBatch(oversized, []);
     assertFalse(result.success);
-    assertTrue(result.error.includes('500 linhas'));
+    assertEqual(result.error, 'Limite de 500 linhas por importação. Reduza a seleção e tente novamente.');
     assertEqual(FinanceData.getEntries(), []);
+    assertEqual(FinanceData.getAccounts(), []);
     assertEqual(FinanceData.getPendingSync().transactionalOperations, []);
 
     const templates = Array.from({ length: 251 }, () => ({
@@ -1480,7 +1552,7 @@ describe('FinanceData — Contas Bancárias', () => {
     const payments = templates.map(template => ({ id: template.id, ym: '2026-10' }));
     const paymentResult = await FinanceData.importBatch([], payments);
     assertFalse(paymentResult.success);
-    assertTrue(paymentResult.error.includes('500 linhas'));
+    assertEqual(paymentResult.error, 'Limite de 500 linhas por importação. Reduza a seleção e tente novamente.');
     assertEqual(FinanceData.getTemplates().length, templates.length);
     assertEqual(FinanceData.getPendingSync().transactionalOperations, []);
   });
@@ -3222,6 +3294,39 @@ describe('Canal Fale comigo', () => {
       assertFalse(await window.SupabaseAuth.checkIsAdmin());
     } finally {
       window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('envia import_batch_id fixo para o RPC transacional', async () => {
+    const auth = window.SupabaseAuth;
+    const previousClient = auth.client;
+    const previousGetSessionUser = auth.getSessionUser;
+    const calls = [];
+    auth.client = {
+      rpc: async (name, args) => {
+        calls.push({ name, args });
+        return {
+          data: { success: true, versions: { entries: {}, templates: {} } },
+          error: null
+        };
+      }
+    };
+    auth.getSessionUser = async () => ({ id: '550e8400-e29b-41d4-a716-446655440001' });
+    try {
+      const batchId = '550e8400-e29b-41d4-a716-446655440002';
+      const result = await auth.importFinancialBatch(
+        [], [], [], '550e8400-e29b-41d4-a716-446655440001', batchId
+      );
+      assertTrue(result.success);
+      assertEqual(calls.length, 1);
+      assertEqual(calls[0].name, 'import_financial_batch');
+      assertEqual(calls[0].args.p_import_batch_id, batchId);
+      assertEqual(calls[0].args.p_entries, []);
+      assertEqual(calls[0].args.p_templates, []);
+      assertEqual(calls[0].args.p_payments, []);
+    } finally {
+      auth.client = previousClient;
+      auth.getSessionUser = previousGetSessionUser;
     }
   });
 
@@ -7894,6 +7999,50 @@ describe('Lógica de Negócio — paidMonths por mês isolado', () => {
   });
 });
 
+describe('Prioridade do login Google', () => {
+  it('posiciona Google primeiro e principal nas abas Entrar e Criar Conta', () => {
+    const fixture = document.createElement('div');
+    const tabs = document.createElement('div');
+    const loginTab = document.createElement('button');
+    const googleButton = document.createElement('button');
+    const divider = document.createElement('div');
+    const loginForm = document.createElement('form');
+    const registerForm = document.createElement('form');
+    const loginSubmit = document.createElement('button');
+    const registerSubmit = document.createElement('button');
+    loginTab.id = 'tabLoginBtn';
+    googleButton.id = 'googleSignInBtn';
+    googleButton.className = 'btn-auth-google';
+    googleButton.textContent = 'Entrar com Google';
+    divider.className = 'auth-email-divider';
+    loginSubmit.id = 'submitLoginBtn';
+    loginSubmit.className = 'btn-primary';
+    registerSubmit.id = 'submitRegisterBtn';
+    registerSubmit.className = 'btn-primary';
+    loginForm.appendChild(loginSubmit);
+    registerForm.appendChild(registerSubmit);
+    fixture.append(tabs, googleButton, divider, loginForm, registerForm);
+    tabs.appendChild(loginTab);
+    document.body.appendChild(fixture);
+    try {
+      assertTrue(window.GastoProGoogleAuthHelpers.applyPriority(document));
+      assertEqual(tabs.nextElementSibling, googleButton);
+      assertTrue(googleButton.classList.contains('btn-primary'));
+      assertFalse(Boolean(googleButton.querySelector('img')));
+      assertEqual(googleButton.textContent, 'Entrar com Google');
+      assertEqual(googleButton.nextElementSibling, divider);
+      assertEqual(divider.nextElementSibling, loginForm);
+      assertEqual(loginForm.nextElementSibling, registerForm);
+      assertTrue(loginSubmit.classList.contains('btn-secondary'));
+      assertFalse(loginSubmit.classList.contains('btn-primary'));
+      assertTrue(registerSubmit.classList.contains('btn-secondary'));
+      assertFalse(registerSubmit.classList.contains('btn-primary'));
+    } finally {
+      fixture.remove();
+    }
+  });
+});
+
 describe('GastoProImporter — parsing e limites', () => {
   it('gera um modelo fictício com cabeçalho fixo aceito pelo importador', () => {
     const template = GastoProImporter.createCSVTemplate();
@@ -7966,6 +8115,26 @@ describe('GastoProImporter — parsing e limites', () => {
       'Cabeçalho CSV inválido. Use o modelo oficial para importar.'
     ]);
     assertEqual(FinanceData.getEntries().map(entry => entry.id), originalIds);
+  });
+
+  it('resume prévia com quantidade e lista curta de lançamentos pendentes sem vencimento', () => {
+    const summary = window.GastoProImportHelpers.getDueDayPreview([
+      { desc: 'EXEMPLO FICTÍCIO A', date: '2099-04-15', type: 'variable', dueDay: null },
+      { desc: 'EXEMPLO FICTÍCIO B', date: '2099-05-15', type: 'variable', dueDay: null },
+      { desc: 'EXEMPLO FICTÍCIO C', date: '2099-06-15', type: 'variable', dueDay: null },
+      { desc: 'EXEMPLO FICTÍCIO D', date: '2099-07-15', type: 'variable', dueDay: null },
+      { desc: 'EXEMPLO FICTÍCIO receita', date: '2099-08-15', type: 'income', dueDay: null },
+      {
+        desc: 'EXEMPLO FICTÍCIO desmarcado', date: '2099-09-15',
+        type: 'variable', dueDay: null, selected: false
+      }
+    ]);
+    assertEqual(summary.count, 4);
+    assertEqual(summary.descriptions, [
+      'EXEMPLO FICTÍCIO A',
+      'EXEMPLO FICTÍCIO B',
+      'EXEMPLO FICTÍCIO C'
+    ]);
   });
 
   it('parseMoney deve aceitar vírgula decimal com uma ou duas casas e formatos existentes', () => {
