@@ -2737,6 +2737,7 @@ button:active { transform: scale(0.98); }
 .btn-primary { background: var(--primary-strong); color: var(--theme-text-ffffff); }
 .btn-danger { background: var(--danger); color: var(--theme-text-ffffff); }
 .btn-secondary { background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border); }
+#downloadCsvTemplateBtn { min-height: 44px; margin-top: 0.75rem; }
 .w-100 { width: 100%; }
 
 .payment-method-field {

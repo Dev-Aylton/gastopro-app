@@ -32,6 +32,7 @@ const GastoProImporter = (() => {
   const MAX_ROWS = 2000;
   const SUPPORTED_FILE_EXTENSIONS = new Set(['.csv', '.txt', '.ofx', '.xml', '.pdf']);
   const UNSUPPORTED_FILE_WARNING = 'Formato não suportado. Use CSV, OFX, PDF, XML ou TXT.';
+  const CSV_HEADER_WARNING = 'Cabeçalho CSV inválido. Use o modelo oficial para importar.';
   let lastWarnings = [];
 
   const CATEGORY_RULES = [
@@ -223,7 +224,8 @@ const GastoProImporter = (() => {
   }
 
   function lineIgnored(line) {
-    return /\b(?:saldo|total|limite)\b|\bfatura\s+anterior\b/.test(normalize(line));
+    return line.trim().startsWith('#') ||
+      /\b(?:saldo|total|limite)\b|\bfatura\s+anterior\b/.test(normalize(line));
   }
 
   function isDateHeader(header) {
@@ -243,7 +245,10 @@ const GastoProImporter = (() => {
         /^(valor|value|amount|vlr|montante)(?:\b|$)/.test(header) ||
         /^(debito|credito|debit|credit)$/.test(header)
       );
-      if (hasDate && hasValue) return { index, separator, headers };
+      const hasDescription = headers.some(header =>
+        /^(desc|description|historico|descricao|memo|estabelecimento|lancamento|detalhe)(?:\b|$)/.test(header)
+      );
+      if (hasDate && hasDescription && hasValue) return { index, separator, headers };
     }
     return null;
   }
@@ -269,7 +274,10 @@ const GastoProImporter = (() => {
 
   function parseCSV(text, today = new Date()) {
     setWarnings();
-    if (!text || !text.trim()) return [];
+    if (!text || !text.trim()) {
+      setWarnings([CSV_HEADER_WARNING]);
+      return [];
+    }
     if (text.length > MAX_CSV_CHARS) {
       setWarnings(['Arquivo CSV excede 1 MB; reduza o arquivo e tente novamente.']);
       return [];
@@ -280,7 +288,10 @@ const GastoProImporter = (() => {
       setWarnings(['O extrato excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.']);
     }
     const header = findHeader(lines);
-    if (!header) return [];
+    if (!header) {
+      setWarnings([...lastWarnings, CSV_HEADER_WARNING]);
+      return [];
+    }
 
     const headers = header.headers;
     const idxDate = headers.findIndex(isDateHeader);
@@ -296,13 +307,23 @@ const GastoProImporter = (() => {
     const idxType = headers.findIndex(name => name === 'tipo');
     const idxStartMonth = headers.findIndex(name => name === 'mes_inicio');
     const idxEndMonth = headers.findIndex(name => name === 'mes_fim');
-    const idxDueDay = headers.findIndex(name => name === 'dia_venc');
+    const idxDueDay = headers.findIndex(name =>
+      name === 'dia_vencimento' || name === 'dia_venc'
+    );
     const idxActive = headers.findIndex(name => name === 'ativo');
     if (idxDebit < 0 && idxCredit < 0 && idxAmount < 0) return [];
 
     const rows = [];
     const defaultTypeRows = [];
     const warnings = [...lastWarnings];
+    const knownHeaders = headers.filter(header =>
+      isDateHeader(header) ||
+      /^(desc|description|historico|descricao|memo|estabelecimento|lancamento|detalhe|categoria|category|debito|debit|credito|credit|valor|value|amount|vlr|montante|tipo|mes_inicio|mes_fim|dia_venc|dia_vencimento|ativo)$/.test(header)
+    );
+    const extraColumnCount = headers.length - knownHeaders.length;
+    if (extraColumnCount > 0) {
+      warnings.push(`${extraColumnCount} coluna(s) extra(s) ignorada(s).`);
+    }
     let inactiveCount = 0;
     const lastLine = Math.min(lines.length, header.index + 1 + MAX_ROWS);
     for (let index = header.index + 1; index < lastLine; index++) {
@@ -1057,6 +1078,18 @@ const GastoProImporter = (() => {
     };
   }
 
+  function createCSVTemplate() {
+    return [
+      'data;descricao;valor;categoria;tipo;mes_inicio;mes_fim;dia_vencimento;ativo',
+      '2026-01-10;EXEMPLO FICTÍCIO - recebimento;1000,00;Renda;income;;;;sim',
+      '2026-01-12;EXEMPLO FICTÍCIO - despesa;25,50;Outros;variable;;;;sim',
+      '2026-01-15;EXEMPLO FICTÍCIO - conta mensal;80,00;Moradia;fixed;2026-01;2026-12;15;sim',
+      '# Instruções: data em AAAA-MM-DD ou DD/MM/AAAA; valor com vírgula ou ponto decimal.',
+      '# Obrigatório: data, descricao e valor. As demais colunas são opcionais.',
+      ''
+    ].join('\n');
+  }
+
   // ================================================================
   // API PÚBLICA
   // ================================================================
@@ -1064,7 +1097,7 @@ const GastoProImporter = (() => {
     parseCSV, parseRawText, parseOFX, parsePixPayload, parseBoletoLine, groupTextItemsIntoLines,
     autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
     parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, shiftMonth, detectInstallment, detectCsvInstallment, matchDebtTemplate,
-    buildInstallmentDebt, parseFile, isSupportedFile, UNSUPPORTED_FILE_WARNING
+    buildInstallmentDebt, parseFile, isSupportedFile, UNSUPPORTED_FILE_WARNING, createCSVTemplate
   };
 
 })();

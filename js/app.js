@@ -1430,6 +1430,7 @@ function isValidPassword(password) {
 }
 
 let savingInProgress = false;
+const protectedActionsInProgress = new WeakSet();
 
 async function withSaving(button, action, timeoutMs = 15000) {
   if (savingInProgress) return false;
@@ -1458,7 +1459,26 @@ async function withSaving(button, action, timeoutMs = 15000) {
   }
 }
 
-window.GastoProSaving = { withSaving };
+async function withProtectedAction(button, action) {
+  if (!button || typeof button !== 'object' || typeof action !== 'function') {
+    throw new TypeError('Ação protegida requer um botão e uma função.');
+  }
+  if (button.disabled || protectedActionsInProgress.has(button)) return false;
+  protectedActionsInProgress.add(button);
+  const originalAriaBusy = button.getAttribute('aria-busy');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    return await action();
+  } finally {
+    button.disabled = false;
+    if (originalAriaBusy === null) button.removeAttribute('aria-busy');
+    else button.setAttribute('aria-busy', originalAriaBusy);
+    protectedActionsInProgress.delete(button);
+  }
+}
+
+window.GastoProSaving = { withSaving, withProtectedAction };
 
 async function waitForAuthenticatedSave() {
   const profile = FinanceData.getProfile();
@@ -8357,7 +8377,7 @@ document.addEventListener('DOMContentLoaded', () => {
         FinanceData.exportJSON();
         showToast('Backup JSON exportado.');
       },
-      onConfirm: async () => {
+      onConfirm: button => withProtectedAction(button, async () => {
         const result = await FinanceData.clearAll();
         closeProfileDrawer();
         renderUserProfile();
@@ -8367,7 +8387,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
         showToast('Dados financeiros zerados.');
-      }
+      })
     });
   });
 
@@ -9723,26 +9743,36 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     );
 
-    confirmDeleteAccountBtn.addEventListener('click', async () => {
-      if (!window.GastoProAccountDeletion.isConfirmationValid(deleteAccountConfirmation.value)) return;
+    confirmDeleteAccountBtn.addEventListener('click', () =>
+      withProtectedAction(confirmDeleteAccountBtn, async () => {
+        if (!window.GastoProAccountDeletion.isConfirmationValid(deleteAccountConfirmation.value)) return;
 
-      confirmDeleteAccountBtn.disabled = true;
-      confirmDeleteAccountBtn.textContent = 'Excluindo...';
-      if (deleteAccountConfirmation) deleteAccountConfirmation.disabled = true;
-      if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = true;
-      if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = true;
+        confirmDeleteAccountBtn.textContent = 'Excluindo...';
+        if (deleteAccountConfirmation) deleteAccountConfirmation.disabled = true;
+        if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = true;
+        if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = true;
 
-      try {
-        const result = await window.GastoProAccountDeletion.deleteAccountAndClearPendingSync(
-          window.SupabaseAuth,
-          FinanceData
-        );
-        if (!result || !result.success) {
-          showDeleteAccountError(
-            result && result.error && result.error.message
-              ? result.error.message
-              : 'Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.'
+        try {
+          const result = await window.GastoProAccountDeletion.deleteAccountAndClearPendingSync(
+            window.SupabaseAuth,
+            FinanceData
           );
+          if (!result || !result.success) {
+            showDeleteAccountError(
+              result && result.error && result.error.message
+                ? result.error.message
+                : 'Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.'
+            );
+            if (deleteAccountConfirmation) deleteAccountConfirmation.disabled = false;
+            if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = false;
+            if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = false;
+            confirmDeleteAccountBtn.disabled = !window.GastoProAccountDeletion.isConfirmationValid(deleteAccountConfirmation.value);
+            confirmDeleteAccountBtn.textContent = 'Excluir conta definitivamente';
+            return;
+          }
+        } catch (error) {
+          console.error('[GastoPro] Falha ao concluir a exclusão da conta:', error);
+          showDeleteAccountError('Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.');
           if (deleteAccountConfirmation) deleteAccountConfirmation.disabled = false;
           if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = false;
           if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = false;
@@ -9750,23 +9780,14 @@ document.addEventListener('DOMContentLoaded', () => {
           confirmDeleteAccountBtn.textContent = 'Excluir conta definitivamente';
           return;
         }
-      } catch (error) {
-        console.error('[GastoPro] Falha ao concluir a exclusão da conta:', error);
-        showDeleteAccountError('Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.');
-        if (deleteAccountConfirmation) deleteAccountConfirmation.disabled = false;
-        if (closeDeleteAccountModalBtn) closeDeleteAccountModalBtn.disabled = false;
-        if (cancelDeleteAccountBtn) cancelDeleteAccountBtn.disabled = false;
-        confirmDeleteAccountBtn.disabled = !window.GastoProAccountDeletion.isConfirmationValid(deleteAccountConfirmation.value);
-        confirmDeleteAccountBtn.textContent = 'Excluir conta definitivamente';
-        return;
-      }
 
-      closeDeleteAccountModal();
-      closeProfileDrawer();
-      renderUserProfile();
-      renderAll();
-      showToast('Conta e dados excluídos. O GastoPro está pronto para começar novamente.');
-    });
+        closeDeleteAccountModal();
+        closeProfileDrawer();
+        renderUserProfile();
+        renderAll();
+        showToast('Conta e dados excluídos. O GastoPro está pronto para começar novamente.');
+      })
+    );
   }
 
   if (downloadBackupBeforeAccountDeletion) {
@@ -10276,6 +10297,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const csvFileInput        = document.getElementById('csvFileInput');
   const csvDropZone         = document.getElementById('csvDropZone');
   const parseCsvBtn         = document.getElementById('parseCsvBtn');
+  const downloadCsvTemplateBtn = document.getElementById('downloadCsvTemplateBtn');
   const parseTextBtn        = document.getElementById('parseTextBtn');
   const importRawTextarea   = document.getElementById('importRawTextarea');
   const importTargetAccount = document.getElementById('importTargetAccount');
@@ -11169,8 +11191,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Botões de parse
-  if (parseCsvBtn)   parseCsvBtn.addEventListener('click',   handleCsvParse);
-  if (parseTextBtn)  parseTextBtn.addEventListener('click',  handleTextParse);
+  if (parseCsvBtn) parseCsvBtn.addEventListener('click', () =>
+    withProtectedAction(parseCsvBtn, handleCsvParse)
+  );
+  if (parseTextBtn) parseTextBtn.addEventListener('click', () =>
+    withProtectedAction(parseTextBtn, handleTextParse)
+  );
+  if (downloadCsvTemplateBtn) {
+    downloadCsvTemplateBtn.addEventListener('click', () => {
+      const downloaded = downloadReportFile(
+        new Blob([GastoProImporter.createCSVTemplate()], { type: 'text/csv;charset=utf-8' }),
+        'gastopro-modelo-importacao.csv'
+      );
+      if (!downloaded) showToast('Não foi possível baixar o modelo CSV neste navegador.');
+    });
+  }
 
   // Selecionar/deselecionar todos
   if (importSelectAll) {
@@ -11220,23 +11255,25 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Confirmar importação
-  if (finalConfirmImportBtn) finalConfirmImportBtn.addEventListener('click', async () => {
-    if (importSaving) return;
-    const previousCancelDisabled = cancelImportBtn.disabled;
-    const previousCloseDisabled = closeImportModalBtn.disabled;
-    await withSaving(finalConfirmImportBtn, async () => {
-      importSaving = true;
-      cancelImportBtn.disabled = true;
-      closeImportModalBtn.disabled = true;
-      try {
-        await handleConfirmImport();
-      } finally {
-        importSaving = false;
-        cancelImportBtn.disabled = previousCancelDisabled;
-        closeImportModalBtn.disabled = previousCloseDisabled;
-      }
-    });
-  });
+  if (finalConfirmImportBtn) finalConfirmImportBtn.addEventListener('click', () =>
+    withProtectedAction(finalConfirmImportBtn, async () => {
+      if (importSaving) return;
+      const previousCancelDisabled = cancelImportBtn.disabled;
+      const previousCloseDisabled = closeImportModalBtn.disabled;
+      await withSaving(finalConfirmImportBtn, async () => {
+        importSaving = true;
+        cancelImportBtn.disabled = true;
+        closeImportModalBtn.disabled = true;
+        try {
+          await handleConfirmImport();
+        } finally {
+          importSaving = false;
+          cancelImportBtn.disabled = previousCancelDisabled;
+          closeImportModalBtn.disabled = previousCloseDisabled;
+        }
+      });
+    })
+  );
 
 
   // ── 14. MÓDULO WIZARD DE LANÇAMENTO RÁPIDO ───────────────────

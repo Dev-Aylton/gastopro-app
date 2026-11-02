@@ -2639,6 +2639,46 @@ describe('Salvamento com trava', () => {
   });
 });
 
+describe('Ação protegida', () => {
+  itAsync('ignora clique duplo durante a ação e libera o botão no sucesso', async () => {
+    const button = document.createElement('button');
+    let resolveAction;
+    let calls = 0;
+    const pendingAction = new Promise(resolve => { resolveAction = resolve; });
+    const first = window.GastoProSaving.withProtectedAction(button, () => {
+      calls++;
+      return pendingAction;
+    });
+
+    assertTrue(button.disabled);
+    assertEqual(button.getAttribute('aria-busy'), 'true');
+    assertFalse(await window.GastoProSaving.withProtectedAction(button, async () => {
+      calls++;
+    }));
+    assertEqual(calls, 1);
+    resolveAction('ok');
+    assertEqual(await first, 'ok');
+    assertFalse(button.disabled);
+    assertNull(button.getAttribute('aria-busy'));
+  });
+
+  itAsync('libera o botão após erro para permitir nova tentativa', async () => {
+    const button = document.createElement('button');
+    let message = '';
+    try {
+      await window.GastoProSaving.withProtectedAction(button, async () => {
+        throw new Error('falha de teste');
+      });
+    } catch (error) {
+      message = error.message;
+    }
+    assertEqual(message, 'falha de teste');
+    assertFalse(button.disabled);
+    assertNull(button.getAttribute('aria-busy'));
+    assertEqual(await window.GastoProSaving.withProtectedAction(button, async () => 'ok'), 'ok');
+  });
+});
+
 describe('Tema — preferência local', () => {
   it('normaliza valores ausentes ou inválidos para escuro', () => {
     assertEqual(window.GastoProThemeHelpers.normalizeSavedTheme(null), 'dark');
@@ -7855,6 +7895,79 @@ describe('Lógica de Negócio — paidMonths por mês isolado', () => {
 });
 
 describe('GastoProImporter — parsing e limites', () => {
+  it('gera um modelo fictício com cabeçalho fixo aceito pelo importador', () => {
+    const template = GastoProImporter.createCSVTemplate();
+    assertEqual(
+      template.split('\n')[0],
+      'data;descricao;valor;categoria;tipo;mes_inicio;mes_fim;dia_vencimento;ativo'
+    );
+    assertTrue(template.includes('EXEMPLO FICTÍCIO'));
+    assertTrue(template.includes('# Instruções: data em AAAA-MM-DD ou DD/MM/AAAA; valor com vírgula ou ponto decimal.'));
+    assertTrue(template.includes('# Obrigatório: data, descricao e valor.'));
+    assertFalse(template.includes('@'));
+    const rows = GastoProImporter.parseCSV(template, new Date(2026, 0, 1));
+    assertEqual(rows.length, 3);
+    assertEqual(rows[2].dueDay, 15);
+    assertEqual(rows[2].startMonth, '2026-01');
+    assertEqual(rows[2].endMonth, '2026-12');
+  });
+
+  it('mantém parcelas no formato atual do CSV', () => {
+    const [row] = GastoProImporter.parseCSV(
+      'data;descricao;valor\n' +
+      '2026-01-10;EXEMPLO FICTÍCIO - parcela 03/12;12,00',
+      new Date(2026, 0, 1)
+    );
+    assertEqual(row.installment, { current: 3, total: 12 });
+    assertEqual(row.installmentBase, 'EXEMPLO FICTÍCIO -');
+  });
+
+  it('avisa e ignora colunas extras sem descartar a linha', () => {
+    const rows = GastoProImporter.parseCSV(
+      'data;descricao;valor;coluna_extra\n' +
+      '2026-01-10;EXEMPLO FICTÍCIO;12,00;ignorar',
+      new Date(2026, 0, 1)
+    );
+    assertEqual(rows.length, 1);
+    assertTrue(GastoProImporter.getLastWarnings().includes(
+      '1 coluna(s) extra(s) ignorada(s).'
+    ));
+  });
+
+  it('mantém dia vazio pendente de vencimento e não assume dia 01', () => {
+    const [row] = GastoProImporter.parseCSV(
+      'data;descricao;valor;tipo;dia_vencimento\n' +
+      '2099-04-15;EXEMPLO FICTÍCIO;12,00;variable;',
+      new Date(2026, 0, 1)
+    );
+    assertNull(row.dueDay);
+    assertEqual(window.GastoProImportHelpers.getImportPreviewType(row), 'variable_pending');
+    assertEqual(window.GastoProImportHelpers.getDueDayIssue(row, 'variable_pending'), 'missing');
+    const entry = GastoProImporter.buildEntry(row, 'variable', false);
+    assertNull(entry.dueDay);
+    assertEqual(entry.date, '2099-04-15');
+  });
+
+  it('rejeita CSV sem cabeçalho esperado sem gravar lançamentos', () => {
+    const originalIds = FinanceData.getEntries().map(entry => entry.id);
+    const rows = GastoProImporter.parseCSV(
+      '2026-01-10;EXEMPLO FICTÍCIO;12,00',
+      new Date(2026, 0, 1)
+    );
+    assertEqual(rows, []);
+    assertEqual(GastoProImporter.getLastWarnings(), [
+      'Cabeçalho CSV inválido. Use o modelo oficial para importar.'
+    ]);
+    assertEqual(GastoProImporter.parseCSV(
+      'data;valor\n2026-01-10;12,00',
+      new Date(2026, 0, 1)
+    ), []);
+    assertEqual(GastoProImporter.getLastWarnings(), [
+      'Cabeçalho CSV inválido. Use o modelo oficial para importar.'
+    ]);
+    assertEqual(FinanceData.getEntries().map(entry => entry.id), originalIds);
+  });
+
   it('parseMoney deve aceitar vírgula decimal com uma ou duas casas e formatos existentes', () => {
     assertEqual(GastoProImporter.parseMoney('45,9'), 45.9);
     assertEqual(GastoProImporter.parseMoney('45,90'), 45.9);
