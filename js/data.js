@@ -2636,6 +2636,7 @@ const FinanceData = {
           desc:       tpl.desc,
           amount:     tpl.amount,
           category:   tpl.category || 'Contas',
+          isDebt:     Boolean(tpl.isDebt),
           active:     tpl.active !== false,   // undefined é tratado como ativo
           month:      yearMonth,
           date:       validDueDay
@@ -3024,6 +3025,49 @@ const FinanceData = {
    * @returns {Object|null} Item atualizado, ou null se não encontrado.
    */
   update(id, updatedFields) {
+    const purchases = this.getCreditCardPurchases();
+    const purchaseIdx = purchases.findIndex(item => item.id === id);
+    if (purchaseIdx !== -1) {
+      const currentPurchase = purchases[purchaseIdx];
+      const card = this.getCreditCards().find(item =>
+        item.id === (updatedFields.cardId || currentPurchase.cardId)
+      );
+      if (!card) return null;
+      const accountId = Object.prototype.hasOwnProperty.call(updatedFields, 'accountId')
+        ? updatedFields.accountId
+        : currentPurchase.accountId;
+      const account = this.ensureAccountForLaunch(accountId);
+      if (!account.success) return null;
+      const desc = updatedFields.desc == null ? currentPurchase.desc : String(updatedFields.desc).trim();
+      const amount = updatedFields.amount == null ? Number(currentPurchase.amount) : Number(updatedFields.amount);
+      const category = updatedFields.category == null
+        ? currentPurchase.category
+        : String(updatedFields.category).trim();
+      const purchaseDate = updatedFields.date || currentPurchase.purchaseDate;
+      const installmentCount = Number(updatedFields.installmentCount || currentPurchase.installmentCount);
+      if (!desc || desc.length > 300 || !category || category.length > 100 ||
+        !Number.isFinite(amount) || amount <= 0 || amount > MAX_ACCOUNT_BALANCE ||
+        !isValidCivilDate(purchaseDate) || !Number.isInteger(installmentCount) ||
+        installmentCount < 1 || installmentCount > 24 ||
+        (currentPurchase.paidInstallments || []).some(number => number > installmentCount)) return null;
+      const updatedPurchase = {
+        ...currentPurchase,
+        desc,
+        amount,
+        category,
+        purchaseDate,
+        installmentCount,
+        accountId: account.accountId,
+        cardId: card.id,
+        cardName: card.name,
+        closingDay: card.closingDay,
+        dueDay: card.dueDay
+      };
+      purchases[purchaseIdx] = updatedPurchase;
+      return this.saveCreditCardPurchases(purchases, { flush: false })
+        .then(result => result.success ? updatedPurchase : null);
+    }
+
     // 1. Procura primeiro nos templates
     const templates = this.getTemplates();
     const tplIdx = templates.findIndex(t => t.id === id);
@@ -3167,6 +3211,10 @@ const FinanceData = {
   // ================================================================
 
   async delete(id) {
+    const purchases = this.getCreditCardPurchases();
+    if (purchases.some(purchase => purchase.id === id)) {
+      return this.saveCreditCardPurchases(purchases.filter(purchase => purchase.id !== id));
+    }
     const templates = this.getTemplates();
     if (templates.some(template => template.id === id)) {
       return this.saveTemplates(templates.filter(template => template.id !== id));

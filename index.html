@@ -401,7 +401,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.34</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.35</span></p>
             <div class="drawer-about-help">
             <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
               <div class="action-icon bg-primary-soft">
@@ -729,13 +729,16 @@
               <div class="view-icon-badge"><i class="fa-solid fa-hand-holding-dollar"></i></div>
               <div>
                 <h2>Ganhos do Mês</h2>
-                <p>Veja, adicione, altere ou exclua qualquer receita de <span class="badge-month-label"></span></p>
+                <p>Gerencie os ganhos lançados em <span class="badge-month-label"></span></p>
               </div>
             </div>
             <div class="view-header-total">
               <span class="total-caption">Total de Ganhos:</span>
               <span class="total-big text-white financial-amount" id="incomesPageTotal">R$ 0,00</span>
             </div>
+            <button type="button" class="btn-primary control-center-create" data-action="open-income-entry">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i> Novo ganho
+            </button>
           </div>
 
           <!-- Formulário Rápido de Novo Ganho -->
@@ -830,7 +833,7 @@
               <div class="view-icon-badge"><i class="fa-solid fa-receipt"></i></div>
               <div>
                 <h2>Gastos do Mês</h2>
-                <p>Controle completo de contas fixas, dívidas e gastos variáveis de <span
+                <p>Gerencie todos os tipos de gasto de <span
                     class="badge-month-label"></span></p>
               </div>
             </div>
@@ -838,6 +841,9 @@
               <span class="total-caption">Total de Gastos:</span>
               <span class="total-big text-white financial-amount" id="expensesPageTotal">R$ 0,00</span>
             </div>
+            <button type="button" class="btn-primary control-center-create" data-action="open-expense-entry">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i> Novo gasto
+            </button>
           </div>
 
           <!-- Formulário Rápido de Novo Gasto -->
@@ -1111,7 +1117,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.34</span>
+          <span class="badge badge-version">v4.35</span>
         </div>
       </footer>
 
@@ -1194,6 +1200,25 @@
         <div class="form-group" id="editPaymentMethodGroup">
           <label for="editPaymentMethod">Forma de pagamento</label>
           <select id="editPaymentMethod" class="payment-method-select"></select>
+        </div>
+
+        <div class="form-group" id="editCreditCardFields" hidden>
+          <p class="form-hint" id="editCreditCardWarning" hidden>
+            Alterar esta compra modifica o parcelamento inteiro, não somente o mês selecionado.
+          </p>
+          <label for="editCreditCard">Cartão</label>
+          <select id="editCreditCard" required></select>
+          <label for="editInstallments">Número de parcelas</label>
+          <select id="editInstallments" required>
+            <option value="1">1x</option><option value="2">2x</option><option value="3">3x</option>
+            <option value="4">4x</option><option value="5">5x</option><option value="6">6x</option>
+            <option value="7">7x</option><option value="8">8x</option><option value="9">9x</option>
+            <option value="10">10x</option><option value="11">11x</option><option value="12">12x</option>
+            <option value="13">13x</option><option value="14">14x</option><option value="15">15x</option>
+            <option value="16">16x</option><option value="17">17x</option><option value="18">18x</option>
+            <option value="19">19x</option><option value="20">20x</option><option value="21">21x</option>
+            <option value="22">22x</option><option value="23">23x</option><option value="24">24x</option>
+          </select>
         </div>
 
         <div class="form-group" id="editEndMonthGroup">

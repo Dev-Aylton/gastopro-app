@@ -2659,6 +2659,114 @@ button:active { transform: scale(0.98); }
   gap: 0.5rem;
 }
 
+.control-center-item {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+}
+
+.control-center-item-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.control-center-item-title {
+  min-width: 0;
+  color: var(--text-main);
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.control-center-item-amount {
+  flex: 0 0 auto;
+  color: var(--text-main);
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.control-center-item-details,
+.control-center-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.8rem;
+  min-width: 0;
+}
+
+.control-center-item-details {
+  color: var(--text-main);
+  font-size: 0.875rem;
+}
+
+.control-center-item-details > span {
+  max-width: 100%;
+  line-height: 1.5;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.control-center-item-details strong {
+  color: var(--text-main);
+}
+
+.control-center-item-actions {
+  justify-content: space-between;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.control-center-item-actions .card-item-actions {
+  margin-left: auto;
+}
+
+.control-center-item .control-center-action {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.control-center-item .btn-action-delete {
+  color: var(--danger);
+}
+
+.control-center-item .btn-action-edit {
+  color: var(--primary);
+}
+
+[data-theme="light"] .control-center-item .btn-action-edit {
+  color: var(--primary-strong);
+}
+
+.control-center-item .checkbox-paid-label,
+.control-center-item .badge-status-btn,
+.control-center-item .notification-action {
+  min-height: 48px;
+}
+
+.control-center-paid-toggle {
+  padding: 0.35rem 0.65rem;
+}
+
+.control-center-paid-toggle input {
+  width: 18px;
+  height: 18px;
+}
+
+.control-center-create {
+  min-height: 48px;
+  flex: 0 0 auto;
+}
+
 .manage-item-card {
   display: flex;
   align-items: center;
@@ -3947,6 +4055,23 @@ button:active { transform: scale(0.98); }
 
 /* Tablet & Smartphones (< 860px) */
 @media (max-width: 900px) {
+  .view-header-card {
+    flex-wrap: wrap;
+  }
+  .view-header-info {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .view-header-info > div {
+    min-width: 0;
+  }
+  .control-center-create {
+    width: 100%;
+  }
+  .control-center-item-heading {
+    flex-wrap: wrap;
+  }
+
   .sidebar {
     transform: translateX(-100%);
     box-shadow: none;

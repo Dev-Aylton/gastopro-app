@@ -2435,15 +2435,16 @@ function navigateMobileBottomItem(destination) {
   return true;
 }
 
-function setEntryFormType(type) {
+function setEntryFormType(type, view = document.getElementById('view-entries')) {
   if (type !== null && !['expense', 'income'].includes(type)) return false;
+  const container = view || document;
   const panels = {
-    expense: document.getElementById('expenseForm')?.closest('.panel-box'),
-    income: document.getElementById('incomeForm')?.closest('.panel-box')
+    expense: container.querySelector('#expenseForm')?.closest('.panel-box'),
+    income: container.querySelector('#incomeForm')?.closest('.panel-box')
   };
   if (!panels.expense || !panels.income) return false;
 
-  document.querySelectorAll('.entry-type-button[data-entry-type]').forEach(button => {
+  container.querySelectorAll('.entry-type-button[data-entry-type]').forEach(button => {
     const selected = button.dataset.entryType === type;
     button.classList.toggle('is-active', selected);
     button.setAttribute('aria-pressed', String(selected));
@@ -2451,7 +2452,7 @@ function setEntryFormType(type) {
   Object.entries(panels).forEach(([formType, panel]) => {
     panel.hidden = formType !== type;
   });
-  const prompt = document.getElementById('entryComposerPrompt');
+  const prompt = container.querySelector('#entryComposerPrompt');
   if (prompt) prompt.hidden = type !== null;
   return true;
 }
@@ -2459,12 +2460,27 @@ function setEntryFormType(type) {
 function openIncomeEntryComposer() {
   if (typeof window.switchToView !== 'function') return false;
   window.switchToView('entries');
-  if (!setEntryFormType('income')) return false;
+  const view = document.getElementById('view-entries');
+  if (!setEntryFormType('income', view)) return false;
   window.requestAnimationFrame(() => {
-    const form = document.getElementById('incomeForm');
-    const amount = document.getElementById('incomeAmount');
+    const form = view.querySelector('#incomeForm');
+    const amount = view.querySelector('#incomeAmount');
     form?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     amount?.focus();
+  });
+  return true;
+}
+
+function openExpenseEntryComposer() {
+  if (typeof window.switchToView !== 'function') return false;
+  window.switchToView('entries');
+  const view = document.getElementById('view-entries');
+  if (!setEntryFormType('expense', view)) return false;
+  window.requestAnimationFrame(() => {
+    const form = view.querySelector('#expenseForm');
+    const description = view.querySelector('#expenseDesc');
+    form?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    description?.focus();
   });
   return true;
 }
@@ -2516,7 +2532,7 @@ function setupEntryComposer(view = document.getElementById('view-entries')) {
   view.querySelectorAll('.entry-type-button[data-entry-type]').forEach(button => {
     button.addEventListener('click', () => setEntryFormType(button.dataset.entryType));
   });
-  if (!setEntryFormType(null)) {
+  if (!setEntryFormType(null, view)) {
     throw new Error('Não foi possível iniciar a tela de lançamentos.');
   }
 }
@@ -4826,52 +4842,18 @@ function renderIncomesView(incomes, totalIncome) {
     container.innerHTML = `
       <div class="empty-state">
         <i class="fa-solid fa-hand-holding-dollar" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.4;"></i>
-        <p>Nenhum ganho cadastrado para este mês ainda.</p>
-        <span>Adicione seu salário ou outras fontes de renda.</span>
+        <p>Nenhum ganho neste mês.</p>
+        <span>Os ganhos recebidos aparecerão aqui após serem lançados.</span>
         <button type="button" class="btn-primary empty-state-action" data-action="open-income-entry">
-          Adicionar ganho
+          Criar ganho em Lançamentos
         </button>
-        <small class="empty-state-tip">Depois de salvar, você pode editar ou excluir o lançamento nesta lista.</small>
       </div>
     `;
     return;
   }
 
   const accountNames = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
-  container.innerHTML = incomes.map(item => {
-    const accountName = accountNames.get(item.accountId);
-    return `
-    <div class="manage-item-card transaction-item-card">
-      <div class="card-item-left">
-        <div class="card-type-icon bg-green-soft">
-          <i class="fa-solid fa-arrow-down"></i>
-        </div>
-        <div class="card-item-info">
-          <div class="card-item-title">${escapeHtml(item.desc)}</div>
-          <div class="card-item-meta">
-            <span class="tag-badge">${escapeHtml(item.category || 'Renda')}</span>
-            ${accountName ? `<span class="tag-badge">${escapeHtml(accountName)}</span>` : ''}
-            ${renderPaymentMethodBadge(item.paymentMethod)}
-          </div>
-          <time class="card-item-date" datetime="${escapeHtml(item.date || '')}">${escapeHtml(formatDate(item.date))}</time>
-        </div>
-      </div>
-
-      <div class="card-item-right">
-        <span class="tag-badge transaction-status-chip">${item.paid ? 'Pago' : 'Pendente'}</span>
-        <div class="card-item-amount text-success financial-amount financial-amount--positive">+ ${formatCurrency(item.amount)}</div>
-        <div class="card-item-actions">
-          <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Ganho" aria-label="Editar ganho ${escapeHtml(item.desc)}">
-            <i class="fa-solid fa-pen"></i>
-          </button>
-          <button class="btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}" title="Excluir Ganho" aria-label="Excluir ganho ${escapeHtml(item.desc)}">
-            <i class="fa-solid fa-trash-can"></i>
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-  }).join('');
+  container.innerHTML = incomes.map(item => renderControlCenterItem(item, accountNames, true)).join('');
 }
 
 // ================================================================
@@ -4912,101 +4894,115 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
     container.innerHTML = `
       <div class="empty-state">
         <i class="fa-solid fa-receipt" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.4;"></i>
-        <p>Nenhum gasto encontrado para este filtro.</p>
-        <span>Cadastre uma nova despesa no formulário acima.</span>
-        <button type="button" class="btn-primary empty-state-action" data-action="focus-entry-form"
-          data-form="expenseForm" data-focus="expenseDesc">Adicionar gasto</button>
-        <small class="empty-state-tip">Escolha a categoria e confira se o gasto é fixo ou variável antes de salvar.</small>
+        <p>Nenhum gasto neste mês.</p>
+        <span>Os lançamentos de gastos aparecerão aqui após serem criados.</span>
+        <button type="button" class="btn-primary empty-state-action" data-action="open-expense-entry">
+          Criar gasto em Lançamentos
+        </button>
       </div>
     `;
     return;
   }
 
   const accountNames = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
-  const paidReviewIds = new Set(getPaidImportReviewIds());
-  container.innerHTML = itemsToDisplay.map(item => {
-    const isFixed = item.type === 'fixed';
-    const typeLabel = item.isCardInstallment
-      ? 'Compra no cartão'
-      : isFixed ? 'Conta Fixa Recorrente' : 'Gasto Variável';
-    const iconClass = isFixed ? 'bg-yellow-soft' : 'bg-red-soft';
-    const iconI = isFixed ? 'fa-solid fa-lock' : 'fa-solid fa-cart-shopping';
-    const isInactive = isFixed && item.active === false;
-    const accountName = accountNames.get(item.accountId);
-    const needsPaidReview = item.paid && paidReviewIds.has(item.id);
+  container.innerHTML = itemsToDisplay.map(item => renderControlCenterItem(item, accountNames, false)).join('');
+}
 
-    return `
-      <div class="manage-item-card transaction-item-card ${item.paid ? 'is-paid' : ''} ${isInactive ? 'is-inactive-card' : ''}"
-        data-entry-id="${escapeHtml(item.id)}">
-        <div class="card-item-left">
-          <div class="card-type-icon ${iconClass}">
-            <i class="${iconI}"></i>
-          </div>
-          <div class="card-item-info">
-            <div class="card-item-title">${escapeHtml(item.desc)}</div>
-            <div class="card-item-meta">
-              <span class="tag-badge">${escapeHtml(item.category || typeLabel)}</span>
-              ${accountName ? `<span class="tag-badge">${escapeHtml(accountName)}</span>` : ''}
-              <span class="tag-badge">${typeLabel}</span>
-              ${item.dueDayMissing ? '<span class="badge badge-warning" role="status">Falta o dia</span>' : ''}
-              ${renderPaymentMethodBadge(item.paymentMethod)}
-              ${item.isCardInstallment
-                ? `<span class="tag-badge">${escapeHtml(item.cardName)} · ${item.installmentNumber}/${item.installmentCount}x</span>`
-                : ''}
-              ${needsPaidReview ? `
-                <span class="import-review-badge">Revisar</span>
-              ` : ''}
-            </div>
-            <time class="card-item-date" datetime="${escapeHtml(item.date || '')}">${escapeHtml(formatDate(item.date))}</time>
-          </div>
-        </div>
+function getControlCenterTypeLabel(item) {
+  if (item.type === 'income') return 'Ganho';
+  if (item.isLoan || item.loanReceivedAmount != null) return 'Empréstimo';
+  if (item.isCardInstallment || item.category === 'Parcelamento') return 'Parcelado';
+  if (item.type === 'debt' || item.isDebt) return 'Dívida';
+  if (item.paymentMethod === 'boleto') return 'Boleto';
+  if (item.isTemplate || item.type === 'fixed') return 'Fixo';
+  return 'Variável';
+}
 
-        <div class="card-item-right">
-          <div class="transaction-card-main-row">
-            <span class="transaction-card-status">
-              ${isFixed ? `
-                <button class="badge-status-btn ${item.active ? 'status-active' : 'status-inactive'}"
-                        data-action="toggle-active" data-id="${escapeHtml(item.id)}"
-                        title="Clique para ${item.active ? 'pausar nos meses seguintes' : 'reativar nos meses seguintes'}">
-                  <i class="fa-solid ${item.active ? 'fa-circle-check' : 'fa-circle-pause'}"></i> ${item.active ? 'Ativo' : 'Inativo'}
-                </button>
-              ` : ''}
-            </span>
-            <label class="checkbox-paid-label" title="${item.paid ? 'Marcar como pendente neste mês' : 'Dar baixa como pago neste mês'}">
-              <input type="checkbox" ${item.paid ? 'checked' : ''} data-action="toggle-paid" data-id="${escapeHtml(item.id)}" ${item.isCardInstallment
+function renderControlCenterItem(item, accountNames, isIncome) {
+  const isCardInstallment = Boolean(item.isCardInstallment);
+  const isTemplate = Boolean(item.isTemplate) ||
+    FinanceData.getTemplates().some(template => template.id === item.id);
+  const isInactive = !isIncome && item.active === false;
+  const needsPaidReview = !isIncome && item.paid && getPaidImportReviewIds().includes(item.id);
+  const dateLabel = item.date ? formatDate(item.date) :
+    item.day ? `Dia ${String(item.day).padStart(2, '0')}` : 'Não definida';
+  const statusLabel = typeof item.paid === 'boolean' ? (item.paid ? 'Pago' : 'A pagar') : null;
+  const actions = isCardInstallment
+    ? `
+      <button type="button" class="control-center-action btn-action-edit" data-action="edit-card-purchase"
+        data-id="${escapeHtml(item.purchaseId || item.id)}" aria-label="Editar compra parcelada ${escapeHtml(item.desc)}"
+        title="Editar a compra e todo o parcelamento"><i class="fa-solid fa-pen"></i></button>
+      <button type="button" class="control-center-action btn-action-delete" data-action="delete-card-purchase"
+        data-id="${escapeHtml(item.purchaseId || item.id)}" aria-label="Excluir compra parcelada ${escapeHtml(item.desc)}"
+        title="Excluir a compra e todas as parcelas"><i class="fa-solid fa-trash-can"></i></button>
+    `
+    : `
+      <button type="button" class="control-center-action btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}"
+        aria-label="Editar ${isIncome ? 'ganho' : 'gasto'} ${escapeHtml(item.desc)}" title="Editar"><i class="fa-solid fa-pen"></i></button>
+      <button type="button" class="control-center-action btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}"
+        aria-label="Excluir ${isIncome ? 'ganho' : 'gasto'} ${escapeHtml(item.desc)}" title="Excluir"><i class="fa-solid fa-trash-can"></i></button>
+    `;
+
+  return `
+    <article class="control-center-item ${item.paid ? 'is-paid' : ''} ${isInactive ? 'is-inactive-card' : ''}"
+      data-entry-id="${escapeHtml(item.id)}">
+      <div class="control-center-item-heading">
+        <h3 class="control-center-item-title">${escapeHtml(item.desc)}</h3>
+        <strong class="control-center-item-amount ${isIncome ? 'text-success' : 'text-danger'}">
+          ${isIncome ? '+' : '−'} ${formatCurrency(item.amount)}
+        </strong>
+      </div>
+      <div class="control-center-item-details">
+        <span><strong>Tipo:</strong> ${escapeHtml(getControlCenterTypeLabel(item))}</span>
+        <span><strong>Data/dia:</strong> ${escapeHtml(dateLabel)}</span>
+        <span><strong>Conta:</strong> ${escapeHtml(accountNames.get(item.accountId) || 'Sem conta')}</span>
+        ${statusLabel ? `<span class="control-center-status"><strong>Situação:</strong> ${statusLabel}</span>` : ''}
+        ${item.isCardInstallment
+          ? `<span><strong>Parcela:</strong> ${item.installmentNumber}/${item.installmentCount} · ${escapeHtml(item.cardName || 'Cartão')}</span>`
+          : ''}
+        ${item.category ? `<span><strong>Categoria:</strong> ${escapeHtml(item.category)}</span>` : ''}
+        ${item.dueDayMissing ? '<span class="badge badge-warning" role="status">Falta o dia</span>' : ''}
+        ${item.paymentMethod ? `<span>${renderPaymentMethodBadge(item.paymentMethod)}</span>` : ''}
+      </div>
+      <div class="control-center-item-actions">
+        ${!isIncome && typeof item.paid === 'boolean' ? `
+          <label class="checkbox-paid-label control-center-paid-toggle">
+            <input type="checkbox" ${item.paid ? 'checked' : ''} data-action="toggle-paid" data-id="${escapeHtml(item.id)}"
+              ${isCardInstallment
                 ? `data-kind="credit-card" data-installment="${item.installmentNumber}" data-month="${escapeHtml(item.month)}"`
                 : ''} />
-              <span>${item.paid ? 'Pago' : 'Pagar'}</span>
-            </label>
-            <div class="card-item-amount financial-amount financial-amount--negative ${isInactive ? 'text-muted' : ''}">
-              − ${formatCurrency(item.amount)}
-            </div>
-          </div>
-
-          ${needsPaidReview ? `
-            <div class="card-item-review-actions">
-              <button type="button" class="notification-action" data-action="review-import-paid"
-                data-id="${escapeHtml(item.id)}" aria-label="Marcar como conferido: ${escapeHtml(item.desc)}">Conferir</button>
-              <button type="button" class="notification-action" data-action="pending-import-paid"
-                data-id="${escapeHtml(item.id)}" aria-label="Alterar para pendente: ${escapeHtml(item.desc)}">Pendente</button>
-            </div>
-          ` : ''}
-
-          ${item.isCardInstallment ? '' : `
-            <div class="card-item-actions transaction-card-action-row">
-              <button class="btn-action-edit" data-action="edit" data-id="${escapeHtml(item.id)}" title="Alterar Informação" aria-label="Editar gasto ${escapeHtml(item.desc)}">
-                <i class="fa-solid fa-pen"></i>
-              </button>
-              <button class="btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}" title="Excluir Gasto" aria-label="Excluir gasto ${escapeHtml(item.desc)}">
-                <i class="fa-solid fa-trash-can"></i>
-              </button>
-            </div>
-          `}
-        </div>
+            <span>${item.paid ? 'Pago' : 'Marcar pago'}</span>
+          </label>
+        ` : ''}
+        ${!isIncome && (item.isTemplate || item.type === 'fixed') ? `
+          <button type="button" class="badge-status-btn ${item.active === false ? 'status-inactive' : 'status-active'}"
+            data-action="toggle-active" data-id="${escapeHtml(item.id)}">
+            ${item.active === false ? 'Reativar modelo' : 'Pausar modelo'}
+          </button>
+        ` : ''}
+        ${needsPaidReview ? `
+          <button type="button" class="notification-action" data-action="review-import-paid" data-id="${escapeHtml(item.id)}">Conferir</button>
+          <button type="button" class="notification-action" data-action="pending-import-paid" data-id="${escapeHtml(item.id)}">A pagar</button>
+        ` : ''}
+        <div class="card-item-actions">${actions}</div>
       </div>
-    `;
-  }).join('');
+    </article>
+  `;
 }
+
+window.GastoProIncomeListHelpers = Object.freeze({
+  render: renderIncomesView,
+  getTypeLabel: getControlCenterTypeLabel
+});
+
+window.GastoProControlCenterHelpers = Object.freeze({
+  getTypeLabel: getControlCenterTypeLabel,
+  openComposer(type) {
+    if (type === 'income') return openIncomeEntryComposer();
+    if (type === 'expense') return openExpenseEntryComposer();
+    return false;
+  }
+});
 
 window.GastoProExpenseListHelpers = Object.freeze({
   render: renderExpensesView
@@ -5024,6 +5020,78 @@ window.GastoProExpenseListHelpers = Object.freeze({
  * @param {string} id - UUID do item a editar.
  */
 window.openEditModal = function(id) {
+  const template = FinanceData.getTemplates().find(item => item.id === id);
+  if (template) {
+    showConfirm({
+      title: 'Editar modelo recorrente?',
+      message: 'A edição altera o modelo inteiro e suas ocorrências nos meses, não apenas este mês. Deseja continuar?',
+      iconClass: 'fa-solid fa-repeat',
+      okLabel: 'Editar modelo',
+      okBtnClass: 'btn-primary',
+      onConfirm: () => populateEditModal(id)
+    });
+    return;
+  }
+  const purchase = FinanceData.getCreditCardPurchases().find(item => item.id === id);
+  if (purchase) {
+    showConfirm({
+      title: 'Editar compra parcelada?',
+      message: 'A edição altera a compra original e todas as parcelas, não apenas esta ocorrência mensal. Deseja continuar?',
+      iconClass: 'fa-solid fa-credit-card',
+      okLabel: 'Editar compra',
+      okBtnClass: 'btn-primary',
+      onConfirm: () => populateCreditCardPurchaseEditModal(purchase)
+    });
+    return;
+  }
+  populateEditModal(id);
+};
+
+function populateCreditCardPurchaseEditModal(purchase) {
+  const editCategory = document.getElementById('editCategory');
+  editCategory.querySelectorAll('[data-legacy="true"]').forEach(option => option.remove());
+  if (purchase.category && !Array.from(editCategory.options).some(option => option.value === purchase.category)) {
+    const option = document.createElement('option');
+    option.value = purchase.category;
+    option.textContent = purchase.category;
+    option.dataset.legacy = 'true';
+    editCategory.appendChild(option);
+  }
+  document.getElementById('editItemId').value = purchase.id;
+  document.getElementById('editDesc').value = purchase.desc;
+  document.getElementById('editAmount').value = purchase.amount;
+  editCategory.value = purchase.category;
+  document.getElementById('editType').value = 'variable';
+  document.getElementById('editDate').value = purchase.purchaseDate;
+  document.getElementById('editAccount').value = purchase.accountId || '';
+  document.getElementById('editCreditCard').innerHTML = FinanceData.getCreditCards().map(card =>
+    `<option value="${escapeHtml(card.id)}">${escapeHtml(card.name)}</option>`
+  ).join('');
+  document.getElementById('editCreditCard').value = purchase.cardId;
+  document.getElementById('editInstallments').value = String(purchase.installmentCount);
+  document.getElementById('editCreditCardFields').hidden = false;
+  document.getElementById('editCreditCard').required = true;
+  document.getElementById('editInstallments').required = true;
+  document.getElementById('editCreditCardWarning').hidden = false;
+  document.getElementById('editTypeGroup').hidden = true;
+  document.getElementById('editStatusGroup').hidden = true;
+  document.getElementById('editDueDayGroup').hidden = true;
+  document.getElementById('editPaymentMethodGroup').hidden = true;
+  document.getElementById('editEndMonthGroup').hidden = true;
+  document.getElementById('editModalTitle').textContent = 'Alterar compra parcelada';
+  document.getElementById('editModal').classList.add('active');
+}
+
+function populateEditModal(id) {
+  document.getElementById('editCreditCardFields').hidden = true;
+  document.getElementById('editCreditCard').required = false;
+  document.getElementById('editInstallments').required = false;
+  document.getElementById('editCreditCardWarning').hidden = true;
+  document.getElementById('editTypeGroup').hidden = false;
+  document.getElementById('editStatusGroup').hidden = false;
+  document.getElementById('editDueDayGroup').hidden = false;
+  document.getElementById('editPaymentMethodGroup').hidden = false;
+  document.getElementById('editEndMonthGroup').hidden = false;
   const all = FinanceData.getAll();
   const item = all.find(e => e.id === id);
   if (!item) {
@@ -5099,7 +5167,7 @@ window.openEditModal = function(id) {
   document.getElementById('editModalTitle').textContent = title;
 
   document.getElementById('editModal').classList.add('active');
-};
+}
 
 function closeEditModal() {
   document.getElementById('editModal').classList.remove('active');
@@ -5508,11 +5576,14 @@ function showConfirm({
  */
 window.deleteEntry = function(id) {
   const isFixed = FinanceData.getTemplates().some(template => template.id === id);
+  const isCardPurchase = FinanceData.getCreditCardPurchases().some(purchase => purchase.id === id);
   showConfirm({
-    title: isFixed ? 'Excluir gasto fixo recorrente?' : 'Excluir lançamento?',
-    message: isFixed 
-      ? 'Este gasto fixo deixará de se repetir nos meses futuros. Deseja realmente excluir?'
-      : 'Esta ação não pode ser desfeita. O item será removido permanentemente.',
+    title: isCardPurchase ? 'Excluir compra parcelada?' : isFixed ? 'Excluir modelo recorrente?' : 'Excluir lançamento?',
+    message: isCardPurchase
+      ? 'A compra original e todas as suas parcelas, pagas ou futuras, serão removidas; não apenas este mês. Deseja excluir?'
+      : isFixed
+        ? 'O modelo recorrente e seu histórico mensal serão removidos, não apenas este mês. Deseja excluir?'
+        : 'Esta ação não pode ser desfeita. O item será removido permanentemente.',
     iconClass: 'fa-solid fa-trash-can',
     okLabel: 'Sim, excluir',
     onConfirm: async () => {
@@ -6164,6 +6235,9 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'open-income-entry':
         openIncomeEntryComposer();
         break;
+      case 'open-expense-entry':
+        openExpenseEntryComposer();
+        break;
       case 'new-goal':
         openGoalModal();
         break;
@@ -6235,7 +6309,13 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'edit':
         openEditModal(id);
         break;
+      case 'edit-card-purchase':
+        openEditModal(id);
+        break;
       case 'delete':
+        deleteEntry(id);
+        break;
+      case 'delete-card-purchase':
         deleteEntry(id);
         break;
       case 'toggle-active':
@@ -6555,13 +6635,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 1. Navegação da Sidebar ────────────────────────────────────
   // Apenas botões COM data-view disparam switchToView() (evita chamar com null)
-  document.querySelectorAll('.sidebar-nav .nav-item[data-view]').forEach(btn => {
+  document.querySelectorAll('  .sidebar-nav .nav-item[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
       const view = btn.getAttribute('data-view');
-      if (view === 'incomes') {
-        openIncomeEntryComposer();
-        return;
-      }
       switchToView(view);
     });
   });
@@ -7175,6 +7251,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dueDayValue = document.getElementById('editDueDay').value;
     const dueDay = dueDayValue === '' ? null : Number(dueDayValue);
     const source = FinanceData.getAll().find(entry => entry.id === id);
+    const purchaseSource = FinanceData.getCreditCardPurchases().find(purchase => purchase.id === id);
     const dueDayRequired = type === 'fixed' || type === 'debt' ||
       Boolean(source && source.isTemplate) ||
       Boolean(source && source.paid === false && source.paymentMethod !== 'credit_card' && type !== 'income');
@@ -7265,10 +7342,19 @@ document.addEventListener('DOMContentLoaded', () => {
           dueDay,
           accountId: document.getElementById('editAccount').value || null
         };
-        if (source && !source.isTemplate) {
+        if (purchaseSource) {
+          const installmentCount = Number(document.getElementById('editInstallments').value);
+          if ((purchaseSource.paidInstallments || []).some(number => number > installmentCount)) {
+            showToast('Não é possível reduzir as parcelas abaixo de uma parcela já paga.');
+            return;
+          }
+          updatedFields.cardId = document.getElementById('editCreditCard').value;
+          updatedFields.installmentCount = installmentCount;
+          updatedFields.paymentMethod = 'credit_card';
+        } else if (source && !source.isTemplate) {
           updatedFields.paymentMethod = document.getElementById('editPaymentMethod').value || null;
         }
-        const updated = FinanceData.update(id, updatedFields);
+        const updated = await FinanceData.update(id, updatedFields);
         if (!updated) {
           showToast('Não é possível alterar entre lançamento pontual e recorrente pela edição.');
           return;

@@ -624,18 +624,28 @@ describe('FinanceData — Metas por Categoria', () => {
       <div class="panel-box"><form id="incomeForm"><input id="incomeAmount" /></form></div>`;
     document.body.appendChild(fixture);
     const previousSwitch = window.switchToView;
+    const previousFrame = window.requestAnimationFrame;
     let destination = null;
+    let frameRequested = false;
     window.switchToView = view => { destination = view; };
+    window.requestAnimationFrame = callback => {
+      frameRequested = true;
+      callback(0);
+      return 1;
+    };
+    fixture.querySelector('#incomeForm').scrollIntoView = () => {};
     try {
       window.GastoProEntryComposer.setup(fixture.querySelector('#view-entries'));
       assertTrue(window.GastoProEntryComposer.openIncome());
-      await new Promise(resolve => window.requestAnimationFrame(resolve));
+      assertTrue(frameRequested, 'o foco deve ser agendado para o próximo frame');
       assertEqual(destination, 'entries');
-      assertFalse(fixture.querySelector('#incomeForm').closest('.panel-box').hidden);
+      assertFalse(fixture.querySelector('#incomeForm').closest('.panel-box').hidden,
+        `formulário de ganho deveria estar visível após abrir; view=${destination}; markup=${fixture.querySelector('#view-entries').innerHTML}`);
       assertEqual(fixture.querySelector('[data-entry-type="income"]').getAttribute('aria-pressed'), 'true');
       assertEqual(document.activeElement, fixture.querySelector('#incomeAmount'));
     } finally {
       window.switchToView = previousSwitch;
+      window.requestAnimationFrame = previousFrame;
       fixture.remove();
     }
   });
@@ -721,7 +731,7 @@ describe('Estados vazios das telas', () => {
       renderAccountBalancesPanel();
 
       assertTrue(host.querySelector('#incomesListDetailed [data-action="open-income-entry"]'));
-      assertTrue(host.querySelector('#expensesListDetailed [data-action="focus-entry-form"]'));
+      assertTrue(host.querySelector('#expensesListDetailed [data-action="open-expense-entry"]'));
       assertTrue(host.querySelector('#accountsList [data-action="new-account"]'));
       assertTrue(host.querySelector('#creditCardsEmpty [data-action="new-credit-card"]'));
       assertFalse(host.querySelector('#goalsEmptyState [data-action="new-goal"]'));
@@ -10627,7 +10637,7 @@ describe('Correções de formulários, cards e rodapé', () => {
     assertEqual(diagnostic.description, 'Registre um ganho em Lançamentos > Ganho.');
   });
 
-  it('organiza cards fixos e variáveis e omite pagamento não informado', () => {
+  it('organiza os itens de Gastos com tipo, situação e ações de gestão', () => {
     setupMockLocalStorage();
     const fixture = document.createElement('div');
     fixture.innerHTML = `
@@ -10652,26 +10662,341 @@ describe('Correções de formulários, cards e rodapé', () => {
         }
       ], 100, 25, 125);
 
-      const cards = [...fixture.querySelectorAll('.transaction-item-card')];
+      const cards = [...fixture.querySelectorAll('.control-center-item')];
       assertEqual(cards.length, 2);
       cards.forEach(card => {
-        const right = card.querySelector('.card-item-right');
-        const topRow = right.querySelector('.transaction-card-main-row');
-        const actionRow = right.querySelector('.transaction-card-action-row');
-        assertEqual(topRow.children.length, 3);
-        assertTrue(topRow.children[1].classList.contains('checkbox-paid-label'));
-        assertTrue(topRow.children[2].classList.contains('card-item-amount'));
-        assertTrue(actionRow);
-        assertEqual(actionRow.querySelectorAll('[data-action="edit"], [data-action="delete"]').length, 2);
+        assertTrue(card.querySelector('.control-center-item-title'));
+        assertTrue(card.querySelector('.control-center-item-amount'));
+        assertTrue(card.textContent.includes('Tipo:'));
+        assertTrue(card.textContent.includes('Data/dia:'));
+        assertTrue(card.textContent.includes('Conta:'));
+        assertTrue(card.textContent.includes('Situação:'));
+        assertEqual(card.querySelectorAll('.control-center-action').length, 2);
+        assertTrue(card.querySelector('.checkbox-paid-label'));
       });
-      assertTrue(cards[0].querySelector('.transaction-card-status .badge-status-btn'));
-      assertFalse(cards[1].querySelector('.transaction-card-status .badge-status-btn'));
-      assertEqual(cards[0].querySelectorAll('.transaction-payment-method-chip').length, 0);
+      assertTrue(cards[0].querySelector('[data-action="toggle-active"]'));
+      assertFalse(cards[1].querySelector('[data-action="toggle-active"]'));
+      assertEqual(cards[0].textContent.includes('Tipo: Fixo'), true);
+      assertEqual(cards[1].textContent.includes('Tipo: Variável'), true);
       assertEqual(cards[1].querySelector('.transaction-payment-method-chip').textContent, 'Pix');
       assertFalse(fixture.textContent.includes('Não informado'));
-      assertTrue(cards.every(card => card.querySelector('.card-item-meta .tag-badge')));
     } finally {
       fixture.remove();
+    }
+  });
+
+  itAsync('lista o mês selecionado com rótulos de fixo, dívida, parcelado, boleto e ganho', async () => {
+    setupMockLocalStorage();
+    const month = '2026-11';
+    const accountResult = await FinanceData.addAccount({ name: 'Conta teste empréstimo', type: 'PF' });
+    const loanAccountId = accountResult.account.id;
+    const templates = [
+      {
+        id: crypto.randomUUID(), desc: 'Aluguel', amount: 1200, category: 'Moradia',
+        type: 'fixed', isDebt: false, active: true, startMonth: month, day: '05', paidMonths: {}
+      },
+      {
+        id: crypto.randomUUID(), desc: 'Parcelamento', amount: 300, category: 'Parcelamento',
+        type: 'fixed', isDebt: true, active: true, startMonth: month, day: '10', paidMonths: {}
+      },
+      {
+        id: crypto.randomUUID(), desc: 'Dívida', amount: 200, category: 'Dívida',
+        type: 'fixed', isDebt: true, active: true, startMonth: month, day: '12', paidMonths: {}
+      },
+      {
+        id: crypto.randomUUID(), desc: 'Empréstimo recebido', amount: 500, category: 'Empréstimo',
+        type: 'fixed', isDebt: true, active: true, startMonth: month, endMonth: '2027-10',
+        day: '15', paidMonths: {}, accountId: loanAccountId,
+        loanReceivedAmount: 5000, loanReceivedDate: '2026-10-10',
+        loanTotalPayable: 6000, loanInstallmentCount: 12
+      }
+    ];
+    await FinanceData.saveEntries([
+      makeIncome({ id: crypto.randomUUID(), desc: 'Salário', paid: true }),
+      makeVariable({
+        id: crypto.randomUUID(), desc: 'Boleto do mês', paymentMethod: 'boleto',
+        paid: false, dueDay: 20
+      })
+    ], { flush: false });
+    await FinanceData.saveTemplates(templates, { flush: false });
+
+    const monthItems = FinanceData.getByMonth(month);
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <span id="incomesPageTotal"></span><div id="incomesListDetailed"></div>
+      <span id="expensesPageTotal"></span><span id="subtotalFixedLabel"></span>
+      <span id="subtotalVarLabel"></span><div id="expensesListDetailed"></div>
+    `;
+    document.body.appendChild(fixture);
+    const previousFilter = state.expenseFilter;
+    state.expenseFilter = 'all';
+    try {
+      const incomes = monthItems.filter(item => item.type === 'income');
+      const fixed = monthItems.filter(item => item.type === 'fixed');
+      const variables = monthItems.filter(item => item.type === 'variable');
+      window.GastoProIncomeListHelpers.render(incomes, 3000);
+      window.GastoProExpenseListHelpers.render(fixed, variables, 1700, 500, 2200);
+      const expenseText = fixture.querySelector('#expensesListDetailed').textContent;
+      assertTrue(expenseText.includes('Tipo: Fixo'));
+      assertTrue(expenseText.includes('Tipo: Dívida'));
+      assertTrue(expenseText.includes('Tipo: Parcelado'));
+      assertTrue(expenseText.includes('Tipo: Boleto'));
+      assertTrue(expenseText.includes('Situação: A pagar'));
+      assertTrue(fixture.querySelector('#incomesListDetailed').textContent.includes('Tipo: Ganho'));
+    } finally {
+      state.expenseFilter = previousFilter;
+      fixture.remove();
+    }
+  });
+
+  itAsync('não exibe o valor recebido de empréstimo como ganho', async () => {
+    setupMockLocalStorage();
+    const accountResult = await FinanceData.addAccount({ name: 'Conta empréstimo', type: 'PF' });
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <span id="incomesPageTotal"></span><div id="incomesListDetailed"></div>
+      <span id="expensesPageTotal"></span><span id="subtotalFixedLabel"></span>
+      <span id="subtotalVarLabel"></span><div id="expensesListDetailed"></div>
+    `;
+    document.body.appendChild(fixture);
+    const template = {
+      id: crypto.randomUUID(), desc: 'Crédito pessoal', amount: 500, category: 'Empréstimo',
+      type: 'fixed', isDebt: true, active: true, startMonth: '2026-11', endMonth: '2027-10',
+      day: '15', accountId: accountResult.account.id,
+      paidMonths: {}, loanReceivedAmount: 5000, loanReceivedDate: '2026-10-10',
+      loanTotalPayable: 6000, loanInstallmentCount: 12
+    };
+    await FinanceData.saveTemplates([template], { flush: false });
+    const monthItems = FinanceData.getByMonth('2026-11');
+    const previousFilter = state.expenseFilter;
+    state.expenseFilter = 'all';
+    try {
+      window.GastoProIncomeListHelpers.render(
+        monthItems.filter(item => item.type === 'income'), 0
+      );
+      window.GastoProExpenseListHelpers.render(
+        monthItems.filter(item => item.type === 'fixed'),
+        monthItems.filter(item => item.type === 'variable'),
+        500, 0, 500
+      );
+      const incomeText = fixture.querySelector('#incomesListDetailed').textContent;
+      const expenseText = fixture.querySelector('#expensesListDetailed').textContent;
+      assertFalse(incomeText.includes('Crédito pessoal'), 'o empréstimo recebido não deve aparecer em Ganhos');
+      assertTrue(expenseText.includes('Crédito pessoal'), 'a parcela precisa aparecer em Gastos');
+      assertTrue(expenseText.includes(formatCurrency(500)), 'a parcela deve aparecer pelo valor integral');
+      assertFalse(expenseText.includes(formatCurrency(5000)), 'o valor recebido não deve ser listado como parcela');
+    } finally {
+      state.expenseFilter = previousFilter;
+      fixture.remove();
+    }
+  });
+
+  itAsync('avisa sobre o modelo recorrente e preserva-o ao cancelar edição e exclusão', async () => {
+    setupMockLocalStorage();
+    const template = { ...makeFixed(), id: crypto.randomUUID(), startMonth: '2026-11', day: '05' };
+    await FinanceData.saveTemplates([template], { flush: false });
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <div id="confirmModal">
+        <div id="confirmIconWrapper"><i id="confirmIcon"></i></div>
+        <h2 id="confirmTitle"></h2><p id="confirmMessage"></p>
+        <div id="confirmPhraseGroup"><input id="confirmPhraseInput"><label id="confirmPhraseLabel"></label></div>
+        <div id="confirmRememberOption"><input id="confirmRememberCheckbox"><span id="confirmRememberLabel"></span></div>
+        <button id="confirmOkBtn"></button><button id="confirmCancelBtn"></button>
+        <button id="confirmBackupBtn"></button>
+      </div>
+    `;
+    document.body.appendChild(fixture);
+    try {
+      window.openEditModal(template.id);
+      assertTrue(fixture.querySelector('#confirmMessage').textContent.includes('modelo inteiro'));
+      assertTrue(fixture.querySelector('#confirmMessage').textContent.includes('não apenas este mês'));
+      fixture.querySelector('#confirmCancelBtn').click();
+      assertFalse(fixture.querySelector('#confirmModal').classList.contains('active'));
+      assertEqual(FinanceData.getTemplates().map(item => item.id), [template.id]);
+
+      window.deleteEntry(template.id);
+      assertTrue(fixture.querySelector('#confirmMessage').textContent.includes('histórico mensal'));
+      assertTrue(fixture.querySelector('#confirmMessage').textContent.includes('não apenas este mês'));
+      fixture.querySelector('#confirmCancelBtn').click();
+      assertFalse(fixture.querySelector('#confirmModal').classList.contains('active'));
+      assertEqual(FinanceData.getTemplates().map(item => item.id), [template.id]);
+    } finally {
+      fixture.remove();
+    }
+  });
+
+  it('atalhos de Ganhos e Gastos abrem Lançamentos no tipo correspondente', () => {
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <div id="view-entries">
+        <p id="entryComposerPrompt"></p>
+        <button class="entry-type-button" data-entry-type="income"></button>
+        <button class="entry-type-button" data-entry-type="expense"></button>
+        <div class="panel-box"><form id="incomeForm"><input id="incomeAmount"></form></div>
+        <div class="panel-box"><form id="expenseForm"><input id="expenseDesc"></form></div>
+      </div>
+    `;
+    document.body.appendChild(fixture);
+    const previousSwitch = window.switchToView;
+    const previousFrame = window.requestAnimationFrame;
+    let activeView = null;
+    window.switchToView = view => { activeView = view; };
+    window.requestAnimationFrame = callback => { callback(); return 1; };
+    fixture.querySelector('#incomeForm').scrollIntoView = () => {};
+    fixture.querySelector('#expenseForm').scrollIntoView = () => {};
+    try {
+      assertTrue(window.GastoProControlCenterHelpers.openComposer('income'));
+      assertEqual(activeView, 'entries');
+      assertEqual(fixture.querySelector('[data-entry-type="income"]').getAttribute('aria-pressed'), 'true');
+      assertTrue(fixture.querySelector('#incomeForm').closest('.panel-box').hidden === false);
+      assertTrue(window.GastoProControlCenterHelpers.openComposer('expense'));
+      assertEqual(activeView, 'entries');
+      assertEqual(fixture.querySelector('[data-entry-type="expense"]').getAttribute('aria-pressed'), 'true');
+      assertTrue(fixture.querySelector('#expenseForm').closest('.panel-box').hidden === false);
+    } finally {
+      window.switchToView = previousSwitch;
+      window.requestAnimationFrame = previousFrame;
+      fixture.remove();
+    }
+  });
+
+  it('mostra estado vazio claro e atalho para criar cada tipo de lançamento', () => {
+    setupMockLocalStorage();
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <span id="incomesPageTotal"></span><div id="incomesListDetailed"></div>
+      <span id="expensesPageTotal"></span><span id="subtotalFixedLabel"></span>
+      <span id="subtotalVarLabel"></span><div id="expensesListDetailed"></div>
+    `;
+    document.body.appendChild(fixture);
+    const previousFilter = state.expenseFilter;
+    state.expenseFilter = 'all';
+    try {
+      window.GastoProIncomeListHelpers.render([], 0);
+      window.GastoProExpenseListHelpers.render([], [], 0, 0, 0);
+      assertTrue(fixture.querySelector('#incomesListDetailed').textContent.includes('Nenhum ganho neste mês.'));
+      assertTrue(fixture.querySelector('#expensesListDetailed').textContent.includes('Nenhum gasto neste mês.'));
+      assertEqual(fixture.querySelector('#incomesListDetailed [data-action="open-income-entry"]').textContent.trim(),
+        'Criar ganho em Lançamentos');
+      assertEqual(fixture.querySelector('#expensesListDetailed [data-action="open-expense-entry"]').textContent.trim(),
+        'Criar gasto em Lançamentos');
+    } finally {
+      state.expenseFilter = previousFilter;
+      fixture.remove();
+    }
+  });
+
+  itAsync('mede os centros mensais nos viewports e temas exigidos', async () => {
+    setupMockLocalStorage();
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <span id="incomesPageTotal"></span><div id="incomesListDetailed"></div>
+      <span id="expensesPageTotal"></span><span id="subtotalFixedLabel"></span>
+      <span id="subtotalVarLabel"></span><div id="expensesListDetailed"></div>
+    `;
+    document.body.appendChild(fixture);
+    const longName = 'Pagamento de serviço com descrição extensa para validar a leitura';
+    const incomes = [{
+      id: 'responsive-income', type: 'income', desc: longName, amount: 3200,
+      date: '2026-11-05', paid: true
+    }];
+    const expenses = [{
+      id: 'responsive-expense', type: 'variable', desc: longName, amount: 125.5,
+      category: 'Alimentação', date: '2026-11-20', paid: false, paymentMethod: 'boleto'
+    }];
+    const previousFilter = state.expenseFilter;
+    state.expenseFilter = 'all';
+    const sizes = [[320, 800], [360, 800], [390, 844], [768, 900],
+      [1024, 900], [1280, 900], [844, 390]];
+    try {
+      window.GastoProIncomeListHelpers.render(incomes, 3200);
+      window.GastoProExpenseListHelpers.render([], expenses, 0, 125.5, 125.5);
+      const incomeMarkup = fixture.querySelector('#incomesListDetailed').innerHTML;
+      const expenseMarkup = fixture.querySelector('#expensesListDetailed').innerHTML;
+      const frame = await getResponsiveFixtureFrame(320, 800);
+      const frameDocument = frame.contentDocument;
+      const frameWindow = frame.contentWindow;
+      frameDocument.getElementById('fixtureApp').innerHTML = `
+        <aside class="sidebar"></aside>
+        <div class="main-content"><main class="views-wrapper">
+          <section class="view-section active" id="view-incomes">
+            <header class="view-header-card bg-green-gradient">
+              <div class="view-header-info"><h2>Ganhos do mês</h2><p>Visão do período</p></div>
+              <div class="view-header-total"><span>Total</span><strong>R$ 3.200,00</strong></div>
+              <button class="btn-primary control-center-create">Novo ganho</button>
+            </header>
+            <div class="items-cards-list">${incomeMarkup}</div>
+          </section>
+          <section class="view-section active" id="view-expenses">
+            <header class="view-header-card bg-red-gradient">
+              <div class="view-header-info"><h2>Gastos do mês</h2><p>Visão do período</p></div>
+              <div class="view-header-total"><span>Total</span><strong>R$ 125,50</strong></div>
+              <button class="btn-primary control-center-create">Novo gasto</button>
+            </header>
+            <div class="items-cards-list">${expenseMarkup}</div>
+          </section>
+        </main></div>
+      `;
+      const colorChannels = value => {
+        const parts = value.match(/[\d.]+/g);
+        return parts ? parts.slice(0, 3).map(Number) : null;
+      };
+      const luminance = color => {
+        const rgb = colorChannels(color);
+        if (!rgb) return null;
+        const linear = rgb.map(channel => {
+          const value = channel / 255;
+          return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+        });
+        return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+      };
+      const contrast = (foreground, background) => {
+        const first = luminance(foreground);
+        const second = luminance(background);
+        if (first === null || second === null) return 0;
+        return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+      };
+
+      for (const theme of ['dark', 'light']) {
+        for (const [width, height] of sizes) {
+          await getResponsiveFixtureFrame(width, height);
+          frameDocument.documentElement.dataset.theme = theme;
+          frameDocument.body.dataset.theme = theme;
+          assertTrue(frameDocument.documentElement.scrollWidth <= frameDocument.documentElement.clientWidth,
+            `${width}x${height} ${theme}: sem corte horizontal`);
+          frameDocument.querySelectorAll('.control-center-item').forEach(item => {
+            const background = frameWindow.getComputedStyle(item).backgroundColor;
+            const text = item.querySelector('.control-center-item-details');
+            assertTrue(contrast(frameWindow.getComputedStyle(text).color, background) >= 4.5,
+              `${width}x${height} ${theme}: contraste do texto de detalhes`);
+            item.querySelectorAll('.control-center-item-title,.control-center-item-amount,.control-center-item-details > span')
+              .forEach(element => assertTrue(element.scrollWidth <= element.clientWidth + 1,
+                `${width}x${height} ${theme}: texto sem corte (${element.textContent.trim()})`));
+            item.querySelectorAll('.control-center-action').forEach(button => {
+              const rect = button.getBoundingClientRect();
+              assertTrue(rect.width >= 44 && rect.height >= 44,
+                `${width}x${height} ${theme}: ação com alvo mínimo (${rect.width}x${rect.height})`);
+              const iconContrast = contrast(frameWindow.getComputedStyle(button).color, background);
+              assertTrue(iconContrast >= 3,
+                `${width}x${height} ${theme}: contraste do ícone ${button.dataset.action} ` +
+                `${frameWindow.getComputedStyle(button).color} sobre ${background} (${iconContrast})`);
+            });
+          });
+          frameDocument.querySelectorAll('.control-center-create').forEach(button => {
+            const rect = button.getBoundingClientRect();
+            assertTrue(rect.width >= 44 && rect.height >= 44,
+              `${width}x${height} ${theme}: atalho com alvo mínimo`);
+            assertTrue(contrast(frameWindow.getComputedStyle(button).color,
+              frameWindow.getComputedStyle(button).backgroundColor) >= 4.5,
+            `${width}x${height} ${theme}: contraste do atalho`);
+          });
+        }
+      }
+    } finally {
+      state.expenseFilter = previousFilter;
+      fixture.remove();
+      removeResponsiveFixtureFrame();
     }
   });
 
