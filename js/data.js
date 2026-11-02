@@ -168,6 +168,8 @@ function getLoanEndMonth(startMonth, installmentCount) {
   return `${String(endYear).padStart(4, '0')}-${String(endMonth).padStart(2, '0')}`;
 }
 
+window.GastoProLoanHelpers = { getEndMonth: getLoanEndMonth };
+
 function getCreditCardInstallments(purchase) {
   const purchaseDate = purchase && purchase.purchaseDate;
   const count = Number(purchase && purchase.installmentCount);

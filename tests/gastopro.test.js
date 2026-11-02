@@ -5425,6 +5425,119 @@ describe('Bloco 2 — dívida, orçamento, diagnóstico e categorias', () => {
     assertEqual(debt.remainingMonths, 0);
   });
 
+  it('calcula diretamente o endMonth inclusivo de três parcelas de empréstimo', () => {
+    assertEqual(window.GastoProLoanHelpers.getEndMonth('2026-11', 3), '2027-01');
+  });
+
+  it('conta parcelas do mês atual pagas sem saldo em aberto', () => {
+    const summary = GastoProReportHelpers.getDebtMonthBreakdown([{
+      type: 'fixed', isDebt: true, active: true, amount: 25,
+      startMonth: '2026-11', endMonth: '2026-12',
+      paidMonths: { '2026-11': true }
+    }], '2026-11');
+    assertEqual(summary.currentMonth, { openAmount: 0, openCount: 0, totalCount: 1 });
+    assertTrue(summary.currentMonth.totalCount > 0);
+  });
+
+  it('retorna contagem zero quando não há parcela no mês consultado', () => {
+    const summary = GastoProReportHelpers.getDebtMonthBreakdown([{
+      type: 'fixed', isDebt: true, active: true, amount: 25,
+      startMonth: '2026-08', endMonth: '2026-09', paidMonths: {}
+    }], '2026-11');
+    assertEqual(summary.currentMonth, { openAmount: 0, openCount: 0, totalCount: 0 });
+    assertEqual(summary.nextMonth.totalCount, 0);
+  });
+
+  it('avança de dezembro para janeiro ao resumir os próximos vencimentos', () => {
+    const summary = GastoProReportHelpers.getDebtMonthBreakdown([{
+      type: 'fixed', isDebt: true, active: true, amount: 40,
+      startMonth: '2026-12', endMonth: '2027-02', paidMonths: {}
+    }], '2026-12');
+    assertEqual(summary.currentMonth, { openAmount: 40, openCount: 1, totalCount: 1 });
+    assertEqual(summary.nextMonth, { openAmount: 40, openCount: 1, totalCount: 1 });
+  });
+
+  it('separa parcelas em atraso e mantém a invariante do saldo restante', () => {
+    const summary = GastoProReportHelpers.getDebtMonthBreakdown([{
+      type: 'fixed', isDebt: true, active: true, amount: 10,
+      startMonth: '2026-08', endMonth: '2027-02',
+      paidMonths: { '2026-08': true, '2026-10': true, '2027-01': true }
+    }], '2026-10');
+    const laterOpenAmount = 20;
+    assertEqual(summary.overdue, { amount: 10, count: 1 });
+    assertEqual(
+      summary.overdue.amount + summary.currentMonth.openAmount +
+        summary.nextMonth.openAmount + laterOpenAmount,
+      summary.totalRemaining
+    );
+    assertEqual(summary.totalRemaining, 40);
+  });
+
+  it('ignora templates excluídos e inativos no detalhamento e nos custos fixos', () => {
+    const summary = GastoProReportHelpers.getDebtMonthBreakdown([
+      { type: 'fixed', isDebt: true, active: true, deletedAt: '2026-10-01',
+        amount: 100, startMonth: '2026-11', endMonth: '2026-11' },
+      { type: 'fixed', isDebt: true, active: false,
+        amount: 200, startMonth: '2026-11', endMonth: '2026-11' }
+    ], '2026-11');
+    assertEqual(summary.totalRemaining, 0);
+    assertEqual(GastoProReportHelpers.getRecurringFixedCosts([
+      { type: 'fixed', category: 'Moradia', active: false, amount: 300 }
+    ]), { monthlyAmount: 0, count: 0 });
+  });
+
+  it('nunca inclui ganho fixo nos valores de dívida ou de custo recorrente', () => {
+    const fixedIncome = {
+      type: 'fixed', category: GastoProCategories.INCOME[0], isDebt: true,
+      active: true, amount: 500, startMonth: '2026-11', endMonth: '2026-12'
+    };
+    const income = {
+      type: 'income', category: 'Outro', active: true, amount: 700,
+      startMonth: '2026-11', endMonth: null
+    };
+    const summary = GastoProReportHelpers.getDebtMonthBreakdown([fixedIncome, income], '2026-11');
+    assertEqual(summary.totalRemaining, 0);
+    assertEqual(GastoProReportHelpers.getRecurringFixedCosts([fixedIncome, income]), {
+      monthlyAmount: 0, count: 0
+    });
+  });
+
+  it('deixa gasto fixo sem fim somente no alerta mensal, fora do saldo de dívida', () => {
+    const fixed = {
+      type: 'fixed', category: 'Moradia', active: true, amount: 125,
+      startMonth: '2026-01', endMonth: null
+    };
+    const summary = GastoProReportHelpers.getDebtMonthBreakdown([fixed], '2026-11');
+    assertEqual(summary.totalRemaining, 0);
+    assertEqual(summary.noEndDebts, { count: 0, monthlyAmount: 0 });
+    assertEqual(GastoProReportHelpers.getRecurringFixedCosts([fixed]), {
+      monthlyAmount: 125, count: 1
+    });
+  });
+
+  it('mantém dívida sem fim fora do saldo e dos meses, mas mostra seu custo mensal', () => {
+    const summary = GastoProReportHelpers.getDebtMonthBreakdown([{
+      type: 'fixed', category: 'Empréstimo', isDebt: true,
+      active: true, amount: 80, startMonth: '2026-01', endMonth: null
+    }], '2026-11');
+    assertEqual(summary.noEndDebts, { count: 1, monthlyAmount: 80 });
+    assertEqual(summary.totalRemaining, 0);
+    assertEqual(summary.currentMonth.totalCount, 0);
+    assertEqual(summary.nextMonth.totalCount, 0);
+  });
+
+  it('usa a última parcela ajustada do empréstimo no saldo restante', () => {
+    const summary = GastoProReportHelpers.getDebtMonthBreakdown([{
+      type: 'fixed', isDebt: true, active: true, amount: 33.33,
+      loanReceivedAmount: 50, loanTotalPayable: 100, loanInstallmentCount: 3,
+      startMonth: '2026-11', endMonth: '2027-01',
+      paidMonths: { '2026-11': true, '2026-12': true }
+    }], '2026-11');
+    assertEqual(summary.totalRemaining, 33.34);
+    assertEqual(summary.currentMonth.openAmount, 0);
+    assertEqual(summary.nextMonth.openAmount, 0);
+  });
+
   it('calcula orçamento diário para mês passado, atual e futuro', () => {
     assertEqual(getDailyBudgetInfo(310, 2026, 8, new Date(2026, 9, 2)), {
       status: 'past', days: 0, dailyAmount: null, message: 'Mês encerrado'

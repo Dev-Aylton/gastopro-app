@@ -4668,6 +4668,129 @@ function initAccountOnboarding() {
 // 7. CENTRO DE DÍVIDAS & PREVISÃO DE QUITAÇÃO
 // ================================================================
 
+function isDebtCenterTemplate(template) {
+  if (template.isDebt || template.endMonth) return true;
+  const cat = (template.category || '').toLowerCase();
+  const desc = (template.desc || '').toLowerCase();
+  return cat.includes('empréstimo') || cat.includes('emprestimo') ||
+         cat.includes('parcela') || cat.includes('financiamento') ||
+         cat.includes('dívida') || cat.includes('divida') ||
+         desc.includes('empréstimo') || desc.includes('emprestimo') ||
+         desc.includes('parcela') || desc.includes('financiamento') ||
+         desc.includes('dívida') || desc.includes('divida');
+}
+
+function isExcludedOrInactiveTemplate(template) {
+  return template.active === false || Boolean(template.deletedAt || template.deleted_at);
+}
+
+function isIncomeTemplate(template) {
+  const category = String(template.category || '').trim().toLowerCase();
+  return template.type === 'income' || GastoProCategories.INCOME.some(value =>
+    String(value).trim().toLowerCase() === category
+  );
+}
+
+function shiftDebtMonth(month, offset) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const monthIndex = year * 12 + monthNumber - 1 + offset;
+  return `${String(Math.floor(monthIndex / 12)).padStart(4, '0')}-${String(monthIndex % 12 + 1).padStart(2, '0')}`;
+}
+
+function getDebtMonthBreakdown(templates, currentYm) {
+  if (!Array.isArray(templates) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(currentYm || '')) {
+    throw new TypeError('Informe templates e o mês atual no formato YYYY-MM.');
+  }
+
+  const nextYm = shiftDebtMonth(currentYm, 1);
+  const overdueCents = { amount: 0, count: 0 };
+  const currentMonth = { openAmount: 0, openCount: 0, totalCount: 0 };
+  const nextMonth = { openAmount: 0, openCount: 0, totalCount: 0 };
+  let totalRemainingCents = 0;
+  let noEndCount = 0;
+  let noEndMonthlyCents = 0;
+
+  templates.forEach(template => {
+    if (isExcludedOrInactiveTemplate(template) || isIncomeTemplate(template) ||
+      !isDebtCenterTemplate(template)) return;
+
+    const installmentCents = Math.max(0, Math.round((Number(template.amount) || 0) * 100));
+    if (!template.endMonth) {
+      noEndCount++;
+      noEndMonthlyCents += installmentCents;
+      return;
+    }
+
+    const isLoan = template.loanReceivedAmount != null;
+    const startMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(template.startMonth || '')
+      ? template.startMonth : currentYm;
+    const totalMonths = isLoan
+      ? Number(template.loanInstallmentCount)
+      : Math.max(1, (Number(template.endMonth.slice(0, 4)) -
+        Number(startMonth.slice(0, 4))) * 12 +
+        Number(template.endMonth.slice(5, 7)) - Number(startMonth.slice(5, 7)) + 1);
+    if (!Number.isInteger(totalMonths) || totalMonths < 1 ||
+      !/^\d{4}-(0[1-9]|1[0-2])$/.test(template.endMonth)) return;
+
+    const loanTotalCents = isLoan
+      ? Math.max(0, Math.round((Number(template.loanTotalPayable) || 0) * 100))
+      : 0;
+    for (let offset = 0; offset < totalMonths; offset++) {
+      const month = shiftDebtMonth(startMonth, offset);
+      const amountCents = isLoan && offset === totalMonths - 1
+        ? Math.max(0, loanTotalCents - installmentCents * (totalMonths - 1))
+        : installmentCents;
+      const monthSummary = month === currentYm ? currentMonth :
+        month === nextYm ? nextMonth : null;
+      if (monthSummary) monthSummary.totalCount++;
+      if (template.paidMonths && template.paidMonths[month]) continue;
+
+      totalRemainingCents += amountCents;
+      if (month < currentYm) {
+        overdueCents.amount += amountCents;
+        overdueCents.count++;
+      }
+      if (monthSummary) {
+        monthSummary.openAmount += amountCents;
+        monthSummary.openCount++;
+      }
+    }
+  });
+
+  const toAmount = cents => Math.round(cents) / 100;
+  return {
+    overdue: { amount: toAmount(overdueCents.amount), count: overdueCents.count },
+    currentMonth: {
+      openAmount: toAmount(currentMonth.openAmount),
+      openCount: currentMonth.openCount,
+      totalCount: currentMonth.totalCount
+    },
+    nextMonth: {
+      openAmount: toAmount(nextMonth.openAmount),
+      openCount: nextMonth.openCount,
+      totalCount: nextMonth.totalCount
+    },
+    totalRemaining: toAmount(totalRemainingCents),
+    noEndDebts: { count: noEndCount, monthlyAmount: toAmount(noEndMonthlyCents) }
+  };
+}
+
+function getRecurringFixedCosts(templates) {
+  if (!Array.isArray(templates)) {
+    throw new TypeError('Informe a lista de templates.');
+  }
+  let count = 0;
+  let monthlyCents = 0;
+  templates.forEach(template => {
+    if (template.type !== 'fixed' || template.endMonth ||
+      isExcludedOrInactiveTemplate(template) || isIncomeTemplate(template) ||
+      isDebtCenterTemplate(template)) return;
+    count++;
+    monthlyCents += Math.max(0, Math.round((Number(template.amount) || 0) * 100));
+  });
+  return { monthlyAmount: Math.round(monthlyCents) / 100, count };
+}
+
 /**
  * Renderiza o painel "Centro de Dívidas" no Dashboard.
  * Identifica automaticamente os templates marcados como dívida/parcelamento
@@ -4682,17 +4805,7 @@ function initAccountOnboarding() {
  * @param {string} currentYm - Mês atual no formato "YYYY-MM".
  */
 function getDebtCenterData(currentYm, templates = FinanceData.getTemplates()) {
-  const debtTemplates = templates.filter(t => {
-    if (t.isDebt || t.endMonth) return true;
-    const cat = (t.category || '').toLowerCase();
-    const desc = (t.desc || '').toLowerCase();
-    return cat.includes('empréstimo') || cat.includes('emprestimo') ||
-           cat.includes('parcela') || cat.includes('financiamento') ||
-           cat.includes('dívida') || cat.includes('divida') ||
-           desc.includes('empréstimo') || desc.includes('emprestimo') ||
-           desc.includes('parcela') || desc.includes('financiamento') ||
-           desc.includes('dívida') || desc.includes('divida');
-  });
+  const debtTemplates = templates.filter(isDebtCenterTemplate);
 
   const items = debtTemplates.map(tpl => {
     const paidMonthsCount = tpl.paidMonths ? Object.values(tpl.paidMonths).filter(Boolean).length : 0;
@@ -4769,6 +4882,9 @@ function getDebtCenterData(currentYm, templates = FinanceData.getTemplates()) {
 }
 
 window.GastoProReportHelpers.getDebtCenterData = getDebtCenterData;
+window.GastoProReportHelpers.getDebtMonthBreakdown = getDebtMonthBreakdown;
+window.GastoProReportHelpers.getRecurringFixedCosts = getRecurringFixedCosts;
+window.GastoProReportHelpers.isDebtCenterTemplate = isDebtCenterTemplate;
 
 function renderDebtCenter(currentYm) {
   const container = document.getElementById('debtCardsGrid');

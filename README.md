@@ -467,7 +467,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.42`. Suíte atual: **514 testes**.
+`CACHE_NAME` atual: `gastopro-v4.42`. Suíte atual: **524 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -687,6 +687,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-062 — Avatar feminino em JPEG** / Descrição: substitui o recurso feminino pelo JPEG 256x256 sem alterar o ID persistido, remove o SVG de avatar e mantém o JPG no cache. / Critério de pronto: 504 testes aprovados no test-runner; visual do avatar não verificado em tela. / Arquivos: `assets/default_avatar_fem.jpg`, `js/app.js`, `js/cache-assets.js`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 - [x] **RM-063 — Leitura na nuvem do feedback Admin** / Descrição: `admin_read_at` controla lista e contagem de mensagens não lidas; abrir resposta ou marcar como lida grava somente essa coluna, enquanto avisos de contas continuam locais. Sem Realtime ou polling. / Critério de pronto: 510 testes aprovados; testes da API Supabase usam mock; RLS/tipos reais não verificados e visual/toque não verificados em tela. / Arquivos: `js/app.js`, `js/supabase.js`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 - [x] **RM-064 — Cabeçalho explícito da zona de perigo** / Descrição: cabeçalho recolhível mostra ações internas, chevron giratório e estado `aria-expanded`; botões críticos, handlers e confirmações permanecem inalterados. / Critério de pronto: 514 testes aprovados; testes não medem layout real; visual/toque e layout em larguras/temas não verificados em tela. / Arquivos: `index.html`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
+- [x] **RM-065 — Helpers puros para totais mensais de dívidas** / Descrição: adiciona o resumo de parcelas em atraso, mês atual, próximo mês, saldo restante e dívidas sem data final; separa gastos fixos recorrentes sem fim e mantém ganhos fora dos totais. Sem alteração visual. / Critério de pronto: 524 testes aprovados no test-runner; layout e tela não medidos. / Arquivos: `js/app.js`, `js/data.js`, `tests/gastopro.test.js`, `README.md`.
 
 ### Em dúvida
 
@@ -700,6 +701,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ### v4.42 — 02/11/2026 (versão atual)
 
+- RM-065: helpers puros para detalhamento mensal de dívidas e custos fixos recorrentes; 524 testes aprovados, zero falhas/pendências. Nenhuma mudança visual; tela não medida. Cache e selo mantidos nesta etapa.
 - RM-064: cabeçalho da Zona de perigo agora explica as ações, mostra chevron e sincroniza `aria-expanded` ao abrir/fechar; conteúdo e handlers preservados. Test-runner: 514 aprovados, zero falhas; layout real e visual/toque não verificados.
 - RM-063: leitura das mensagens do Admin gravada em `feedback_messages.admin_read_at`; lista, badge e contagem usam o estado remoto; avisos de contas seguem locais. Test-runner com código real: 510 aprovados, zero falhas; Supabase mockado, RLS/tipos reais e visual/toque em tela não verificados.
 - RM-062: avatar feminino passou a ser JPEG 256x256; ID do preset preservado, escolha local sincronizável pelo campo de perfil existente, arquivo no cache e referências ao recurso vetorial removidas. Test-runner com código real: 504 aprovados, zero falhas; visual do avatar não verificado em tela.
