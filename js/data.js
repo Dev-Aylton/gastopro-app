@@ -1060,7 +1060,28 @@ const FinanceData = {
       this.queueLocalChanges('accounts', accounts, migratedAccounts);
     }
 
-    return this.flushPendingSync(userId);
+    const recordFailure = failure => {
+      const diagnostics = window.GastoProDiagnostics;
+      if (!diagnostics || typeof diagnostics.record !== 'function') return;
+      diagnostics.record('pending-sync-failure', {
+        category: failure.category,
+        operationType: failure.operationType || 'unknown',
+        errorCode: 'PENDING_SYNC_FAILED'
+      });
+    };
+    try {
+      const result = await this.flushPendingSync(userId);
+      if (!result.success) {
+        const failures = Array.isArray(result.failureCategories) && result.failureCategories.length
+          ? result.failureCategories
+          : [{ category: 'unknown' }];
+        failures.forEach(recordFailure);
+      }
+      return result;
+    } catch (error) {
+      recordFailure({ category: 'unknown' });
+      throw error;
+    }
   },
 
   async syncAllToCloud(userId) {
@@ -1194,14 +1215,29 @@ const FinanceData = {
 
     const flush = async () => {
       if (localStorage.getItem(STORAGE_LAST_UID) !== targetUserId) {
-        return { success: false, error: new Error('O usuário local não corresponde à sessão atual.') };
+        return {
+          success: false,
+          error: new Error('O usuário local não corresponde à sessão atual.'),
+          failureCategories: [{ category: 'session' }]
+        };
       }
 
       const reconciliation = await this.reconcileCloudBeforeSync(targetUserId);
-      if (!reconciliation.success) return reconciliation;
+      if (!reconciliation.success) {
+        return {
+          ...reconciliation,
+          failureCategories: [{ category: 'reconciliation' }]
+        };
+      }
 
       const transactionalSync = await this.flushTransactionalOperations(targetUserId);
-      if (!transactionalSync.success) return transactionalSync;
+      if (!transactionalSync.success) {
+        return {
+          ...transactionalSync,
+          failureCategories: transactionalSync.failureCategories ||
+            [{ category: 'transactional', operationType: 'unknown' }]
+        };
+      }
 
       const pending = this.getPendingSync();
       const fullSync = pending.full;
@@ -1387,12 +1423,24 @@ const FinanceData = {
         if (typeof showToast === 'function') {
           showToast('Não foi possível sincronizar todos os dados; os itens pendentes continuam salvos neste aparelho');
         }
-        return (accountResult && !accountResult.success ? accountResult : null) ||
+        const failureCategories = [];
+        if (failedEntryIds.length || failedEntryDeletes) failureCategories.push({ category: 'entries' });
+        if (failedTemplateIds.length || failedTemplateDeletes) failureCategories.push({ category: 'templates' });
+        if (failedGoalCategories.length || failedGoalDeletes) failureCategories.push({ category: 'goals' });
+        if (failedAccountIds.length || failedAccountDeletes) failureCategories.push({ category: 'accounts' });
+        if (failedCreditCardIds.length || failedCreditCardDeletes) failureCategories.push({ category: 'creditCards' });
+        if (failedCreditCardPurchaseIds.length || failedCreditCardPurchaseDeletes) {
+          failureCategories.push({ category: 'creditCardPurchases' });
+        }
+        if (failedFixedImportRules) failureCategories.push({ category: 'rules' });
+        if (failedProfile) failureCategories.push({ category: 'profile' });
+        const failure = (accountResult && !accountResult.success ? accountResult : null) ||
           (profileResult && !profileResult.success ? profileResult : null) ||
           (creditCardsResult && !creditCardsResult.success ? creditCardsResult : null) ||
           (creditCardPurchasesResult && !creditCardPurchasesResult.success ? creditCardPurchasesResult : null) ||
           results.find(result => !result || !result.success) ||
           { success: false, error: new Error('Alguns itens não puderam ser sincronizados.') };
+        return { ...failure, failureCategories };
       }
       return { success: true };
     };
@@ -1429,7 +1477,12 @@ const FinanceData = {
     for (const operation of operations) {
       if (operation.type === 'deleteAccount') {
         if (typeof auth.deleteAccountTransactional !== 'function') {
-          return { success: false, error: new Error('Exclusão transacional de conta não disponível.'), synced };
+          return {
+            success: false,
+            error: new Error('Exclusão transacional de conta não disponível.'),
+            synced,
+            failureCategories: [{ category: 'transactional', operationType: operation.type }]
+          };
         }
         const result = await auth.deleteAccountTransactional(
           operation.accountId, operation.clientEditedAt, userId
@@ -1439,7 +1492,8 @@ const FinanceData = {
             success: false,
             error: result && result.error || new Error('A exclusão transacional da conta falhou.'),
             conflicts: result && result.conflicts || [],
-            synced
+            synced,
+            failureCategories: [{ category: 'transactional', operationType: operation.type }]
           };
         }
 
@@ -1456,7 +1510,12 @@ const FinanceData = {
 
       if (operation.type === 'import') {
         if (typeof auth.importFinancialBatch !== 'function') {
-          return { success: false, error: new Error('Importação transacional não disponível.'), synced };
+          return {
+            success: false,
+            error: new Error('Importação transacional não disponível.'),
+            synced,
+            failureCategories: [{ category: 'transactional', operationType: operation.type }]
+          };
         }
         const currentEntries = this.getEntries();
         const currentTemplates = this.getTemplates();
@@ -1467,7 +1526,8 @@ const FinanceData = {
             success: false,
             error: new Error('O lote de importação mudou localmente; a transação foi mantida na fila.'),
             conflicts: [],
-            synced
+            synced,
+            failureCategories: [{ category: 'transactional', operationType: operation.type }]
           };
         }
         const importBatchId = operation.importBatchId || operation.operationId;
@@ -1492,7 +1552,8 @@ const FinanceData = {
               success: false,
               error: result && result.error || new Error('A importação transacional falhou.'),
               conflicts: result && result.conflicts || [],
-              synced
+              synced,
+              failureCategories: [{ category: 'transactional', operationType: operation.type }]
             };
           }
 

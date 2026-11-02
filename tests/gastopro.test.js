@@ -131,6 +131,7 @@ function itAsync(testName, fn) {
         window.GastoProActiveTestName = null;
       }
     });
+
   pendingTestPromises.push(pending);
 }
 
@@ -528,6 +529,94 @@ describe('Diagnóstico local temporário', () => {
       assertFalse(/fetch|XMLHttpRequest|sendBeacon|Supabase/i.test(diagnostics.record.toString()));
     } finally {
       window.fetch = originalFetch;
+      diagnostics.clear();
+    }
+  });
+
+  itAsync('registra localmente a categoria de lançamento que falhou sem dados do lançamento', async () => {
+    setupMockLocalStorage();
+    const diagnostics = window.GastoProDiagnostics;
+    diagnostics.clear();
+    const userId = 'diagnostic-sync-user';
+    const entryId = 'sensitive-entry-id';
+    const entry = makeIncome({ id: entryId, desc: 'Descrição privada' });
+    FinanceData.activateUser(userId);
+    FinanceData.saveEntries([entry], { flush: false });
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      saveCloudEntries: async () => ({
+        success: false,
+        error: new Error('Falha simulada com detalhes privados')
+      }),
+      saveCloudTemplates: async () => ({ success: true }),
+      deleteCloudEntries: async () => ({ success: true }),
+      deleteCloudTemplates: async () => ({ success: true }),
+      saveCloudGoals: async () => ({ success: true }),
+      deleteCloudGoals: async () => ({ success: true }),
+      saveCloudAccounts: async () => ({ success: true }),
+      deleteCloudAccounts: async () => ({ success: true }),
+      saveCloudFixedImportRules: async () => ({ success: true }),
+      saveCloudProfile: async () => ({ success: true }),
+      saveCloudCreditCards: async () => ({ success: true }),
+      deleteCloudCreditCards: async () => ({ success: true }),
+      saveCloudCreditCardPurchases: async () => ({ success: true }),
+      deleteCloudCreditCardPurchases: async () => ({ success: true })
+    };
+    try {
+      const result = await FinanceData.prepareLocalDataForSync(userId);
+      assertFalse(result.success);
+      const events = diagnostics.list().filter(item => item.type === 'pending-sync-failure');
+      assertEqual(events.length, 1);
+      assertEqual(events[0].data.category, 'entries');
+      assertEqual(events[0].data.errorCode, 'PENDING_SYNC_FAILED');
+      const serialized = localStorage.getItem(diagnostics.key);
+      assertFalse(serialized.includes(entryId));
+      assertFalse(serialized.includes(entry.desc));
+      assertFalse(serialized.includes('Falha simulada'));
+      assertFalse(serialized.includes('diagnostic-sync-user'));
+    } finally {
+      window.SupabaseAuth = previousAuth;
+      diagnostics.clear();
+    }
+  });
+
+  itAsync('registra tipo de operação transacional sem armazenar identificadores', async () => {
+    setupMockLocalStorage();
+    const diagnostics = window.GastoProDiagnostics;
+    diagnostics.clear();
+    const userId = 'diagnostic-transaction-user';
+    FinanceData.activateUser(userId);
+    FinanceData.savePendingSync({
+      ...FinanceData.getPendingSync(),
+      transactionalOperations: [{
+        operationId: 'private-operation-id',
+        type: 'deleteAccount',
+        accountId: 'private-account-id',
+        clientEditedAt: '2026-11-02T00:00:00.000Z',
+        linked: {}
+      }]
+    });
+    const previousAuth = window.SupabaseAuth;
+    window.SupabaseAuth = {
+      deleteAccountTransactional: async () => ({
+        success: false,
+        error: new Error('Falha simulada privada')
+      })
+    };
+    try {
+      const result = await FinanceData.prepareLocalDataForSync(userId);
+      assertFalse(result.success);
+      const events = diagnostics.list().filter(item => item.type === 'pending-sync-failure');
+      assertEqual(events.length, 1);
+      assertEqual(events[0].data.category, 'transactional');
+      assertEqual(events[0].data.operationType, 'deleteAccount');
+      assertEqual(events[0].data.errorCode, 'PENDING_SYNC_FAILED');
+      const serialized = localStorage.getItem(diagnostics.key);
+      assertFalse(serialized.includes('private-operation-id'));
+      assertFalse(serialized.includes('private-account-id'));
+      assertFalse(serialized.includes('Falha simulada'));
+    } finally {
+      window.SupabaseAuth = previousAuth;
       diagnostics.clear();
     }
   });
@@ -5458,8 +5547,66 @@ describe('Privacidade, payloads e autenticação', () => {
 
     it('usa o nome do cadastro somente quando não há nome local nem de profiles', () => {
       assertEqual(window.GastoProProfileHelpers.getInitialName('', '', 'Cadastro', 'email'), 'Cadastro');
-      assertEqual(window.GastoProProfileHelpers.getInitialName('Local', 'Nuvem', 'Cadastro', 'email'), 'Nuvem');
+      assertEqual(window.GastoProProfileHelpers.getInitialName('Local', 'Nuvem', 'Cadastro', 'email'), 'Local');
       assertEqual(window.GastoProProfileHelpers.getInitialName('Local', '', 'Cadastro', 'email'), 'Local');
+    });
+
+    it('prefere full_name e usa name como fallback somente para contas Google', () => {
+      const getName = window.GastoProProfileHelpers.getGoogleMetadataName;
+      assertEqual(getName({
+        app_metadata: { provider: 'google' },
+        user_metadata: { full_name: 'Nome completo', name: 'Nome alternativo' }
+      }), 'Nome completo');
+      assertEqual(getName({
+        identities: [{ provider: 'google' }],
+        user_metadata: { name: 'Nome alternativo' }
+      }), 'Nome alternativo');
+      assertEqual(getName({
+        app_metadata: { provider: 'email' },
+        user_metadata: { full_name: 'Nome não Google' }
+      }), '');
+      assertEqual(
+        window.GastoProProfileHelpers.getInitialName('Nome escolhido', '', 'Nome Google', 'email'),
+        'Nome escolhido'
+      );
+    });
+
+    itAsync('salva o nome Google inicial em profiles com Supabase mockado', async () => {
+      const previousClient = window.SupabaseAuth.client;
+      const user = {
+        id: 'google-profile-user',
+        app_metadata: { provider: 'google' },
+        user_metadata: { full_name: 'Nome Google fictício' }
+      };
+      let upsertPayload = null;
+      window.SupabaseAuth.client = {
+        auth: { getSession: async () => ({ data: { session: { user } }, error: null }) },
+        from(table) {
+          assertEqual(table, 'profiles');
+          return {
+            upsert: async payload => {
+              upsertPayload = payload;
+              return { error: null };
+            }
+          };
+        }
+      };
+      try {
+        const name = window.GastoProProfileHelpers.getInitialName(
+          '',
+          '',
+          window.GastoProProfileHelpers.getGoogleMetadataName(user),
+          'email'
+        );
+        const result = await window.SupabaseAuth.saveCloudProfile(
+          { name, avatar: null },
+          user.id
+        );
+        assertTrue(result.success);
+        assertEqual(upsertPayload.name, 'Nome Google fictício');
+      } finally {
+        window.SupabaseAuth.client = previousClient;
+      }
     });
   });
 

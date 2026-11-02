@@ -97,10 +97,23 @@ window.GastoProInstallCardHelpers = Object.freeze({
 
 window.GastoProProfileHelpers = {
   getInitialName(localName, cloudName, metadataName, emailPrefix) {
-    return (typeof cloudName === 'string' && cloudName.trim()) ||
-      (typeof localName === 'string' && localName.trim()) ||
+    return (typeof localName === 'string' && localName.trim()) ||
+      (typeof cloudName === 'string' && cloudName.trim()) ||
       (typeof metadataName === 'string' && metadataName.trim()) ||
       emailPrefix || '';
+  },
+  getGoogleMetadataName(user) {
+    const isGoogleUser = Boolean(
+      user && (
+        user.app_metadata && user.app_metadata.provider === 'google' ||
+        Array.isArray(user.identities) && user.identities.some(identity => identity.provider === 'google')
+      )
+    );
+    if (!isGoogleUser || !user.user_metadata) return '';
+    const metadata = user.user_metadata;
+    return (typeof metadata.full_name === 'string' && metadata.full_name.trim()) ||
+      (typeof metadata.name === 'string' && metadata.name.trim()) ||
+      '';
   }
 };
 
@@ -383,7 +396,7 @@ const DIAGNOSTIC_LOG_LIMIT = 100;
 const DIAGNOSTIC_EVENT_TYPES = new Set([
   'auth-state', 'view-switch', 'page-load', 'pageshow', 'visibilitychange',
   'focus', 'online', 'offline', 'sync', 'refresh', 'controllerchange', 'admin-check',
-  'admin-query-error', 'app-update-notice'
+  'admin-query-error', 'app-update-notice', 'pending-sync-failure'
 ]);
 const DIAGNOSTIC_VIEW_IDS = new Set(Object.keys(VIEW_TITLES));
 const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
@@ -400,7 +413,8 @@ const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
   controllerchange: [],
   'admin-check': ['phase', 'result', 'buttonVisibleBefore', 'buttonVisibleAfter'],
   'admin-query-error': ['query', 'code', 'message'],
-  'app-update-notice': []
+  'app-update-notice': [],
+  'pending-sync-failure': ['category', 'operationType', 'errorCode']
 });
 
 function getLocalDiagnosticTime(date = new Date()) {
@@ -445,6 +459,15 @@ function normalizeDiagnosticData(type, data) {
     } else if (key === 'query' &&
       ['admin_feedback_authors', 'admin_list_users', 'feedback_messages.select',
         'feedback_messages.count_unread', 'feedback_messages.mark_read'].includes(value)) {
+      normalized[key] = value;
+    } else if (key === 'category' &&
+      ['entries', 'templates', 'goals', 'accounts', 'creditCards', 'creditCardPurchases',
+        'profile', 'rules', 'transactional', 'reconciliation', 'session', 'unknown'].includes(value)) {
+      normalized[key] = value;
+    } else if (key === 'operationType' &&
+      ['import', 'deleteAccount', 'unknown'].includes(value)) {
+      normalized[key] = value;
+    } else if (key === 'errorCode' && value === 'PENDING_SYNC_FAILED') {
       normalized[key] = value;
     } else if (key === 'code' &&
       typeof value === 'string' && /^[A-Z0-9]{1,16}$/.test(value)) {
@@ -9345,7 +9368,7 @@ document.addEventListener('DOMContentLoaded', () => {
       profile.name = window.GastoProProfileHelpers.getInitialName(
         profile.name,
         cloudName,
-        user.user_metadata && user.user_metadata.name,
+        window.GastoProProfileHelpers.getGoogleMetadataName(user),
         user.email.split('@')[0]
       );
     }
