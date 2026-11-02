@@ -10320,8 +10320,9 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     assertEqual(gallery.presets.map(preset => preset.id), ['neutral-default', 'feminine-default']);
     assertFalse(gallery.isPreset('preset:fem-2'));
     assertEqual(gallery.getSource('preset:fem-2'), 'assets/default_avatar.jpg');
-    assertEqual(gallery.getSource('preset:feminine-default'), 'assets/default_avatar_fem.svg');
-    assertTrue(window.GastoProCacheAssets.optional.includes('./assets/default_avatar_fem.svg'));
+    assertEqual(gallery.getSource('preset:neutral-default'), 'assets/default_avatar.jpg');
+    assertEqual(gallery.getSource('preset:feminine-default'), 'assets/default_avatar_fem.jpg');
+    assertTrue(window.GastoProCacheAssets.optional.includes('./assets/default_avatar_fem.jpg'));
     assertEqual(gallery.selectPreset({}, 'preset:feminine-default'), {
       avatar: 'preset:feminine-default',
       avatarPreset: 'preset:feminine-default'
@@ -10336,29 +10337,24 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     }
   });
 
-  itAsync('mantém o avatar feminino em SVG XML válido, original e selecionável', async () => {
-    const response = await fetch('../assets/default_avatar_fem.svg');
-    assertTrue(response.ok, 'arquivo SVG acessível');
-    const source = await response.text();
-    const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
-    const svgNamespace = 'http://www.w3.org/2000/svg';
-    const root = parsed.documentElement;
-    assertFalse(parsed.getElementsByTagName('parsererror').length > 0, 'XML sem erro de parse');
-    assertEqual(root.localName, 'svg');
-    assertEqual(root.getAttribute('viewBox'), '0 0 256 256');
-    assertEqual(parsed.getElementsByTagNameNS(svgNamespace, 'script').length, 0);
-    assertEqual(parsed.getElementsByTagNameNS(svgNamespace, 'image').length, 0);
-    [...parsed.querySelectorAll('*')].forEach(element => {
-      ['href', 'xlink:href'].forEach(attribute => {
-        const value = element.getAttribute(attribute);
-        assertTrue(!value || value.startsWith('#'), `referência sem recurso embutido/externo: ${attribute}`);
-      });
-    });
-
+  itAsync('mantém os avatares predefinidos em JPEG e sem referências a SVG de avatar', async () => {
+    const response = await fetch('../assets/default_avatar_fem.jpg');
+    assertTrue(response.ok, 'arquivo JPEG acessível');
+    const image = new Image();
+    image.src = URL.createObjectURL(await response.blob());
+    await image.decode();
+    URL.revokeObjectURL(image.src);
+    assertEqual([image.naturalWidth, image.naturalHeight], [256, 256]);
     const gallery = window.GastoProAvatarGallery;
     assertTrue(gallery.isPreset('preset:feminine-default'));
-    assertEqual(gallery.getSource('preset:feminine-default'), 'assets/default_avatar_fem.svg');
+    assertEqual(gallery.getSource('preset:feminine-default'), 'assets/default_avatar_fem.jpg');
+    assertEqual(gallery.getSource('preset:neutral-default'), 'assets/default_avatar.jpg');
     assertEqual(gallery.selectPreset({}, 'preset:feminine-default').avatar, 'preset:feminine-default');
+    assertTrue(window.GastoProCacheAssets.optional.includes('./assets/default_avatar_fem.jpg'));
+    assertEqual(
+      window.GastoProCacheAssets.optional.filter(asset => /avatar.*\.svg$/i.test(asset)),
+      []
+    );
   });
 
   it('salva e recupera a escolha do avatar feminino no perfil local', () => {
@@ -10371,7 +10367,7 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       assertTrue(FinanceData.saveProfile(selectedProfile).success);
       assertEqual(FinanceData.getProfile().avatar, 'preset:feminine-default');
       assertEqual(window.GastoProAvatarGallery.getSource(FinanceData.getProfile().avatar),
-        'assets/default_avatar_fem.svg');
+        'assets/default_avatar_fem.jpg');
     } finally {
       FinanceData.saveProfile(previousProfile);
     }
@@ -10531,7 +10527,7 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     frameDocument.getElementById('fixtureApp').innerHTML =
       '<div class="drawer-section"><div class="avatar-gallery" id="gallery">' +
       '<button class="avatar-preset-option" aria-label="Escolher avatar Avatar padrão"><img src="assets/default_avatar.jpg" alt=""><span>Avatar padrão</span></button>' +
-      '<button class="avatar-preset-option" aria-label="Escolher avatar Avatar feminino"><img src="assets/default_avatar_fem.svg" alt=""><span>Avatar feminino</span></button>' +
+      '<button class="avatar-preset-option" aria-label="Escolher avatar Avatar feminino"><img src="assets/default_avatar_fem.jpg" alt=""><span>Avatar feminino</span></button>' +
       '</div></div>';
     try {
       for (const width of [320, 390, 1280]) {

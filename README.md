@@ -149,6 +149,7 @@ financeiro-app/
 │   ├── logo-symbol.png        # Símbolo transparente da marca
 │   ├── logo.jpg               # Logotipo legado preservado
 │   ├── default_avatar.jpg     # Avatar padrão
+│   ├── default_avatar_fem.jpg # Avatar feminino predefinido (256x256)
 │   ├── icon-192.png           # Ícone PWA 192x192
 │   ├── icon-512.png           # Ícone PWA 512x512
 │   ├── icon-maskable-512.png  # Ícone maskable
@@ -466,7 +467,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.39`. Suíte atual: **504 testes**.
+`CACHE_NAME` atual: `gastopro-v4.40`. Suíte atual: **504 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -681,8 +682,9 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-057 — Centros de controle mensais para Ganhos e Gastos** / Descrição: listas mensais com tipo, valor, data/dia, conta, situação, edição e exclusão; atalhos de criação levam a Lançamentos. Modelos recorrentes avisam que editar/excluir afeta o modelo e seus meses; empréstimos recebidos permanecem fora de Ganhos. / Critério de pronto: 491 testes aprovados; telas medidas em 320, 360, 390, 768, 1024, 1280 e paisagem 844×390 nos temas claro/escuro, sem corte, com alvos >= 44 px e contraste >= 4.5:1 para texto e >= 3:1 para ícones. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `sw.js`, `tests/gastopro.test.js`, `README.md`.
 - [x] **RM-058 — Autoria consentida e avisos de feedback no Admin** / Descrição: mostra autor numerado sem consentimento ou nome/e-mail com `admin_visibility`; inclui feedback novo não lido no sino local e mantém o contador Admin sincronizado. A migração restrita `admin_feedback_authors()` não altera RLS e não foi aplicada. / Critério de pronto: 494 testes aprovados no test-runner com o código real; aparência em tela não medida. / Arquivos: `js/app.js`, `js/supabase.js`, `css/style.css`, `supabase/schema.sql`, `supabase/migrations/20261107_admin_feedback_authors.sql`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 - [x] **RM-059 — Estado e diagnóstico das mensagens de feedback** / Descrição: ao abrir Mensagens do Admin, o filtro volta a Novas sem interferir no refresh manual; falhas das consultas administrativas ficam no Diagnóstico sem IDs, e-mails ou conteúdo do feedback; mensagens do cliente aparecem da mais recente para a mais antiga, com status, datas e resposta associada. / Critério de pronto: 497 testes aprovados no test-runner com código real; testes de consultas Supabase usam mock; aparência/toque em tela não verificados. / Arquivos: `js/app.js`, `js/supabase.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
-- [x] **RM-060 — Diagnóstico seguro, avatar feminino e aviso de atualização** / Descrição: erros administrativos usam mensagem fixa e não registram detalhes/hints; avatar feminino predefinido é selecionável e sincronizado no campo existente; aviso de Service Worker aguardando chama a verificação manual e registra sua exibição; navegação “Metas”/“Mais” permanece correta. / Critério de pronto: 503 testes aprovados no test-runner; layout do aviso e avatares verificados em 320, 390 e 1280 px nos dois temas; tela em dispositivo não verificada. / Arquivos: `js/app.js`, `js/cache-assets.js`, `assets/default_avatar_fem.svg`, `css/style.css`, `index.html`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
-- [x] **RM-061 — Refinamento do avatar feminino** / Descrição: rosto, pescoço e ombros refinados; cabelo em camadas roxo/turquesa; traços faciais, sombra de luz e detalhe na roupa; SVG local sem código ou imagens embutidas. / Critério de pronto: 504 testes aprovados; XML validado e seleção coberta; visual em tela não verificado. / Arquivos: `assets/default_avatar_fem.svg`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
+- [x] **RM-060 — Diagnóstico seguro, avatar feminino e aviso de atualização** / Descrição: erros administrativos usam mensagem fixa e não registram detalhes/hints; avatar feminino predefinido é selecionável e sincronizado no campo existente; aviso de Service Worker aguardando chama a verificação manual e registra sua exibição; navegação “Metas”/“Mais” permanece correta. / Critério de pronto: 503 testes aprovados no test-runner; layout do aviso e avatares verificados em 320, 390 e 1280 px nos dois temas; tela em dispositivo não verificada. / Arquivos: `js/app.js`, `js/cache-assets.js`, `assets/default_avatar_fem.jpg`, `css/style.css`, `index.html`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
+- [x] **RM-061 — Refinamento do avatar feminino** / Descrição: rosto, pescoço e ombros refinados; cabelo em camadas roxo/turquesa; traços faciais, sombra de luz e detalhe na roupa. / Critério de pronto: 504 testes aprovados; seleção coberta; visual em tela não verificado. / Arquivos: `assets/default_avatar_fem.jpg`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
+- [x] **RM-062 — Avatar feminino em JPEG** / Descrição: substitui o recurso feminino pelo JPEG 256x256 sem alterar o ID persistido, remove o SVG de avatar e mantém o JPG no cache. / Critério de pronto: 504 testes aprovados no test-runner; visual do avatar não verificado em tela. / Arquivos: `assets/default_avatar_fem.jpg`, `js/app.js`, `js/cache-assets.js`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 
 ### Em dúvida
 
@@ -694,9 +696,10 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.39 — 02/11/2026 (versão atual)
+### v4.40 — 02/11/2026 (versão atual)
 
-- RM-061: acabamento do avatar feminino com rosto e pescoço mais estreitos, cabelo em camadas, orelhas, sobrancelhas, nariz, sombra lateral e detalhe turquesa; SVG XML válido e seleção coberta. Test-runner com código real: 504 aprovados, zero falhas; visual do avatar não verificado em tela.
+- RM-062: avatar feminino passou a ser JPEG 256x256; ID do preset preservado, escolha local sincronizável pelo campo de perfil existente, arquivo no cache e referências ao recurso vetorial removidas. Test-runner com código real: 504 aprovados, zero falhas; visual do avatar não verificado em tela.
+- RM-061: acabamento do avatar feminino com rosto e pescoço mais estreitos, cabelo em camadas, orelhas, sobrancelhas, nariz, sombra lateral e detalhe turquesa; seleção coberta. Test-runner com código real: 504 aprovados, zero falhas; visual do avatar não verificado em tela.
 - RM-060: mensagem de Diagnóstico administrativa fixa para excluir valores de `message`, `details` e `hint`; avatar feminino predefinido selecionável; aviso de Service Worker aguardando usa a verificação manual e registra exibição; navegação “Metas” rola ao painel e “Mais” abre menu sem mudança. Test-runner com código real: 503 aprovados, zero falhas; medições via fixture em 320/390/1280 px e dois temas.
 - RM-059: Mensagens do Admin reabre no filtro Novas, sem alterar o filtro no refresh manual; erros de `admin_list_users`, `admin_feedback_authors` e consulta de feedback são registrados no Diagnóstico com código, mensagem sanitizada e origem, sem IDs/e-mails/conteúdo. Mensagens do cliente ordenadas da mais recente, com resposta, status e data. Test-runner com código real: 497 aprovados, zero falhas; testes de consultas Supabase mockados e tela não verificada.
 

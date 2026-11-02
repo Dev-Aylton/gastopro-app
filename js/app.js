@@ -112,7 +112,7 @@ window.GastoProAvatarGallery = Object.freeze({
     const preset = getProfileAvatarPreset(value);
     if (preset || typeof value !== 'string' || !value || value.startsWith('preset:')) {
       return preset && preset.id === 'feminine-default'
-        ? 'assets/default_avatar_fem.svg'
+        ? 'assets/default_avatar_fem.jpg'
         : 'assets/default_avatar.jpg';
     }
     return value;

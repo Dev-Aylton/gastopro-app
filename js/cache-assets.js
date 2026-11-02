@@ -34,7 +34,7 @@ self.GastoProCacheAssets = Object.freeze({
     './assets/LICENSE-Font-Awesome.txt',
     './assets/logo-symbol.png',
     './assets/default_avatar.jpg',
-    './assets/default_avatar_fem.svg',
+    './assets/default_avatar_fem.jpg',
     './assets/icon-192.png',
     './assets/icon-512.png',
     './assets/icon-maskable-512.png',
