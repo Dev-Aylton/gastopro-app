@@ -467,7 +467,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.43`. Suíte atual: **530 testes**.
+`CACHE_NAME` atual: `gastopro-v4.44`. Suíte atual: **546 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -688,6 +688,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-063 — Leitura na nuvem do feedback Admin** / Descrição: `admin_read_at` controla lista e contagem de mensagens não lidas; abrir resposta ou marcar como lida grava somente essa coluna, enquanto avisos de contas continuam locais. Sem Realtime ou polling. / Critério de pronto: 510 testes aprovados; testes da API Supabase usam mock; RLS/tipos reais não verificados e visual/toque não verificados em tela. / Arquivos: `js/app.js`, `js/supabase.js`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 - [x] **RM-064 — Cabeçalho explícito da zona de perigo** / Descrição: cabeçalho recolhível mostra ações internas, chevron giratório e estado `aria-expanded`; botões críticos, handlers e confirmações permanecem inalterados. / Critério de pronto: 514 testes aprovados; testes não medem layout real; visual/toque e layout em larguras/temas não verificados em tela. / Arquivos: `index.html`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-065 — Helpers puros para totais mensais de dívidas** / Descrição: adiciona o resumo de parcelas em atraso, mês atual, próximo mês, saldo restante e dívidas sem data final; separa gastos fixos recorrentes sem fim e mantém ganhos fora dos totais. / Critério de pronto: 530 testes aprovados no test-runner; visual/toque e layout não verificados em tela. / Arquivos: `js/app.js`, `js/data.js`, `tests/gastopro.test.js`, `index.html`, `css/style.css`, `sw.js`, `README.md`.
+- [x] **RM-066 — Filtro de conta na home e relatório financeiro CSV/PDF** / Descrição: filtra os totais e listas do dashboard por todas as contas, PF/PJ ou conta individual; exporta localmente lançamentos do período filtrado em CSV com escape e neutralização de fórmulas, e em PDF com o gerador local existente. / Critério de pronto: 546 testes aprovados, zero falhas/pendências; aparência/toque e layout não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/report.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 
 ### Em dúvida
 
@@ -699,7 +700,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.43 — 02/11/2026 (versão atual)
+### v4.44 — 02/11/2026 (versão atual)
+
+- RM-066: filtro de conta na home e exportação CSV/PDF local dos lançamentos do período, com conta PF/PJ, tratamento de campos CSV e aviso sobre informe de rendimentos. Test-runner: 546 aprovados, zero falhas/pendências; visual/toque e layout não verificados em tela.
+
+### v4.43 — 02/11/2026
 
 - RM-065: Centro de Dívidas mostra atraso, parcelas deste mês/próximo e total restante calculados para o mês real local; gastos recorrentes e dívidas sem prazo ficam em alerta separado. Test-runner: 530 aprovados, zero falhas/pendências; aparência/toque e layout nas larguras previstas não verificados em tela.
 

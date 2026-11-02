@@ -12535,6 +12535,144 @@ describe('Correções de formulários, cards e rodapé', () => {
   });
 });
 
+describe('Filtro de contas na home e relatório do contador', () => {
+  setupMockLocalStorage();
+
+  it('filtra ganhos, gastos fixos, variáveis e totais sem alterar os lançamentos', () => {
+    const accounts = [
+      { id: 'pf-account', name: 'Conta PF', type: 'PF' },
+      { id: 'pj-account', name: 'Conta PJ', type: 'PJ' }
+    ];
+    const items = [
+      { id: 'income-pf', type: 'income', amount: 1800, accountId: 'pf-account' },
+      { id: 'income-pj', type: 'income', amount: 3200, accountId: 'pj-account' },
+      { id: 'fixed-pf', type: 'fixed', amount: 400, active: true, accountId: 'pf-account' },
+      { id: 'fixed-inactive-pj', type: 'fixed', amount: 800, active: false, accountId: 'pj-account' },
+      { id: 'variable-pj', type: 'variable', amount: 150, accountId: 'pj-account' }
+    ];
+    const originalItems = JSON.stringify(items);
+    const all = GastoProAccountFilterHelpers.getDashboardSummary(items, accounts, 'all');
+    const personal = GastoProAccountFilterHelpers.getDashboardSummary(
+      items, accounts, 'account:pf-account'
+    );
+
+    assertEqual(all.totalIncome, 5000);
+    assertEqual(all.totalFixed, 400);
+    assertEqual(all.totalVariable, 150);
+    assertEqual(all.incomes.map(item => item.id), ['income-pf', 'income-pj']);
+    assertEqual(personal.totalIncome, 1800);
+    assertEqual(personal.totalFixed, 400);
+    assertEqual(personal.totalVariable, 0);
+    assertEqual(personal.items.map(item => item.id), ['income-pf', 'fixed-pf']);
+    assertEqual(JSON.stringify(items), originalItems);
+  });
+
+  it('inicia com Todas as contas selecionado', () => {
+    assertEqual(state.accountBalanceFilter, 'all');
+    assertEqual(buildAccountBalanceFilterOptions([
+      { id: 'account-default', name: 'Principal', type: 'PF' }
+    ])[0], { value: 'all', label: 'Todas as contas' });
+  });
+
+  itAsync('gera o relatório e CSV com lançamentos apenas da conta selecionada', async () => {
+    setupMockLocalStorage();
+    const personalAccount = {
+      id: crypto.randomUUID(), name: 'Conta PF', type: 'PF', institution: null, initialBalance: 0
+    };
+    const businessAccount = {
+      id: crypto.randomUUID(), name: 'Conta PJ', type: 'PJ', institution: null, initialBalance: 0
+    };
+    await FinanceData.saveAccounts([personalAccount, businessAccount], { flush: false });
+    FinanceData.saveEntries([
+      makeIncome({
+        id: 'account-report-income', month: '2026-11', date: '2026-11-05',
+        amount: 181.2, desc: '=Casa; "A"', accountId: personalAccount.id
+      }),
+      makeVariable({
+        id: 'account-report-variable', month: '2026-11', date: '2026-11-10',
+        amount: 82.55, accountId: businessAccount.id
+      })
+    ]);
+    FinanceData.saveTemplates([]);
+
+    const report = buildReportData({
+      type: 'month', from: '2026-11', to: '2026-11',
+      includeDetails: true, accountFilter: `account:${personalAccount.id}`
+    });
+    const csv = buildReportCsv(report);
+
+    assertEqual(report.totals.income, 181.2);
+    assertEqual(report.totals.variable, 0);
+    assertEqual(report.entries.income.length, 1);
+    assertEqual(report.entries.variable, []);
+    assertTrue(csv.startsWith('Data;Tipo;Descrição;Categoria;Valor;Situação;Conta'));
+    assertTrue(csv.includes("'=Casa; \"\"A\"\""));
+    assertTrue(csv.includes('181,20'));
+    assertFalse(csv.includes('82,55'));
+    assertTrue(csv.includes('Conta PF (PF)'));
+  });
+
+  it('escapa campos CSV, formata duas casas e neutraliza valores iniciados por fórmula', () => {
+    const csv = buildReportCsv({
+      entries: {
+        income: [
+          {
+            date: '2026-11-05', description: '-12+1', category: 'Renda',
+            amount: -12.5, status: 'Pago', account: 'Conta PF (PF)'
+          },
+          {
+            date: '2026-11-06', description: '=formula', category: 'Renda',
+            amount: 1, status: 'Pago', account: 'Conta PF (PF)'
+          },
+          {
+            date: '2026-11-07', description: '+formula', category: 'Renda',
+            amount: 1, status: 'Pago', account: 'Conta PF (PF)'
+          },
+          {
+            date: '2026-11-08', description: '@formula', category: 'Renda',
+            amount: 1, status: 'Pago', account: 'Conta PF (PF)'
+          }
+        ],
+        fixed: [],
+        debts: [],
+        variable: []
+      }
+    });
+
+    assertTrue(csv.includes("'-12,50"));
+    assertTrue(csv.includes(";'=formula;"));
+    assertTrue(csv.includes(";'+formula;"));
+    assertTrue(csv.includes(";'@formula;"));
+    assertTrue(csv.includes('Este relatório não substitui o informe de rendimentos.'));
+    assertTrue(csv.includes('Aviso;Este relatório não substitui o informe de rendimentos.'));
+  });
+
+  it('monta os dados do relatório sem fazer chamadas de rede', async () => {
+    setupMockLocalStorage();
+    const originalFetch = window.fetch;
+    let fetchCalls = 0;
+    window.fetch = () => {
+      fetchCalls++;
+      return Promise.reject(new Error('A geração do relatório não deve chamar a rede.'));
+    };
+    try {
+      FinanceData.saveEntries([
+        makeIncome({ id: 'offline-report-income', month: '2026-11', accountId: null })
+      ]);
+      FinanceData.saveTemplates([]);
+      const report = buildReportData({
+        type: 'month', from: '2026-11', to: '2026-11',
+        includeDetails: true, accountFilter: 'all'
+      });
+      buildReportCsv(report);
+      assertEqual(fetchCalls, 0);
+    } finally {
+      if (originalFetch === undefined) delete window.fetch;
+      else window.fetch = originalFetch;
+    }
+  });
+});
+
 // ================================================================
 // RELATÓRIO FINAL
 // ================================================================

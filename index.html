@@ -401,7 +401,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.43</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.44</span></p>
             <div class="app-update-notice" id="appUpdateNotice" role="status" hidden>
               <span>Nova versão disponível.</span>
               <button type="button" class="btn-secondary" id="appUpdateCheckBtn">Atualizar</button>
@@ -723,7 +723,7 @@
               </button>
             </div>
             <div class="form-group account-balance-filters">
-              <label for="accountBalanceView">Visão do saldo</label>
+              <label for="accountBalanceView">Filtrar a home por conta</label>
               <select id="accountBalanceView" class="form-select" aria-label="Selecionar visão do saldo das contas">
                 <option value="all">Todas as contas</option>
                 <option value="PF">Todas as contas PF</option>
@@ -1158,7 +1158,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.43</span>
+          <span class="badge badge-version">v4.44</span>
         </div>
       </footer>
 
@@ -1578,9 +1578,16 @@
         <button type="button" class="modal-close-btn" id="closeReportModalBtn" aria-label="Fechar relatório">&times;</button>
       </div>
       <p id="reportModalDescription" class="report-modal-description">
-        Escolha o período e se deseja incluir a lista detalhada dos lançamentos.
+        Escolha o período e a conta para gerar o relatório localmente.
       </p>
+      <p class="report-disclaimer">Este relatório não substitui o informe de rendimentos.</p>
       <form id="reportForm">
+        <label class="form-group">
+          <span>Conta do relatório</span>
+          <select id="reportAccountFilter" class="form-control">
+            <option value="all">Todas as contas</option>
+          </select>
+        </label>
         <label class="form-group">
           <span>Período</span>
           <select id="reportPeriodType" class="form-control">
@@ -1604,6 +1611,7 @@
         <p id="reportError" class="report-error" role="alert" hidden></p>
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="cancelReportBtn">Cancelar</button>
+          <button type="button" class="btn-secondary" id="exportReportCsvBtn">Baixar CSV</button>
           <button type="submit" class="btn-primary" id="generateReportBtn">Gerar PDF</button>
         </div>
       </form>

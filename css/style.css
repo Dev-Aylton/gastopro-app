@@ -1592,8 +1592,19 @@ body {
   margin: -0.5rem 0 1.2rem;
 }
 
+.report-disclaimer {
+  color: var(--text-main);
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
 .report-modal-content .form-group {
   margin-bottom: 1rem;
+}
+
+.report-modal-content .modal-actions > button {
+  flex: 1 1 8rem;
 }
 
 .report-details-option {

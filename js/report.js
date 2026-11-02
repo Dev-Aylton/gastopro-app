@@ -22,7 +22,8 @@
     diagnosis: 'Diagnóstico financeiro',
     diagnosisColumn: 'Diagnóstico',
     guidance: 'Orientação',
-    noEntries: 'Nenhum lançamento no período.'
+    noEntries: 'Nenhum lançamento no período.',
+    disclaimer: 'Este relatório não substitui o informe de rendimentos.'
   };
 
   function formatReportPercentage(value) {
@@ -94,14 +95,16 @@
     map[category] = (map[category] || 0) + Number(item.amount || 0);
   }
 
-  function toReportEntry(item, ym, kind) {
+  function toReportEntry(item, ym, kind, accountsById) {
+    const account = accountsById.get(item.accountId);
     return {
       date: item.date || `${ym}-${String(item.day || '01').padStart(2, '0')}`,
       description: item.desc || '',
       category: item.category || 'Outros',
       amount: roundMoney(item.amount),
       status: item.paid ? 'Pago' : 'Pendente',
-      kind
+      kind,
+      account: account ? `${account.name} (${account.type})` : 'Sem conta'
     };
   }
 
@@ -122,10 +125,14 @@
     const monthly = [];
     const monthlyRows = [];
     const debtHelpers = window.GastoProReportHelpers;
-    const templateList = FinanceData.getTemplates();
+    const accountFilter = period.accountFilter || 'all';
+    const accounts = FinanceData.getAccounts();
+    const accountsById = new Map(accounts.map(account => [account.id, account]));
+    const filterItems = window.GastoProAccountFilterHelpers.filterItems;
+    const templateList = filterItems(FinanceData.getTemplates(), accounts, accountFilter);
 
     months.forEach(ym => {
-      const projectedRows = FinanceData.getByMonth(ym);
+      const projectedRows = filterItems(FinanceData.getByMonth(ym), accounts, accountFilter);
       const monthRows = {
         income: projectedRows.filter(item => item.type === 'income'),
         fixed: projectedRows.filter(item => item.type === 'fixed' || item.type === 'debt'),
@@ -138,18 +145,20 @@
       monthlyRows.push({ ym, rows: monthRows, debtIds });
 
       monthRows.income.forEach(item => {
-        entries.income.push(toReportEntry(item, ym, 'income'));
+        entries.income.push(toReportEntry(item, ym, 'income', accountsById));
       });
       monthRows.fixed
         .filter(item => item.active !== false || item.paid)
         .forEach(item => {
           const isDebt = debtIds.has(String(item.id));
           const kind = isDebt ? 'debt' : 'fixed';
-          entries[kind === 'debt' ? 'debts' : 'fixed'].push(toReportEntry(item, ym, kind));
+          entries[kind === 'debt' ? 'debts' : 'fixed'].push(
+            toReportEntry(item, ym, kind, accountsById)
+          );
           addToCategoryMap(categoryMap, item);
         });
       monthRows.variable.forEach(item => {
-        entries.variable.push(toReportEntry(item, ym, 'variable'));
+        entries.variable.push(toReportEntry(item, ym, 'variable', accountsById));
         addToCategoryMap(categoryMap, item);
       });
     });
@@ -236,6 +245,7 @@
         from: period.from,
         to: period.to,
         profileName: profile && profile.name ? profile.name : '',
+        accountFilter,
         generatedAt
       },
       totals,
@@ -284,6 +294,44 @@
     }
     if (from === to) return `GastoPro-relatorio-${from}.pdf`;
     return `GastoPro-relatorio-${from}_a_${to}.pdf`;
+  }
+
+  function formatCsvAmount(value) {
+    return (Number(value) || 0).toFixed(2).replace('.', ',');
+  }
+
+  function escapeCsvCell(value) {
+    const text = String(value == null ? '' : value);
+    const safeText = /^[\t\r ]*[=+\-@]/.test(text) ? `'${text}` : text;
+    return /[;"\r\n]/.test(safeText)
+      ? `"${safeText.replace(/"/g, '""')}"`
+      : safeText;
+  }
+
+  function buildReportCsv(data) {
+    if (!data || !data.entries) {
+      throw new TypeError('Os lançamentos detalhados são necessários para exportar o CSV.');
+    }
+    const rows = [
+      ['Data', 'Tipo', 'Descrição', 'Categoria', 'Valor', 'Situação', 'Conta'],
+      ...['income', 'fixed', 'debts', 'variable'].flatMap(kind =>
+        data.entries[kind].map(item => [
+          item.date,
+          kind === 'income' ? 'Ganho' : kind === 'variable' ? 'Gasto variável' : 'Gasto fixo',
+          item.description,
+          item.category,
+          formatCsvAmount(item.amount),
+          item.status,
+          item.account
+        ])
+      ),
+      ['Aviso', REPORT_LABELS.disclaimer]
+    ];
+    return rows.map(row => row.map(escapeCsvCell).join(';')).join('\r\n');
+  }
+
+  function getReportCsvFileName(data) {
+    return getReportFileName(data).replace(/\.pdf$/i, '.csv');
   }
 
   function loadImage(url) {
@@ -354,8 +402,9 @@
     doc.text(sanitizePdfText(data.meta.period), 14, 37);
     doc.setFontSize(8);
     doc.text(`Gerado em ${sanitizePdfText(data.meta.generatedAt)}`, 14, 43);
+    doc.text(REPORT_LABELS.disclaimer, 14, 48);
     if (data.meta.profileName) {
-      doc.text(`Perfil: ${sanitizePdfText(data.meta.profileName)}`, 14, 48);
+      doc.text(`Perfil: ${sanitizePdfText(data.meta.profileName)}`, 14, 53);
     }
 
     try {
@@ -376,7 +425,7 @@
       [REPORT_LABELS.variableExpenses, pdfCurrency(data.totals.variable)],
       ['Saldo', pdfCurrency(data.totals.balance)],
       ['Percentual 50/30/20', `${formatReportPercentage(data.totals.percentages.fixed)}% / ${formatReportPercentage(data.totals.percentages.variable)}% / ${formatReportPercentage(data.totals.percentages.savings)}%`]
-    ], data.meta.profileName ? 55 : 50, { numericColumns: [1] });
+    ], data.meta.profileName ? 60 : 55, { numericColumns: [1] });
 
     y = addSectionTitle(doc, 'Totais por mês', y);
     y = renderTable(doc, [REPORT_LABELS.month, 'Renda', 'Fixos', REPORT_LABELS.debts, REPORT_LABELS.variable, 'Saldo'],
@@ -431,9 +480,10 @@
       ];
       sections.forEach(([title, rows]) => {
         y = addSectionTitle(doc, title, y);
-        y = renderTable(doc, ['Data', 'Descrição', 'Categoria', 'Valor', 'Situação'],
+        y = renderTable(doc, ['Data', 'Descrição', 'Categoria', 'Valor', 'Situação', 'Conta'],
           rows.map(item => [
-            pdfDate(item.date), item.description, item.category, pdfCurrency(item.amount), item.status
+            pdfDate(item.date), item.description, item.category, pdfCurrency(item.amount),
+            item.status, item.account
           ]), y, { numericColumns: [3] });
         if (!rows.length) {
           y = renderTable(doc, [REPORT_LABELS.information], [[REPORT_LABELS.noEntries]], y);
@@ -457,6 +507,8 @@
   window.buildReportData = buildReportData;
   window.renderReportPDF = renderReportPDF;
   window.getReportFileName = getReportFileName;
+  window.buildReportCsv = buildReportCsv;
+  window.getReportCsvFileName = getReportCsvFileName;
   window.sanitizePdfText = sanitizePdfText;
   window.formatReportPercentage = formatReportPercentage;
   window.getReportLabels = () => ({ ...REPORT_LABELS });

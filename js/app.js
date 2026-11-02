@@ -2758,9 +2758,13 @@ function renderAll() {
   });
 
   // Busca todos os itens financeiros do mês atual (entradas + projeções fixas)
-  const entries   = FinanceData.getByMonth(ym);
-  const incomes   = entries.filter(e => e.type === 'income');
-  const allFixed  = entries.filter(e => e.type === 'fixed');
+  const entries = FinanceData.getByMonth(ym);
+  const accounts = FinanceData.getAccounts();
+  const dashboardSummary = getDashboardAccountSummary(
+    entries, accounts, state.accountBalanceFilter
+  );
+  const incomes = entries.filter(e => e.type === 'income');
+  const allFixed = entries.filter(e => e.type === 'fixed');
   const variables = entries.filter(e => e.type === 'variable');
 
   // Filtra apenas fixos ativos (ou pagos) para o cálculo de totais.
@@ -2783,21 +2787,30 @@ function renderAll() {
 
   const topbarMonthlyResult = document.getElementById('topbarMonthlyResult');
   if (topbarMonthlyResult) {
-    setFinancialAmount(topbarMonthlyResult, balance, { signed: true });
+    setFinancialAmount(topbarMonthlyResult, dashboardSummary.balance, { signed: true });
   }
 
   const highlights = getDashboardHighlightValues(
     FinanceData.getAccountBalances(),
     state.accountBalanceFilter,
-    FinanceData.getAccounts(),
+    accounts,
     accountId => FinanceData.getAccountBalance(accountId),
-    balance
+    dashboardSummary.balance
   );
   setFinancialAmount(document.getElementById('dashboardCurrentBalance'), highlights.currentBalance, { signed: true });
   setFinancialAmount(document.getElementById('dashboardMonthlyResult'), highlights.monthlyResult, { signed: true });
 
   // Delega para cada tela sua renderização específica
-  renderDashboardView(incomes, activeFixed, variables, totalIncome, totalFixed, totalVariable, balance, ym);
+  renderDashboardView(
+    dashboardSummary.incomes,
+    dashboardSummary.fixed,
+    dashboardSummary.variables,
+    dashboardSummary.totalIncome,
+    dashboardSummary.totalFixed,
+    dashboardSummary.totalVariable,
+    dashboardSummary.balance,
+    ym
+  );
   renderIncomesView(incomes, totalIncome);
   // allFixed (com inativos) é passado para permitir gerenciar gastos pausados na tela de Gastos
   renderExpensesView(allFixed, variables, totalFixed, totalVariable, totalExpenses);
@@ -3212,9 +3225,16 @@ function renderCreditCardDashboardSummary(summary) {
 function renderDashboardCreditCardSummary() {
   const container = document.getElementById('dashboardCreditCardSummary');
   if (!container) return;
+  const accounts = FinanceData.getAccounts();
+  const cards = filterFinancialItemsByAccount(
+    FinanceData.getCreditCards(), accounts, state.accountBalanceFilter
+  );
+  const purchases = filterFinancialItemsByAccount(
+    FinanceData.getCreditCardPurchases(), accounts, state.accountBalanceFilter
+  );
   const summary = getCreditCardDashboardSummary(
-    FinanceData.getCreditCards(),
-    FinanceData.getCreditCardPurchases()
+    cards,
+    purchases
   );
   container.innerHTML = renderCreditCardDashboardSummary(summary);
 }
@@ -3494,6 +3514,33 @@ function filterFinancialItemsByAccount(items, accounts, filter) {
   }
   return items;
 }
+
+function getDashboardAccountSummary(items, accounts, filter) {
+  const filteredItems = filterFinancialItemsByAccount(items, accounts, filter);
+  const incomes = filteredItems.filter(item => item.type === 'income');
+  const fixed = filteredItems.filter(item =>
+    item.type === 'fixed' && (item.active !== false || item.paid)
+  );
+  const variables = filteredItems.filter(item => item.type === 'variable');
+  const totalIncome = incomes.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const totalFixed = fixed.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const totalVariable = variables.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  return {
+    items: filteredItems,
+    incomes,
+    fixed,
+    variables,
+    totalIncome,
+    totalFixed,
+    totalVariable,
+    balance: totalIncome - totalFixed - totalVariable
+  };
+}
+
+window.GastoProAccountFilterHelpers = Object.freeze({
+  filterItems: filterFinancialItemsByAccount,
+  getDashboardSummary: getDashboardAccountSummary
+});
 
 const NOTIFICATION_PREFERENCES_KEY = 'gastopro_notification_preferences_v1';
 const NOTIFICATION_ITEMS_KEY = 'gastopro_notifications_v1';
@@ -6448,6 +6495,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const reportFromLabel = document.getElementById('reportFromLabel');
   const reportError = document.getElementById('reportError');
   const generateReportBtn = document.getElementById('generateReportBtn');
+  const reportAccountFilter = document.getElementById('reportAccountFilter');
+  const exportReportCsvBtn = document.getElementById('exportReportCsvBtn');
   let reportGenerationInProgress = false;
   let reportScriptPromises = {};
   let reportPreviousFocus = null;
@@ -6477,6 +6526,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!reportModal) return;
     reportPreviousFocus = document.activeElement;
     reportError.hidden = true;
+    if (reportAccountFilter) {
+      reportAccountFilter.innerHTML = getAccountBalanceOptionsMarkup(FinanceData.getAccounts());
+      reportAccountFilter.value = state.accountBalanceFilter;
+      if (!reportAccountFilter.value) reportAccountFilter.value = 'all';
+    }
     updateReportPeriodFields();
     reportModal.classList.add('active');
     reportModal.setAttribute('aria-hidden', 'false');
@@ -6527,6 +6581,60 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       if (link && link.isConnected) link.remove();
     }
+  }
+
+  function getReportPeriodValues() {
+    const type = reportType.value;
+    const fromValue = reportFrom.value;
+    const toValue = reportTo.value;
+    let from;
+    let to;
+    if (type === 'year') {
+      if (!/^\d{4}$/.test(fromValue)) throw new Error('Informe um ano válido.');
+      from = `${fromValue}-01`;
+      to = `${fromValue}-12`;
+    } else if (type === 'range') {
+      from = fromValue;
+      to = toValue;
+    } else {
+      from = fromValue;
+      to = fromValue;
+    }
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(from) ||
+      !/^\d{4}-(0[1-9]|1[0-2])$/.test(to) || from > to) {
+      throw new Error('Confira o período informado.');
+    }
+    return {
+      type,
+      from,
+      to,
+      accountFilter: reportAccountFilter ? reportAccountFilter.value : 'all'
+    };
+  }
+
+  function showReportError(error) {
+    console.error('[GastoPro] Falha ao gerar ou entregar o relatório:', error);
+    reportError.textContent = error.message ||
+      'Não foi possível gerar ou baixar o relatório neste aparelho.';
+    reportError.hidden = false;
+  }
+
+  if (exportReportCsvBtn) {
+    exportReportCsvBtn.addEventListener('click', () => {
+      reportError.hidden = true;
+      try {
+        const period = getReportPeriodValues();
+        const data = buildReportData({ ...period, includeDetails: true });
+        const blob = new Blob([`\uFEFF${buildReportCsv(data)}`], {
+          type: 'text/csv;charset=utf-8'
+        });
+        if (!downloadReportFile(blob, getReportCsvFileName(data))) {
+          throw new Error('Não foi possível baixar o CSV neste navegador.');
+        }
+      } catch (error) {
+        showReportError(error);
+      }
+    });
   }
 
   async function deliverReport(result) {
@@ -6600,28 +6708,9 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         await loadReportScript('js/vendor/jspdf.umd.min.js');
         await loadReportScript('js/vendor/jspdf.plugin.autotable.min.js');
-        const type = reportType.value;
-        const fromValue = reportFrom.value;
-        const toValue = reportTo.value;
-        let from;
-        let to;
-        if (type === 'year') {
-          if (!/^\d{4}$/.test(fromValue)) throw new Error('Informe um ano válido.');
-          from = `${fromValue}-01`;
-          to = `${fromValue}-12`;
-        } else if (type === 'range') {
-          from = fromValue;
-          to = toValue;
-        } else {
-          from = fromValue;
-          to = fromValue;
-        }
-        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(from) ||
-          !/^\d{4}-(0[1-9]|1[0-2])$/.test(to) || from > to) {
-          throw new Error('Confira o período informado.');
-        }
+        const period = getReportPeriodValues();
         const data = buildReportData({
-          type, from, to,
+          ...period,
           includeDetails: document.getElementById('reportIncludeDetails').checked
         });
         const blob = await renderReportPDF(data, { download: false });
@@ -6634,9 +6723,7 @@ document.addEventListener('DOMContentLoaded', () => {
           closeReportModal();
         }
       } catch (error) {
-        console.error('[GastoPro] Falha ao gerar ou entregar o relatório:', error);
-        reportError.textContent = 'Não foi possível gerar ou baixar o relatório. Confira sua conexão e tente novamente.';
-        reportError.hidden = false;
+        showReportError(error);
       } finally {
         reportGenerationInProgress = false;
         generateReportBtn.disabled = false;
@@ -6941,7 +7028,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (accountBalanceView) {
     accountBalanceView.addEventListener('change', () => {
       state.accountBalanceFilter = accountBalanceView.value;
-      renderAccountBalancesPanel();
+      renderAll();
     });
   }
 
