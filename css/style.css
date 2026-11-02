@@ -3368,6 +3368,13 @@ button:active { transform: scale(0.98); }
   color: var(--primary-text);
 }
 
+.feedback-reply time {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
 .admin-panel,
 .admin-feedback-card {
   min-width: 0;

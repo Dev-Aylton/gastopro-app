@@ -511,6 +511,16 @@ function isMissingConsentSchemaError(error) {
       message.includes('schema cache') || message.includes('function'));
 }
 
+function recordAdminQueryFailure(query, error) {
+  const diagnostics = window.GastoProDiagnostics;
+  if (!diagnostics || typeof diagnostics.record !== 'function') return;
+  diagnostics.record('admin-query-error', {
+    query,
+    code: error && typeof error.code === 'string' ? error.code : '',
+    message: error && typeof error.message === 'string' ? error.message : ''
+  });
+}
+
 function buildFeedbackReplyPayload(reply, repliedAt) {
   const validationError = validateFeedbackReply(reply);
   if (validationError) return { error: validationError, payload: null };
@@ -989,6 +999,7 @@ const SupabaseAuth = {
     try {
       const { data, error } = await this.client.rpc('admin_list_users');
       if (error) {
+        recordAdminQueryFailure('admin_list_users', error);
         if (isMissingConsentSchemaError(error)) return { success: false, unavailable: true };
         return { success: false, error: this.getFeedbackErrorMessage(error) };
       }
@@ -996,6 +1007,7 @@ const SupabaseAuth = {
       if (!users) return { success: false, error: 'A lista de usuários recebida do servidor é inválida.' };
       return { success: true, users };
     } catch (error) {
+      recordAdminQueryFailure('admin_list_users', error);
       if (isMissingConsentSchemaError(error)) return { success: false, unavailable: true };
       return { success: false, error: this.getFeedbackErrorMessage(error) };
     }
@@ -1068,7 +1080,10 @@ const SupabaseAuth = {
       const { data, error } = await this.client.from('feedback_messages')
         .select('id')
         .eq('status', 'new');
-      if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
+      if (error) {
+        recordAdminQueryFailure('feedback_messages.count_new', error);
+        return { success: false, error: this.getFeedbackErrorMessage(error) };
+      }
       if (!Array.isArray(data) || data.some(item =>
         !item || !isValidCloudUuid(item.id) || Object.keys(item).some(key => key !== 'id')
       )) {
@@ -1076,6 +1091,7 @@ const SupabaseAuth = {
       }
       return { success: true, count: data.length, ids: data.map(item => item.id) };
     } catch (error) {
+      recordAdminQueryFailure('feedback_messages.count_new', error);
       return { success: false, error: this.getFeedbackErrorMessage(error) };
     }
   },
@@ -1090,19 +1106,34 @@ const SupabaseAuth = {
       return { success: false, error: 'Área restrita.' };
     }
     try {
-      const [feedbackResult, authorsResult] = await Promise.all([
-        (async () => {
+      const feedbackQuery = (async () => {
+        try {
           let query = this.client.from('feedback_messages')
             .select('id, user_id, category, message, status, reply, replied_at, created_at')
             .order('created_at', { ascending: status === 'new' });
           if (status !== 'all') query = query.eq('status', status);
-          return query.range(safeOffset, safeOffset + safeLimit - 1);
-        })(),
-        this.client.rpc('admin_feedback_authors')
-      ]);
+          return await query.range(safeOffset, safeOffset + safeLimit - 1);
+        } catch (error) {
+          recordAdminQueryFailure('feedback_messages.select', error);
+          throw error;
+        }
+      })();
+      const authorsQuery = (async () => {
+        try {
+          return await this.client.rpc('admin_feedback_authors');
+        } catch (error) {
+          recordAdminQueryFailure('admin_feedback_authors', error);
+          throw error;
+        }
+      })();
+      const [feedbackResult, authorsResult] = await Promise.all([feedbackQuery, authorsQuery]);
       const { data, error } = feedbackResult;
-      if (error) return { success: false, error: this.getFeedbackErrorMessage(error) };
+      if (error) {
+        recordAdminQueryFailure('feedback_messages.select', error);
+        return { success: false, error: this.getFeedbackErrorMessage(error) };
+      }
       if (authorsResult.error) {
+        recordAdminQueryFailure('admin_feedback_authors', authorsResult.error);
         if (isMissingConsentSchemaError(authorsResult.error)) {
           return { success: false, unavailable: true, error: this.getFeedbackErrorMessage(authorsResult.error) };
         }

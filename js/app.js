@@ -342,7 +342,8 @@ const DIAGNOSTIC_LOG_KEY = 'gastopro_diagnostic_log_v1';
 const DIAGNOSTIC_LOG_LIMIT = 100;
 const DIAGNOSTIC_EVENT_TYPES = new Set([
   'auth-state', 'view-switch', 'page-load', 'pageshow', 'visibilitychange',
-  'focus', 'online', 'offline', 'sync', 'refresh', 'controllerchange', 'admin-check'
+  'focus', 'online', 'offline', 'sync', 'refresh', 'controllerchange', 'admin-check',
+  'admin-query-error'
 ]);
 const DIAGNOSTIC_VIEW_IDS = new Set(Object.keys(VIEW_TITLES));
 const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
@@ -357,7 +358,8 @@ const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
   sync: ['phase', 'source', 'result'],
   refresh: ['phase', 'result'],
   controllerchange: [],
-  'admin-check': ['phase', 'result', 'buttonVisibleBefore', 'buttonVisibleAfter']
+  'admin-check': ['phase', 'result', 'buttonVisibleBefore', 'buttonVisibleAfter'],
+  'admin-query-error': ['query', 'code', 'message']
 });
 
 function getLocalDiagnosticTime(date = new Date()) {
@@ -399,6 +401,21 @@ function normalizeDiagnosticData(type, data) {
     } else if (key === 'result' &&
       ['success', 'failure', 'admin', 'not-admin', 'error'].includes(value)) {
       normalized[key] = value;
+    } else if (key === 'query' &&
+      ['admin_feedback_authors', 'admin_list_users', 'feedback_messages.select',
+        'feedback_messages.count_new'].includes(value)) {
+      normalized[key] = value;
+    } else if (key === 'code' &&
+      typeof value === 'string' && /^[A-Z0-9]{1,16}$/.test(value)) {
+      normalized[key] = value;
+    } else if (key === 'message' && typeof value === 'string') {
+      normalized[key] = value
+        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
+        .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '[id]')
+        .replace(/(['"`]).*?\1/g, '[redacted]')
+        .replace(/\b\d+\b/g, '[number]')
+        .replace(/\s+/g, ' ')
+        .slice(0, 200);
     }
   });
   return normalized;
@@ -1606,9 +1623,9 @@ function renderContactView() {
   }
 
   const helper = window.GastoProFeedbackHelpers;
-  const messageCards = feedbackViewState.messages.map(message => {
+  const messageCards = helper.sortMessages(feedbackViewState.messages, 'all').map(message => {
     const category = helper.categories[message.category] || 'Mensagem';
-    const status = helper.getStatusLabel(message.status);
+    const status = message.status === 'answered' ? 'Respondida' : 'Nova';
     return `
       <article class="manage-item-card feedback-message-card">
         <div class="feedback-message-content">
@@ -1621,6 +1638,7 @@ function renderContactView() {
           ${message.reply ? `
             <div class="feedback-reply">
               <strong>Resposta</strong>
+              ${message.replied_at ? `<time datetime="${escapeHtml(message.replied_at)}">${escapeHtml(formatFeedbackDate(message.replied_at))}</time>` : ''}
               <p class="feedback-message-text">${escapeHtml(message.reply)}</p>
             </div>
           ` : ''}
@@ -2217,6 +2235,7 @@ async function loadAdminMessages({ reset = false } = {}) {
 }
 
 async function openAdminView() {
+  adminViewState.filter = 'new';
   adminViewState.access = 'checking';
   adminViewState.messages = [];
   adminViewState.offset = 0;

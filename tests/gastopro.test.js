@@ -3772,6 +3772,189 @@ describe('Canal Fale comigo', () => {
     }
   });
 
+  itAsync('ao abrir Mensagens do Admin usa Novas e o refresh mantém o filtro escolhido', async () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div id="adminContent"></div>';
+    document.body.appendChild(host);
+    const previousCurrentView = state.currentView;
+    const previousAdminState = { ...adminViewState };
+    const previousAnalyticsState = { ...adminAnalyticsState };
+    const previousMethods = {
+      checkIsAdmin: window.SupabaseAuth.checkIsAdmin,
+      countNewFeedback: window.SupabaseAuth.countNewFeedback,
+      fetchAdminAnalytics: window.SupabaseAuth.fetchAdminAnalytics,
+      fetchAdminUsers: window.SupabaseAuth.fetchAdminUsers,
+      fetchAllFeedback: window.SupabaseAuth.fetchAllFeedback
+    };
+    const previousNotifications = localStorage.getItem('gastopro_notifications_v1');
+    const previousPreferences = localStorage.getItem('gastopro_notification_preferences_v1');
+    const requestedStatuses = [];
+
+    window.SupabaseAuth.checkIsAdmin = async callback => {
+      if (callback) callback('admin');
+      return true;
+    };
+    window.SupabaseAuth.countNewFeedback = async () => ({ success: true, ids: [] });
+    window.SupabaseAuth.fetchAdminAnalytics = async () => ({ success: true, analytics: {} });
+    window.SupabaseAuth.fetchAdminUsers = async () => ({ success: true, users: [] });
+    window.SupabaseAuth.fetchAllFeedback = async ({ status }) => {
+      requestedStatuses.push(status);
+      return { success: true, messages: [] };
+    };
+
+    try {
+      state.currentView = 'admin';
+      adminViewState.filter = 'answered';
+      await openAdminView();
+      assertEqual(requestedStatuses[0], 'new');
+
+      adminViewState.filter = 'answered';
+      await loadAdminMessages({ reset: true });
+      assertEqual(requestedStatuses[1], 'answered');
+      assertEqual(adminViewState.filter, 'answered');
+    } finally {
+      host.remove();
+      state.currentView = previousCurrentView;
+      Object.assign(adminViewState, previousAdminState);
+      Object.assign(adminAnalyticsState, previousAnalyticsState);
+      Object.assign(window.SupabaseAuth, previousMethods);
+      if (previousNotifications === null) localStorage.removeItem('gastopro_notifications_v1');
+      else localStorage.setItem('gastopro_notifications_v1', previousNotifications);
+      if (previousPreferences === null) localStorage.removeItem('gastopro_notification_preferences_v1');
+      else localStorage.setItem('gastopro_notification_preferences_v1', previousPreferences);
+    }
+  });
+
+  itAsync('registra falhas administrativas no Diagnóstico sem IDs, e-mails ou conteúdo de feedback', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const previousDiagnosticLog = localStorage.getItem(window.GastoProDiagnostics.key);
+    const feedbackError = {
+      code: '42501',
+      message: 'Could not process "texto privado" for user 550e8400-e29b-41d4-a716-446655440001 and pessoa@example.com'
+    };
+    let feedbackFailure = null;
+    let countFailure = null;
+    let authorsFailure = null;
+    window.GastoProDiagnostics.clear();
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: '550e8400-e29b-41d4-a716-446655440001' } } },
+          error: null
+        })
+      },
+      rpc: async name => {
+        if (name === 'is_admin') return { data: true, error: null };
+        if (name === 'admin_list_users') return { data: null, error: feedbackError };
+        return {
+          data: authorsFailure ? null : [],
+          error: authorsFailure
+        };
+      },
+      from() {
+        let selectedColumns = '';
+        return {
+          select(columns) {
+            selectedColumns = columns;
+            return this;
+          },
+          order() { return this; },
+          eq() {
+            if (selectedColumns === 'id') {
+              return Promise.resolve({ data: [], error: countFailure });
+            }
+            return this;
+          },
+          range: async () => ({ data: [], error: feedbackFailure })
+        };
+      }
+    };
+
+    try {
+      const usersResult = await window.SupabaseAuth.fetchAdminUsers();
+      assertFalse(usersResult.success);
+      assertEqual(usersResult.error, 'Não foi possível concluir esta ação agora. Tente novamente mais tarde.');
+
+      feedbackFailure = feedbackError;
+      const feedbackResult = await window.SupabaseAuth.fetchAllFeedback({ status: 'new' });
+      assertFalse(feedbackResult.success);
+      assertEqual(feedbackResult.error, 'Não foi possível concluir esta ação agora. Tente novamente mais tarde.');
+
+      feedbackFailure = null;
+      authorsFailure = feedbackError;
+      const authorsResult = await window.SupabaseAuth.fetchAllFeedback({ status: 'new' });
+      assertFalse(authorsResult.success);
+      assertEqual(authorsResult.error, 'Não foi possível concluir esta ação agora. Tente novamente mais tarde.');
+
+      countFailure = feedbackError;
+      const countResult = await window.SupabaseAuth.countNewFeedback();
+      assertFalse(countResult.success);
+      assertEqual(countResult.error, 'Não foi possível concluir esta ação agora. Tente novamente mais tarde.');
+
+      const entries = window.GastoProDiagnostics.list()
+        .filter(entry => entry.type === 'admin-query-error');
+      assertEqual(entries.map(entry => entry.data.query), [
+        'admin_list_users',
+        'feedback_messages.select',
+        'admin_feedback_authors',
+        'feedback_messages.count_new'
+      ]);
+      entries.forEach(entry => {
+        assertEqual(entry.data.code, '42501');
+        assertFalse(entry.data.message.includes('texto privado'));
+        assertFalse(entry.data.message.includes('550e8400-e29b-41d4-a716-446655440001'));
+        assertFalse(entry.data.message.includes('pessoa@example.com'));
+      });
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+      if (previousDiagnosticLog === null) localStorage.removeItem(window.GastoProDiagnostics.key);
+      else localStorage.setItem(window.GastoProDiagnostics.key, previousDiagnosticLog);
+    }
+  });
+
+  it('mostra feedback próprio mais recente primeiro com resposta, status e data', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div id="feedbackContent"></div>';
+    document.body.appendChild(host);
+    const previousState = { ...feedbackViewState };
+    feedbackViewState.mode = 'signed_in';
+    feedbackViewState.loading = false;
+    feedbackViewState.messages = [{
+      id: 'older',
+      category: 'duvida',
+      message: 'Mensagem antiga',
+      status: 'new',
+      reply: null,
+      replied_at: null,
+      created_at: '2026-10-29T12:00:00Z'
+    }, {
+      id: 'newer',
+      category: 'sugestao',
+      message: 'Mensagem recente',
+      status: 'answered',
+      reply: 'Resposta vinculada à mensagem recente',
+      replied_at: '2026-11-01T12:30:00Z',
+      created_at: '2026-11-01T12:00:00Z'
+    }];
+
+    try {
+      renderContactView();
+      const cards = host.querySelectorAll('.feedback-message-card');
+      assertEqual(cards.length, 2);
+      assertTrue(cards[0].textContent.includes('Mensagem recente'));
+      assertTrue(cards[0].textContent.includes('Respondida'));
+      assertTrue(cards[0].querySelector('.feedback-reply').textContent.includes('Resposta vinculada à mensagem recente'));
+      assertEqual(cards[0].querySelector('.feedback-reply time').getAttribute('datetime'), '2026-11-01T12:30:00Z');
+      assertTrue(cards[1].textContent.includes('Mensagem antiga'));
+      assertTrue(cards[1].textContent.includes('Nova'));
+      assertFalse(cards[1].querySelector('.feedback-reply'));
+      assertEqual(cards[1].querySelector('time').getAttribute('datetime'), '2026-10-29T12:00:00Z');
+    } finally {
+      Object.assign(feedbackViewState, previousState);
+      host.remove();
+    }
+  });
+
   itAsync('busca IDs de feedback novo para sincronizar avisos lidos', async () => {
     const previousClient = window.SupabaseAuth.client;
     const feedbackIds = [

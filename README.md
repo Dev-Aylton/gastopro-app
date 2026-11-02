@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.36-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.37-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-494%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-497%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -465,7 +465,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 17 | `20261107_admin_feedback_authors.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.36`. Suíte atual: **494 testes**.
+`CACHE_NAME` atual: `gastopro-v4.37`. Suíte atual: **497 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -679,6 +679,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-056 — Confirmação de conta no primeiro lançamento e seletor no ajuste** / Descrição: ao salvar sem conta, pede confirmação da Conta principal antes de gravar ganhos, gastos comuns, fixos, dívidas, empréstimos, parcelamentos, boletos, assistente inicial ou importação; cancelar não cria nem salva. A camada de dados bloqueia criação implícita, exceto na migração de lançamentos antigos, fora deste item. Ajuste de saldo abre direto com uma conta, exige escolha sem pré-seleção com várias e não cria conta quando não há nenhuma. / Critério de pronto: 485 testes aprovados; formulários medidos em 320, 390 e 1280 px nos temas claro/escuro, sem corte, com controles de 44 px e campos de 16 px ou mais; contraste mínimo atendido. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `sw.js`, `tests/gastopro.test.js`, `README.md`.
 - [x] **RM-057 — Centros de controle mensais para Ganhos e Gastos** / Descrição: listas mensais com tipo, valor, data/dia, conta, situação, edição e exclusão; atalhos de criação levam a Lançamentos. Modelos recorrentes avisam que editar/excluir afeta o modelo e seus meses; empréstimos recebidos permanecem fora de Ganhos. / Critério de pronto: 491 testes aprovados; telas medidas em 320, 360, 390, 768, 1024, 1280 e paisagem 844×390 nos temas claro/escuro, sem corte, com alvos >= 44 px e contraste >= 4.5:1 para texto e >= 3:1 para ícones. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `sw.js`, `tests/gastopro.test.js`, `README.md`.
 - [x] **RM-058 — Autoria consentida e avisos de feedback no Admin** / Descrição: mostra autor numerado sem consentimento ou nome/e-mail com `admin_visibility`; inclui feedback novo não lido no sino local e mantém o contador Admin sincronizado. A migração restrita `admin_feedback_authors()` não altera RLS e não foi aplicada. / Critério de pronto: 494 testes aprovados no test-runner com o código real; aparência em tela não medida. / Arquivos: `js/app.js`, `js/supabase.js`, `css/style.css`, `supabase/schema.sql`, `supabase/migrations/20261107_admin_feedback_authors.sql`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
+- [x] **RM-059 — Estado e diagnóstico das mensagens de feedback** / Descrição: ao abrir Mensagens do Admin, o filtro volta a Novas sem interferir no refresh manual; falhas das consultas administrativas ficam no Diagnóstico sem IDs, e-mails ou conteúdo do feedback; mensagens do cliente aparecem da mais recente para a mais antiga, com status, datas e resposta associada. / Critério de pronto: 497 testes aprovados no test-runner com código real; testes de consultas Supabase usam mock; aparência/toque em tela não verificados. / Arquivos: `js/app.js`, `js/supabase.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 
 ### Em dúvida
 
@@ -690,7 +691,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.36 — 02/11/2026 (versão atual)
+### v4.37 — 02/11/2026 (versão atual)
+
+- RM-059: Mensagens do Admin reabre no filtro Novas, sem alterar o filtro no refresh manual; erros de `admin_list_users`, `admin_feedback_authors` e consulta de feedback são registrados no Diagnóstico com código, mensagem sanitizada e origem, sem IDs/e-mails/conteúdo. Mensagens do cliente ordenadas da mais recente, com resposta, status e data. Test-runner com código real: 497 aprovados, zero falhas; testes de consultas Supabase mockados e tela não verificada.
+
+### v4.36 — 02/11/2026
 
 - RM-058: mensagens do Admin mostram autor numerado sem consentimento ou nome/e-mail quando `admin_visibility` permite; a resposta fica associada ao mesmo autor. O sino local alerta o Admin sobre feedback novo ainda não lido, atualiza ao autenticar/abrir o sino e mantém o contador do menu consistente. Sem Realtime, push ou polling. Criada a migration `20261107_admin_feedback_authors.sql`, ainda não aplicada. Test-runner com código real: 494 aprovados, zero falhas; aparência em tela não medida.
 
