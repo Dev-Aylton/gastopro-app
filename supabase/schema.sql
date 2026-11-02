@@ -259,6 +259,7 @@ create table if not exists public.feedback_messages (
   status text not null default 'new' check (status in ('new', 'answered')),
   reply text check (reply is null or char_length(reply) <= 2000),
   replied_at timestamptz,
+  admin_read_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -548,6 +549,8 @@ revoke all on public.feedback_messages from authenticated;
 grant select, delete on public.feedback_messages to authenticated;
 grant insert (user_id, category, message) on public.feedback_messages to authenticated;
 grant update (reply, status, replied_at) on public.feedback_messages to authenticated;
+revoke update (admin_read_at) on public.feedback_messages from public, anon, authenticated;
+grant update (admin_read_at) on public.feedback_messages to authenticated;
 revoke truncate, references, trigger on public.app_admins, public.feedback_messages from authenticated;
 
 -- ============================================================

@@ -464,6 +464,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 16 | `20261106_single_loan.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 17 | `20261107_admin_feedback_authors.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
+| 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
 `CACHE_NAME` atual: `gastopro-v4.39`. Suíte atual: **504 testes**.
 
