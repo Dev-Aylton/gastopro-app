@@ -8,7 +8,7 @@
              script-src 'self';
              style-src 'self' 'unsafe-inline';
              font-src 'self';
-             img-src 'self' data: blob:;
+             img-src 'self' data: blob: https://*.googleusercontent.com;
              object-src 'none';
              base-uri 'self';
              form-action 'self';
@@ -201,7 +201,7 @@
           </button>
 
           <button class="user-avatar-btn" id="userMenuBtn" title="Menu do Usuário" aria-label="Abrir menu do usuário" aria-haspopup="dialog" aria-expanded="false">
-            <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" class="user-avatar-sm" id="topbarAvatarImg" />
+            <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" class="user-avatar-sm" id="topbarAvatarImg" referrerpolicy="no-referrer" />
           </button>
         </div>
       </header>
@@ -266,7 +266,7 @@
               <div class="drawer-avatar-wrapper" id="changeAvatarBtn" role="button" tabindex="0"
                 aria-label="Enviar foto de perfil" title="Clique para fazer upload da sua foto">
                 <div class="drawer-user-avatar">
-                  <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" id="drawerAvatarImg" />
+                  <img src="assets/default_avatar.jpg" alt="Avatar do Usuário" id="drawerAvatarImg" referrerpolicy="no-referrer" />
                 </div>
                 <div class="avatar-camera-badge"><i class="fa-solid fa-camera"></i></div>
               </div>
@@ -401,7 +401,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.47</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.48</span></p>
             <div class="app-update-notice" id="appUpdateNotice" role="status" hidden>
               <span>Nova versão disponível.</span>
               <button type="button" class="btn-secondary" id="appUpdateCheckBtn">Atualizar</button>
@@ -1158,7 +1158,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.47</span>
+          <span class="badge badge-version">v4.48</span>
         </div>
       </footer>
 
@@ -2302,7 +2302,7 @@
 
         <h4>2. Dados e armazenamento</h4>
         <p>Os lançamentos, gastos fixos, metas, contas, cartões e demais dados financeiros ficam neste aparelho. Quando você entra em uma conta, são sincronizados com o Supabase e protegidos por regras de acesso por usuário (RLS). O Supabase processa a autenticação e os dados da conta.</p>
-        <p>O e-mail é usado na autenticação do Supabase. O nome informado no cadastro fica nos metadados da conta e no perfil do app. O nome e o avatar também ficam neste aparelho e, com login, na tabela <code>profiles</code> do Supabase, protegida por RLS. Fotos ficam no campo <code>profiles.avatar</code> como imagem Base64. Avatares predefinidos são identificadores e ilustrações locais. A senha é processada pelo Supabase Auth e não é salva pelo app no localStorage.</p>
+        <p>O e-mail é usado na autenticação do Supabase. O nome informado no cadastro fica nos metadados da conta e no perfil do app. O nome e o avatar também ficam neste aparelho e, com login, na tabela <code>profiles</code> do Supabase, protegida por RLS. Na primeira entrada com Google, se não houver avatar escolhido, o app pode guardar em <code>profiles.avatar</code> o endereço da foto fornecido pelo Google, não a imagem. O navegador busca a imagem diretamente no Google ao exibi-la. Você pode removê-la no perfil; a remoção mantém o avatar escolhido. Avatares predefinidos são identificadores e ilustrações locais. A senha é processada pelo Supabase Auth e não é salva pelo app no localStorage.</p>
         <p>Com login, o canal Fale comigo armazena no Supabase a categoria, o texto da mensagem, a data de envio e eventuais respostas. O administrador (desenvolvedor) lê as mensagens para responder. Na tela Mensagens do painel de administração do app, não são exibidos o nome nem o e-mail associados ao remetente; o painel do Supabase pode mostrar informações adicionais. Qualquer contato informado no texto fica visível ao administrador junto com a mensagem. Você pode apagar suas mensagens na própria tela. Evite incluir senhas ou informações financeiras nas mensagens.</p>
 
         <h4>3. Preferências opcionais de privacidade</h4>

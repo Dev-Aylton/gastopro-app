@@ -96,6 +96,29 @@ window.GastoProInstallCardHelpers = Object.freeze({
 });
 
 window.GastoProProfileHelpers = {
+  getGoogleAvatarUrl(user) {
+    const isGoogleUser = Boolean(
+      user && (
+        user.app_metadata && user.app_metadata.provider === 'google' ||
+        Array.isArray(user.identities) && user.identities.some(identity => identity.provider === 'google')
+      )
+    );
+    if (!isGoogleUser || !user.user_metadata) return '';
+    const metadata = user.user_metadata;
+    for (const candidate of [metadata.avatar_url, metadata.picture]) {
+      if (typeof candidate !== 'string' || !candidate.trim()) continue;
+      try {
+        const url = new URL(candidate.trim());
+        if (url.protocol === 'https:' &&
+          (url.hostname === 'googleusercontent.com' || url.hostname.endsWith('.googleusercontent.com'))) {
+          return url.href;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    return '';
+  },
   getInitialName(localName, cloudName, metadataName, emailPrefix) {
     return (typeof localName === 'string' && localName.trim()) ||
       (typeof cloudName === 'string' && cloudName.trim()) ||
@@ -149,12 +172,43 @@ function withoutProfileAvatarPhoto(profile) {
   return { ...profile, avatar, avatarPreset: avatar };
 }
 
+function withGoogleProfileAvatar(profile, user) {
+  const updatedProfile = { ...profile };
+  const currentAvatar = typeof updatedProfile.avatar === 'string'
+    ? updatedProfile.avatar.trim()
+    : '';
+  if (currentAvatar) return updatedProfile;
+  const avatarUrl = window.GastoProProfileHelpers.getGoogleAvatarUrl(user);
+  if (!avatarUrl) return updatedProfile;
+  const preset = getProfileAvatarPreset(updatedProfile.avatarPreset);
+  const defaultPreset = preset ? `preset:${preset.id}` : 'preset:neutral-default';
+  return { ...updatedProfile, avatar: avatarUrl, avatarPreset: defaultPreset };
+}
+
 window.GastoProAvatarGallery = Object.freeze({
   presets: PROFILE_AVATAR_PRESETS,
   isPreset: value => Boolean(getProfileAvatarPreset(value)),
   selectPreset: withProfileAvatarPreset,
   savePhoto: withProfileAvatarPhoto,
   removePhoto: withoutProfileAvatarPhoto,
+  applyGoogleAvatar: withGoogleProfileAvatar,
+  setImageSource(image, value, fallbackPreset) {
+    if (!image) return;
+    const fallback = getProfileAvatarPreset(fallbackPreset);
+    const fallbackSource = fallback && fallback.id === 'feminine-default'
+      ? 'assets/default_avatar_fem.jpg'
+      : 'assets/default_avatar.jpg';
+    const source = this.getSource(value);
+    image.referrerPolicy = 'no-referrer';
+    image.onerror = null;
+    if (source !== fallbackSource && source.startsWith('https://')) {
+      image.onerror = () => {
+        image.onerror = null;
+        image.src = fallbackSource;
+      };
+    }
+    image.src = source;
+  },
   getSource(value) {
     const preset = getProfileAvatarPreset(value);
     if (preset || typeof value !== 'string' || !value || value.startsWith('preset:')) {
@@ -162,7 +216,11 @@ window.GastoProAvatarGallery = Object.freeze({
         ? 'assets/default_avatar_fem.jpg'
         : 'assets/default_avatar.jpg';
     }
-    return value;
+    if (value.startsWith('data:image/')) return value;
+    return window.GastoProProfileHelpers.getGoogleAvatarUrl({
+      app_metadata: { provider: 'google' },
+      user_metadata: { avatar_url: value }
+    }) || 'assets/default_avatar.jpg';
   }
 });
 
@@ -8597,8 +8655,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const drawerAvatarImg = document.getElementById('drawerAvatarImg');
     const topbarAvatarImg = document.getElementById('topbarAvatarImg');
 
-    if (drawerAvatarImg) drawerAvatarImg.src = avatarSrc;
-    if (topbarAvatarImg) topbarAvatarImg.src = avatarSrc;
+    const fallbackPreset = profile.avatarPreset || profile.avatar;
+    if (drawerAvatarImg) {
+      window.GastoProAvatarGallery.setImageSource(drawerAvatarImg, avatarSrc, fallbackPreset);
+    }
+    if (topbarAvatarImg) {
+      window.GastoProAvatarGallery.setImageSource(topbarAvatarImg, avatarSrc, fallbackPreset);
+    }
     renderAvatarGallery(profile);
     if (removeProfilePhotoBtn) {
       removeProfilePhotoBtn.hidden = !profile.avatar ||
@@ -9365,6 +9428,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const cloudName = cloudProfileResult.success && cloudProfileResult.profile
         ? cloudProfileResult.profile.name
         : '';
+      if (cloudProfileResult.success) {
+        const avatar = window.GastoProAvatarGallery.applyGoogleAvatar(profile, user);
+        profile.avatar = avatar.avatar;
+        profile.avatarPreset = avatar.avatarPreset;
+      }
       profile.name = window.GastoProProfileHelpers.getInitialName(
         profile.name,
         cloudName,
@@ -9373,7 +9441,9 @@ document.addEventListener('DOMContentLoaded', () => {
       );
     }
     const queueInitialProfile = cloudProfileResult.success && !profilePending &&
-      (!cloudProfileResult.profile || !cloudProfileResult.profile.name) &&
+      (!cloudProfileResult.profile ||
+        (!cloudProfileResult.profile.name && profile.name) ||
+        (!cloudProfileResult.profile.avatar && profile.avatar)) &&
       Boolean(profile.name || profile.avatar);
     FinanceData.saveProfile(profile, { queueSync: queueInitialProfile });
     renderUserProfile();

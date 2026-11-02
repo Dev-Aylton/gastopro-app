@@ -3625,7 +3625,7 @@ const FinanceData = {
 
   /**
    * Salva o perfil do usuário no localStorage.
-   * O avatar é armazenado como uma Data URL (Base64) gerada pelo FileReader.
+   * Avatares são Data URLs locais ou endereços HTTPS de foto Google.
    *
    * @param {{ name: string, avatar: string|null }} profile - Dados do perfil.
    */

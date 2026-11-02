@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.47-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.48-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-567%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-572%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -192,7 +192,7 @@ financeiro-app/
 │       ├── 20261107_admin_feedback_authors.sql # Autores de feedback para Admin; criada, não aplicada
 │       └── 20261108_admin_email_text_cast.sql # Corrige tipo do e-mail nas funções administrativas; criada, não aplicada
 ├── tests/
-│   ├── gastopro.test.js       # 567 testes em JavaScript puro, sem framework
+│   ├── gastopro.test.js       # 572 testes em JavaScript puro, sem framework
 │   ├── test-runner.html       # Página de execução dos testes no navegador
 │   └── test-runner.js         # Runner dos testes no navegador
 └── README.md                  # Esta documentação
@@ -467,7 +467,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.47`. Suíte atual: **567 testes**.
+`CACHE_NAME` atual: `gastopro-v4.48`. Suíte atual: **572 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -487,7 +487,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **567 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mocks do `localStorage` e do Supabase; os dados reais não são afetados.
+Suite com **572 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mocks do `localStorage` e do Supabase; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -692,6 +692,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-067 — Login Google via OAuth** / Descrição: inicia autenticação com provider Google pelo cliente Supabase e callback local da aplicação; mantém o processamento de sessão existente, exige consentimento de privacidade no cadastro e mostra mensagem fixa sem expor detalhes de erro. / Critério de pronto: 550 testes aprovados com Supabase mockado; fluxo real com Google e visual/toque não verificados. / Arquivos: `index.html`, `js/app.js`, `js/supabase.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-068 — Aviso de saída com backup único e reset financeiro seguro** / Descrição: oculta corretamente o botão secundário de backup quando não há ação secundária; o reset já percorre exclusões por registro, sem enviar listas grandes de IDs. / Critério de pronto: 563 testes aprovados, zero falhas/pendências; testes de exclusão usam Supabase mockado; visual/toque não verificados em tela. / Arquivos: `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 - [x] **RM-069 — Nome Google inicial e diagnóstico local de sincronização** / Descrição: preenche o nome do perfil vazio com `full_name` ou `name` da primeira entrada Google sem substituir nome escolhido; registra no Diagnóstico temporário a categoria ou tipo transacional que falhou, com código fixo e sem dados pessoais, somente neste aparelho. A seção temporária será removida no U-12. / Critério de pronto: 567 testes aprovados, zero falhas/pendências; mocks de Supabase usados; tela e login Google real não verificados. / Arquivos: `js/app.js`, `js/data.js`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
+- [x] **RM-070 — Avatar Google inicial no perfil** / Descrição: usa como avatar inicial apenas URL HTTPS validada de `googleusercontent.com`; preserva escolha/remoção, não baixa a imagem e usa avatar local em falha. CSP libera somente o domínio de imagem em `img-src`; política descreve armazenamento do endereço. / Critério de pronto: 572 testes aprovados, zero falhas/pendências; Supabase mockado para validar persistência; visual/toque e login Google real não verificados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 
 ### Em dúvida
 
@@ -703,7 +704,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.47 — 02/11/2026 (versão atual)
+### v4.48 — 02/11/2026 (versão atual)
+
+- RM-070: preenche avatar vazio com foto Google apenas por endereço HTTPS validado; remoção mantém o avatar predefinido, falha remota retorna ao JPEG local e `referrerpolicy` evita enviar referenciador. URL sincronizada pelo campo `profiles.avatar`; CSP e Política atualizadas somente para refletir o comportamento. Test-runner: 572 aprovados, zero falhas/pendências; Supabase mockado; visual/toque e login Google real não verificados.
+
+### v4.47 — 02/11/2026
 
 - RM-069: usa `full_name`/`name` do Google apenas para preencher perfil sem nome; falhas da sincronização de dados locais registram categoria/tipo e código fixo no Diagnóstico temporário, sem IDs ou detalhes do erro. Test-runner: 567 aprovados, zero falhas/pendências; Supabase mockado, tela e login Google real não verificados.
 

@@ -11355,6 +11355,99 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     }
   });
 
+  it('preenche avatar vazio somente com URL HTTPS validada do Google', () => {
+    const user = {
+      app_metadata: { provider: 'google' },
+      user_metadata: {
+        avatar_url: 'https://lh3.googleusercontent.com/a/fake-profile-photo',
+        picture: 'https://lh3.googleusercontent.com/a/alternative'
+      }
+    };
+    const profile = window.GastoProAvatarGallery.applyGoogleAvatar(
+      { name: '', avatar: null },
+      user
+    );
+    assertEqual(
+      profile.avatar,
+      'https://lh3.googleusercontent.com/a/fake-profile-photo'
+    );
+    assertEqual(profile.avatarPreset, 'preset:neutral-default');
+    assertEqual(
+      window.GastoProProfileHelpers.getGoogleAvatarUrl({
+        ...user,
+        user_metadata: {
+          avatar_url: 'https://example.invalid/photo',
+          picture: 'https://lh3.googleusercontent.com/a/fallback'
+        }
+      }),
+      'https://lh3.googleusercontent.com/a/fallback'
+    );
+  });
+
+  it('preserva avatar escolhido e ignora foto de outro host', () => {
+    const gallery = window.GastoProAvatarGallery;
+    const user = {
+      app_metadata: { provider: 'google' },
+      user_metadata: { avatar_url: 'https://lh3.googleusercontent.com/a/fake-photo' }
+    };
+    assertEqual(
+      gallery.applyGoogleAvatar(
+        { avatar: 'data:image/jpeg;base64,chosen-photo' },
+        user
+      ).avatar,
+      'data:image/jpeg;base64,chosen-photo'
+    );
+    assertEqual(
+      gallery.applyGoogleAvatar(
+        { avatar: 'preset:feminine-default' },
+        user
+      ).avatar,
+      'preset:feminine-default'
+    );
+    assertEqual(
+      gallery.applyGoogleAvatar(
+        { avatar: null },
+        { ...user, user_metadata: { avatar_url: 'https://evil.invalid/photo' } }
+      ).avatar,
+      null
+    );
+    assertEqual(
+      gallery.getSource('https://evil.invalid/photo'),
+      'assets/default_avatar.jpg'
+    );
+  });
+
+  it('remover foto mantém o avatar escolhido e impede preenchimento automático seguinte', () => {
+    const gallery = window.GastoProAvatarGallery;
+    const user = {
+      app_metadata: { provider: 'google' },
+      user_metadata: { picture: 'https://lh3.googleusercontent.com/a/fake-photo' }
+    };
+    const withPhoto = gallery.applyGoogleAvatar({ avatar: null }, user);
+    const removed = gallery.removePhoto(withPhoto);
+    assertEqual(removed.avatar, 'preset:neutral-default');
+    assertEqual(
+      gallery.applyGoogleAvatar(removed, user).avatar,
+      'preset:neutral-default'
+    );
+    assertEqual(gallery.getSource(removed.avatar), 'assets/default_avatar.jpg');
+  });
+
+  it('usa avatar JPEG padrão quando a foto remota falha ao carregar', () => {
+    const image = { src: '', onerror: null, referrerPolicy: '' };
+    window.GastoProAvatarGallery.setImageSource(
+      image,
+      'https://lh3.googleusercontent.com/a/unavailable',
+      'preset:feminine-default'
+    );
+    assertEqual(image.src, 'https://lh3.googleusercontent.com/a/unavailable');
+    assertEqual(image.referrerPolicy, 'no-referrer');
+    assertTrue(typeof image.onerror === 'function');
+    image.onerror();
+    assertEqual(image.src, 'assets/default_avatar_fem.jpg');
+    assertEqual(image.onerror, null);
+  });
+
   itAsync('mantém os avatares predefinidos em JPEG e sem referências a SVG de avatar', async () => {
     const response = await fetch('../assets/default_avatar_fem.jpg');
     assertTrue(response.ok, 'arquivo JPEG acessível');
@@ -11425,6 +11518,40 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       const result = await window.SupabaseAuth.saveCloudProfile(selectedProfile, profileId);
       assertTrue(result.success);
       assertEqual(savedProfile.avatar, 'preset:feminine-default');
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('sincroniza URL HTTPS do Google no campo avatar existente com Supabase mockado', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const profileId = '00000000-0000-4000-8000-000000000002';
+    const avatarUrl = 'https://lh3.googleusercontent.com/a/fake-profile-photo';
+    let savedProfile = null;
+    window.SupabaseAuth.client = {
+      auth: {
+        getSession: async () => ({
+          data: { session: { user: { id: profileId } } },
+          error: null
+        })
+      },
+      from(table) {
+        assertEqual(table, 'profiles');
+        return {
+          upsert(profile) {
+            savedProfile = profile;
+            return { select: async () => ({ data: [{ id: profileId }], error: null }) };
+          }
+        };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.saveCloudProfile(
+        { name: '', avatar: avatarUrl },
+        profileId
+      );
+      assertTrue(result.success);
+      assertEqual(savedProfile.avatar, avatarUrl);
     } finally {
       window.SupabaseAuth.client = previousClient;
     }
