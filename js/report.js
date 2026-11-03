@@ -23,7 +23,7 @@
     diagnosisColumn: 'Diagnóstico',
     guidance: 'Orientação',
     noEntries: 'Nenhum lançamento no período.',
-    disclaimer: 'Este relatório não substitui o informe de rendimentos.'
+    disclaimer: 'Organizador gerado no aparelho. Não substitui informe de rendimentos, nota fiscal nem orientação de contador.'
   };
 
   function formatReportPercentage(value) {
@@ -72,6 +72,9 @@
       .reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const variable = rows.variable.reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const expenses = fixed + debts + variable;
+    const paidExpenses = [...activeFixed, ...rows.variable]
+      .filter(item => item.paid === true)
+      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const balance = income - expenses;
     return {
       income: roundMoney(income),
@@ -79,6 +82,8 @@
       debts: roundMoney(debts),
       variable: roundMoney(variable),
       expenses: roundMoney(expenses),
+      forecast: roundMoney(expenses),
+      paidExpenses: roundMoney(paidExpenses),
       balance: roundMoney(balance),
       percentages: {
         fixed: income ? Math.round(((fixed + debts) / income) * 100) : 0,
@@ -102,8 +107,10 @@
       description: item.desc || '',
       category: item.category || 'Outros',
       amount: roundMoney(item.amount),
+      paid: item.paid === true,
       status: item.paid ? 'Pago' : 'Pendente',
       kind,
+      month: ym,
       account: account ? `${account.name} (${account.type})` : 'Sem conta'
     };
   }
@@ -122,12 +129,23 @@
 
     const entries = { income: [], fixed: [], debts: [], variable: [] };
     const categoryMap = {};
+    const incomeCategoryMap = {};
     const monthly = [];
     const monthlyRows = [];
     const debtHelpers = window.GastoProReportHelpers;
     const accountFilter = period.accountFilter || 'all';
     const accounts = FinanceData.getAccounts();
     const accountsById = new Map(accounts.map(account => [account.id, account]));
+    const selectedAccount = accountFilter.startsWith('account:')
+      ? accountsById.get(accountFilter.slice('account:'.length))
+      : null;
+    const accountLabel = accountFilter === 'all'
+      ? 'Todas as contas'
+      : selectedAccount
+        ? `${selectedAccount.name} (${selectedAccount.type})`
+        : accountFilter === 'PF' || accountFilter === 'PJ'
+          ? `Contas ${accountFilter}`
+          : 'Conta selecionada';
     const filterItems = window.GastoProAccountFilterHelpers.filterItems;
     const templateList = filterItems(FinanceData.getTemplates(), accounts, accountFilter);
 
@@ -146,6 +164,7 @@
 
       monthRows.income.forEach(item => {
         entries.income.push(toReportEntry(item, ym, 'income', accountsById));
+        addToCategoryMap(incomeCategoryMap, item);
       });
       monthRows.fixed
         .filter(item => item.active !== false || item.paid)
@@ -163,7 +182,7 @@
       });
     });
 
-    const totals = ['income', 'fixed', 'debts', 'variable', 'expenses', 'balance']
+    const totals = ['income', 'fixed', 'debts', 'variable', 'expenses', 'forecast', 'paidExpenses', 'balance']
       .reduce((result, key) => {
         result[key] = roundMoney(monthly.reduce((sum, item) => sum + item[key], 0));
         return result;
@@ -184,6 +203,13 @@
         category,
         amount: roundMoney(amount),
         percentage: totalExpenses ? roundMoney((amount / totalExpenses) * 100) : 0
+      }))
+      .sort((a, b) => b.amount - a.amount);
+    const incomeCategories = Object.entries(incomeCategoryMap)
+      .map(([category, amount]) => ({
+        category,
+        amount: roundMoney(amount),
+        percentage: totals.income ? roundMoney((amount / totals.income) * 100) : 0
       }))
       .sort((a, b) => b.amount - a.amount);
 
@@ -246,6 +272,7 @@
         to: period.to,
         profileName: profile && profile.name ? profile.name : '',
         accountFilter,
+        accountLabel,
         generatedAt
       },
       totals,
@@ -256,6 +283,7 @@
         totals: { ...item, debt: item.debts }
       })),
       categories,
+      incomeCategories,
       entries: period.includeDetails ? entries : null,
       details: period.includeDetails ? entries : { income: [], fixed: [], debts: [], variable: [] },
       debts,
@@ -330,8 +358,103 @@
     return rows.map(row => row.map(escapeCsvCell).join(';')).join('\r\n');
   }
 
+  function getReportEntryRows(data) {
+    return ['income', 'fixed', 'debts', 'variable'].flatMap(kind =>
+      (data.entries[kind] || []).map(item => ({
+        ...item,
+        typeLabel: kind === 'income' ? 'Ganho' : kind === 'variable'
+          ? 'Gasto variável' : kind === 'debts' ? 'Dívida' : 'Gasto fixo'
+      }))
+    );
+  }
+
+  function buildAccountantReportCsv(data) {
+    if (!data || !data.entries) {
+      throw new TypeError('Os lançamentos detalhados são necessários para exportar o CSV.');
+    }
+    const header = [
+      'Seção', 'Período', 'Conta filtrada', 'Data', 'Descrição',
+      'Categoria', 'Tipo', 'Conta', 'Valor', 'Pago'
+    ];
+    const rows = [header];
+    const accountLabel = data.meta.accountLabel || data.meta.accountFilter || 'all';
+    const append = values => rows.push(values);
+    append(['Relatório', data.meta.period, accountLabel, '', '', '', '', '', '', '']);
+    append(['Totais mensais', 'Mês', 'Ganhos', 'Previsão', 'Já pago', 'Saldo', '', '', '', '']);
+    data.monthly.forEach(item => append([
+      'Total mensal', item.label, '', item.income, item.forecast,
+      item.paidExpenses, item.balance, '', '', ''
+    ]));
+    append(['Ganhos por categoria', '', '', '', '', '', '', '', '', '']);
+    data.incomeCategories.forEach(item => append([
+      'Ganho por categoria', data.meta.period, accountLabel, '', '',
+      item.category, '', '', item.amount, ''
+    ]));
+    append(['Gastos por categoria', '', '', '', '', '', '', '', '', '']);
+    data.categories.forEach(item => append([
+      'Gasto por categoria', data.meta.period, accountLabel, '', '',
+      item.category, '', '', item.amount, ''
+    ]));
+    append(['Lançamentos', 'Período', 'Conta filtrada', 'Data', 'Descrição', 'Categoria', 'Tipo', 'Conta', 'Valor', 'Pago']);
+    getReportEntryRows(data).forEach(item => append([
+      'Lançamento', data.meta.period, accountLabel, item.date, item.description,
+      item.category, item.typeLabel, item.account, formatCsvAmount(item.amount),
+      item.paid ? 'Sim' : 'Não'
+    ]));
+    append(['Nota', '', '', '', REPORT_LABELS.disclaimer, '', '', '', '', '']);
+    return rows.map(row => row.map(escapeCsvCell).join(';')).join('\r\n');
+  }
+
+  function formatReportDateForSheet(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value || '');
+  }
+
+  function buildReportWorkbookSheets(data) {
+    if (!data || !data.entries) {
+      throw new TypeError('Os lançamentos detalhados são necessários para exportar o Excel.');
+    }
+    const transactions = [[
+      'Período', 'Data', 'Descrição', 'Categoria', 'Tipo', 'Conta', 'Valor', 'Pago'
+    ], ...getReportEntryRows(data).map(item => [
+      data.meta.period, formatReportDateForSheet(item.date), item.description,
+      item.category, item.typeLabel, item.account, roundMoney(item.amount),
+      item.paid ? 'Sim' : 'Não'
+    ])];
+    const summary = [
+      ['Período', data.meta.period],
+      ['Conta filtrada', data.meta.accountLabel || data.meta.accountFilter || 'all'],
+      [],
+      ['Totais mensais', 'Ganhos', 'Previsão', 'Já pago', 'Saldo'],
+      ...data.monthly.map(item => [
+        item.label, item.income, item.forecast, item.paidExpenses, item.balance
+      ]),
+      [],
+      ['Ganhos por categoria', 'Valor', 'Percentual'],
+      ...data.incomeCategories.map(item => [item.category, item.amount, item.percentage]),
+      [],
+      ['Gastos por categoria', 'Valor', 'Percentual'],
+      ...data.categories.map(item => [item.category, item.amount, item.percentage]),
+      [],
+      ['Nota', REPORT_LABELS.disclaimer]
+    ];
+    return [
+      { name: 'Lançamentos', rows: transactions },
+      { name: 'Resumo por categoria', rows: summary }
+    ];
+  }
+
+  function buildReportXlsx(data) {
+    if (!window.GastoProXlsxWriter) throw new Error('O gerador local de Excel não foi carregado.');
+    return window.GastoProXlsxWriter.createWorkbook(buildReportWorkbookSheets(data));
+  }
+
   function getReportCsvFileName(data) {
     return getReportFileName(data).replace(/\.pdf$/i, '.csv');
+  }
+
+  function getReportXlsxFileName(data) {
+    return getReportFileName(data).replace(/\.pdf$/i, '.xlsx');
   }
 
   function loadImage(url) {
@@ -402,7 +525,7 @@
     doc.text(sanitizePdfText(data.meta.period), 14, 37);
     doc.setFontSize(8);
     doc.text(`Gerado em ${sanitizePdfText(data.meta.generatedAt)}`, 14, 43);
-    doc.text(REPORT_LABELS.disclaimer, 14, 48);
+    doc.text(REPORT_LABELS.disclaimer, 14, 48, { maxWidth: 182 });
     if (data.meta.profileName) {
       doc.text(`Perfil: ${sanitizePdfText(data.meta.profileName)}`, 14, 53);
     }
@@ -419,20 +542,31 @@
     }
 
     let y = renderTable(doc, ['Resumo', 'Valor'], [
+      ['Conta filtrada', data.meta.accountLabel || data.meta.accountFilter || 'Todas as contas'],
       ['Renda', pdfCurrency(data.totals.income)],
       ['Despesas fixas', pdfCurrency(data.totals.fixed)],
       [REPORT_LABELS.debts, pdfCurrency(data.totals.debts)],
       [REPORT_LABELS.variableExpenses, pdfCurrency(data.totals.variable)],
+      ['Previsão', pdfCurrency(data.totals.forecast)],
+      ['Já pago', pdfCurrency(data.totals.paidExpenses)],
       ['Saldo', pdfCurrency(data.totals.balance)],
       ['Percentual 50/30/20', `${formatReportPercentage(data.totals.percentages.fixed)}% / ${formatReportPercentage(data.totals.percentages.variable)}% / ${formatReportPercentage(data.totals.percentages.savings)}%`]
     ], data.meta.profileName ? 60 : 55, { numericColumns: [1] });
 
+    y = addSectionTitle(doc, 'Ganhos por categoria', y);
+    y = renderTable(doc, ['Categoria', 'Valor', '% dos ganhos'],
+      data.incomeCategories.map(item => [
+        item.category, pdfCurrency(item.amount), `${formatReportPercentage(item.percentage)}%`
+      ]), y, { numericColumns: [1, 2] });
+
     y = addSectionTitle(doc, 'Totais por mês', y);
-    y = renderTable(doc, [REPORT_LABELS.month, 'Renda', 'Fixos', REPORT_LABELS.debts, REPORT_LABELS.variable, 'Saldo'],
+    y = renderTable(doc, [REPORT_LABELS.month, 'Renda', 'Fixos', REPORT_LABELS.debts,
+      REPORT_LABELS.variable, 'Previsão', 'Já pago', 'Saldo'],
       data.monthly.map(item => [
         item.label, pdfCurrency(item.income), pdfCurrency(item.fixed), pdfCurrency(item.debts),
-        pdfCurrency(item.variable), pdfCurrency(item.balance)
-      ]), y, { numericColumns: [1, 2, 3, 4, 5] });
+        pdfCurrency(item.variable), pdfCurrency(item.forecast), pdfCurrency(item.paidExpenses),
+        pdfCurrency(item.balance)
+      ]), y, { numericColumns: [1, 2, 3, 4, 5, 6, 7] });
 
     y = addSectionTitle(doc, 'Gastos por categoria', y);
     y = renderTable(doc, ['Categoria', 'Valor', '% dos gastos'],
@@ -480,14 +614,24 @@
       ];
       sections.forEach(([title, rows]) => {
         y = addSectionTitle(doc, title, y);
-        y = renderTable(doc, ['Data', 'Descrição', 'Categoria', 'Valor', 'Situação', 'Conta'],
+        y = renderTable(doc, ['Data', 'Descrição', 'Categoria', 'Valor', 'Pago', 'Conta'],
           rows.map(item => [
             pdfDate(item.date), item.description, item.category, pdfCurrency(item.amount),
-            item.status, item.account
+            item.paid ? 'Sim' : 'Não', item.account
           ]), y, { numericColumns: [3] });
         if (!rows.length) {
           y = renderTable(doc, [REPORT_LABELS.information], [[REPORT_LABELS.noEntries]], y);
         }
+      });
+    }
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let page = 1; page <= pageCount; page++) {
+      doc.setPage(page);
+      doc.setFontSize(7);
+      doc.setTextColor(71, 85, 105);
+      doc.text(REPORT_LABELS.disclaimer, 14, doc.internal.pageSize.getHeight() - 8, {
+        maxWidth: 182
       });
     }
 
@@ -508,7 +652,11 @@
   window.renderReportPDF = renderReportPDF;
   window.getReportFileName = getReportFileName;
   window.buildReportCsv = buildReportCsv;
+  window.buildAccountantReportCsv = buildAccountantReportCsv;
+  window.buildReportWorkbookSheets = buildReportWorkbookSheets;
+  window.buildReportXlsx = buildReportXlsx;
   window.getReportCsvFileName = getReportCsvFileName;
+  window.getReportXlsxFileName = getReportXlsxFileName;
   window.sanitizePdfText = sanitizePdfText;
   window.formatReportPercentage = formatReportPercentage;
   window.getReportLabels = () => ({ ...REPORT_LABELS });

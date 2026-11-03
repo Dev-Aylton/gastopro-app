@@ -493,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.65`. Suíte atual: **633 testes**.
+`CACHE_NAME` atual: `gastopro-v4.66`. Suíte atual: **634 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -667,7 +667,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-014 — Tipo OFX por TRNTYPE e descrição padrão** / Descrição: usar TRNTYPE conhecido, fallback de descrição vazia e aviso para OFX sem transações. / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-015 — Reset sem apagar perfil** / Descrição: reset financeiro preserva identidade da conta e perfil. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-016 — Simulador de Cenários Futuros (“E se...”)** / Descrição: simular pagamento extra de dívida e estimar quitação; projetar amortização com gráfico de linha; simular corte de categoria (por exemplo, reduzir Alimentação em 20%); comparar antes/depois em painel lateral. / Critério de pronto: a definir. / Arquivos: a definir.
-- [ ] **RM-017 — Exportação de dados adicionais** / Descrição: exportar lançamentos em Excel/CSV filtrados por período e oferecer exportações adicionais em Excel/CSV. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-017 — Exportação de dados adicionais** / Descrição: exporta lançamentos filtrados por conta e período em CSV neutralizado contra fórmulas e Excel .xlsx local com planilhas de lançamentos e resumo por categoria. / Critério de pronto: teste-runner aprovado; estrutura XLSX conferida por funções puras e validação XML/ZIP. / Arquivos: `index.html`, `js/app.js`, `js/report.js`, `js/xlsx-writer.js`, `js/cache-assets.js`, `sw.js`, `tests/gastopro.test.js`, `README.md`.
 - [ ] **RM-018 — Notificações push (parte 2)** / Descrição: enviar notificações push com o app fechado via Service Worker e Edge Function agendada; reavaliar apenas se couber no plano gratuito. A central interna (parte 1) está implementada como Lote B1. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-019 — Offline-First aprimorado com IndexedDB** / Descrição: migrar de localStorage para IndexedDB para maior capacidade e performance; manter fila para operações offline e envio ao reconectar; exibir status de conectividade na UI. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-020 — Ampliar cobertura de testes automatizados** / Descrição: testes para o fluxo completo de quatro passos do Wizard. / Critério de pronto: a definir. / Arquivos: a definir.
@@ -693,7 +693,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-040 — Metas mobile, legenda dos fixos e paisagem compacta** / Descrição: navegação direta ao painel de metas com respeito às barras fixas, contagem de fixos pagos no dashboard e cabeçalho/menu compactos em paisagem baixa. / Critério de pronto: testes automatizados aprovados e validação visual nos dois temas.
 - [x] **RM-043 — Zoom de campos e layout responsivo** / Descrição: campos com fonte mínima de 16 px, avisos e perfil sem overflow, cabeçalho e navegação mobile compactos e limpeza da chave legada de gasto anterior. / Critério de pronto: suíte automatizada aprovada e verificação visual em 320, 360, 390 e paisagem nos dois temas. / Arquivos: `css/style.css`, `js/data.js`, `tests/gastopro.test.js`.
 - [x] **RM-044 — Home unificada e lançamentos responsivos** / Descrição: home única com saldo, avisos e quatro KPIs em colunas adaptáveis; meios de pagamento em selects; cartões de ganhos/gastos com chips e data sem corte. / Critério de pronto: 389 testes aprovados e medições geométricas nas larguras previstas, em dois temas. / Arquivos: `index.html`, `js/app.js`, `css/style.css`, `tests/gastopro.test.js`.
-- [ ] **RM-045 — Relatório para o contador (gerado no aparelho, sem custo)** / Ideia futura após a Etapa 4. Fase 1: CSV e relatório filtrado por conta, com ganhos e gastos por categoria. Fase 2, somente após ouvir 2 ou 3 contadores: nota ou comprovante, dedutível, com/sem nota, revenda/serviço e migration. O relatório é um organizador e não substitui informe de rendimentos nem nota fiscal.
+- [x] **RM-045 — Relatório para o contador (gerado no aparelho, sem custo)** / Fase 1 concluída: relatório local filtrado por conta/período, com ganhos e gastos por categoria, totais mensais, previsão, já pago e lançamentos detalhados em CSV/PDF. Fase 2 permanece pendente e depende de ouvir 2 ou 3 contadores: nota ou comprovante, dedutível, com/sem nota, revenda/serviço e migration. O relatório é um organizador e não substitui informe de rendimentos nem nota fiscal. / Critério de pronto: suíte automatizada aprovada; dados processados localmente. / Arquivos: `index.html`, `js/app.js`, `js/report.js`, `js/xlsx-writer.js`, `tests/gastopro.test.js`, `README.md`.
 - [x] **RM-046 — Tela única de lançamento e menu lateral** / Descrição: formulário de gasto/ganho alternável sem duplicar IDs, confirmação após salvar, contadores neutros, itens laterais sem destaque falso e avatares ajustados. / Critério de pronto: testes funcionais sem falhas e medição geométrica nas sete larguras e nos dois temas.
 - [ ] **RM-047 — Redesenhar e atualizar o site-currículo (conta GitHub da faculdade), incluindo o GastoPro como projeto de portfólio.**
 - [x] **RM-048 — Sidebar e painel do usuário organizados por função** / Descrição: tema em local único e acesso a Fale comigo sem duplicação; painel separado em Perfil, Preferências, Conta, Dados e backup, Ajuda e Zona de perigo. / Critério de pronto: testes estruturais aprovados e medições geométricas nas sete larguras e nos dois temas.
@@ -748,9 +748,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.65 — 03/11/2026 (versão atual)
+### v4.66 — 03/11/2026 (versão atual)
 
-- RM-089: corrige a detecção de termos de movimentação própria por fronteira de palavra; separa no Dashboard a previsão mensal de gastos pagos, sem alterar o saldo. Test-runner: 633 aprovados em duas execuções consecutivas, zero falhas/pendências; contraste calculado; visual/toque em iPhone não verificados.
+- RM-089: corrige a detecção de termos de movimentação própria por fronteira de palavra; separa no Dashboard a previsão mensal de gastos pagos, sem alterar o saldo. RM-017: CSV e XLSX local filtrados por período/conta, prévia e neutralização contra fórmulas. RM-045 Fase 1: relatório para contador com prévia, CSV, PDF e Excel. Test-runner: 634 aprovados em duas execuções consecutivas, zero falhas/pendências; RM-020 continua pendente porque o fluxo visual completo do Wizard não é acionável no runner sem alterar sua inicialização.
+
+### v4.65 — 03/11/2026 (versão anterior)
 
 ### v4.64 — 03/11/2026 (versão anterior)
 

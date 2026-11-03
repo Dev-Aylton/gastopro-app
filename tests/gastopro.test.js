@@ -11426,7 +11426,7 @@ describe('FinanceData — exclusão durante sincronização', () => {
 describe('Relatório Financeiro — buildReportData', () => {
   setupMockLocalStorage();
 
-  it('deve calcular totais mensais, percentuais e totais do intervalo', () => {
+  it('RM-045: calcula totais mensais, previsão, pagos e totais do intervalo', () => {
     FinanceData.saveEntries([
       makeIncome({ id: 'report-income-jan', month: '2026-01', date: '2026-01-05', amount: 5000 }),
       makeVariable({ id: 'report-variable-jan', month: '2026-01', date: '2026-01-10', amount: 400 }),
@@ -11456,6 +11456,8 @@ describe('Relatório Financeiro — buildReportData', () => {
     assertEqual(report.months[0].totals.debt, 300);
     assertEqual(report.months[0].totals.variable, 400);
     assertEqual(report.months[0].totals.balance, 3300);
+    assertEqual(report.monthly[0].forecast, 1700);
+    assertEqual(report.monthly[0].paidExpenses, 300);
     assertEqual(report.months[0].totals.percentages.fixed, 26);
     assertEqual(report.months[0].totals.percentages.variable, 8);
     assertEqual(report.months[0].totals.percentages.savings, 66);
@@ -14404,6 +14406,19 @@ describe('Filtro de contas na home e relatório do contador', () => {
     );
   });
 
+  it('RM-089: inclui dívidas pagas e pendentes sem alterar o saldo', () => {
+    const items = [
+      { type: 'fixed', amount: 100, active: true, paid: true },
+      { type: 'variable', amount: 20, paid: true },
+      { type: 'debt', amount: 40, active: true, paid: true },
+      { type: 'debt', amount: 50, active: true, paid: false }
+    ];
+    const summary = GastoProAccountFilterHelpers.getDashboardSummary(items, [], 'all');
+    assertEqual(summary.totalExpenses, 210);
+    assertEqual(summary.paidExpenses, 160);
+    assertEqual(summary.balance, -120);
+  });
+
   it('inicia com Todas as contas selecionado', () => {
     assertEqual(state.accountBalanceFilter, 'all');
     assertEqual(buildAccountBalanceFilterOptions([
@@ -14411,7 +14426,7 @@ describe('Filtro de contas na home e relatório do contador', () => {
     ])[0], { value: 'all', label: 'Todas as contas' });
   });
 
-  itAsync('gera o relatório e CSV com lançamentos apenas da conta selecionada', async () => {
+  itAsync('RM-017/RM-045: filtra o relatório e exportações por conta e período', async () => {
     setupMockLocalStorage();
     const personalAccount = {
       id: crypto.randomUUID(), name: 'Conta PF', type: 'PF', institution: null, initialBalance: 0
@@ -14437,6 +14452,7 @@ describe('Filtro de contas na home e relatório do contador', () => {
       includeDetails: true, accountFilter: `account:${personalAccount.id}`
     });
     const csv = buildReportCsv(report);
+    const accountantCsv = buildAccountantReportCsv(report);
 
     assertEqual(report.totals.income, 181.2);
     assertEqual(report.totals.variable, 0);
@@ -14447,6 +14463,31 @@ describe('Filtro de contas na home e relatório do contador', () => {
     assertTrue(csv.includes('181,20'));
     assertFalse(csv.includes('82,55'));
     assertTrue(csv.includes('Conta PF (PF)'));
+    assertTrue(accountantCsv.startsWith(
+      'Seção;Período;Conta filtrada;Data;Descrição;Categoria;Tipo;Conta;Valor;Pago'
+    ));
+    assertTrue(accountantCsv.includes('Total mensal'));
+    assertTrue(accountantCsv.includes('Ganho por categoria'));
+    assertTrue(accountantCsv.includes("'=Casa; \"\"A\"\""));
+    assertTrue(accountantCsv.includes('Conta PF (PF)'));
+    assertFalse(accountantCsv.includes('82,55'));
+
+    const workbookSheets = buildReportWorkbookSheets(report);
+    assertEqual(workbookSheets.map(sheet => sheet.name), [
+      'Lançamentos', 'Resumo por categoria'
+    ]);
+    assertEqual(workbookSheets[0].rows[1].slice(0, 7), [
+      'novembro de 2026', '05/11/2026', '=Casa; "A"', 'Salário', 'Ganho',
+      'Conta PF (PF)', 181.2
+    ]);
+    const xlsxBytes = GastoProXlsxWriter.createWorkbookBytes(workbookSheets);
+    const xlsxText = new TextDecoder().decode(xlsxBytes);
+    assertEqual(new DataView(xlsxBytes.buffer).getUint32(0, true), 0x04034B50);
+    assertTrue(xlsxText.includes('[Content_Types].xml'));
+    assertTrue(xlsxText.includes('xl/_rels/workbook.xml.rels'));
+    assertTrue(xlsxText.includes('&quot;A&quot;'));
+    assertTrue(xlsxText.includes('<c r="G2" s="1"><v>181.2</v></c>'));
+    assertEqual(GastoProXlsxWriter.crc32(new TextEncoder().encode('123456789')), 0xCBF43926);
   });
 
   it('escapa campos CSV, formata duas casas e neutraliza valores iniciados por fórmula', () => {
@@ -14480,8 +14521,8 @@ describe('Filtro de contas na home e relatório do contador', () => {
     assertTrue(csv.includes(";'=formula;"));
     assertTrue(csv.includes(";'+formula;"));
     assertTrue(csv.includes(";'@formula;"));
-    assertTrue(csv.includes('Este relatório não substitui o informe de rendimentos.'));
-    assertTrue(csv.includes('Aviso;Este relatório não substitui o informe de rendimentos.'));
+    assertTrue(csv.includes('Organizador gerado no aparelho. Não substitui informe de rendimentos, nota fiscal nem orientação de contador.'));
+    assertTrue(csv.includes('Aviso;Organizador gerado no aparelho. Não substitui informe de rendimentos, nota fiscal nem orientação de contador.'));
   });
 
   it('monta os dados do relatório sem fazer chamadas de rede', async () => {

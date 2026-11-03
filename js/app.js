@@ -4701,11 +4701,14 @@ function getDashboardAccountSummary(items, accounts, filter) {
   const fixed = filteredItems.filter(item =>
     item.type === 'fixed' && (item.active !== false || item.paid)
   );
+  const debts = filteredItems.filter(item =>
+    item.type === 'debt' && (item.active !== false || item.paid)
+  );
   const variables = filteredItems.filter(item => item.type === 'variable');
   const totalIncome = incomes.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const totalFixed = fixed.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const totalVariable = variables.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const expenses = [...fixed, ...variables];
+  const expenses = [...fixed, ...debts, ...variables];
   const paidExpenses = expenses
     .filter(item => item.paid === true)
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
@@ -4713,11 +4716,13 @@ function getDashboardAccountSummary(items, accounts, filter) {
     items: filteredItems,
     incomes,
     fixed,
+    debts,
     variables,
     totalIncome,
     totalFixed,
     totalVariable,
-    totalExpenses: totalFixed + totalVariable,
+    totalExpenses: totalFixed + totalVariable +
+      debts.reduce((sum, item) => sum + Number(item.amount || 0), 0),
     paidExpenses,
     balance: totalIncome - totalFixed - totalVariable
   };
@@ -7685,18 +7690,32 @@ document.addEventListener('DOMContentLoaded', () => {
   const reportModal = document.getElementById('reportModal');
   const reportDialog = reportModal && reportModal.querySelector('[role="dialog"]');
   const reportForm = document.getElementById('reportForm');
+  const reportModalTitle = document.getElementById('reportModalTitle');
   const reportType = document.getElementById('reportPeriodType');
   const reportFrom = document.getElementById('reportFrom');
   const reportTo = document.getElementById('reportTo');
   const reportToGroup = document.getElementById('reportToGroup');
   const reportFromLabel = document.getElementById('reportFromLabel');
   const reportError = document.getElementById('reportError');
+  const reportPreviewError = document.getElementById('reportPreviewError');
+  const reportPreview = document.getElementById('reportPreview');
+  const reportPreviewSummary = document.getElementById('reportPreviewSummary');
+  const reportPreviewIncomeCategories = document.getElementById('reportPreviewIncomeCategories');
+  const reportPreviewExpenseCategories = document.getElementById('reportPreviewExpenseCategories');
+  const reportPreviewEntries = document.getElementById('reportPreviewEntries');
+  const reportPreviewEntryCount = document.getElementById('reportPreviewEntryCount');
   const generateReportBtn = document.getElementById('generateReportBtn');
   const reportAccountFilter = document.getElementById('reportAccountFilter');
-  const exportReportCsvBtn = document.getElementById('exportReportCsvBtn');
+  const downloadReportCsvBtn = document.getElementById('downloadReportCsvBtn');
+  const downloadReportXlsxBtn = document.getElementById('downloadReportXlsxBtn');
+  const downloadReportPdfBtn = document.getElementById('downloadReportPdfBtn');
+  const editReportFiltersBtn = document.getElementById('editReportFiltersBtn');
+  const openAccountantReportBtn = document.getElementById('openAccountantReportBtn');
   let reportGenerationInProgress = false;
   let reportScriptPromises = {};
   let reportPreviousFocus = null;
+  let reportPreviewData = null;
+  let accountantReportMode = false;
 
   function updateReportPeriodFields() {
     const type = reportType.value;
@@ -7719,10 +7738,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function openReportModal() {
+  function openReportModal(isAccountantReport = false) {
     if (!reportModal) return;
     reportPreviousFocus = document.activeElement;
+    accountantReportMode = isAccountantReport;
+    reportPreviewData = null;
+    reportForm.hidden = false;
+    reportPreview.hidden = true;
+    reportModalTitle.textContent = isAccountantReport
+      ? 'Relatório para o contador'
+      : 'Relatório financeiro';
     reportError.hidden = true;
+    reportPreviewError.hidden = true;
     if (reportAccountFilter) {
       reportAccountFilter.innerHTML = getAccountBalanceOptionsMarkup(FinanceData.getAccounts());
       reportAccountFilter.value = state.accountBalanceFilter;
@@ -7809,27 +7836,85 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  function showReportError(error) {
+  function showReportError(error, preview = false) {
     console.error('[GastoPro] Falha ao gerar ou entregar o relatório:', error);
-    reportError.textContent = error.message ||
+    const target = preview ? reportPreviewError : reportError;
+    target.textContent = error.message ||
       'Não foi possível gerar ou baixar o relatório neste aparelho.';
-    reportError.hidden = false;
+    target.hidden = false;
   }
 
-  if (exportReportCsvBtn) {
-    exportReportCsvBtn.addEventListener('click', () => {
-      reportError.hidden = true;
+  function renderReportPreview(data) {
+    const entries = ['income', 'fixed', 'debts', 'variable']
+      .flatMap(kind => data.entries[kind] || [])
+      .map(item => ({
+        ...item,
+        typeLabel: item.kind === 'income' ? 'Ganho' : item.kind === 'variable'
+          ? 'Gasto variável' : item.kind === 'debt' ? 'Dívida' : 'Gasto fixo'
+      }));
+    reportPreviewSummary.innerHTML = `
+      <p><strong>Período:</strong> ${escapeHtml(data.meta.period)} &nbsp; <strong>Conta:</strong> ${escapeHtml(data.meta.accountLabel || 'Todas as contas')}</p>
+      <div class="report-preview-totals">
+        <span>Ganhos <strong>${formatCurrency(data.totals.income)}</strong></span>
+        <span>Previsão <strong>${formatCurrency(data.totals.forecast)}</strong></span>
+        <span>Já pago <strong>${formatCurrency(data.totals.paidExpenses)}</strong></span>
+        <span>Saldo <strong>${formatCurrency(data.totals.balance)}</strong></span>
+      </div>`;
+    const renderCategories = categories => categories.length
+      ? `<ul>${categories.map(item => `<li><span>${escapeHtml(item.category)}</span><strong>${formatCurrency(item.amount)}</strong></li>`).join('')}</ul>`
+      : '<p>Nenhuma categoria no período.</p>';
+    reportPreviewIncomeCategories.innerHTML = renderCategories(data.incomeCategories);
+    reportPreviewExpenseCategories.innerHTML = renderCategories(data.categories);
+    reportPreviewEntryCount.textContent = `${entries.length} lançamento${entries.length === 1 ? '' : 's'} no período; exibindo até 8.`;
+    reportPreviewEntries.innerHTML = entries.slice(0, 8).map(item => `
+      <tr>
+        <td>${escapeHtml(formatDate(item.date))}</td>
+        <td>${escapeHtml(item.description)}</td>
+        <td>${escapeHtml(item.category)}</td>
+        <td>${escapeHtml(item.typeLabel)}</td>
+        <td>${escapeHtml(item.account)}</td>
+        <td>${escapeHtml(formatCurrency(item.amount))}</td>
+        <td>${item.paid ? 'Sim' : 'Não'}</td>
+      </tr>`).join('');
+  }
+
+  if (editReportFiltersBtn) {
+    editReportFiltersBtn.addEventListener('click', () => {
+      reportPreview.hidden = true;
+      reportForm.hidden = false;
+      reportPreviewError.hidden = true;
+      generateReportBtn.focus();
+    });
+  }
+
+  if (downloadReportCsvBtn) {
+    downloadReportCsvBtn.addEventListener('click', () => {
+      reportPreviewError.hidden = true;
       try {
-        const period = getReportPeriodValues();
-        const data = buildReportData({ ...period, includeDetails: true });
-        const blob = new Blob([`\uFEFF${buildReportCsv(data)}`], {
-          type: 'text/csv;charset=utf-8'
-        });
+        const data = reportPreviewData;
+        const csv = accountantReportMode
+          ? buildAccountantReportCsv(data)
+          : buildReportCsv(data);
+        const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
         if (!downloadReportFile(blob, getReportCsvFileName(data))) {
           throw new Error('Não foi possível baixar o CSV neste navegador.');
         }
       } catch (error) {
-        showReportError(error);
+        showReportError(error, true);
+      }
+    });
+  }
+
+  if (downloadReportXlsxBtn) {
+    downloadReportXlsxBtn.addEventListener('click', () => {
+      reportPreviewError.hidden = true;
+      try {
+        const blob = buildReportXlsx(reportPreviewData);
+        if (!downloadReportFile(blob, getReportXlsxFileName(reportPreviewData))) {
+          throw new Error('Não foi possível baixar o Excel neste navegador.');
+        }
+      } catch (error) {
+        showReportError(error, true);
       }
     });
   }
@@ -7868,7 +7953,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (reportType) reportType.addEventListener('change', updateReportPeriodFields);
-  document.getElementById('openReportModalBtn')?.addEventListener('click', openReportModal);
+  document.getElementById('openReportModalBtn')?.addEventListener('click', () => openReportModal(false));
+  if (openAccountantReportBtn) {
+    openAccountantReportBtn.addEventListener('click', () => openReportModal(true));
+  }
   document.getElementById('closeReportModalBtn')?.addEventListener('click', closeReportModal);
   document.getElementById('cancelReportBtn')?.addEventListener('click', closeReportModal);
   if (reportModal) {
@@ -7897,34 +7985,52 @@ document.addEventListener('DOMContentLoaded', () => {
   if (reportForm) {
     reportForm.addEventListener('submit', async event => {
       event.preventDefault();
+      reportError.hidden = true;
+      try {
+        const period = getReportPeriodValues();
+        reportPreviewData = buildReportData({ ...period, includeDetails: true });
+        renderReportPreview(reportPreviewData);
+        reportForm.hidden = true;
+        reportPreview.hidden = false;
+        reportPreviewError.hidden = true;
+        reportModalTitle.textContent = accountantReportMode
+          ? 'Prévia do relatório para o contador'
+          : 'Prévia do relatório financeiro';
+        editReportFiltersBtn.focus();
+      } catch (error) {
+        showReportError(error);
+      }
+    });
+  }
+
+  if (downloadReportPdfBtn) {
+    downloadReportPdfBtn.addEventListener('click', async () => {
       if (reportGenerationInProgress) return;
       reportGenerationInProgress = true;
-      generateReportBtn.disabled = true;
-      generateReportBtn.textContent = 'Gerando...';
-      reportError.hidden = true;
+      downloadReportPdfBtn.disabled = true;
+      downloadReportPdfBtn.textContent = 'Gerando...';
+      reportPreviewError.hidden = true;
       try {
         await loadReportScript('js/vendor/jspdf.umd.min.js');
         await loadReportScript('js/vendor/jspdf.plugin.autotable.min.js');
-        const period = getReportPeriodValues();
-        const data = buildReportData({
-          ...period,
-          includeDetails: document.getElementById('reportIncludeDetails').checked
+        const blob = await renderReportPDF(reportPreviewData, { download: false });
+        const delivery = await deliverReport({
+          blob,
+          fileName: getReportFileName(reportPreviewData)
         });
-        const blob = await renderReportPDF(data, { download: false });
-        const result = { blob, fileName: getReportFileName(data) };
-        const delivery = await deliverReport(result);
         if (delivery === 'opened') {
-          reportError.textContent = 'O relatório foi aberto em uma nova aba porque o download automático não pôde ser iniciado.';
-          reportError.hidden = false;
+          reportPreviewError.textContent =
+            'O relatório foi aberto em uma nova aba porque o download automático não pôde ser iniciado.';
+          reportPreviewError.hidden = false;
         } else if (delivery !== 'cancelled') {
           closeReportModal();
         }
       } catch (error) {
-        showReportError(error);
+        showReportError(error, true);
       } finally {
         reportGenerationInProgress = false;
-        generateReportBtn.disabled = false;
-        generateReportBtn.textContent = 'Gerar PDF';
+        downloadReportPdfBtn.disabled = false;
+        downloadReportPdfBtn.textContent = 'Baixar PDF';
       }
     });
   }
