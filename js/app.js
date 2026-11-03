@@ -3860,6 +3860,8 @@ function renderAll() {
     dashboardSummary.totalIncome,
     dashboardSummary.totalFixed,
     dashboardSummary.totalVariable,
+    dashboardSummary.totalExpenses,
+    dashboardSummary.paidExpenses,
     dashboardSummary.balance,
     ym
   );
@@ -4703,6 +4705,10 @@ function getDashboardAccountSummary(items, accounts, filter) {
   const totalIncome = incomes.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const totalFixed = fixed.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const totalVariable = variables.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const expenses = [...fixed, ...variables];
+  const paidExpenses = expenses
+    .filter(item => item.paid === true)
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
   return {
     items: filteredItems,
     incomes,
@@ -4711,6 +4717,8 @@ function getDashboardAccountSummary(items, accounts, filter) {
     totalIncome,
     totalFixed,
     totalVariable,
+    totalExpenses: totalFixed + totalVariable,
+    paidExpenses,
     balance: totalIncome - totalFixed - totalVariable
   };
 }
@@ -5530,10 +5538,12 @@ window.GastoProCreditCardDashboardHelpers = {
  * @param {number} totalIncome   - Total de ganhos em R$.
  * @param {number} totalFixed    - Total de gastos fixos em R$.
  * @param {number} totalVariable - Total de gastos variáveis em R$.
+ * @param {number} totalExpenses - Previsão total de gastos no mês.
+ * @param {number} paidExpenses  - Total de gastos pagos no mês.
  * @param {number} balance       - Saldo: totalIncome - (totalFixed + totalVariable).
  * @param {string} ym            - Mês de competência "YYYY-MM".
  */
-function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed, totalVariable, balance, ym) {
+function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed, totalVariable, totalExpenses, paidExpenses, balance, ym) {
   // --- KPI: Total Recebido ---
   setFinancialAmount(document.getElementById('totalIncomeDisplay'), totalIncome, { signed: true });
   document.getElementById('incomeCount').textContent =
@@ -5546,8 +5556,9 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
     window.matchMedia('(max-width: 700px)').matches
   );
 
-  // --- KPI: Gastos Variáveis ---
-  setFinancialAmount(document.getElementById('totalVariableDisplay'), -totalVariable, { signed: true });
+  // --- KPI: Gastos do Mês ---
+  setFinancialAmount(document.getElementById('totalExpensesForecastDisplay'), -totalExpenses, { signed: true });
+  setFinancialAmount(document.getElementById('totalPaidExpensesDisplay'), -paidExpenses, { signed: true });
 
   // --- Cálculo das porcentagens para a regra 50/30/20 ---
   // Evita divisão por zero quando não há renda cadastrada
@@ -5560,7 +5571,7 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
   }
 
   document.getElementById('fixedPercentage').textContent    = `${pctFixed}% da renda`;
-  document.getElementById('variablePercentage').textContent = `${pctVar}% da renda`;
+  document.getElementById('variablePercentage').textContent = `${pctVar}% em variáveis`;
 
   // --- Sub-componentes do Dashboard ---
   renderHealthDiagnostic(totalIncome, balance, pctFixed, pctVar, pctSave);

@@ -2276,6 +2276,21 @@ html {
   color: var(--text-dim);
 }
 
+.kpi-paid-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.kpi-paid-summary strong {
+  min-width: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
 .text-success { color: var(--success); }
 .text-warning { color: var(--warning); }
 .text-danger { color: var(--danger-text); }
@@ -9149,6 +9164,12 @@ input[type="month"] {
 
   .kpi-title i {
     flex: 0 0 auto;
+  }
+
+  .kpi-paid-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.1rem;
   }
 
   .kpi-value {

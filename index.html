@@ -407,7 +407,7 @@
               </div>
               <div class="action-text">
                 <strong>Buscar nova versão do app</strong>
-                <span>Versão v4.64</span>
+                <span>Versão v4.65</span>
               </div>
             </button>
             <div class="drawer-about-help">
@@ -599,16 +599,19 @@
 
             <!-- Gastos do Mês -->
             <div class="kpi-card variable-card" data-goto="expenses" role="button" tabindex="0"
-              aria-label="Gastos variáveis: abrir e gerenciar gastos do mês" title="Clique para gerenciar gastos">
+              aria-label="Gastos do mês: abrir e gerenciar gastos" title="Clique para gerenciar gastos">
               <div class="kpi-header">
                 <span class="kpi-title">
                   <i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>
-                  <span>Variáveis</span>
+                  <span>Gastos do Mês</span>
                 </span>
               </div>
-              <div class="kpi-value text-danger financial-amount financial-amount--negative" id="totalVariableDisplay">R$ 0,00</div>
-              <span class="badge badge-danger kpi-badge" id="variablePercentage">0% da renda</span>
-              <span class="kpi-caption">Gastos variáveis do mês</span>
+              <div class="kpi-value text-danger financial-amount financial-amount--negative" id="totalExpensesForecastDisplay">R$ 0,00</div>
+              <span class="badge badge-danger kpi-badge" id="variablePercentage">0% em variáveis</span>
+              <div class="kpi-paid-summary">
+                <span>Já pago</span>
+                <strong class="financial-amount financial-amount--negative" id="totalPaidExpensesDisplay">R$ 0,00</strong>
+              </div>
             </div>
           </div>
 
@@ -1241,7 +1244,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.64</span>
+          <span class="badge badge-version">v4.65</span>
         </div>
       </footer>
 

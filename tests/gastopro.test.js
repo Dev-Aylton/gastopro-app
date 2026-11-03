@@ -9215,6 +9215,18 @@ describe('GastoProImporter — parsing e limites', () => {
       );
       assertFalse(row.reviewOwnAccountMovement, `${description} não deve ser sinalizado`);
     });
+    ['Calçados Silva', 'Balcão', 'Alcance', 'Aplicativo Uber'].forEach(description => {
+      const [row] = GastoProImporter.parseCSV(
+        `data;descricao;valor\n2026-01-10;${description};-10,00`
+      );
+      assertFalse(row.reviewOwnAccountMovement, `${description} não deve ser sinalizado`);
+    });
+    ['CDB Banco', 'RES APLIC AUT MAIS', 'Aplicação automática', 'Resgate LCA', 'FGTS'].forEach(description => {
+      const [row] = GastoProImporter.parseCSV(
+        `data;descricao;valor\n2026-01-10;${description};-10,00`
+      );
+      assertTrue(row.reviewOwnAccountMovement, `${description} deve ser sinalizado`);
+    });
   });
 
   it('RM-086: avisa sobre fatura sem desmarcar nem deduplicar linhas do mesmo arquivo', () => {
@@ -14358,12 +14370,38 @@ describe('Filtro de contas na home e relatório do contador', () => {
     assertEqual(all.totalIncome, 5000);
     assertEqual(all.totalFixed, 400);
     assertEqual(all.totalVariable, 150);
+    assertEqual(all.totalExpenses, 550);
+    assertEqual(all.paidExpenses, 0);
     assertEqual(all.incomes.map(item => item.id), ['income-pf', 'income-pj']);
     assertEqual(personal.totalIncome, 1800);
     assertEqual(personal.totalFixed, 400);
     assertEqual(personal.totalVariable, 0);
+    assertEqual(personal.totalExpenses, 400);
+    assertEqual(personal.paidExpenses, 0);
     assertEqual(personal.items.map(item => item.id), ['income-pf', 'fixed-pf']);
     assertEqual(JSON.stringify(items), originalItems);
+  });
+
+  it('separa previsão e total pago sem incluir gastos pendentes no pago', () => {
+    const accounts = [];
+    const withPendingExpenses = [
+      { type: 'fixed', amount: 100, active: true, paid: false, date: '2026-11-28' },
+      { type: 'variable', amount: 20, paid: false, date: '2026-11-20' },
+      { type: 'variable', amount: 30, paid: true, date: '2026-11-03' }
+    ];
+    const projected = GastoProAccountFilterHelpers.getDashboardSummary(
+      withPendingExpenses, accounts, 'all'
+    );
+    assertEqual([projected.totalExpenses, projected.paidExpenses], [150, 30]);
+
+    const withoutPendingExpenses = GastoProAccountFilterHelpers.getDashboardSummary([
+      { type: 'fixed', amount: 15, active: true, paid: true, date: '2026-11-01' },
+      { type: 'variable', amount: 10, paid: true, date: '2026-11-02' }
+    ], accounts, 'all');
+    assertEqual(
+      [withoutPendingExpenses.totalExpenses, withoutPendingExpenses.paidExpenses],
+      [25, 25]
+    );
   });
 
   it('inicia com Todas as contas selecionado', () => {

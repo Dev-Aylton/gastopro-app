@@ -165,11 +165,14 @@ const GastoProImporter = (() => {
 
   function applyDescriptionReviews(row) {
     const description = normalize(row.desc);
-    row.reviewOwnAccountMovement = REVIEW_MOVEMENT_TERMS.some(term =>
-      term === 'aplic'
-        ? description.includes(term)
-        : containsWholeKey(description, term)
-    );
+    row.reviewOwnAccountMovement = REVIEW_MOVEMENT_TERMS.some(term => {
+      if (term === 'aplic') return /(^|[^a-z0-9])aplic(?!ativo)[a-z0-9]*/.test(description);
+      if (['cdb', 'rdb', 'lci', 'lca', 'fgts'].includes(term)) {
+        return containsWholeKey(description, term);
+      }
+      return new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+        .test(description);
+    });
     row.cardInvoiceNotice =
       /\b(?:pagamento\s+(?:de\s+|da\s+)?fatura|pgto\s+(?:de\s+|da\s+)?fatura|fatura\s+(?:(?:do|de)\s+)?cartao)\b/.test(description);
     return row;

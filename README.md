@@ -493,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.64`. Suíte atual: **632 testes**.
+`CACHE_NAME` atual: `gastopro-v4.65`. Suíte atual: **633 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -736,6 +736,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-086 — Arredondamento e sinalização na importação** / Descrição: arredonda valores em centavos nos formatos CSV, texto/PDF, OFX, XML, Pix e boleto; sinaliza divergência explícita de tipo/sinal e movimentações próprias/investimentos sem seleção automática; avisa sobre pagamento de fatura sem deduplicar linhas do arquivo. / Critério de pronto: 632 testes aprovados em duas execuções consecutivas, zero falhas/pendências; comportamento de seleção automatizada coberto. / Arquivos: `js/importer.js`, `js/app.js`, `tests/gastopro.test.js`, `README.md`.
 - [x] **RM-087 — Botões secundários de login e cadastro** / Descrição: aplica fundo transparente, borda/texto na cor de acento, foco visível e estado desabilitado aos botões Entrar no GastoPro e Criar Minha Conta Gratuita. Contraste texto/borda: 5,83:1 (escuro), 9,93:1 (claro); foco: 3,89:1 (escuro), 6,29:1 (claro). / Critério de pronto: 632 testes aprovados em duas execuções consecutivas; tamanhos responsivos e aparência em iPhone não verificados em tela. / Arquivos: `css/style.css`, `tests/gastopro.test.js`, `README.md`.
 - [x] **RM-088 — Aviso de OFX no guia de extrato** / Descrição: orienta que arquivos OFX baixados do e-mail podem não aparecer no app Arquivos do iPhone; preserva os demais passos. / Critério de pronto: texto coberto pela suíte de 632 testes; apresentação visual não verificada em tela. / Arquivos: `js/onboarding.js`, `tests/gastopro.test.js`, `README.md`.
+- [x] **RM-089 — Previsão e gastos pagos no Dashboard** / Descrição: mostra no card Gastos do Mês a previsão atual (incluindo parcelas e itens a pagar) e, separadamente, apenas os gastos pagos, respeitando o filtro de contas e sem alterar o saldo. / Critério de pronto: 633 testes aprovados em duas execuções consecutivas, zero falhas/pendências; contraste calculado; visual/toque em iPhone não verificados em tela. / Arquivos: `js/app.js`, `index.html`, `css/style.css`, `tests/gastopro.test.js`, `README.md`, `sw.js`.
 
 ### Em dúvida
 
@@ -747,7 +748,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.64 — 03/11/2026 (versão atual)
+### v4.65 — 03/11/2026 (versão atual)
+
+- RM-089: corrige a detecção de termos de movimentação própria por fronteira de palavra; separa no Dashboard a previsão mensal de gastos pagos, sem alterar o saldo. Test-runner: 633 aprovados em duas execuções consecutivas, zero falhas/pendências; contraste calculado; visual/toque em iPhone não verificados.
+
+### v4.64 — 03/11/2026 (versão anterior)
 
 - RM-086: arredonda valores importados em centavos; sinaliza divergência de tipo/sinal e movimentações próprias/investimentos para revisão, sem deduplicar linhas do mesmo arquivo; mantém pagamentos de fatura selecionados com aviso. RM-087: aplica estilo secundário aos botões de login/cadastro compartilhando a classe existente. RM-088: explica a limitação de arquivos OFX de e-mail no iPhone. Test-runner: 632 aprovados em duas execuções consecutivas, zero falhas/pendências; contraste calculado; visual/toque em iPhone não verificados.
 
