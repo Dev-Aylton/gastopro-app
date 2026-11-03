@@ -2787,6 +2787,43 @@ describe('Restauração da tela principal', () => {
 });
 
 describe('Salvamento com trava', () => {
+  itAsync('impede clique duplo e anuncia sucesso, pendência e erro no formulário', async () => {
+    const form = document.createElement('form');
+    const button = document.createElement('button');
+    const status = document.createElement('p');
+    status.dataset.buttonStateStatus = '';
+    form.append(button, status);
+    let resolveSave;
+    let writes = 0;
+    const pendingSave = new Promise(resolve => { resolveSave = resolve; });
+    const first = window.GastoProButtonStates.run(button, async () => {
+      writes++;
+      await pendingSave;
+      return { state: 'saved' };
+    });
+
+    assertTrue(button.disabled);
+    assertEqual(status.textContent, 'Enviando…');
+    assertFalse(await window.GastoProButtonStates.run(button, async () => {
+      writes++;
+      return { state: 'saved' };
+    }));
+    assertEqual(writes, 1);
+    resolveSave();
+    await first;
+    assertFalse(button.disabled);
+    assertEqual(status.textContent, 'Salvo.');
+
+    await window.GastoProButtonStates.run(button, async () => ({ state: 'pending' }));
+    assertTrue(status.textContent.includes('falta enviar à nuvem'));
+    await window.GastoProButtonStates.run(button, async () => ({
+      state: 'error', message: 'conta indisponível'
+    }));
+    assertTrue(status.textContent.includes('Erro: conta indisponível'));
+    assertFalse(button.disabled);
+    form.remove();
+  });
+
   itAsync('ignora segundo clique após timeout e restaura botão quando a ação original termina', async () => {
     const button = document.createElement('button');
     button.innerHTML = '<i class="fa-solid fa-check"></i> Salvar';
@@ -3090,6 +3127,26 @@ describe('FinanceData — addTemplate() Gastos Fixos', () => {
 
 describe('FinanceData — getByMonth()', () => {
   setupMockLocalStorage();
+
+  itAsync('oculta templates excluídos da tela sem remover o tombstone dos dados', async () => {
+    setupMockLocalStorage();
+    const tombstone = {
+      id: 'template-deleted-test',
+      type: 'fixed',
+      desc: 'Template excluído de teste',
+      amount: 25,
+      startMonth: '2026-11',
+      day: '10',
+      deletedAt: '2026-11-12T10:00:00.000Z'
+    };
+    await FinanceData.saveTemplates([tombstone], { flush: false });
+
+    assertEqual(FinanceData.getTemplates().length, 1);
+    assertEqual(FinanceData.getActiveTemplates().length, 0);
+    assertFalse(FinanceData.getByMonth('2026-11').some(item =>
+      item.desc === 'Template excluído de teste'
+    ));
+  });
 
   it('mapeia dias ausentes ou inválidos sem erro e sinaliza falta na lista', () => {
     setupMockLocalStorage();
@@ -9804,6 +9861,26 @@ describe('GastoProImporter — importação de arquivos', () => {
     const rows = GastoProImporter.parseOFX('<OFX><BANKTRANLIST></BANKTRANLIST></OFX>');
     assertEqual(rows, []);
     assertTrue(GastoProImporter.getLastWarnings().includes('Nenhuma transação encontrada no arquivo OFX.'));
+  });
+
+  it('parseOFX expõe dados do saldo apenas como metadados mascarados de prévia', () => {
+    const rows = GastoProImporter.parseOFX(
+      '<OFX><BANKID>123</BANKID><ORG>Banco Exemplo</ORG><ACCTID>9876543210</ACCTID>' +
+      '<LEDGERBAL><BALAMT>1234.56</BALAMT><DTASOF>20261112000000</DTASOF></LEDGERBAL>' +
+      '<BANKTRANLIST><STMTTRN><DTPOSTED>20261111<TRNAMT>-10.00<MEMO>Compra</STMTTRN>' +
+      '</BANKTRANLIST></OFX>'
+    );
+    const statement = GastoProImporter.getLastOFXStatementInfo();
+    assertEqual(statement.bank, 'Banco Exemplo');
+    assertEqual(statement.account, '••••3210');
+    assertEqual(statement.balance, 1234.56);
+    assertEqual(statement.balanceDate, '2026-11-12');
+    assertFalse(Object.prototype.hasOwnProperty.call(rows[0], 'balance'));
+
+    GastoProImporter.parseOFX(
+      '<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261111<TRNAMT>-10.00</STMTTRN></BANKTRANLIST></OFX>'
+    );
+    assertNull(GastoProImporter.getLastOFXStatementInfo());
   });
 
   it('parseOFX prioriza TRNTYPE e usa sinal para tipos desconhecidos', () => {

@@ -1959,6 +1959,10 @@ const FinanceData = {
     }
   },
 
+  getActiveTemplates() {
+    return this.getTemplates().filter(template => !template.deletedAt);
+  },
+
   /**
    * Persiste a lista completa de templates fixos.
    *
@@ -2723,7 +2727,7 @@ const FinanceData = {
     }));
 
     // Passo 2: projeta templates fixos ativos para o mês pedido
-    const templates = this.getTemplates();
+    const templates = this.getActiveTemplates();
     const fixedForMonth = [];
 
     templates.forEach(tpl => {

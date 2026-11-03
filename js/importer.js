@@ -35,6 +35,7 @@ const GastoProImporter = (() => {
   const CSV_HEADER_WARNING = 'Cabeçalho CSV inválido. Use o modelo oficial para importar.';
   let lastWarnings = [];
   let lastIgnoredRows = [];
+  let lastOFXStatementInfo = null;
 
   const CATEGORY_RULES = [
     { keys: ['ifood', 'rappi', 'uber eats', 'uber eat', 'delivery', 'mcdonalds', 'mc donalds',
@@ -666,6 +667,7 @@ const GastoProImporter = (() => {
 
   async function parseFile(file, today = new Date()) {
     lastIgnoredRows = [];
+    lastOFXStatementInfo = null;
     const extension = getFileExtension(file);
     if (!SUPPORTED_FILE_EXTENSIONS.has(extension)) {
       setWarnings([UNSUPPORTED_FILE_WARNING]);
@@ -704,9 +706,32 @@ const GastoProImporter = (() => {
   function parseOFX(text) {
     setWarnings();
     lastIgnoredRows = [];
+    lastOFXStatementInfo = null;
     if (text.length > MAX_CSV_CHARS) {
       setWarnings(['O extrato OFX excede 1 MB; reduza o arquivo e tente novamente.']);
       return [];
+    }
+    const getStatementField = tag => {
+      const match = text.match(new RegExp(`<${tag}>([^<\\r\\n]*)`, 'i'));
+      return match ? match[1].trim() : '';
+    };
+    const bank = getStatementField('ORG') || getStatementField('BANKID');
+    const accountId = getStatementField('ACCTID');
+    const balanceAmount = getStatementField('BALAMT');
+    const balanceDateRaw = getStatementField('DTASOF').match(/^\d{8}/);
+    const balanceDate = balanceDateRaw && validDateParts(
+      Number(balanceDateRaw[0].slice(0, 4)),
+      Number(balanceDateRaw[0].slice(4, 6)),
+      Number(balanceDateRaw[0].slice(6, 8))
+    ) ? `${balanceDateRaw[0].slice(0, 4)}-${balanceDateRaw[0].slice(4, 6)}-${balanceDateRaw[0].slice(6, 8)}` : '';
+    const parsedBalance = balanceAmount ? parseMoneySigned(balanceAmount) : Number.NaN;
+    if (bank || accountId || Number.isFinite(parsedBalance) && balanceDate) {
+      lastOFXStatementInfo = {
+        bank,
+        account: accountId ? `••••${accountId.slice(-4)}` : '',
+        balance: Number.isFinite(parsedBalance) && balanceDate ? parsedBalance : null,
+        balanceDate: Number.isFinite(parsedBalance) && balanceDate ? balanceDate : ''
+      };
     }
     const warnings = [];
     const rows = [];
@@ -1151,6 +1176,10 @@ const GastoProImporter = (() => {
     ].join('\r\n');
   }
 
+  function getLastOFXStatementInfo() {
+    return lastOFXStatementInfo ? { ...lastOFXStatementInfo } : null;
+  }
+
   // ================================================================
   // API PÚBLICA
   // ================================================================
@@ -1158,7 +1187,8 @@ const GastoProImporter = (() => {
     parseCSV, parseRawText, parseOFX, parsePixPayload, parseBoletoLine, groupTextItemsIntoLines,
     autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
     parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, getLastIgnoredRows, shiftMonth, detectInstallment, detectCsvInstallment, matchDebtTemplate,
-    buildInstallmentDebt, parseFile, isSupportedFile, UNSUPPORTED_FILE_WARNING, createCSVTemplate
+    buildInstallmentDebt, parseFile, isSupportedFile, UNSUPPORTED_FILE_WARNING, createCSVTemplate,
+    getLastOFXStatementInfo
   };
 
 })();

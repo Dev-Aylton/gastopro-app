@@ -2906,6 +2906,68 @@ function completeEntrySave(type) {
   return true;
 }
 
+const activeButtonSubmissions = new WeakSet();
+const buttonStateTimers = new WeakMap();
+
+function setButtonSubmissionState(button, state, message = '') {
+  if (!button) return;
+  const status = button.closest('form')?.querySelector('[data-button-state-status]');
+  const timer = buttonStateTimers.get(button);
+  if (timer) clearTimeout(timer);
+  if (state === 'sending') {
+    activeButtonSubmissions.add(button);
+    button.disabled = true;
+    if (status) status.textContent = 'Enviando…';
+    return;
+  }
+
+  activeButtonSubmissions.delete(button);
+  button.disabled = false;
+  if (!status) return;
+  if (state === 'saved') {
+    status.textContent = 'Salvo.';
+    buttonStateTimers.set(button, setTimeout(() => {
+      status.textContent = '';
+      buttonStateTimers.delete(button);
+    }, 2500));
+  } else if (state === 'pending') {
+    status.textContent = 'Salvo neste aparelho; falta enviar à nuvem.';
+  } else if (state === 'error') {
+    status.textContent = `Erro: ${(message || 'não foi possível salvar.').slice(0, 120)}`;
+  } else {
+    status.textContent = '';
+  }
+}
+
+function beginButtonSubmission(button) {
+  if (!button || activeButtonSubmissions.has(button)) return false;
+  setButtonSubmissionState(button, 'sending');
+  return true;
+}
+
+async function runButtonSubmission(button, action) {
+  if (!beginButtonSubmission(button)) return false;
+  try {
+    const result = await action();
+    if (!result || !['saved', 'pending', 'error'].includes(result.state)) {
+      setButtonSubmissionState(button, 'error', 'não foi possível confirmar o salvamento.');
+      return result;
+    }
+    setButtonSubmissionState(button, result.state, result.message);
+    return result;
+  } catch (error) {
+    console.error('[GastoPro] Falha ao salvar pelo formulário:', error);
+    setButtonSubmissionState(button, 'error', error.message || 'não foi possível salvar.');
+    return { state: 'error', message: error.message || 'não foi possível salvar.' };
+  }
+}
+
+window.GastoProButtonStates = Object.freeze({
+  begin: beginButtonSubmission,
+  finish: setButtonSubmissionState,
+  run: runButtonSubmission
+});
+
 function setupEntryComposer(view = document.getElementById('view-entries')) {
   if (!view) return;
 
@@ -3028,7 +3090,7 @@ function renderLoansView() {
       : 'Cadastre uma conta em Contas antes de salvar um empréstimo.';
   }
 
-  const loans = FinanceData.getTemplates().filter(template =>
+  const loans = FinanceData.getActiveTemplates().filter(template =>
     template.loanReceivedAmount != null && !template.deletedAt && !template.deleted_at
   );
   if (!loans.length) {
@@ -3179,7 +3241,7 @@ function buildLoanCandidate(form) {
   }
   const editId = value('loanEditId');
   const existing = editId
-    ? FinanceData.getTemplates().find(template => template.id === editId && template.loanReceivedAmount != null)
+    ? FinanceData.getActiveTemplates().find(template => template.id === editId && template.loanReceivedAmount != null)
     : null;
   if (editId && !existing) return { error: 'O empréstimo que você está editando não foi encontrado.' };
   return {
@@ -3266,6 +3328,7 @@ async function persistLoanCandidate(candidate, editId) {
     ? 'Empréstimo salvo neste aparelho; a sincronização com a nuvem ficará pendente.'
     : editId ? 'Empréstimo atualizado.' : 'Empréstimo salvo.',
   syncResult.success ? 'success' : 'error');
+  return syncResult;
 }
 
 async function finishLoanConflictChoice(choice, conflictId) {
@@ -3294,12 +3357,14 @@ async function finishLoanConflictChoice(choice, conflictId) {
         },
         onConfirm: async () => {
           try {
-            const result = await FinanceData.delete(selected.id);
-            if (!result || !result.success) {
+            const deleteResult = await FinanceData.delete(selected.id);
+            if (!deleteResult || !deleteResult.success) {
               setLoanFormError('O item não foi removido; o empréstimo não foi inserido. Tente sincronizar novamente.');
               return;
             }
-            await persistLoanCandidate(pending.candidate, pending.editId);
+            const result = await persistLoanCandidate(pending.candidate, pending.editId);
+            setButtonSubmissionState(document.getElementById('loanSubmitBtn'),
+              result.success ? 'saved' : 'pending');
           } catch (error) {
             console.error('Erro ao remover o conflito do empréstimo:', error);
             setLoanFormError('Não foi possível remover o item escolhido. O empréstimo não foi inserido.');
@@ -3309,10 +3374,14 @@ async function finishLoanConflictChoice(choice, conflictId) {
       return;
     }
     try {
-      await persistLoanCandidate(pending.candidate, pending.editId);
+      const result = await persistLoanCandidate(pending.candidate, pending.editId);
+      setButtonSubmissionState(document.getElementById('loanSubmitBtn'),
+        result.success ? 'saved' : 'pending');
     } catch (error) {
       console.error('Erro ao salvar o empréstimo após a prévia:', error);
       setLoanFormError(error.message || 'Não foi possível salvar o empréstimo.');
+      setButtonSubmissionState(document.getElementById('loanSubmitBtn'), 'error',
+        error.message || 'não foi possível salvar.');
     }
   });
   if (saveResult === false) {
@@ -3345,28 +3414,41 @@ function bindLoansForm(form = document.getElementById('loanForm')) {
     const result = buildLoanCandidate(form);
     if (result.error) {
       setLoanFormError(result.error);
+      setButtonSubmissionState(submitButton, 'error', result.error);
       return;
     }
-    const saveResult = await withSaving(event.submitter || submitButton, async () => {
+    const button = event.submitter || submitButton;
+    if (!beginButtonSubmission(button)) return;
+    const saveResult = await withSaving(button, async () => {
       try {
         const conflicts = window.GastoProLoans.detectLoanConflicts(
           result.loan,
           FinanceData.getEntries(),
-          FinanceData.getTemplates()
+          FinanceData.getActiveTemplates()
         );
         if (conflicts.length) {
           pendingLoanSave = { candidate: result.loan, editId: result.editId, conflicts };
           renderLoanConflictPreview(conflicts);
           return;
         }
-        await persistLoanCandidate(result.loan, result.editId);
+        return await persistLoanCandidate(result.loan, result.editId);
       } catch (error) {
         console.error('Erro ao salvar empréstimo:', error);
         setLoanFormError(error.message || 'Ocorreu um erro ao salvar o empréstimo. Tente novamente.');
+        return null;
       }
     });
     if (saveResult === false) {
       setLoanFormError('Outro salvamento está em andamento. Aguarde e tente novamente.');
+      setButtonSubmissionState(button, 'error', 'outro salvamento está em andamento.');
+    } else if (pendingLoanSave) {
+      setButtonSubmissionState(button, 'error', 'revise e confirme os conflitos para continuar.');
+    } else if (saveResult && typeof saveResult.success === 'boolean') {
+      setButtonSubmissionState(button, saveResult.success ? 'saved' : 'pending');
+    } else if (saveResult === null) {
+      setButtonSubmissionState(button, 'error', 'não foi possível salvar o empréstimo.');
+    } else {
+      setButtonSubmissionState(button, 'error', 'não foi possível salvar o empréstimo.');
     }
   });
   document.getElementById('loanInsertAnywayBtn')?.addEventListener('click', () => {
@@ -3403,7 +3485,7 @@ function bindLoansForm(form = document.getElementById('loanForm')) {
 }
 
 function editLoan(id) {
-  const loan = FinanceData.getTemplates().find(template =>
+  const loan = FinanceData.getActiveTemplates().find(template =>
     template.id === id && template.loanReceivedAmount != null
   );
   if (!loan) {
@@ -3445,7 +3527,7 @@ function editLoan(id) {
 }
 
 function deleteLoan(id) {
-  const loan = FinanceData.getTemplates().find(template =>
+  const loan = FinanceData.getActiveTemplates().find(template =>
     template.id === id && template.loanReceivedAmount != null
   );
   if (!loan) {
@@ -4985,7 +5067,7 @@ function renderFinancialInsights() {
       FinanceData.getEntries(), accounts, filter
     ).filter(item => isUnpaidDue(item) && item.date < today);
     const overdueTemplateItems = filterFinancialItemsByAccount(
-      getLatestOverdueTemplateItems(FinanceData.getTemplates(), today), accounts, filter
+      getLatestOverdueTemplateItems(FinanceData.getActiveTemplates(), today), accounts, filter
     );
     const dueByDate = new Map();
     [...overdueEntryItems, ...overdueTemplateItems, ...upcomingDueItems].forEach(item => {
@@ -5844,7 +5926,7 @@ function getRecurringFixedCosts(templates) {
  *
  * @param {string} currentYm - Mês atual no formato "YYYY-MM".
  */
-function getDebtCenterData(currentYm, templates = FinanceData.getTemplates()) {
+function getDebtCenterData(currentYm, templates = FinanceData.getActiveTemplates()) {
   const debtTemplates = templates.filter(isDebtCenterTemplate);
 
   const items = debtTemplates.map(tpl => {
@@ -5993,7 +6075,7 @@ function renderDebtCenter(currentYm) {
   const summaryContainer = document.getElementById('debtCenterSummary');
   if (!container) return;
 
-  const templates = FinanceData.getTemplates();
+  const templates = FinanceData.getActiveTemplates();
   const realYm = getLocalDateString().substring(0, 7);
   const viewModel = getDebtCenterViewModel(templates, currentYm, realYm);
   const debtData = getDebtCenterData(realYm, templates.filter(template =>
@@ -6298,7 +6380,7 @@ function getControlCenterTypeLabel(item) {
 function renderControlCenterItem(item, accountNames, isIncome) {
   const isCardInstallment = Boolean(item.isCardInstallment);
   const isTemplate = Boolean(item.isTemplate) ||
-    FinanceData.getTemplates().some(template => template.id === item.id);
+    FinanceData.getActiveTemplates().some(template => template.id === item.id);
   const isInactive = !isIncome && item.active === false;
   const needsPaidReview = !isIncome && item.paid && getPaidImportReviewIds().includes(item.id);
   const dateLabel = item.date ? formatDate(item.date) :
@@ -6397,7 +6479,7 @@ window.GastoProExpenseListHelpers = Object.freeze({
  * @param {string} id - UUID do item a editar.
  */
 window.openEditModal = function(id) {
-  const template = FinanceData.getTemplates().find(item => item.id === id);
+  const template = FinanceData.getActiveTemplates().find(item => item.id === id);
   if (template) {
     showConfirm({
       title: 'Editar modelo recorrente?',
@@ -6495,7 +6577,7 @@ function populateEditModal(id) {
   if (editTypeSelect) {
     const currentType = item.type || (item.isDebt ? 'debt' : (item.isTemplate ? 'fixed' : 'variable'));
     editTypeSelect.value = currentType;
-    const isTemplate = FinanceData.getTemplates().some(template => template.id === id);
+    const isTemplate = FinanceData.getActiveTemplates().some(template => template.id === id);
     Array.from(editTypeSelect.options).forEach(option => {
       option.disabled = isTemplate
         ? option.value === 'income' || option.value === 'variable'
@@ -6525,7 +6607,7 @@ function populateEditModal(id) {
   }
 
   const isFixed = item.type === 'fixed' || item.type === 'debt' || item.isTemplate ||
-    FinanceData.getTemplates().some(template => template.id === id);
+    FinanceData.getActiveTemplates().some(template => template.id === id);
   const statusGroup = document.getElementById('editStatusGroup');
   const endMonthGroup = document.getElementById('editEndMonthGroup');
   const paymentMethodGroup = document.getElementById('editPaymentMethodGroup');
@@ -6953,7 +7035,7 @@ function showConfirm({
  * @param {string} id - ID do item a excluir.
  */
 window.deleteEntry = function(id) {
-  const isFixed = FinanceData.getTemplates().some(template => template.id === id);
+  const isFixed = FinanceData.getActiveTemplates().some(template => template.id === id);
   const isCardPurchase = FinanceData.getCreditCardPurchases().some(purchase => purchase.id === id);
   showConfirm({
     title: isCardPurchase ? 'Excluir compra parcelada?' : isFixed ? 'Excluir modelo recorrente?' : 'Excluir lançamento?',
@@ -8183,7 +8265,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderMonthPicker() {
     pickerYearDisplay.textContent = pickerYear;
     const all       = FinanceData.getAll();
-    const templates = FinanceData.getTemplates();
+    const templates = FinanceData.getActiveTemplates();
 
     pickerMonthsGrid.innerHTML = SHORT_MONTHS.map((name, index) => {
       const monthNum   = index + 1;
@@ -8296,6 +8378,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('incomeForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
     const desc     = document.getElementById('incomeDesc').value.trim();
     const amount   = parseFloat(document.getElementById('incomeAmount').value);
     const category = document.getElementById('incomeCategory').value;
@@ -8305,10 +8388,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Validações básicas antes de persistir
     if (!desc) {
       alert('Por favor, informe a descrição do ganho.');
+      setButtonSubmissionState(saveButton, 'error', 'informe a descrição do ganho.');
       return;
     }
     if (isNaN(amount) || amount <= 0) {
       alert('Por favor, informe um valor válido para o ganho.');
+      setButtonSubmissionState(saveButton, 'error', 'informe um valor válido para o ganho.');
       return;
     }
 
@@ -8316,7 +8401,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // (permite lançar ganhos de outros meses sem mudar o mês ativo)
     const itemMonth = dateVal ? dateVal.substring(0, 7) : getYearMonthString(state.currentYear, state.currentMonth);
 
-    const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
+    if (!beginButtonSubmission(saveButton)) return;
+    let submissionState = null;
     let saveResult;
     try {
       saveResult = await withNewEntryAccount(
@@ -8335,32 +8421,47 @@ document.addEventListener('DOMContentLoaded', () => {
           date: dateVal
         });
         if (!savedItem) {
-          alert(FinanceData.getAccounts().length
+          const message = FinanceData.getAccounts().length
             ? 'Selecione uma conta de destino antes de salvar o ganho.'
-            : 'Não foi possível criar a Conta principal para salvar o ganho.');
-          return;
+            : 'Não foi possível criar a Conta principal para salvar o ganho.';
+          alert(message);
+          submissionState = { state: 'error', message };
+          return submissionState;
         }
 
         completeEntrySave('income');
         document.getElementById('incomeDesc').focus();
 
         renderAll();
-        await waitForAuthenticatedSave();
+        const syncResult = await waitForAuthenticatedSave();
+        submissionState = syncResult.success
+          ? { state: 'saved' }
+          : { state: 'pending' };
+        return submissionState;
       } catch (err) {
         console.error('Erro ao adicionar ganho:', err);
         alert('Ocorreu um erro ao salvar o ganho: ' + err.message);
+        submissionState = { state: 'error', message: err.message };
+        return submissionState;
       }
         })
       );
     } catch (error) {
       console.error('Erro ao preparar o salvamento do ganho:', error);
       reportSubmitNoEffect('income', 'Não foi possível iniciar o salvamento do ganho. Tente novamente.');
+      setButtonSubmissionState(saveButton, 'error', 'não foi possível iniciar o salvamento.');
       return;
     }
     if (saveResult === null) {
       reportSubmitNoEffect('income', 'Ganho não salvo: a conta de destino não foi confirmada.');
+      setButtonSubmissionState(saveButton, 'error', 'a conta de destino não foi confirmada.');
     } else if (saveResult === false) {
       reportSubmitNoEffect('income', 'Outro salvamento está em andamento. Aguarde e tente novamente.');
+      setButtonSubmissionState(saveButton, 'error', 'outro salvamento está em andamento.');
+    } else {
+      const finalState = submissionState || saveResult;
+      setButtonSubmissionState(saveButton, finalState.state || 'error',
+        finalState.message || 'não foi possível confirmar o salvamento.');
     }
   });
 
@@ -8426,6 +8527,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('expenseForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
     const desc = document.getElementById('expenseDesc').value.trim();
     const amount = parseFloat(document.getElementById('expenseAmount').value);
     const type = document.getElementById('expenseType').value;
@@ -8437,10 +8539,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!desc) {
       alert('Por favor, informe a descrição do gasto.');
+      setButtonSubmissionState(saveButton, 'error', 'informe a descrição do gasto.');
       return;
     }
     if (isNaN(amount) || amount <= 0) {
       alert('Por favor, informe um valor válido maior que zero.');
+      setButtonSubmissionState(saveButton, 'error', 'informe um valor válido maior que zero.');
       return;
     }
     const requiresDueDay = type === 'fixed' || type === 'debt' ||
@@ -8449,16 +8553,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const dueDay = dueDayValue === '' ? null : Number(dueDayValue);
     if (requiresDueDay && (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) {
       alert('Informe um dia de vencimento entre 1 e 31.');
+      setButtonSubmissionState(saveButton, 'error', 'informe um dia de vencimento entre 1 e 31.');
       return;
     }
     if (dueDayValue !== '' && (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31)) {
       alert('O dia de vencimento deve estar entre 1 e 31.');
+      setButtonSubmissionState(saveButton, 'error', 'o dia de vencimento deve estar entre 1 e 31.');
       return;
     }
 
     const itemMonth = dateVal ? dateVal.substring(0, 7) : getYearMonthString(state.currentYear, state.currentMonth);
 
-    const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
+    if (!beginButtonSubmission(saveButton)) return;
+    let submissionState = null;
     const selectedAccountId = paymentMethod === 'credit_card'
       ? document.getElementById('expenseCreditAccount').value || null
       : document.getElementById('expenseAccount').value || null;
@@ -8470,11 +8577,13 @@ document.addEventListener('DOMContentLoaded', () => {
           const cardId = document.getElementById('expenseCreditCard').value;
           if (type !== 'variable') {
             alert('Compras no crédito devem ser cadastradas como gasto variável.');
-            return;
+            submissionState = { state: 'error', message: 'cadastre a compra como gasto variável.' };
+            return submissionState;
           }
           if (!FinanceData.getCreditCards().length) {
             alert('Cadastre um cartão de crédito antes de lançar uma compra.');
-            return;
+            submissionState = { state: 'error', message: 'cadastre um cartão antes de lançar a compra.' };
+            return submissionState;
           }
           const result = await FinanceData.addCreditCardPurchase({
             cardId,
@@ -8486,8 +8595,11 @@ document.addEventListener('DOMContentLoaded', () => {
             installmentCount: Number(document.getElementById('expenseInstallments').value)
           });
           if (!result.purchase) {
-            alert(result.error && result.error.message || result.error || 'Não foi possível salvar a compra no cartão.');
-            return;
+            const message = result.error && result.error.message || result.error ||
+              'Não foi possível salvar a compra no cartão.';
+            alert(message);
+            submissionState = { state: 'error', message };
+            return submissionState;
           }
           completeEntrySave('expense');
           updateCreditCardPurchaseFields();
@@ -8498,7 +8610,8 @@ document.addEventListener('DOMContentLoaded', () => {
             button.classList.toggle('active', button.getAttribute('data-filter') === 'all');
           });
           renderAll();
-          return;
+          submissionState = result.success ? { state: 'saved' } : { state: 'pending' };
+          return submissionState;
         }
 
         const savedItem = FinanceData.add({
@@ -8515,10 +8628,12 @@ document.addEventListener('DOMContentLoaded', () => {
           endMonth: endMonthVal || null
         });
         if (!savedItem) {
-          alert(FinanceData.getAccounts().length
+          const message = FinanceData.getAccounts().length
             ? 'Selecione uma conta de destino antes de salvar o gasto.'
-            : 'Não foi possível criar a Conta principal para salvar o gasto.');
-          return;
+            : 'Não foi possível criar a Conta principal para salvar o gasto.';
+          alert(message);
+          submissionState = { state: 'error', message };
+          return submissionState;
         }
 
         completeEntrySave('expense');
@@ -8531,21 +8646,34 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         renderAll();
-        await waitForAuthenticatedSave();
+        const syncResult = await waitForAuthenticatedSave();
+        submissionState = syncResult.success
+          ? { state: 'saved' }
+          : { state: 'pending' };
+        return submissionState;
       } catch (err) {
         console.error('Erro ao adicionar gasto:', err);
         alert('Ocorreu um erro ao salvar o gasto: ' + err.message);
+        submissionState = { state: 'error', message: err.message };
+        return submissionState;
       }
       }));
     } catch (error) {
       console.error('Erro ao preparar o salvamento do gasto:', error);
       reportSubmitNoEffect('expense', 'Não foi possível iniciar o salvamento do gasto. Tente novamente.');
+      setButtonSubmissionState(saveButton, 'error', 'não foi possível iniciar o salvamento.');
       return;
     }
     if (saveResult === null) {
       reportSubmitNoEffect('expense', 'Gasto não salvo: a conta de destino não foi confirmada.');
+      setButtonSubmissionState(saveButton, 'error', 'a conta de destino não foi confirmada.');
     } else if (saveResult === false) {
       reportSubmitNoEffect('expense', 'Outro salvamento está em andamento. Aguarde e tente novamente.');
+      setButtonSubmissionState(saveButton, 'error', 'outro salvamento está em andamento.');
+    } else {
+      const finalState = submissionState || saveResult;
+      setButtonSubmissionState(saveButton, finalState.state || 'error',
+        finalState.message || 'não foi possível confirmar o salvamento.');
     }
   });
 
@@ -9683,7 +9811,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function getCurrentRealtimeRecord(change, userId) {
     const getters = {
       entries: () => FinanceData.getEntries(),
-      templates: () => FinanceData.getTemplates(),
+      templates: () => FinanceData.getActiveTemplates(),
       accounts: () => FinanceData.getAccounts(),
       creditCards: () => FinanceData.getCreditCards(),
       creditCardPurchases: () => FinanceData.getCreditCardPurchases(),
@@ -11084,7 +11212,7 @@ document.addEventListener('DOMContentLoaded', () => {
             Math.abs(entryDate - rowDate) <= 2 * 24 * 60 * 60 * 1000;
         });
         const matchingTemplate = !matchingEntry && (row.type === 'fixed' || row.type === 'debt')
-          ? FinanceData.getTemplates().find(template =>
+          ? FinanceData.getActiveTemplates().find(template =>
             normalizeFixedDescription(template.desc) === normalizeFixedDescription(row.desc) &&
             Math.abs(Math.round(Number(template.amount) * 100) - Math.round(Number(row.amount) * 100)) <= 1 &&
             template.startMonth === row.startMonth &&
@@ -11442,6 +11570,20 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function renderImportPreview(rows) {
     const installmentHint = document.getElementById('importInstallmentHint');
+    const statementInfo = GastoProImporter.getLastOFXStatementInfo();
+    const statementInfoElement = document.getElementById('importOfxStatementInfo');
+    if (statementInfoElement) {
+      const details = [];
+      if (statementInfo?.bank) details.push(`Banco: ${statementInfo.bank}`);
+      if (statementInfo?.account) details.push(`Conta: ${statementInfo.account}`);
+      if (statementInfo?.balance != null && statementInfo.balanceDate) {
+        details.push(`Saldo no arquivo: ${Number(statementInfo.balance).toLocaleString('pt-BR', {
+          style: 'currency', currency: 'BRL'
+        })} em ${statementInfo.balanceDate}`);
+      }
+      statementInfoElement.textContent = details.join(' · ');
+      statementInfoElement.hidden = details.length === 0;
+    }
     renderImportDueDaySummary(rows);
     if (installmentHint) installmentHint.hidden = !rows || !rows.some(row => row.installment);
     if (!importPreviewTbody) return;
@@ -11670,7 +11812,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (dueDayInput) updateImportDueDay(row, dueDayInput.value);
     });
     _importSourceRows = rows.map(row => ({ ...row }));
-    const templates = FinanceData.getTemplates();
+    const templates = FinanceData.getActiveTemplates();
     const accountId = importTargetAccount ? importTargetAccount.value : '';
     _importParsedRows = GastoProImporter.markDuplicates(
       _importSourceRows, FinanceData.getEntries(), accountId
@@ -12434,7 +12576,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /** Renderiza checklist de gastos fixos existentes + lista de novos. */
   function renderWizardStep2() {
     const ym = getYearMonthString(state.currentYear, state.currentMonth);
-    const allTemplates = FinanceData.getTemplates().filter(t =>
+    const allTemplates = FinanceData.getActiveTemplates().filter(t =>
       t.type === 'fixed' && t.active !== false
     );
 
@@ -12603,7 +12745,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Total de fixos: checados existentes + novos
     const ym = getYearMonthString(state.currentYear, state.currentMonth);
-    const templates = FinanceData.getTemplates();
+    const templates = FinanceData.getActiveTemplates();
     const checkedFixedAmt = wizardState.fixedChecked.reduce((s, id) => {
       const t = templates.find(x => x.id === id);
       return s + (t ? t.amount : 0);
@@ -12736,7 +12878,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 2. Registrar baixa dos fixos marcados no mês atual
     wizardState.fixedChecked.forEach(id => {
-      const template = FinanceData.getTemplates().find(item => item.id === id);
+      const template = FinanceData.getActiveTemplates().find(item => item.id === id);
       const assigned = template && FinanceData.update(id, {
         accountId,
         dueDay: template.day
