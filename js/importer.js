@@ -1084,8 +1084,6 @@ const GastoProImporter = (() => {
       '2026-01-10;EXEMPLO FICTÍCIO - recebimento;1000,00;Renda;income;;;;sim',
       '2026-01-12;EXEMPLO FICTÍCIO - despesa;25,50;Outros;variable;;;;sim',
       '2026-01-15;EXEMPLO FICTÍCIO - conta mensal;80,00;Moradia;fixed;2026-01;2026-12;15;sim',
-      '# Instruções: data em AAAA-MM-DD ou DD/MM/AAAA; valor com vírgula ou ponto decimal.',
-      '# Obrigatório: data, descricao e valor. As demais colunas são opcionais.',
       ''
     ].join('\r\n');
   }

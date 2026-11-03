@@ -8270,6 +8270,50 @@ describe('Prioridade do login Google', () => {
       fixture.remove();
     }
   });
+
+  it('mantém o botão Google com 48 px e contraste mínimo nos dois temas', () => {
+    const originalTheme = document.documentElement.getAttribute('data-theme');
+    const wrapper = document.createElement('div');
+    const button = document.createElement('button');
+    wrapper.style.width = '320px';
+    button.style.transition = 'none';
+    button.className = 'btn-auth-google btn-primary';
+    button.textContent = 'Entrar com Google';
+    wrapper.appendChild(button);
+    document.body.appendChild(wrapper);
+    const channel = value => {
+      const normalized = value / 255;
+      return normalized <= 0.04045
+        ? normalized / 12.92
+        : ((normalized + 0.055) / 1.055) ** 2.4;
+    };
+    const luminance = color => {
+      const [red, green, blue] = color.match(/\d+/g).map(Number);
+      return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
+    };
+    try {
+      for (const theme of ['dark', 'light']) {
+        if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        else document.documentElement.removeAttribute('data-theme');
+        wrapper.setAttribute('data-theme', theme);
+        const style = getComputedStyle(button);
+        assertEqual(style.backgroundColor, theme === 'light'
+          ? 'rgb(67, 56, 202)'
+          : 'rgb(79, 70, 229)');
+        const foreground = luminance(style.color);
+        const background = luminance(style.backgroundColor);
+        const contrast = (Math.max(foreground, background) + 0.05) /
+          (Math.min(foreground, background) + 0.05);
+        assertEqual(style.minHeight, '48px');
+        assertEqual(style.width, '320px');
+        assertTrue(contrast >= 4.5, `${theme}: contraste ${contrast.toFixed(2)}:1`);
+      }
+    } finally {
+      if (originalTheme === null) document.documentElement.removeAttribute('data-theme');
+      else document.documentElement.setAttribute('data-theme', originalTheme);
+      wrapper.remove();
+    }
+  });
 });
 
 describe('GastoProImporter — parsing e limites', () => {
@@ -8284,14 +8328,53 @@ describe('GastoProImporter — parsing e limites', () => {
     assertTrue(template.includes('\r\n'));
     assertFalse(template.replace(/\r\n/g, '').includes('\n'));
     assertTrue(template.includes('EXEMPLO FICTÍCIO'));
-    assertTrue(template.includes('# Instruções: data em AAAA-MM-DD ou DD/MM/AAAA; valor com vírgula ou ponto decimal.'));
-    assertTrue(template.includes('# Obrigatório: data, descricao e valor.'));
+    assertFalse(template.split(/\r?\n/).some(line => line.startsWith('#')));
     assertFalse(template.includes('@'));
     const rows = GastoProImporter.parseCSV(template, new Date(2026, 0, 1));
     assertEqual(rows.length, 3);
     assertEqual(rows[2].dueDay, 15);
     assertEqual(rows[2].startMonth, '2026-01');
     assertEqual(rows[2].endMonth, '2026-12');
+  });
+
+  it('continua ignorando linhas de comentário em CSVs antigos', () => {
+    const rows = GastoProImporter.parseCSV(
+      '# Instruções antigas: data em DD/MM/AAAA.\r\n' +
+      '# Obrigatório: data, descricao e valor.\r\n' +
+      'data;descricao;valor\r\n' +
+      '2026-01-10;EXEMPLO FICTÍCIO;12,00\r\n' +
+      '# observação depois dos dados\r\n',
+      new Date(2026, 0, 1)
+    );
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].desc, 'EXEMPLO FICTÍCIO');
+  });
+
+  it('usa rótulo claro para exportar cópias de segurança em confirmações', () => {
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div id="confirmModal">
+        <i id="confirmIcon"></i><div id="confirmIconWrapper"></div>
+        <h2 id="confirmTitle"></h2><p id="confirmMessage"></p>
+        <button id="confirmOkBtn" type="button"></button>
+        <button id="confirmCancelBtn" type="button"></button>
+        <button id="confirmBackupBtn" type="button"></button>
+      </div>`;
+    document.body.appendChild(host);
+    try {
+      window.showConfirm({
+        title: 'Confirmação',
+        message: 'Ação protegida.',
+        onBackup: () => {},
+        onConfirm: () => {}
+      });
+      assertEqual(
+        host.querySelector('#confirmBackupBtn').textContent,
+        'Cópia de segurança (para restaurar no app)'
+      );
+    } finally {
+      host.remove();
+    }
   });
 
   it('mantém parcelas no formato atual do CSV', () => {
@@ -11997,7 +12080,7 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     assertFalse(sidebar.contains(navContact), 'Fale comigo fora do sidebar');
     assertFalse(dangerZone.open, 'zona de perigo fechada inicialmente');
     assertEqual(drawerSections, [
-      'Perfil', 'Preferências', 'Conta', 'Dados e backup', 'Ajuda', 'Zona de perigo'
+      'Perfil', 'Preferências', 'Conta', 'Dados e cópia de segurança', 'Ajuda', 'Zona de perigo'
     ]);
     assertEqual(expectedIds.filter(id => !allIds.includes(id)), [], 'IDs existentes preservados');
     assertEqual(allIds.filter((id, index) => allIds.indexOf(id) !== index), [], 'IDs sem duplicação');

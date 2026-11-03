@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.51-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.52-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-586%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-589%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -493,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.51`. Suíte atual: **586 testes**.
+`CACHE_NAME` atual: `gastopro-v4.52`. Suíte atual: **589 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -513,7 +513,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **586 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mocks do `localStorage` e do Supabase; os dados reais não são afetados.
+Suite com **589 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mocks do `localStorage` e do Supabase; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -722,6 +722,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-071 — Diagnóstico dos formulários, modelo CSV e tutoriais recolhíveis** / Descrição: retornos sem efeito dos formulários mostram aviso e registram apenas categoria fixa no Diagnóstico local; modelo CSV inclui BOM UTF-8 e CRLF sem alterar o cabeçalho; tutoriais do painel ficam recolhidos em controle acessível. / Critério de pronto: 575 testes aprovados, zero falhas/pendências; Supabase mockado; Excel, visual e toque não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/importer.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-072 — Apresentação do produto e teste de rolagem determinístico** / Descrição: documenta proposta, importação, privacidade, acesso e arquitetura; estabiliza o teste de navegação até Metas fixando a altura de viewport no fixture, sem alterar a lógica do app. / Critério de pronto: 575 testes aprovados em duas execuções, zero falhas/pendências; consultas Supabase mockadas. / Arquivos: `README.md`, `tests/gastopro.test.js`, `index.html`, `sw.js`.
 - [x] **RM-073 — Aba dedicada de Empréstimos** / Descrição: adiciona tela, formulário próprio, resumo das parcelas, conflitos com prévia e escolha explícita para manter, excluir ou cancelar; mantém recebimentos fora da renda e sincroniza exclusões pelo fluxo existente, sem migration. / Critério de pronto: 586 testes aprovados em duas execuções, zero falhas/pendências; Supabase mockado; visual e toque não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/loans.js`, `js/cache-assets.js`, `css/style.css`, `tests/gastopro.test.js`, `tests/test-runner.html`, `README.md`.
+- [x] **RM-074 — Destaque do login Google, modelo CSV e rótulos de cópia** / Descrição: reforça o botão Google com contraste acessível; mantém o modelo CSV sem linhas de comentário e ensina as regras na importação; esclarece que a cópia de segurança restaura no app e renomeia o relatório para leitura/impressão. / Critério de pronto: 589 testes aprovados em duas execuções, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela. / Arquivos: `css/style.css`, `index.html`, `js/app.js`, `js/data.js`, `js/importer.js`, `tests/gastopro.test.js`, `README.md`, `sw.js`.
 
 ### Em dúvida
 
@@ -733,7 +734,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.51 — 02/11/2026 (versão atual)
+### v4.52 — 02/11/2026 (versão atual)
+
+- RM-074: destaca Entrar com Google com altura mínima de 48 px e contraste calculado acima de 4,5:1 nos dois temas; remove comentários do modelo CSV mantendo compatibilidade com arquivos antigos; explica a cópia de segurança para restaurar no app e renomeia o relatório para leitura/impressão. Test-runner: 589 aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela.
+
+### v4.51 — 02/11/2026 (versão anterior)
 
 - RM-073: adiciona a aba Empréstimos com formulário independente, resumo de parcelas, edição/exclusão e prévia de conflitos com confirmação explícita; recebimentos continuam fora da renda e empréstimos não são duplicados no Centro de Dívidas. Test-runner: 586 aprovados em duas execuções, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela.
 

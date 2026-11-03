@@ -365,9 +365,10 @@
           </section>
 
           <section class="drawer-section drawer-data-section">
-            <h4 class="drawer-section-title">Dados e backup</h4>
+            <h4 class="drawer-section-title">Dados e cópia de segurança</h4>
             <div class="drawer-backup-controls">
             <p class="user-data-description">
+              A cópia serve para guardar e restaurar seus dados no app; não é feita para abrir ou ler.
               A exportação inclui lançamentos, gastos fixos, metas, contas, cartões, compras no cartão,
               regras de Fixo e mensagens enviadas em Fale comigo.
             </p>
@@ -377,26 +378,26 @@
               </div>
               <div class="action-text">
                 <strong>Exportar todos os meus dados</strong>
-                <span>Baixar uma cópia JSON neste aparelho</span>
+                <span>Cópia de segurança (para restaurar no app)</span>
               </div>
             </button>
-            <button type="button" id="restoreBackupBtn" class="drawer-action-btn" title="Restaurar backup">
+            <button type="button" id="restoreBackupBtn" class="drawer-action-btn" title="Restaurar cópia de segurança">
               <div class="action-icon bg-primary-soft">
                 <i class="fa-solid fa-upload text-primary" aria-hidden="true"></i>
               </div>
               <div class="action-text">
-                <strong>Restaurar backup</strong>
+                <strong>Restaurar cópia de segurança</strong>
                 <span>Mesclar ou substituir os dados deste aparelho</span>
               </div>
             </button>
             <input type="file" id="restoreBackupFile" accept=".json,application/json" hidden />
             <button type="button" id="openReportModalBtn" class="drawer-action-btn"
-              title="Baixar relatório PDF" aria-haspopup="dialog" aria-controls="reportModal">
+              title="Relatório para ler ou imprimir (PDF)" aria-haspopup="dialog" aria-controls="reportModal">
               <div class="action-icon bg-primary-soft">
                 <i class="fa-solid fa-file-pdf text-primary" aria-hidden="true"></i>
               </div>
               <div class="action-text">
-                <strong>Baixar relatório PDF</strong>
+                <strong>Relatório para ler ou imprimir (PDF)</strong>
                 <span>Gerar um relatório financeiro para impressão</span>
               </div>
             </button>
@@ -405,7 +406,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.51</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.52</span></p>
             <div class="app-update-notice" id="appUpdateNotice" role="status" hidden>
               <span>Nova versão disponível.</span>
               <button type="button" class="btn-secondary" id="appUpdateCheckBtn">Atualizar</button>
@@ -1235,7 +1236,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.51</span>
+          <span class="badge badge-version">v4.52</span>
         </div>
       </footer>
 
@@ -1462,7 +1463,7 @@
         <div class="form-group">
           <label for="creditCardPreviousSpent">Já gasto antes do app (R$)</label>
           <input type="number" id="creditCardPreviousSpent" step="0.01" min="0" max="9999999999.99" />
-          <small class="form-hint">Opcional; fica salvo apenas neste aparelho e não é incluído no backup.</small>
+          <small class="form-hint">Opcional; fica salvo apenas neste aparelho e não é incluído na cópia de segurança.</small>
         </div>
         <div class="form-row-2">
           <div class="form-group">
@@ -1566,7 +1567,7 @@
         <input type="text" id="confirmPhraseInput" autocomplete="off" spellcheck="false" />
       </div>
       <div class="modal-actions confirm-actions">
-        <button type="button" class="btn-secondary" id="confirmBackupBtn" hidden>Baixar backup JSON</button>
+        <button type="button" class="btn-secondary" id="confirmBackupBtn" hidden>Baixar cópia de segurança</button>
       </div>
       <div class="modal-actions confirm-actions">
         <button type="button" class="btn-secondary" id="confirmCancelBtn">Cancelar</button>
@@ -1582,10 +1583,10 @@
         title="Fechar" aria-label="Fechar exclusão da conta">&times;</button>
       <h2 id="deleteAccountTitle">Excluir minha conta</h2>
       <p class="account-delete-warning">
-        Remove definitivamente sua conta de login e todos os dados vinculados. Recomendamos exportar um backup JSON antes de continuar.
+        Remove definitivamente sua conta de login e todos os dados vinculados. Você pode exportar uma cópia de segurança para restaurar no app antes de continuar.
       </p>
       <button type="button" id="downloadBackupBeforeAccountDeletion" class="btn-secondary">
-        <i class="fa-solid fa-download"></i> Baixar backup JSON
+        <i class="fa-solid fa-download"></i> Cópia de segurança (para restaurar no app)
       </button>
       <div class="form-group auth-field">
         <label for="deleteAccountConfirmation">Digite EXCLUIR CONTA para confirmar</label>
@@ -1651,7 +1652,7 @@
     <section class="modal-content report-modal-content" role="dialog" aria-modal="true"
       aria-labelledby="reportModalTitle" aria-describedby="reportModalDescription" tabindex="-1">
       <div class="modal-header">
-        <h3 id="reportModalTitle">Relatório financeiro em PDF</h3>
+        <h3 id="reportModalTitle">Relatório para ler ou imprimir (PDF)</h3>
         <button type="button" class="modal-close-btn" id="closeReportModalBtn" aria-label="Fechar relatório">&times;</button>
       </div>
       <p id="reportModalDescription" class="report-modal-description">
@@ -1882,13 +1883,13 @@
         sincronizadas. Você pode cancelar e entrar novamente na conta anterior, ou descartar permanentemente
         essas alterações deste aparelho e continuar.
       </p>
-      <p>Se quiser guardar uma cópia, exporte o backup JSON antes de descartar.</p>
+      <p>Se quiser guardar uma cópia, exporte a cópia de segurança para restaurar os dados no app; o arquivo não é feito para abrir ou ler.</p>
       <div class="modal-actions discard-pending-actions">
         <button type="button" class="btn-secondary" id="cancelDiscardPendingBtn" data-modal-cancel>
           Cancelar e entrar na mesma conta
         </button>
         <button type="button" class="btn-secondary" id="exportBeforeDiscardBtn">
-          Exportar backup JSON
+          Cópia de segurança (para restaurar no app)
         </button>
         <button type="button" class="btn-danger" id="confirmDiscardPendingBtn">
           Descartar alterações e entrar
@@ -1964,6 +1965,10 @@
       <button type="button" class="btn-secondary" id="downloadCsvTemplateBtn">
         Baixar modelo CSV
       </button>
+      <p class="import-help-note" id="csvTemplateInstructions">
+        No modelo: data em AAAA-MM-DD ou DD/MM/AAAA; valor com vírgula ou ponto decimal.
+        Obrigatórios: data, descricao e valor; as demais colunas são opcionais.
+      </p>
       <p class="import-help-note">
         Empréstimo não entra por CSV: use o formulário de empréstimo.
       </p>

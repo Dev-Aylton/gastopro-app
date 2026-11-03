@@ -269,8 +269,8 @@ function getNextCreditCardDueDate(card, fromDate = new Date()) {
 }
 
 function validateBackupText(text) {
-  if (typeof text !== 'string') return { error: 'O conteúdo do backup deve ser texto.' };
-  if (new Blob([text]).size > 5 * 1024 * 1024) return { error: 'O backup excede o limite de 5 MB.' };
+  if (typeof text !== 'string') return { error: 'O conteúdo da cópia de segurança deve ser texto.' };
+  if (new Blob([text]).size > 5 * 1024 * 1024) return { error: 'A cópia de segurança excede o limite de 5 MB.' };
 
   let parsed;
   try {
@@ -280,7 +280,7 @@ function validateBackupText(text) {
   }
   if (!parsed || typeof parsed !== 'object' ||
     typeof parsed.version !== 'string' || !parsed.version.trim()) {
-    return { error: 'O backup precisa conter uma versão textual.' };
+    return { error: 'A cópia de segurança precisa conter uma versão textual.' };
   }
 
   const recordError = (kind, item, message) => {
@@ -354,7 +354,7 @@ function validateBackupText(text) {
     if (item.id == null || item.id === '') return null;
     const rawId = String(item.id);
     const key = kind === 'goals' ? rawId.replace(/^goal-/, '') : rawId;
-    if (seenIds.has(key)) return recordError(kind, item, 'ID duplicado no backup.');
+    if (seenIds.has(key)) return recordError(kind, item, 'ID duplicado na cópia de segurança.');
     seenIds.add(key);
     return null;
   };
@@ -589,7 +589,7 @@ function validateBackupText(text) {
     }
     goal.category = goal.category.trim();
     if (goalCategories.has(goal.category)) {
-      return { error: recordError('goals', goal, 'categoria duplicada no backup.') };
+      return { error: recordError('goals', goal, 'categoria duplicada na cópia de segurança.') };
     }
     goalCategories.add(goal.category);
     const goalId = String(goal.id || '').replace(/^goal-/, '');
@@ -3597,7 +3597,7 @@ const FinanceData = {
     const goalsSyncResult = await this.flushPendingSync(this.getProfile().userId);
     if (!accountsResult.success || !creditCardsResult.success || !creditCardPurchasesResult.success ||
       !entriesResult.success || !templatesResult.success || !goalsSyncResult.success) {
-      return { success: false, error: 'O backup foi restaurado localmente, mas há alterações pendentes de sincronização.' };
+      return { success: false, error: 'A cópia de segurança foi restaurada localmente, mas há alterações pendentes de sincronização.' };
     }
     return { success: true };
   },

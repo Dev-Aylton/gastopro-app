@@ -6762,7 +6762,7 @@ function showConfirm({
   if (backupBtn && newBackup) {
     backupBtn.parentNode.replaceChild(newBackup, backupBtn);
     newBackup.hidden = !onBackup && !onSecondary;
-    newBackup.textContent = secondaryLabel || 'Baixar backup JSON';
+    newBackup.textContent = secondaryLabel || 'Cópia de segurança (para restaurar no app)';
   }
 
   newOk.textContent = okLabel || 'Confirmar';
@@ -8855,7 +8855,7 @@ document.addEventListener('DOMContentLoaded', () => {
       restoreBackupFile.value = '';
       if (!file) return;
       if (file.size > 5 * 1024 * 1024) {
-        showToast('O backup excede o limite de 5 MB.');
+        showToast('A cópia de segurança excede o limite de 5 MB.');
         return;
       }
 
@@ -8872,25 +8872,27 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        const summary = `Backup com ${preview.entries.length} lançamentos, ${preview.templates.length} gastos fixos e ${preview.goals.length} metas. Escolha como restaurar.`;
+        const summary = `Cópia de segurança com ${preview.entries.length} lançamentos, ${preview.templates.length} gastos fixos e ${preview.goals.length} metas. Escolha como restaurar no app.`;
         const restore = (mode, button) => withSaving(button, async () => {
           try {
             const result = await FinanceData.importJSON(text, mode);
             if (!result.success) {
-              showToast(result.error || 'Não foi possível restaurar o backup.');
+              showToast(result.error || 'Não foi possível restaurar a cópia de segurança.');
               return;
             }
             renderAll();
             renderUserProfile();
-            showToast(mode === 'merge' ? 'Backup mesclado com sucesso.' : 'Backup restaurado; os dados anteriores foram substituídos.');
+            showToast(mode === 'merge'
+              ? 'Cópia de segurança mesclada com sucesso.'
+              : 'Cópia de segurança restaurada; os dados anteriores foram substituídos.');
             document.getElementById('confirmModal').classList.remove('active');
           } catch (error) {
-            console.error('[GastoPro] Falha ao restaurar backup:', error);
-            showToast(error.message || 'Não foi possível restaurar o backup.');
+            console.error('[GastoPro] Falha ao restaurar cópia de segurança:', error);
+            showToast(error.message || 'Não foi possível restaurar a cópia de segurança.');
           }
         });
         showConfirm({
-          title: 'Prévia do backup',
+          title: 'Prévia da cópia de segurança',
           message: summary,
           iconClass: 'fa-solid fa-file-import',
           okLabel: 'Mesclar',
@@ -8901,8 +8903,8 @@ document.addEventListener('DOMContentLoaded', () => {
           onSecondary: button => restore('replace', button)
         });
       } catch (error) {
-        console.error('[GastoPro] Falha ao ler backup:', error);
-        showToast('Não foi possível ler o arquivo de backup.');
+        console.error('[GastoPro] Falha ao ler cópia de segurança:', error);
+        showToast('Não foi possível ler o arquivo de cópia de segurança.');
       }
     });
   }
@@ -8918,10 +8920,11 @@ document.addEventListener('DOMContentLoaded', () => {
         : 'Lançamentos, fixos, contas, cartões, compras, metas e regras serão removidos deste aparelho. Perfil e mensagens serão preservados.',
       iconClass:'fa-solid fa-trash-can',
       okLabel:  'Zerar dados financeiros',
+      secondaryLabel: 'Cópia de segurança (para restaurar no app)',
       confirmationPhrase: 'ZERAR',
       onBackup: () => {
         FinanceData.exportJSON();
-        showToast('Backup JSON exportado.');
+        showToast('Cópia de segurança exportada.');
       },
       onConfirm: button => withProtectedAction(button, async () => {
         const result = await FinanceData.clearAll();
@@ -9400,7 +9403,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (exportBeforeDiscardBtn) {
     exportBeforeDiscardBtn.addEventListener('click', () => {
       FinanceData.exportJSON();
-      showToast('Backup JSON exportado. Guarde-o antes de descartar as alterações.');
+      showToast('Cópia de segurança exportada. Guarde-a antes de descartar as alterações.');
     });
   }
 
@@ -10117,13 +10120,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!syncResult.success) {
         showConfirm({
           title: 'Não foi possível sincronizar',
-          message: 'Seus dados continuam neste aparelho. Baixe um backup JSON antes de tentar sair novamente.',
+          message: 'Seus dados continuam neste aparelho. Baixe uma cópia de segurança para restaurar no app antes de tentar sair novamente.',
           iconClass: 'fa-solid fa-cloud-arrow-up',
-          okLabel: 'Baixar backup JSON',
+          okLabel: 'Cópia de segurança (para restaurar no app)',
           okBtnClass: 'btn-primary',
           onConfirm: () => {
             FinanceData.exportJSON();
-            showToast('Backup JSON exportado. Seus dados continuam salvos neste aparelho.');
+            showToast('Cópia de segurança exportada. Seus dados continuam salvos neste aparelho.');
           }
         });
         return;
@@ -10351,7 +10354,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (downloadBackupBeforeAccountDeletion) {
     downloadBackupBeforeAccountDeletion.addEventListener('click', () => {
       FinanceData.exportJSON();
-      showToast('Backup JSON exportado. Guarde-o antes de excluir a conta.');
+      showToast('Cópia de segurança exportada. Guarde-a antes de excluir a conta.');
     });
   }
 
