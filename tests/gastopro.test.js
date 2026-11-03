@@ -629,6 +629,49 @@ describe('Diagnóstico local temporário', () => {
     assertTrue(diagnostics.clear());
     assertEqual(diagnostics.list(), []);
   });
+
+  itAsync('avisa e registra quando validação nativa impede o envio do formulário', async () => {
+    setupMockLocalStorage();
+    const diagnostics = window.GastoProDiagnostics;
+    diagnostics.clear();
+    const host = document.createElement('div');
+    host.innerHTML = '<div id="toast" role="status"></div>';
+    document.body.appendChild(host);
+    const cases = [
+      { formType: 'income', category: 'submit sem efeito: ganho' },
+      { formType: 'expense', category: 'submit sem efeito: gasto' },
+      { formType: 'expense', loan: true, category: 'submit sem efeito: empréstimo' }
+    ];
+
+    try {
+      for (const testCase of cases) {
+        const form = document.createElement('form');
+        form.innerHTML = `${testCase.loan
+          ? '<select id="expenseType"><option value="loan" selected>Empréstimo</option></select>'
+          : ''}<div hidden><input type="text" required /></div><button type="submit">Enviar</button>`;
+        host.appendChild(form);
+        let submitted = false;
+        form.addEventListener('submit', event => {
+          event.preventDefault();
+          submitted = true;
+        });
+        assertTrue(window.GastoProSubmitFeedback.bindValidation(form, testCase.formType));
+
+        form.querySelector('button').click();
+        await new Promise(resolve => window.setTimeout(resolve, 0));
+
+        assertFalse(submitted, 'A validação nativa deve impedir o submit');
+        assertTrue(host.querySelector('#toast').textContent.includes('Confira os campos obrigatórios.'));
+        const event = diagnostics.list().filter(item => item.type === 'submit-no-effect').pop();
+        assertEqual(event.data.category, testCase.category);
+        assertEqual(Object.keys(event.data), ['category']);
+        form.remove();
+      }
+    } finally {
+      host.remove();
+      diagnostics.clear();
+    }
+  });
 });
 
 describe('FinanceData — Metas por Categoria', () => {
@@ -8232,9 +8275,13 @@ describe('GastoProImporter — parsing e limites', () => {
   it('gera um modelo fictício com cabeçalho fixo aceito pelo importador', () => {
     const template = GastoProImporter.createCSVTemplate();
     assertEqual(
-      template.split('\n')[0],
+      template.split('\r\n')[0].slice(1),
       'data;descricao;valor;categoria;tipo;mes_inicio;mes_fim;dia_vencimento;ativo'
     );
+    assertEqual(template.charCodeAt(0), 0xFEFF);
+    assertEqual([...new TextEncoder().encode(template).slice(0, 3)], [0xEF, 0xBB, 0xBF]);
+    assertTrue(template.includes('\r\n'));
+    assertFalse(template.replace(/\r\n/g, '').includes('\n'));
     assertTrue(template.includes('EXEMPLO FICTÍCIO'));
     assertTrue(template.includes('# Instruções: data em AAAA-MM-DD ou DD/MM/AAAA; valor com vírgula ou ponto decimal.'));
     assertTrue(template.includes('# Obrigatório: data, descricao e valor.'));
@@ -11934,7 +11981,7 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       'removeProfilePhotoBtn', 'drawerPrivacyLink', 'accountGuestCard', 'accountLoggedCard',
       'openAuthModalBtn', 'logoutBtn', 'refreshAppBtn', 'refreshIcon', 'drawerRefreshBtn',
       'drawerRefreshIcon', 'exportBtn', 'restoreBackupBtn', 'restoreBackupFile',
-      'openReportModalBtn', 'reopenOnboardingBtn', 'howToUseTopics', 'irreversibleActions',
+      'openReportModalBtn', 'reopenOnboardingBtn', 'userTutorials', 'howToUseTopics', 'irreversibleActions',
       'clearDataBtn', 'deleteAllMyDataBtn', 'deleteAccountAction', 'deleteAccountBtn'
     ];
     const allIds = [...appDocument.querySelectorAll('[id]')].map(element => element.id);
@@ -11976,11 +12023,78 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       assertTrue(row?.contains(text), `${buttonId}: descrição permanece junto ao botão`);
       assertEqual(text?.textContent.trim(), description, `${buttonId}: descrição original`);
     });
+
     assertEqual(
       descriptions.filter(([buttonId]) => !appDocument.getElementById(buttonId)).length,
       0,
       'IDs das três ações preservados'
     );
+  });
+
+  itAsync('mantém os tutoriais recolhidos em um botão acessível sem remover conteúdo', async () => {
+    const [htmlResponse, cssResponse] = await Promise.all([
+      fetch('../index.html'),
+      fetch('../css/style.css')
+    ]);
+    assertTrue(htmlResponse.ok && cssResponse.ok, 'Não foi possível carregar os arquivos do app.');
+    const appDocument = new DOMParser().parseFromString(await htmlResponse.text(), 'text/html');
+    const details = appDocument.getElementById('userTutorials');
+    const summary = details?.querySelector('summary');
+    const topics = appDocument.getElementById('howToUseTopics');
+
+    assertTrue(details && summary && topics, 'Painel de tutoriais preservado');
+    assertFalse(details.open, 'Tutoriais começam recolhidos');
+    assertEqual(summary.getAttribute('aria-expanded'), 'false');
+    assertTrue(summary.textContent.includes('Tutoriais'));
+    assertTrue(details.contains(topics));
+    assertTrue(summary.querySelector('svg.irreversible-actions-chevron'));
+    const css = await cssResponse.text();
+    const tutorialRules = css.match(/\.how-to-use-section[^{}]*\{[^}]*\}/g) || [];
+    assertTrue(tutorialRules.length > 0, 'Estilos específicos de tutoriais presentes');
+    assertFalse(tutorialRules.some(rule => rule.includes('!important')));
+
+    const host = document.createElement('div');
+    host.appendChild(details.cloneNode(true));
+    document.body.appendChild(host);
+    try {
+      const target = host.querySelector('summary');
+      assertTrue(parseFloat(getComputedStyle(target).minHeight) >= 44);
+    } finally {
+      host.remove();
+    }
+  });
+
+  itAsync('sincroniza aria-expanded ao abrir e recolher os tutoriais', async () => {
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <details class="how-to-use-section">
+        <summary class="irreversible-actions-summary" aria-expanded="false">
+          <span class="action-text"><strong>Tutoriais</strong></span>
+          <svg class="irreversible-actions-chevron" aria-hidden="true"></svg>
+        </summary>
+        <div class="how-to-use-topics"><details class="how-to-use-topic"><summary>Ajuda</summary></details></div>
+      </details>`;
+    document.body.appendChild(host);
+    const details = host.querySelector('details');
+    const summary = details.querySelector('summary');
+
+    try {
+      assertTrue(bindDetailsExpandedState(details));
+      let toggled = new Promise(resolve => details.addEventListener('toggle', resolve, { once: true }));
+      summary.click();
+      await toggled;
+      assertTrue(details.open);
+      assertEqual(summary.getAttribute('aria-expanded'), 'true');
+
+      toggled = new Promise(resolve => details.addEventListener('toggle', resolve, { once: true }));
+      summary.click();
+      await toggled;
+      assertFalse(details.open);
+      assertEqual(summary.getAttribute('aria-expanded'), 'false');
+      assertTrue(details.querySelector('.how-to-use-topic'));
+    } finally {
+      host.remove();
+    }
   });
 
   itAsync('mostra seta e resumo das ações na zona de perigo, recolhida inicialmente', async () => {

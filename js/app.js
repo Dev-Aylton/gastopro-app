@@ -454,7 +454,7 @@ const DIAGNOSTIC_LOG_LIMIT = 100;
 const DIAGNOSTIC_EVENT_TYPES = new Set([
   'auth-state', 'view-switch', 'page-load', 'pageshow', 'visibilitychange',
   'focus', 'online', 'offline', 'sync', 'refresh', 'controllerchange', 'admin-check',
-  'admin-query-error', 'app-update-notice', 'pending-sync-failure'
+  'admin-query-error', 'app-update-notice', 'pending-sync-failure', 'submit-no-effect'
 ]);
 const DIAGNOSTIC_VIEW_IDS = new Set(Object.keys(VIEW_TITLES));
 const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
@@ -472,7 +472,8 @@ const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
   'admin-check': ['phase', 'result', 'buttonVisibleBefore', 'buttonVisibleAfter'],
   'admin-query-error': ['query', 'code', 'message'],
   'app-update-notice': [],
-  'pending-sync-failure': ['category', 'operationType', 'errorCode']
+  'pending-sync-failure': ['category', 'operationType', 'errorCode'],
+  'submit-no-effect': ['category']
 });
 
 function getLocalDiagnosticTime(date = new Date()) {
@@ -520,7 +521,8 @@ function normalizeDiagnosticData(type, data) {
       normalized[key] = value;
     } else if (key === 'category' &&
       ['entries', 'templates', 'goals', 'accounts', 'creditCards', 'creditCardPurchases',
-        'profile', 'rules', 'transactional', 'reconciliation', 'session', 'unknown'].includes(value)) {
+        'profile', 'rules', 'transactional', 'reconciliation', 'session', 'unknown',
+        'submit sem efeito: ganho', 'submit sem efeito: gasto', 'submit sem efeito: empréstimo'].includes(value)) {
       normalized[key] = value;
     } else if (key === 'operationType' &&
       ['import', 'deleteAccount', 'unknown'].includes(value)) {
@@ -593,6 +595,53 @@ window.GastoProDiagnostics = {
     return `${entry.time} | ${entry.type} | tela: ${entry.view} | ${JSON.stringify(entry.data)}`;
   }
 };
+
+const SUBMIT_DIAGNOSTIC_CATEGORIES = Object.freeze({
+  income: 'submit sem efeito: ganho',
+  expense: 'submit sem efeito: gasto',
+  loan: 'submit sem efeito: empréstimo'
+});
+
+function reportSubmitNoEffect(formType, message) {
+  const category = SUBMIT_DIAGNOSTIC_CATEGORIES[formType];
+  if (!category) throw new TypeError('Formulário de lançamento inválido.');
+  window.GastoProDiagnostics.record('submit-no-effect', { category });
+  showToast(message);
+}
+
+function bindSubmitValidationFeedback(form, formType) {
+  if (!form || !SUBMIT_DIAGNOSTIC_CATEGORIES[formType]) return false;
+  if (form.dataset.submitValidationFeedbackBound === 'true') return true;
+
+  let noticeScheduled = false;
+  form.addEventListener('invalid', () => {
+    if (noticeScheduled) return;
+    noticeScheduled = true;
+    window.setTimeout(() => {
+      noticeScheduled = false;
+      const actualFormType = formType === 'expense' &&
+        form.querySelector('#expenseType')?.value === 'loan'
+        ? 'loan'
+        : formType;
+      const label = actualFormType === 'income'
+        ? 'o ganho'
+        : actualFormType === 'loan'
+          ? 'o empréstimo'
+          : 'o gasto';
+      reportSubmitNoEffect(
+        actualFormType,
+        `Não foi possível enviar ${label}. Confira os campos obrigatórios.`
+      );
+    }, 0);
+  }, true);
+  form.dataset.submitValidationFeedbackBound = 'true';
+  return true;
+}
+
+window.GastoProSubmitFeedback = Object.freeze({
+  report: reportSubmitNoEffect,
+  bindValidation: bindSubmitValidationFeedback
+});
 
 function renderDiagnosticLog() {
   const list = document.getElementById('diagnosticLogList');
@@ -6618,6 +6667,14 @@ document.addEventListener('DOMContentLoaded', () => {
     updateBackToTopVisibility();
   }
   setupEntryComposer();
+  window.GastoProSubmitFeedback.bindValidation(
+    document.getElementById('incomeForm'),
+    'income'
+  );
+  window.GastoProSubmitFeedback.bindValidation(
+    document.getElementById('expenseForm'),
+    'expense'
+  );
   document.addEventListener('gastopro:themechange', () => {
     if (document.getElementById('categoryChart')) renderAll();
   });
@@ -6917,6 +6974,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Navegação e ações delegadas ───────────────────────────────
   const irreversibleActions = document.getElementById('irreversibleActions');
   if (irreversibleActions) bindDetailsExpandedState(irreversibleActions);
+  const userTutorials = document.getElementById('userTutorials');
+  if (userTutorials) bindDetailsExpandedState(userTutorials);
 
   document.addEventListener('click', (e) => {
     if (!(e.target instanceof Element)) return;
@@ -7611,9 +7670,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const itemMonth = dateVal ? dateVal.substring(0, 7) : getYearMonthString(state.currentYear, state.currentMonth);
 
     const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
-    await withNewEntryAccount(
-      document.getElementById('incomeAccount').value || null,
-      accountId => withSaving(saveButton, async () => {
+    let saveResult;
+    try {
+      saveResult = await withNewEntryAccount(
+        document.getElementById('incomeAccount').value || null,
+        accountId => withSaving(saveButton, async () => {
       try {
         const savedItem = FinanceData.add({
           month: itemMonth,
@@ -7642,7 +7703,18 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Erro ao adicionar ganho:', err);
         alert('Ocorreu um erro ao salvar o ganho: ' + err.message);
       }
-    }));
+        })
+      );
+    } catch (error) {
+      console.error('Erro ao preparar o salvamento do ganho:', error);
+      reportSubmitNoEffect('income', 'Não foi possível iniciar o salvamento do ganho. Tente novamente.');
+      return;
+    }
+    if (saveResult === null) {
+      reportSubmitNoEffect('income', 'Ganho não salvo: a conta de destino não foi confirmada.');
+    } else if (saveResult === false) {
+      reportSubmitNoEffect('income', 'Outro salvamento está em andamento. Aguarde e tente novamente.');
+    }
   });
 
   // ── 6. Formulário de Novo Gasto ────────────────────────────────
@@ -7838,11 +7910,20 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       loanError.hidden = true;
       if (!FinanceData.getAccounts().length) {
-        accountId = await requestFirstEntryAccount();
-        if (!accountId) return;
+        try {
+          accountId = await requestFirstEntryAccount();
+        } catch (error) {
+          console.error('Erro ao preparar a conta do empréstimo:', error);
+          reportSubmitNoEffect('loan', 'Não foi possível confirmar a conta do empréstimo. Tente novamente.');
+          return;
+        }
+        if (!accountId) {
+          reportSubmitNoEffect('loan', 'Empréstimo não salvo: a conta de destino não foi confirmada.');
+          return;
+        }
       }
       const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
-      await withSaving(saveButton, async () => {
+      const saveResult = await withSaving(saveButton, async () => {
         try {
           const savedLoan = FinanceData.add({
             type: 'loan',
@@ -7872,6 +7953,9 @@ document.addEventListener('DOMContentLoaded', () => {
           loanError.hidden = false;
         }
       });
+      if (saveResult === false) {
+        reportSubmitNoEffect('loan', 'Outro salvamento está em andamento. Aguarde e tente novamente.');
+      }
       return;
     }
     if (isNaN(amount) || amount <= 0) {
@@ -7897,7 +7981,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedAccountId = paymentMethod === 'credit_card'
       ? document.getElementById('expenseCreditAccount').value || null
       : document.getElementById('expenseAccount').value || null;
-    await withNewEntryAccount(selectedAccountId, accountId => withSaving(saveButton, async () => {
+    let saveResult;
+    try {
+      saveResult = await withNewEntryAccount(selectedAccountId, accountId => withSaving(saveButton, async () => {
       try {
         if (paymentMethod === 'credit_card') {
           const cardId = document.getElementById('expenseCreditCard').value;
@@ -7969,7 +8055,17 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Erro ao adicionar gasto:', err);
         alert('Ocorreu um erro ao salvar o gasto: ' + err.message);
       }
-    }));
+      }));
+    } catch (error) {
+      console.error('Erro ao preparar o salvamento do gasto:', error);
+      reportSubmitNoEffect('expense', 'Não foi possível iniciar o salvamento do gasto. Tente novamente.');
+      return;
+    }
+    if (saveResult === null) {
+      reportSubmitNoEffect('expense', 'Gasto não salvo: a conta de destino não foi confirmada.');
+    } else if (saveResult === false) {
+      reportSubmitNoEffect('expense', 'Outro salvamento está em andamento. Aguarde e tente novamente.');
+    }
   });
 
   // ── 7. Filtros de Gastos ──────────────────────────────────────

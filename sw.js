@@ -5,7 +5,7 @@
 
 importScripts('./js/cache-assets.js');
 
-const CACHE_NAME = 'gastopro-v4.48';
+const CACHE_NAME = 'gastopro-v4.49';
 const ESSENTIAL_ASSETS = self.GastoProCacheAssets.essential;
 const OPTIONAL_ASSETS = self.GastoProCacheAssets.optional;
 const LOCAL_ASSETS = [...ESSENTIAL_ASSETS, ...OPTIONAL_ASSETS];

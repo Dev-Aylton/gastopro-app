@@ -5690,6 +5690,15 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   gap: 0.55rem;
 }
 
+.how-to-use-section > .irreversible-actions-summary .action-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.how-to-use-section[open] > .irreversible-actions-summary > .irreversible-actions-chevron {
+  transform: rotate(180deg);
+}
+
 .how-to-use-topics {
   display: flex;
   flex-direction: column;

@@ -1079,7 +1079,7 @@ const GastoProImporter = (() => {
   }
 
   function createCSVTemplate() {
-    return [
+    return '\uFEFF' + [
       'data;descricao;valor;categoria;tipo;mes_inicio;mes_fim;dia_vencimento;ativo',
       '2026-01-10;EXEMPLO FICTÍCIO - recebimento;1000,00;Renda;income;;;;sim',
       '2026-01-12;EXEMPLO FICTÍCIO - despesa;25,50;Outros;variable;;;;sim',
@@ -1087,7 +1087,7 @@ const GastoProImporter = (() => {
       '# Instruções: data em AAAA-MM-DD ou DD/MM/AAAA; valor com vírgula ou ponto decimal.',
       '# Obrigatório: data, descricao e valor. As demais colunas são opcionais.',
       ''
-    ].join('\n');
+    ].join('\r\n');
   }
 
   // ================================================================
