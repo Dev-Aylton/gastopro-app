@@ -645,7 +645,7 @@ describe('Diagnóstico local temporário', () => {
     try {
       for (const testCase of cases) {
         const form = document.createElement('form');
-        form.innerHTML = '<div hidden><input type="text" required /></div><button type="submit">Enviar</button>';
+        form.innerHTML = '<div hidden><input id="hiddenRequired" type="text" required /></div><button type="submit">Enviar</button>';
         host.appendChild(form);
         let submitted = false;
         form.addEventListener('submit', event => {
@@ -658,10 +658,12 @@ describe('Diagnóstico local temporário', () => {
         await new Promise(resolve => window.setTimeout(resolve, 0));
 
         assertFalse(submitted, 'A validação nativa deve impedir o submit');
-        assertTrue(host.querySelector('#toast').textContent.includes('Confira os campos obrigatórios.'));
+        assertEqual(host.querySelector('#toast').textContent.trim(),
+          'Não foi possível enviar: há um campo obrigatório oculto.');
         const event = diagnostics.list().filter(item => item.type === 'submit-no-effect').pop();
         assertEqual(event.data.category, testCase.category);
-        assertEqual(Object.keys(event.data), ['category']);
+        assertEqual(event.data.fieldId, 'hiddenRequired');
+        assertEqual(Object.keys(event.data).sort(), ['category', 'fieldId']);
         form.remove();
       }
     } finally {
@@ -12637,6 +12639,85 @@ describe('Cartões de lançamentos e notificações responsivos', () => {
 // ================================================================
 // RELATÓRIO FINAL
 describe('Home unificada e formas de pagamento', () => {
+  async function makeExpenseSubmitFixture(paymentMethod) {
+    setupMockLocalStorage();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const account = await FinanceData.addAccount({
+      name: 'Conta do formulário', type: 'PF', initialBalance: 100, balanceDate: today
+    });
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <form id="expenseForm">
+        <label for="expenseDesc">Descrição do Gasto</label>
+        <input id="expenseDesc" required />
+        <label for="expenseAmount">Valor (R$)</label>
+        <input id="expenseAmount" type="number" min="0" step="0.01" required />
+        <label for="expenseType">Tipo de Gasto</label>
+        <select id="expenseType" required><option value="variable">Variável</option></select>
+        <label for="expenseCategory">Categoria</label>
+        <select id="expenseCategory" required><option value="Mercado">Mercado</option></select>
+        <label for="expenseDate">Data do Gasto</label>
+        <input id="expenseDate" type="date" required />
+        <label for="expensePaymentMethod">Forma de pagamento</label>
+        <select id="expensePaymentMethod"><option value="${paymentMethod}">${paymentMethod}</option></select>
+        <div id="expenseAccountGroup">
+          <label for="expenseAccount">Conta</label>
+          <select id="expenseAccount" class="account-select"><option value="">Selecione</option></select>
+        </div>
+        <div id="expenseCreditFields" hidden>
+          <label for="expenseCreditCard">Cartão de crédito</label>
+          <select id="expenseCreditCard"></select>
+          <select id="expenseInstallments"></select>
+          <label for="expenseCreditAccount">Conta de destino</label>
+          <select id="expenseCreditAccount" class="account-select"><option value="">Selecione</option></select>
+        </div>
+        <button type="submit">Inserir Gasto</button>
+      </form>
+      <div id="toast" role="status"></div>
+    `;
+    document.body.appendChild(host);
+    const form = host.querySelector('#expenseForm');
+    let savedItem = null;
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      const date = form.querySelector('#expenseDate').value;
+      const selectedAccount = paymentMethod === 'credit_card'
+        ? form.querySelector('#expenseCreditAccount').value
+        : form.querySelector('#expenseAccount').value;
+      savedItem = FinanceData.add({
+        type: 'variable',
+        desc: form.querySelector('#expenseDesc').value,
+        amount: Number(form.querySelector('#expenseAmount').value),
+        category: form.querySelector('#expenseCategory').value,
+        date,
+        month: date.slice(0, 7),
+        accountId: selectedAccount,
+        paymentMethod,
+        paid: window.GastoProPaymentHelpers.isPaidByPaymentMethod(paymentMethod, date, today)
+      });
+    });
+    window.GastoProDiagnostics.clear();
+    window.GastoProSubmitFeedback.bindValidation(form, 'expense');
+    window.GastoProPaymentHelpers.updateAccountSelects();
+    form.querySelector('#expenseAccount').value = account.account.id;
+    form.querySelector('#expenseCreditAccount').value = account.account.id;
+    window.GastoProPaymentHelpers.updateCreditCardPurchaseFields();
+    form.querySelector('#expenseDesc').value = 'Compra de mercado';
+    form.querySelector('#expenseAmount').value = '10';
+    form.querySelector('#expenseDate').value = today;
+    return {
+      host,
+      account: account.account,
+      form,
+      getSavedItem: () => savedItem,
+      cleanup() {
+        host.remove();
+        window.GastoProDiagnostics.clear();
+      }
+    };
+  }
+
   itAsync('usa uma lista central de pagamento e preserva pago, pendente e crédito', async () => {
     setupMockLocalStorage();
     const helpers = window.GastoProPaymentHelpers;
@@ -12689,6 +12770,44 @@ describe('Home unificada e formas de pagamento', () => {
       assertFalse(fixture.querySelector('#expenseAccountGroup').hidden);
     } finally {
       fixture.remove();
+    }
+  });
+
+  itAsync('salva gasto no débito sem bloquear pelo campo de crédito oculto', async () => {
+    const fixture = await makeExpenseSubmitFixture('debit');
+    try {
+      const creditAccount = fixture.form.querySelector('#expenseCreditAccount');
+      assertTrue(fixture.host.querySelector('#expenseCreditFields').hidden);
+      assertFalse(creditAccount.required);
+      assertEqual(creditAccount.value, '');
+      assertTrue(fixture.form.querySelector('#expenseAccount').required);
+
+      fixture.form.querySelector('button[type="submit"]').click();
+      await new Promise(resolve => window.setTimeout(resolve, 0));
+
+      assertNotNull(fixture.getSavedItem());
+      assertEqual(FinanceData.getEntries().length, 1);
+      assertEqual(FinanceData.getEntries()[0].paymentMethod, 'debit');
+      assertEqual(FinanceData.getEntries()[0].accountId, fixture.account.id);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('recusa gasto no crédito sem cartão e informa o campo inválido', async () => {
+    const fixture = await makeExpenseSubmitFixture('credit_card');
+    try {
+      assertFalse(fixture.host.querySelector('#expenseCreditFields').hidden);
+      assertTrue(fixture.form.querySelector('#expenseCreditCard').required);
+
+      fixture.form.querySelector('button[type="submit"]').click();
+      await new Promise(resolve => window.setTimeout(resolve, 0));
+
+      assertEqual(fixture.getSavedItem(), null);
+      assertEqual(FinanceData.getEntries(), []);
+      assertTrue(fixture.host.querySelector('#toast').textContent.includes('Cartão de crédito'));
+    } finally {
+      fixture.cleanup();
     }
   });
 

@@ -474,7 +474,7 @@ const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
   'admin-query-error': ['query', 'code', 'message'],
   'app-update-notice': [],
   'pending-sync-failure': ['category', 'operationType', 'errorCode'],
-  'submit-no-effect': ['category']
+  'submit-no-effect': ['category', 'fieldId']
 });
 
 function getLocalDiagnosticTime(date = new Date()) {
@@ -524,6 +524,9 @@ function normalizeDiagnosticData(type, data) {
       ['entries', 'templates', 'goals', 'accounts', 'creditCards', 'creditCardPurchases',
         'profile', 'rules', 'transactional', 'reconciliation', 'session', 'unknown',
         'submit sem efeito: ganho', 'submit sem efeito: gasto', 'submit sem efeito: empréstimo'].includes(value)) {
+      normalized[key] = value;
+    } else if (key === 'fieldId' &&
+      typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(value)) {
       normalized[key] = value;
     } else if (key === 'operationType' &&
       ['import', 'deleteAccount', 'unknown'].includes(value)) {
@@ -603,10 +606,11 @@ const SUBMIT_DIAGNOSTIC_CATEGORIES = Object.freeze({
   loan: 'submit sem efeito: empréstimo'
 });
 
-function reportSubmitNoEffect(formType, message) {
+function reportSubmitNoEffect(formType, message, fieldId = null) {
   const category = SUBMIT_DIAGNOSTIC_CATEGORIES[formType];
   if (!category) throw new TypeError('Formulário de lançamento inválido.');
-  window.GastoProDiagnostics.record('submit-no-effect', { category });
+  const data = fieldId ? { category, fieldId } : { category };
+  window.GastoProDiagnostics.record('submit-no-effect', data);
   showToast(message);
 }
 
@@ -615,20 +619,37 @@ function bindSubmitValidationFeedback(form, formType) {
   if (form.dataset.submitValidationFeedbackBound === 'true') return true;
 
   let noticeScheduled = false;
-  form.addEventListener('invalid', () => {
+  let invalidField = null;
+  form.addEventListener('invalid', event => {
     if (noticeScheduled) return;
     noticeScheduled = true;
+    invalidField = event.target;
     window.setTimeout(() => {
       noticeScheduled = false;
-      const actualFormType = formType;
-      const label = actualFormType === 'income'
+      const field = invalidField;
+      invalidField = null;
+      if (!field) return;
+      const hidden = field.hidden || Boolean(field.closest('[hidden]')) ||
+        window.getComputedStyle(field).display === 'none' || field.getClientRects().length === 0;
+      if (hidden) {
+        reportSubmitNoEffect(
+          formType,
+          'Não foi possível enviar: há um campo obrigatório oculto.',
+          field.id || null
+        );
+        return;
+      }
+      const label = Array.from(field.labels || [])
+        .map(item => item.textContent.trim())
+        .find(Boolean) || field.getAttribute('aria-label') || field.id || 'campo obrigatório';
+      const formLabel = formType === 'income'
         ? 'o ganho'
-        : actualFormType === 'loan'
+        : formType === 'loan'
           ? 'o empréstimo'
           : 'o gasto';
       reportSubmitNoEffect(
-        actualFormType,
-        `Não foi possível enviar ${label}. Confira os campos obrigatórios.`
+        formType,
+        `Não foi possível enviar ${formLabel}. Campo inválido: ${label}.`
       );
     }, 0);
   }, true);
@@ -837,7 +858,9 @@ window.GastoProPaymentHelpers = {
   getOptions: kind => (PAYMENT_METHOD_OPTIONS[kind] || []).map(option => option.value),
   populateSelect: populatePaymentMethodSelect,
   getPreference: getPaymentMethodPreference,
-  savePreference: savePaymentMethodPreference
+  savePreference: savePaymentMethodPreference,
+  updateCreditCardPurchaseFields,
+  updateAccountSelects
 };
 
 function getConsentStorageKey(userId = getConsentUserId()) {
@@ -3580,6 +3603,17 @@ function updateCreditCardPurchaseFields() {
   creditFields.hidden = !useCredit;
   accountGroup.hidden = useCredit;
   cardSelect.required = useCredit;
+  const accountSelect = document.getElementById('expenseAccount');
+  const creditAccountSelect = document.getElementById('expenseCreditAccount');
+  const hasAccounts = FinanceData.getAccounts().length > 0;
+  if (accountSelect) accountSelect.required = hasAccounts && !useCredit;
+  if (creditAccountSelect) {
+    creditAccountSelect.required = hasAccounts && useCredit;
+    if (!useCredit) {
+      creditAccountSelect.value = '';
+      creditAccountSelect.setCustomValidity('');
+    }
+  }
   const hint = document.getElementById('expenseCreditCardHint');
   if (hint) {
     hint.textContent = cards.length
@@ -3601,7 +3635,19 @@ function updateAccountSelects() {
       `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
     ).join('');
     select.value = accounts.some(account => account.id === selectedId) ? selectedId : '';
-    select.required = accounts.length > 0;
+    const creditFields = document.getElementById('expenseCreditFields');
+    const isCreditPurchase = Boolean(creditFields && !creditFields.hidden);
+    if (select.id === 'expenseAccount') {
+      select.required = accounts.length > 0 && !isCreditPurchase;
+    } else if (select.id === 'expenseCreditAccount') {
+      select.required = accounts.length > 0 && isCreditPurchase;
+      if (!isCreditPurchase) {
+        select.value = '';
+        select.setCustomValidity('');
+      }
+    } else {
+      select.required = accounts.length > 0;
+    }
   });
   const adjustSelect = document.getElementById('adjustAccountId');
   if (adjustSelect) {
@@ -8247,8 +8293,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const dueDayInput = document.getElementById('expenseDueDay');
     if (dueDayWrapper) dueDayWrapper.hidden = !requiresDueDay;
     if (dueDayInput) dueDayInput.required = requiresDueDay;
-    const accountSelect = document.getElementById('expenseAccount');
-    if (accountSelect) accountSelect.required = FinanceData.getAccounts().length > 0;
   }
   if (expenseTypeSelect) expenseTypeSelect.addEventListener('change', checkDebtVisibility);
   if (expenseCatSelect) expenseCatSelect.addEventListener('change', checkDebtVisibility);
@@ -8802,7 +8846,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const dueDayGroup = document.getElementById('editDueDayGroup');
       const dueDayInput = document.getElementById('editDueDay');
       if (dueDayGroup) dueDayGroup.hidden = val === 'income';
-      if (dueDayInput) dueDayInput.required = isFixed || dueDayInput.dataset.dueRequired === 'true';
+      if (dueDayInput) {
+        dueDayInput.required = val !== 'income' &&
+          (isFixed || dueDayInput.dataset.dueRequired === 'true');
+      }
     });
   }
 
