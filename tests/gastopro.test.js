@@ -8291,15 +8291,19 @@ describe('Prioridade do login Google', () => {
       const [red, green, blue] = color.match(/\d+/g).map(Number);
       return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
     };
+    const backgrounds = [];
     try {
       for (const theme of ['dark', 'light']) {
         if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
         else document.documentElement.removeAttribute('data-theme');
         wrapper.setAttribute('data-theme', theme);
+        assertEqual(document.documentElement.getAttribute('data-theme'),
+          theme === 'light' ? 'light' : null);
         const style = getComputedStyle(button);
         assertEqual(style.backgroundColor, theme === 'light'
           ? 'rgb(67, 56, 202)'
           : 'rgb(79, 70, 229)');
+        backgrounds.push(style.backgroundColor);
         const foreground = luminance(style.color);
         const background = luminance(style.backgroundColor);
         const contrast = (Math.max(foreground, background) + 0.05) /
@@ -8308,6 +8312,8 @@ describe('Prioridade do login Google', () => {
         assertEqual(style.width, '320px');
         assertTrue(contrast >= 4.5, `${theme}: contraste ${contrast.toFixed(2)}:1`);
       }
+      assertTrue(backgrounds[0] !== backgrounds[1],
+        'as cores renderizadas do botão devem mudar entre os temas');
     } finally {
       if (originalTheme === null) document.documentElement.removeAttribute('data-theme');
       else document.documentElement.setAttribute('data-theme', originalTheme);
@@ -13827,6 +13833,89 @@ describe('Empréstimos — resumo, conflitos e formulário', () => {
       assertEqual(saved.paidMonths, {});
       assertEqual(FinanceData.getEntries(), []);
       assertEqual(saved.day, '15');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('aceita total de 1000,00 em três parcelas de 333,33 pelo formulário', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      fillLoanForm(fixture, {
+        loanReceivedAmount: '100',
+        loanTotalPayable: '1000.00',
+        loanInstallmentCount: '3',
+        loanInstallmentAmount: '333.33',
+        loanFirstMonth: '2026-11'
+      });
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => FinanceData.getTemplates().length === 1 &&
+        !fixture.host.querySelector('#loanSubmitBtn').disabled);
+      const saved = FinanceData.getTemplates()[0];
+      assertEqual(saved.loanTotalPayable, 1000);
+      assertEqual(saved.loanInstallmentCount, 3);
+      assertEqual(saved.amount, 333.33);
+      assertEqual(saved.endMonth, '2027-01');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('bloqueia pelo formulário parcela de 333,00 para total de 1000,00 em três vezes', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      fillLoanForm(fixture, {
+        loanTotalPayable: '1000.00',
+        loanInstallmentCount: '3',
+        loanInstallmentAmount: '333.00'
+      });
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => !fixture.host.querySelector('#loanFormError').hidden);
+      assertEqual(fixture.host.querySelector('#loanFormError').textContent,
+        'Informe valores válidos; a diferença entre o total e as parcelas não pode exceder R$ 0,01 por parcela.');
+      assertEqual(FinanceData.getTemplates(), []);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('calcula o mês final a partir do mês inicial e do número de parcelas', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      fillLoanForm(fixture, {
+        loanFirstMonth: '2026-11',
+        loanInstallmentCount: '3',
+        loanInstallmentAmount: '40.00'
+      });
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => FinanceData.getTemplates().length === 1 &&
+        !fixture.host.querySelector('#loanSubmitBtn').disabled);
+      assertEqual(FinanceData.getTemplates()[0].endMonth, '2027-01');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('impede o clique de envio sem dia de vencimento obrigatório', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      fillLoanForm(fixture, { loanDueDay: '' });
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      assertFalse(fixture.host.querySelector('#loanDueDay').checkValidity());
+      assertEqual(FinanceData.getTemplates(), []);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('persiste empréstimo com isDebt true pelo clique real', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      fillLoanForm(fixture);
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => FinanceData.getTemplates().length === 1 &&
+        !fixture.host.querySelector('#loanSubmitBtn').disabled);
+      assertTrue(FinanceData.getTemplates()[0].isDebt);
     } finally {
       fixture.cleanup();
     }
