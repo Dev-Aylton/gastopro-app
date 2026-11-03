@@ -86,6 +86,10 @@
               <span>Gastos do Mês</span>
               <span class="nav-badge" id="sidebarExpenseCount"></span>
             </button>
+            <button class="nav-item" data-view="loans" id="navLoans">
+              <i class="fa-solid fa-hand-holding-dollar"></i>
+              <span>Empréstimos</span>
+            </button>
           </section>
 
           <section class="sidebar-group" aria-labelledby="sidebarMoreTitle">
@@ -401,7 +405,7 @@
 
           <section class="drawer-section drawer-about-section">
             <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.50</span></p>
+            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.51</span></p>
             <div class="app-update-notice" id="appUpdateNotice" role="status" hidden>
               <span>Nova versão disponível.</span>
               <button type="button" class="btn-secondary" id="appUpdateCheckBtn">Atualizar</button>
@@ -925,40 +929,8 @@
                 <label for="expenseType">Tipo de Gasto</label>
                 <select id="expenseType" required>
                   <option value="fixed">🔒 Gasto Fixo Contínuo</option>
-                  <option value="loan">💳 Empréstimo</option>
                   <option value="variable">🛒 Variável / Dia a dia</option>
                 </select>
-              </div>
-
-              <div id="expenseLoanFields" class="loan-fields" hidden>
-                <p class="form-hint loan-fields-intro">
-                  O valor recebido entra no saldo da conta, mas não é renda. As parcelas ficam pendentes até você marcá-las como pagas.
-                </p>
-                <div>
-                  <label for="expenseLoanReceivedAmount">Valor recebido (R$)</label>
-                  <input type="number" id="expenseLoanReceivedAmount" min="0" max="9999999999.99" step="0.01" inputmode="decimal" required />
-                </div>
-                <div>
-                  <label for="expenseLoanReceivedDate">Data do recebimento</label>
-                  <input type="date" id="expenseLoanReceivedDate" required />
-                </div>
-                <div>
-                  <label for="expenseLoanTotalPayable">Total a pagar (R$)</label>
-                  <input type="number" id="expenseLoanTotalPayable" min="0" max="9999999999.99" step="0.01" inputmode="decimal" required />
-                </div>
-                <div>
-                  <label for="expenseLoanInstallmentCount">Número de parcelas</label>
-                  <input type="number" id="expenseLoanInstallmentCount" min="1" max="480" step="1" inputmode="numeric" required />
-                </div>
-                <div>
-                  <label for="expenseLoanInstallmentAmount">Valor da parcela (R$)</label>
-                  <input type="number" id="expenseLoanInstallmentAmount" min="0" max="9999999999.99" step="0.01" inputmode="decimal" readonly required />
-                </div>
-                <div>
-                  <label for="expenseLoanFirstMonth">Mês da primeira parcela</label>
-                  <input type="month" id="expenseLoanFirstMonth" required />
-                </div>
-                <p id="expenseLoanError" class="form-error" role="alert" hidden></p>
               </div>
 
               <div id="expenseEndMonthWrapper" style="display: none;">
@@ -1036,6 +1008,103 @@
             </div>
           </div>
 
+        </section>
+
+        <section class="view-section" id="view-loans">
+          <div class="view-header-card">
+            <div class="view-header-info">
+              <div class="view-icon-badge"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+              <div>
+                <h2>Empréstimos</h2>
+                <p>O valor recebido entra no saldo da conta, não como renda; as parcelas ficam como gastos a pagar.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-box loan-form-panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-green-soft"><i class="fa-solid fa-plus"></i></div>
+                <div>
+                  <h3 id="loanFormTitle">Adicionar empréstimo</h3>
+                  <p>Informe o valor recebido, as parcelas e a conta de destino.</p>
+                </div>
+              </div>
+            </div>
+            <form id="loanForm" class="loan-form-grid">
+              <input type="hidden" id="loanEditId" />
+              <div>
+                <label for="loanDesc">Descrição</label>
+                <input type="text" id="loanDesc" maxlength="300" required />
+              </div>
+              <div>
+                <label for="loanReceivedAmount">Valor recebido (R$)</label>
+                <input type="number" id="loanReceivedAmount" min="0" max="9999999999.99" step="0.01" inputmode="decimal" required />
+              </div>
+              <div>
+                <label for="loanReceivedDate">Data do recebimento</label>
+                <input type="date" id="loanReceivedDate" required />
+              </div>
+              <div>
+                <label for="loanTotalPayable">Total a pagar (R$)</label>
+                <input type="number" id="loanTotalPayable" min="0" max="9999999999.99" step="0.01" inputmode="decimal" required />
+              </div>
+              <div>
+                <label for="loanInstallmentCount">Número de parcelas</label>
+                <input type="number" id="loanInstallmentCount" min="1" max="480" step="1" inputmode="numeric" required />
+              </div>
+              <div>
+                <label for="loanInstallmentAmount">Valor da parcela (R$)</label>
+                <input type="number" id="loanInstallmentAmount" min="0" max="9999999999.99" step="0.01" inputmode="decimal" readonly required />
+              </div>
+              <div>
+                <label for="loanDueDay">Dia do vencimento</label>
+                <input type="number" id="loanDueDay" min="1" max="31" step="1" inputmode="numeric" placeholder="1 a 31" required />
+              </div>
+              <div>
+                <label for="loanFirstMonth">Mês da primeira parcela</label>
+                <input type="month" id="loanFirstMonth" required />
+              </div>
+              <div>
+                <label for="loanAccount">Conta que recebeu</label>
+                <select id="loanAccount" required>
+                  <option value="">Selecione uma conta</option>
+                </select>
+                <p id="loanAccountNotice" class="form-hint" role="status"></p>
+              </div>
+              <p id="loanFormError" class="form-error" role="alert" hidden></p>
+              <div class="loan-form-actions">
+                <button type="submit" class="btn-primary" id="loanSubmitBtn">
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i> Salvar empréstimo
+                </button>
+                <button type="button" class="btn-secondary" id="loanCancelEditBtn" hidden>Cancelar edição</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="panel-box">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-green-soft"><i class="fa-solid fa-list-check"></i></div>
+                <div>
+                  <h3>Empréstimos cadastrados</h3>
+                  <p>Acompanhe parcelas, valores restantes e modelos recorrentes.</p>
+                </div>
+              </div>
+            </div>
+            <div id="loansList" class="loan-list" aria-live="polite"></div>
+          </div>
+
+          <section class="loan-conflict-preview panel-box" id="loanConflictPreview" aria-labelledby="loanConflictTitle" hidden>
+            <h3 id="loanConflictTitle">Confira possíveis conflitos</h3>
+            <p>Escolha como continuar. Nenhum item será removido sem uma escolha e confirmação explícitas.</p>
+            <div id="loanConflictItems" class="loan-conflict-items"></div>
+            <div class="loan-conflict-actions">
+              <button type="button" class="btn-primary" id="loanInsertAnywayBtn">Inserir mesmo assim</button>
+              <button type="button" class="btn-danger" id="loanRemoveConflictBtn" disabled>Remover o item existente e inserir</button>
+              <button type="button" class="btn-secondary" id="loanCancelConflictBtn">Cancelar</button>
+            </div>
+          </section>
         </section>
 
         <section class="view-section" id="view-cards">
@@ -1166,7 +1235,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.50</span>
+          <span class="badge badge-version">v4.51</span>
         </div>
       </footer>
 
@@ -2463,6 +2532,7 @@
   <script src="js/data.js"></script>
   <script src="js/categories.js"></script>
   <script src="js/importer.js"></script>
+  <script src="js/loans.js"></script>
   <script src="js/onboarding.js"></script>
   <script src="js/app.js"></script>
   <script src="js/a11y.js"></script>

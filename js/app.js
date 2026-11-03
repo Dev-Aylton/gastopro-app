@@ -443,6 +443,7 @@ const VIEW_TITLES = {
   entries:   'Lançamentos',
   incomes:   'Gerenciador de Ganhos do Mês',
   expenses:  'Gerenciador de Gastos do Mês',
+  loans:     'Empréstimos',
   cards:     'Cartões',
   accounts:  'Contas',
   contact:   'Fale comigo',
@@ -619,10 +620,7 @@ function bindSubmitValidationFeedback(form, formType) {
     noticeScheduled = true;
     window.setTimeout(() => {
       noticeScheduled = false;
-      const actualFormType = formType === 'expense' &&
-        form.querySelector('#expenseType')?.value === 'loan'
-        ? 'loan'
-        : formType;
+      const actualFormType = formType;
       const label = actualFormType === 'income'
         ? 'o ganho'
         : actualFormType === 'loan'
@@ -2775,8 +2773,7 @@ function clearEntryFormFields(type) {
     : type === 'expense'
       ? [
         'expenseDesc', 'expenseAmount', 'expenseAccount', 'expenseEndMonth', 'expenseDueDay',
-        'expenseCreditAccount', 'expenseLoanReceivedAmount', 'expenseLoanTotalPayable',
-        'expenseLoanInstallmentCount', 'expenseLoanInstallmentAmount', 'expenseLoanFirstMonth'
+        'expenseCreditAccount'
       ]
       : null;
   if (!fields) return false;
@@ -2787,8 +2784,6 @@ function clearEntryFormFields(type) {
   });
   const date = document.getElementById(`${type}Date`);
   if (date) date.value = getTodayString();
-  const receivedDate = document.getElementById('expenseLoanReceivedDate');
-  if (receivedDate) receivedDate.value = getTodayString();
   return true;
 }
 
@@ -2897,6 +2892,502 @@ window.GastoProAppUpdate = Object.freeze({
   watch: watchForWaitingAppUpdate
 });
 
+function renderLoansView() {
+  const list = document.getElementById('loansList');
+  if (!list) return;
+  const accounts = FinanceData.getAccounts();
+  const accountNames = new Map(accounts.map(account => [account.id, account.name]));
+  const accountSelect = document.getElementById('loanAccount');
+  const selectedAccountId = accountSelect?.value || '';
+  if (accountSelect) {
+    accountSelect.innerHTML = '<option value="">Selecione uma conta</option>' +
+      accounts.map(account =>
+        `<option value="${escapeHtml(account.id)}">${escapeHtml(account.name)}</option>`
+      ).join('');
+    accountSelect.value = accounts.some(account => account.id === selectedAccountId)
+      ? selectedAccountId : '';
+    accountSelect.required = accounts.length > 0;
+  }
+  const accountNotice = document.getElementById('loanAccountNotice');
+  if (accountNotice) {
+    accountNotice.textContent = accounts.length
+      ? 'Escolha a conta em que o valor foi recebido.'
+      : 'Cadastre uma conta em Contas antes de salvar um empréstimo.';
+  }
+
+  const loans = FinanceData.getTemplates().filter(template =>
+    template.loanReceivedAmount != null && !template.deletedAt && !template.deleted_at
+  );
+  if (!loans.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i>
+        <p>Nenhum empréstimo cadastrado.</p>
+        <span>Cadastre um empréstimo para acompanhar parcelas, saldo restante e vencimento.</span>
+      </div>
+    `;
+    return;
+  }
+
+  list.innerHTML = loans.map(loan => {
+    const summary = window.GastoProLoans.getLoanSummary(loan);
+    const nextMonthLabel = summary.nextInstallmentMonth
+      ? summary.nextInstallmentMonth.split('-').reverse().join('/')
+      : 'Nenhuma';
+    const accountName = accountNames.get(loan.accountId) || 'Conta não encontrada';
+    return `
+      <article class="loan-card">
+        <div class="loan-card-heading">
+          <div>
+            <h4>${escapeHtml(loan.desc)}</h4>
+            <p>${escapeHtml(accountName)} · Vencimento dia ${escapeHtml(String(loan.day))}</p>
+          </div>
+          <span class="loan-status ${summary.remainingInstallments ? '' : 'is-paid'}">
+            ${summary.remainingInstallments ? `${summary.remainingInstallments}x restantes` : 'Quitado'}
+          </span>
+        </div>
+        <div class="loan-progress-track" role="progressbar"
+          aria-label="Parcelas pagas de ${escapeHtml(loan.desc)}"
+          aria-valuemin="0" aria-valuemax="${summary.paidInstallments + summary.remainingInstallments}"
+          aria-valuenow="${summary.paidInstallments}">
+          <span style="width: ${summary.percentagePaid}%"></span>
+        </div>
+        <div class="loan-card-details">
+          <span>Parcelas pagas: <strong>${summary.paidInstallments}</strong></span>
+          <span>Próxima: <strong>${escapeHtml(nextMonthLabel)}</strong></span>
+          <span>Total a pagar: <strong>${formatCurrency(summary.totalPayable)}</strong></span>
+          <span>Falta pagar: <strong>${formatCurrency(summary.remainingAmount)}</strong></span>
+          <span>Última parcela: <strong>${escapeHtml(summary.lastInstallmentMonth.split('-').reverse().join('/'))}</strong></span>
+        </div>
+        <div class="loan-card-actions">
+          <button type="button" class="btn-primary" data-action="loan-toggle-paid"
+            data-id="${escapeHtml(loan.id)}" data-month="${escapeHtml(summary.nextInstallmentMonth || '')}"
+            ${summary.nextInstallmentMonth ? '' : 'disabled'}>
+            ${summary.nextInstallmentMonth ? `Marcar parcela de ${escapeHtml(nextMonthLabel)} como paga` : 'Todas pagas'}
+          </button>
+          <button type="button" class="btn-secondary" data-action="edit-loan"
+            data-id="${escapeHtml(loan.id)}">Editar</button>
+          <button type="button" class="btn-secondary" data-action="delete-loan"
+            data-id="${escapeHtml(loan.id)}">Excluir</button>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+let pendingLoanSave = null;
+
+function setLoanFormError(message) {
+  const error = document.getElementById('loanFormError');
+  if (error) {
+    error.textContent = message;
+    error.hidden = false;
+  }
+  reportSubmitNoEffect('loan', message);
+}
+
+function clearLoanFormError() {
+  const error = document.getElementById('loanFormError');
+  if (error) {
+    error.textContent = '';
+    error.hidden = true;
+  }
+}
+
+function updateLoanInstallmentAmount() {
+  const totalField = document.getElementById('loanTotalPayable');
+  const countField = document.getElementById('loanInstallmentCount');
+  const receivedField = document.getElementById('loanReceivedAmount');
+  const installmentField = document.getElementById('loanInstallmentAmount');
+  if (!totalField || !countField || !receivedField || !installmentField) return;
+  clearLoanFormError();
+  installmentField.value = '';
+  if ([receivedField.value, totalField.value].some(value =>
+    value !== '' && !window.GastoProMoneyScale.hasAtMostTwoDecimalPlaces(value))) {
+    return;
+  }
+  const total = Number(totalField.value);
+  const received = Number(receivedField.value);
+  const count = Number(countField.value);
+  if (totalField.value === '' || countField.value === '' || receivedField.value === '' ||
+    !Number.isFinite(total) || !Number.isFinite(received) || total < received ||
+    !Number.isInteger(count) || count < 1 || count > 480) return;
+  const totalCents = Math.round(total * 100);
+  const installmentCents = Math.round(totalCents / count);
+  if (Math.abs(installmentCents * count - totalCents) > count) return;
+  installmentField.value = (installmentCents / 100).toFixed(2);
+}
+
+function isValidLoanFormDate(value) {
+  if (typeof value !== 'string' ||
+    !/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function buildLoanCandidate(form) {
+  const value = id => form.querySelector(`#${id}`)?.value ?? '';
+  const desc = value('loanDesc').trim();
+  const receivedAmount = Number(value('loanReceivedAmount'));
+  const totalPayable = Number(value('loanTotalPayable'));
+  const installmentCount = Number(value('loanInstallmentCount'));
+  const installmentAmount = Number(value('loanInstallmentAmount'));
+  const dueDay = Number(value('loanDueDay'));
+  const receivedDate = value('loanReceivedDate');
+  const startMonth = value('loanFirstMonth');
+  const accountId = value('loanAccount');
+  const moneyFields = [value('loanReceivedAmount'), value('loanTotalPayable'), value('loanInstallmentAmount')];
+  if (!desc || desc.length > 300) return { error: 'Informe uma descrição com até 300 caracteres.' };
+  if (moneyFields.some(amount => !window.GastoProMoneyScale.hasAtMostTwoDecimalPlaces(amount))) {
+    return { error: 'Os valores do empréstimo devem ter no máximo 2 casas decimais.' };
+  }
+  if (!Number.isFinite(receivedAmount) || receivedAmount < 0 ||
+    receivedAmount > 9999999999.99 || !Number.isFinite(totalPayable) ||
+    totalPayable < receivedAmount || totalPayable > 9999999999.99 ||
+    !Number.isInteger(installmentCount) || installmentCount < 1 || installmentCount > 480 ||
+    !Number.isFinite(installmentAmount) ||
+    Math.abs(Math.round(installmentAmount * 100) * installmentCount -
+      Math.round(totalPayable * 100)) > installmentCount) {
+    return { error: 'Informe valores válidos; a diferença entre o total e as parcelas não pode exceder R$ 0,01 por parcela.' };
+  }
+  if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
+    return { error: 'Informe um dia de vencimento entre 1 e 31.' };
+  }
+  if (!isValidLoanFormDate(receivedDate) ||
+    !/^\d{4}-(0[1-9]|1[0-2])$/.test(startMonth)) {
+    return { error: 'Informe uma data de recebimento e o mês da primeira parcela válidos.' };
+  }
+  if (!accountId || !FinanceData.getAccounts().some(account => account.id === accountId)) {
+    return {
+      error: FinanceData.getAccounts().length
+        ? 'Escolha a conta que recebeu o empréstimo.'
+        : 'Cadastre uma conta em Contas antes de salvar um empréstimo.'
+    };
+  }
+  const editId = value('loanEditId');
+  const existing = editId
+    ? FinanceData.getTemplates().find(template => template.id === editId && template.loanReceivedAmount != null)
+    : null;
+  if (editId && !existing) return { error: 'O empréstimo que você está editando não foi encontrado.' };
+  return {
+    loan: {
+      ...(existing || {}),
+      id: existing?.id,
+      type: 'loan',
+      isDebt: true,
+      active: existing?.active !== false,
+      desc,
+      amount: installmentAmount,
+      accountId,
+      dueDay,
+      day: String(dueDay).padStart(2, '0'),
+      startMonth,
+      endMonth: shiftDebtMonth(startMonth, installmentCount - 1),
+      loanReceivedAmount: receivedAmount,
+      loanReceivedDate: receivedDate,
+      loanTotalPayable: totalPayable,
+      loanInstallmentCount: installmentCount,
+      paidMonths: existing?.paidMonths || {}
+    },
+    editId
+  };
+}
+
+function renderLoanConflictPreview(conflicts) {
+  const preview = document.getElementById('loanConflictPreview');
+  const list = document.getElementById('loanConflictItems');
+  const removeButton = document.getElementById('loanRemoveConflictBtn');
+  if (!preview || !list || !removeButton) throw new Error('A prévia de conflitos de empréstimo não está disponível.');
+  const accountNames = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
+  list.innerHTML = conflicts.map((conflict, index) => `
+    <article class="loan-conflict-item">
+      <label class="loan-conflict-choice">
+        <input type="radio" name="loanConflictChoice" value="${index}"
+          data-conflict-id="${escapeHtml(conflict.id || '')}" ${conflict.id ? '' : 'disabled'} />
+        <span>
+          <strong>${escapeHtml(conflict.description)} · ${formatCurrency(conflict.amount)}</strong>
+          ${escapeHtml(conflict.date || 'Data não informada')} ·
+          ${escapeHtml(accountNames.get(conflict.accountId) || 'Conta não informada')}<br />
+          ${escapeHtml(conflict.reason)}
+        </span>
+      </label>
+    </article>
+  `).join('');
+  removeButton.disabled = true;
+  preview.hidden = false;
+  preview.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function hideLoanConflictPreview() {
+  const preview = document.getElementById('loanConflictPreview');
+  if (preview) preview.hidden = true;
+  pendingLoanSave = null;
+}
+
+async function persistLoanCandidate(candidate, editId) {
+  let saved;
+  if (editId) {
+    saved = FinanceData.update(editId, {
+      ...candidate,
+      type: 'loan',
+      day: candidate.day,
+      dueDay: candidate.dueDay
+    });
+  } else {
+    saved = FinanceData.add(candidate);
+  }
+  if (!saved) throw new Error('Não foi possível salvar. Confira os dados e a conta selecionada.');
+  const syncResult = await waitForAuthenticatedSave();
+  clearLoanFormError();
+  hideLoanConflictPreview();
+  document.getElementById('loanForm').reset();
+  document.getElementById('loanEditId').value = '';
+  document.getElementById('loanFormTitle').textContent = 'Adicionar empréstimo';
+  document.getElementById('loanSubmitBtn').innerHTML = '<i class="fa-solid fa-plus" aria-hidden="true"></i> Salvar empréstimo';
+  document.getElementById('loanCancelEditBtn').hidden = true;
+  document.getElementById('loanReceivedDate').value = getTodayString();
+  document.getElementById('loanInstallmentAmount').value = '';
+  document.getElementById('loanAccount').value = '';
+  renderAll();
+  showToast(!syncResult.success
+    ? 'Empréstimo salvo neste aparelho; a sincronização com a nuvem ficará pendente.'
+    : editId ? 'Empréstimo atualizado.' : 'Empréstimo salvo.');
+}
+
+async function finishLoanConflictChoice(choice, conflictId) {
+  if (!pendingLoanSave) {
+    setLoanFormError('A prévia de conflitos não está mais ativa. Confira os dados e tente novamente.');
+    return;
+  }
+  const pending = pendingLoanSave;
+  const button = choice === 'remove'
+    ? document.getElementById('loanRemoveConflictBtn')
+    : document.getElementById('loanInsertAnywayBtn');
+  const saveResult = await withSaving(button, async () => {
+    if (choice === 'remove') {
+      const selected = pending.conflicts.find(conflict => conflict.id === conflictId);
+      if (!selected) {
+        setLoanFormError('Escolha um item identificável para remover.');
+        return;
+      }
+      showConfirm({
+        title: 'Remover este item?',
+        message: `O item "${selected.description}" será excluído pelo caminho usual e a exclusão será sincronizada. Deseja continuar?`,
+        iconClass: 'fa-solid fa-trash-can',
+        okLabel: 'Remover e inserir',
+        onCancel: () => {
+          setLoanFormError('Empréstimo não salvo: a remoção não foi confirmada.');
+        },
+        onConfirm: async () => {
+          try {
+            const result = await FinanceData.delete(selected.id);
+            if (!result || !result.success) {
+              setLoanFormError('O item não foi removido; o empréstimo não foi inserido. Tente sincronizar novamente.');
+              return;
+            }
+            await persistLoanCandidate(pending.candidate, pending.editId);
+          } catch (error) {
+            console.error('Erro ao remover o conflito do empréstimo:', error);
+            setLoanFormError('Não foi possível remover o item escolhido. O empréstimo não foi inserido.');
+          }
+        }
+      });
+      return;
+    }
+    try {
+      await persistLoanCandidate(pending.candidate, pending.editId);
+    } catch (error) {
+      console.error('Erro ao salvar o empréstimo após a prévia:', error);
+      setLoanFormError(error.message || 'Não foi possível salvar o empréstimo.');
+    }
+  });
+  if (saveResult === false) {
+    setLoanFormError('Outro salvamento está em andamento. Aguarde e tente novamente.');
+  }
+}
+
+function bindLoansForm(form = document.getElementById('loanForm')) {
+  if (!form) return false;
+  if (form.dataset.loanFormBound === 'true') return true;
+  const preview = document.getElementById('loanConflictPreview');
+  const submitButton = document.getElementById('loanSubmitBtn');
+  if (!preview || !submitButton) throw new Error('O formulário de empréstimos está incompleto.');
+  const accountSelect = form.querySelector('#loanAccount');
+  const accounts = FinanceData.getAccounts();
+  if (accountSelect) accountSelect.required = accounts.length > 0;
+  const accountNotice = form.querySelector('#loanAccountNotice');
+  if (accountNotice) {
+    accountNotice.textContent = accounts.length
+      ? 'Escolha a conta em que o valor foi recebido.'
+      : 'Cadastre uma conta em Contas antes de salvar um empréstimo.';
+  }
+  window.GastoProSubmitFeedback.bindValidation(form, 'loan');
+  ['loanReceivedAmount', 'loanTotalPayable', 'loanInstallmentCount'].forEach(id => {
+    form.querySelector(`#${id}`)?.addEventListener('input', updateLoanInstallmentAmount);
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    clearLoanFormError();
+    const result = buildLoanCandidate(form);
+    if (result.error) {
+      setLoanFormError(result.error);
+      return;
+    }
+    const saveResult = await withSaving(event.submitter || submitButton, async () => {
+      try {
+        const conflicts = window.GastoProLoans.detectLoanConflicts(
+          result.loan,
+          FinanceData.getEntries(),
+          FinanceData.getTemplates()
+        );
+        if (conflicts.length) {
+          pendingLoanSave = { candidate: result.loan, editId: result.editId, conflicts };
+          renderLoanConflictPreview(conflicts);
+          return;
+        }
+        await persistLoanCandidate(result.loan, result.editId);
+      } catch (error) {
+        console.error('Erro ao salvar empréstimo:', error);
+        setLoanFormError(error.message || 'Ocorreu um erro ao salvar o empréstimo. Tente novamente.');
+      }
+    });
+    if (saveResult === false) {
+      setLoanFormError('Outro salvamento está em andamento. Aguarde e tente novamente.');
+    }
+  });
+  document.getElementById('loanInsertAnywayBtn')?.addEventListener('click', () => {
+    finishLoanConflictChoice('insert');
+  });
+  document.getElementById('loanRemoveConflictBtn')?.addEventListener('click', () => {
+    const selected = preview.querySelector('input[name="loanConflictChoice"]:checked');
+    finishLoanConflictChoice('remove', selected?.dataset.conflictId);
+  });
+  document.getElementById('loanCancelConflictBtn')?.addEventListener('click', () => {
+    hideLoanConflictPreview();
+    showToast('Empréstimo não salvo: operação cancelada.');
+    reportSubmitNoEffect('loan', 'Empréstimo não salvo: operação cancelada.');
+  });
+  preview.addEventListener('change', event => {
+    if (!(event.target instanceof Element) ||
+      !event.target.matches('input[name="loanConflictChoice"]')) return;
+    const removeButton = document.getElementById('loanRemoveConflictBtn');
+    if (removeButton) removeButton.disabled = !event.target.dataset.conflictId;
+  });
+  document.getElementById('loanCancelEditBtn')?.addEventListener('click', () => {
+    form.reset();
+    document.getElementById('loanEditId').value = '';
+    document.getElementById('loanFormTitle').textContent = 'Adicionar empréstimo';
+    submitButton.innerHTML = '<i class="fa-solid fa-plus" aria-hidden="true"></i> Salvar empréstimo';
+    document.getElementById('loanCancelEditBtn').hidden = true;
+    document.getElementById('loanReceivedDate').value = getTodayString();
+    clearLoanFormError();
+  });
+  const receivedDate = document.getElementById('loanReceivedDate');
+  if (receivedDate && !receivedDate.value) receivedDate.value = getTodayString();
+  form.dataset.loanFormBound = 'true';
+  return true;
+}
+
+function editLoan(id) {
+  const loan = FinanceData.getTemplates().find(template =>
+    template.id === id && template.loanReceivedAmount != null
+  );
+  if (!loan) {
+    showToast('Empréstimo não encontrado. Atualize a tela e tente novamente.');
+    return;
+  }
+  showConfirm({
+    title: 'Editar modelo recorrente?',
+    message: 'A edição altera o modelo inteiro e suas ocorrências nos meses, não apenas este mês. Deseja continuar?',
+    iconClass: 'fa-solid fa-repeat',
+    okLabel: 'Editar modelo',
+    okBtnClass: 'btn-primary',
+    onConfirm: () => {
+      const fieldValues = {
+        loanEditId: loan.id,
+        loanDesc: loan.desc,
+        loanReceivedAmount: loan.loanReceivedAmount,
+        loanReceivedDate: loan.loanReceivedDate,
+        loanTotalPayable: loan.loanTotalPayable,
+        loanInstallmentCount: loan.loanInstallmentCount,
+        loanInstallmentAmount: loan.amount,
+        loanDueDay: Number(loan.day),
+        loanFirstMonth: loan.startMonth,
+        loanAccount: loan.accountId
+      };
+      Object.entries(fieldValues).forEach(([id, value]) => {
+        const field = document.getElementById(id);
+        if (field) field.value = value;
+      });
+      document.getElementById('loanFormTitle').textContent = 'Editar modelo de empréstimo';
+      document.getElementById('loanSubmitBtn').innerHTML = '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Salvar alterações';
+      document.getElementById('loanCancelEditBtn').hidden = false;
+      clearLoanFormError();
+      window.switchToView('loans');
+      document.getElementById('loanForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('loanDesc').focus();
+    }
+  });
+}
+
+function deleteLoan(id) {
+  const loan = FinanceData.getTemplates().find(template =>
+    template.id === id && template.loanReceivedAmount != null
+  );
+  if (!loan) {
+    showToast('Empréstimo não encontrado. Atualize a tela e tente novamente.');
+    return;
+  }
+  showConfirm({
+    title: 'Excluir modelo recorrente?',
+    message: 'O modelo recorrente e seu histórico mensal serão removidos, não apenas este mês. Deseja excluir?',
+    iconClass: 'fa-solid fa-trash-can',
+    okLabel: 'Sim, excluir',
+    onConfirm: async () => {
+      try {
+        const result = await FinanceData.delete(id);
+        renderAll();
+        showToast(result && result.success
+          ? 'Empréstimo excluído.'
+          : 'Não foi possível sincronizar a exclusão do empréstimo. Tente novamente.');
+      } catch (error) {
+        console.error('Erro ao excluir empréstimo:', error);
+        showToast('Não foi possível excluir o empréstimo. Tente novamente.');
+      }
+    }
+  });
+}
+
+async function markLoanInstallmentPaid(id, month) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month || '')) {
+    showToast('Não foi possível marcar a parcela: mês inválido.');
+    reportSubmitNoEffect('loan', 'Parcela não marcada: mês inválido.');
+    return;
+  }
+  try {
+    const result = await FinanceData.markPaid(id, month);
+    if (!result || !result.success) {
+      showToast('Não foi possível marcar a parcela como paga. Tente novamente.');
+      return;
+    }
+    renderAll();
+    showToast('Parcela marcada como paga.');
+  } catch (error) {
+    console.error('Erro ao marcar parcela do empréstimo:', error);
+    showToast('Não foi possível marcar a parcela como paga. Tente novamente.');
+  }
+}
+
+window.GastoProLoanUI = Object.freeze({
+  bindForm: bindLoansForm,
+  render: renderLoansView,
+  summarize: window.GastoProLoans.getLoanSummary,
+  detectConflicts: window.GastoProLoans.detectLoanConflicts,
+  edit: editLoan,
+  delete: deleteLoan,
+  markPaid: markLoanInstallmentPaid
+});
+
 // ================================================================
 // 5. ORQUESTRADOR CENTRAL DE RENDERIZAÇÃO
 // ================================================================
@@ -2983,6 +3474,7 @@ function renderAll() {
   renderIncomesView(incomes, totalIncome);
   // allFixed (com inativos) é passado para permitir gerenciar gastos pausados na tela de Gastos
   renderExpensesView(allFixed, variables, totalFixed, totalVariable, totalExpenses);
+  renderLoansView();
   renderAccountsView();
   renderCreditCardsPanel();
   renderContactView();
@@ -6227,7 +6719,7 @@ function deleteAccount(id) {
 function showConfirm({
   title, message, iconClass, okLabel, okBtnClass, onConfirm,
   onBackup, secondaryLabel, onSecondary, keepOpenOnConfirm = false, rememberLabel,
-  confirmationPhrase
+  confirmationPhrase, onCancel
 }) {
   const modal = document.getElementById('confirmModal');
   const iconEl = document.getElementById('confirmIcon');
@@ -6292,6 +6784,7 @@ function showConfirm({
   }
   newCancel.addEventListener('click', () => {
     modal.classList.remove('active');
+    if (onCancel) onCancel();
   });
   if (newBackup && (onBackup || onSecondary)) {
     newBackup.addEventListener('click', async () => {
@@ -6446,13 +6939,6 @@ function escapeHtml(str) {
  * @param {string|null} dateStr - Data no formato YYYY-MM-DD.
  * @returns {string} Data no formato DD/MM, ou string vazia se inválida.
  */
-function isValidLoanDate(value) {
-  if (typeof value !== 'string' ||
-    !/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value)) return false;
-  const date = new Date(`${value}T00:00:00Z`);
-  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
-}
-
 function formatDate(dateStr) {
   if (!dateStr) return '';
   const parts = dateStr.split('-');
@@ -6675,6 +7161,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('expenseForm'),
     'expense'
   );
+  bindLoansForm();
   document.addEventListener('gastopro:themechange', () => {
     if (document.getElementById('categoryChart')) renderAll();
   });
@@ -7107,11 +7594,20 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'edit':
         openEditModal(id);
         break;
+      case 'edit-loan':
+        editLoan(id);
+        break;
       case 'edit-card-purchase':
         openEditModal(id);
         break;
       case 'delete':
         deleteEntry(id);
+        break;
+      case 'delete-loan':
+        deleteLoan(id);
+        break;
+      case 'loan-toggle-paid':
+        markLoanInstallmentPaid(id, actionElement.dataset.month);
         break;
       case 'delete-card-purchase':
         deleteEntry(id);
@@ -7726,55 +8222,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const expenseTypeSelect     = document.getElementById('expenseType');
   const expenseCatSelect      = document.getElementById('expenseCategory');
   const expenseEndMonthWrapper = document.getElementById('expenseEndMonthWrapper');
-  const loanFields = document.getElementById('expenseLoanFields');
-  const loanReceivedAmount = document.getElementById('expenseLoanReceivedAmount');
-  const loanReceivedDate = document.getElementById('expenseLoanReceivedDate');
-  const loanTotalPayable = document.getElementById('expenseLoanTotalPayable');
-  const loanInstallmentCount = document.getElementById('expenseLoanInstallmentCount');
-  const loanInstallmentAmount = document.getElementById('expenseLoanInstallmentAmount');
-  const loanFirstMonth = document.getElementById('expenseLoanFirstMonth');
-  const loanError = document.getElementById('expenseLoanError');
 
   function checkDebtVisibility() {
     if (!expenseEndMonthWrapper || !expenseTypeSelect) return;
-    const isLoan = expenseTypeSelect.value === 'loan';
     const isDebt = (expenseTypeSelect.value === 'debt') ||
                    (expenseCatSelect && (expenseCatSelect.value === 'Empréstimo' || expenseCatSelect.value === 'Parcelamento'));
-    expenseEndMonthWrapper.style.display = isDebt && !isLoan ? 'block' : 'none';
-    const amountGroup = document.getElementById('expenseAmountGroup');
-    const dateGroup = document.getElementById('expenseDateGroup');
+    expenseEndMonthWrapper.style.display = isDebt ? 'block' : 'none';
     const categoryGroup = document.getElementById('expenseCategoryGroup');
     const paymentMethodGroup = document.getElementById('expensePaymentMethodGroup');
-    const amountInput = document.getElementById('expenseAmount');
-    const dateInput = document.getElementById('expenseDate');
-    if (loanFields) loanFields.hidden = !isLoan;
-    if (amountGroup) amountGroup.hidden = isLoan;
-    if (dateGroup) dateGroup.hidden = isLoan;
-    if (categoryGroup) categoryGroup.hidden = isLoan;
-    if (paymentMethodGroup) paymentMethodGroup.hidden = isLoan;
-    if (amountInput) amountInput.required = !isLoan;
-    if (dateInput) dateInput.required = !isLoan;
-    if (expenseCatSelect) {
-      if (isLoan) expenseCatSelect.value = 'Empréstimo';
-      expenseCatSelect.required = !isLoan;
-    }
-    if (loanReceivedAmount) loanReceivedAmount.required = isLoan;
-    if (loanReceivedDate) {
-      loanReceivedDate.required = isLoan;
-      if (isLoan && !loanReceivedDate.value) loanReceivedDate.value = getTodayString();
-    }
-    if (loanTotalPayable) loanTotalPayable.required = isLoan;
-    if (loanInstallmentCount) loanInstallmentCount.required = isLoan;
-    if (loanInstallmentAmount) loanInstallmentAmount.required = isLoan;
-    if (loanFirstMonth) loanFirstMonth.required = isLoan;
+    if (categoryGroup) categoryGroup.hidden = false;
+    if (paymentMethodGroup) paymentMethodGroup.hidden = false;
+    if (expenseCatSelect) expenseCatSelect.required = true;
     const paymentMethod = document.getElementById('expensePaymentMethod');
-    if (!isLoan && paymentMethod && paymentMethod.value === 'credit_card' &&
+    if (paymentMethod && paymentMethod.value === 'credit_card' &&
       expenseTypeSelect && expenseTypeSelect.value !== 'variable') {
       expenseTypeSelect.value = 'variable';
     }
     updateCreditCardPurchaseFields();
     const dateVal = document.getElementById('expenseDate').value || getTodayString();
-    const requiresDueDay = isLoan || expenseTypeSelect.value === 'fixed' || expenseTypeSelect.value === 'debt' ||
+    const requiresDueDay = expenseTypeSelect.value === 'fixed' || expenseTypeSelect.value === 'debt' ||
       (expenseTypeSelect.value === 'variable' && paymentMethod.value !== 'credit_card' &&
         !isPaidByPaymentMethod(paymentMethod.value, dateVal));
     const dueDayWrapper = document.getElementById('expenseDueDayWrapper');
@@ -7783,58 +8249,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dueDayInput) dueDayInput.required = requiresDueDay;
     const accountSelect = document.getElementById('expenseAccount');
     if (accountSelect) accountSelect.required = FinanceData.getAccounts().length > 0;
-    updateLoanInstallmentAmount();
   }
-
-  function updateLoanInstallmentAmount() {
-    if (!loanTotalPayable || !loanInstallmentCount || !loanInstallmentAmount) return;
-    const total = Number(loanTotalPayable.value);
-    const count = Number(loanInstallmentCount.value);
-    const received = loanReceivedAmount.value === '' ? null : Number(loanReceivedAmount.value);
-    const rawAmounts = [loanReceivedAmount.value, loanTotalPayable.value];
-    if (rawAmounts.some(value =>
-      value !== '' && !window.GastoProMoneyScale.hasAtMostTwoDecimalPlaces(value))) {
-      loanInstallmentAmount.value = '';
-      if (loanError) {
-        loanError.textContent = 'Os valores recebido, total a pagar e parcela devem ter no máximo 2 casas decimais.';
-        loanError.hidden = false;
-      }
-      return;
-    }
-    if (loanTotalPayable.value === '' || loanInstallmentCount.value === '' ||
-      !Number.isFinite(total) || total < 0 || total > 9999999999.99 ||
-      !Number.isInteger(count) || count < 1 || count > 480) {
-      loanInstallmentAmount.value = '';
-      if (loanError) loanError.hidden = true;
-      return;
-    }
-    if (received != null && (!Number.isFinite(received) || received < 0 ||
-      received > 9999999999.99 || total < received)) {
-      loanInstallmentAmount.value = '';
-      if (loanError) {
-        loanError.textContent = 'O total a pagar deve ser maior ou igual ao valor recebido.';
-        loanError.hidden = false;
-      }
-      return;
-    }
-    const cents = Math.round(total * 100);
-    const installmentCents = Math.round(cents / count);
-    if (Math.abs(installmentCents * count - cents) > count) {
-      loanInstallmentAmount.value = '';
-      if (loanError) {
-        loanError.textContent = 'A diferença entre o total e as parcelas excede a tolerância de R$ 0,01 por parcela.';
-        loanError.hidden = false;
-      }
-      return;
-    }
-    loanInstallmentAmount.value = (installmentCents / 100).toFixed(2);
-    if (loanError) loanError.hidden = true;
-  }
-
-  [loanTotalPayable, loanInstallmentCount].forEach(input =>
-    input?.addEventListener('input', updateLoanInstallmentAmount)
-  );
-  loanReceivedAmount?.addEventListener('input', updateLoanInstallmentAmount);
   if (expenseTypeSelect) expenseTypeSelect.addEventListener('change', checkDebtVisibility);
   if (expenseCatSelect) expenseCatSelect.addEventListener('change', checkDebtVisibility);
   if (expenseDateInput) expenseDateInput.addEventListener('change', checkDebtVisibility);
@@ -7873,89 +8288,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!desc) {
       alert('Por favor, informe a descrição do gasto.');
-      return;
-    }
-    if (type === 'loan') {
-      const received = loanReceivedAmount.value === '' ? NaN : Number(loanReceivedAmount.value);
-      const total = loanTotalPayable.value === '' ? NaN : Number(loanTotalPayable.value);
-      const count = loanInstallmentCount.value === '' ? NaN : Number(loanInstallmentCount.value);
-      const installment = loanInstallmentAmount.value === '' ? NaN : Number(loanInstallmentAmount.value);
-      const dueDay = dueDayValue === '' ? NaN : Number(dueDayValue);
-      let accountId = document.getElementById('expenseAccount').value;
-      let loanMessage = '';
-      if ([loanReceivedAmount.value, loanTotalPayable.value, loanInstallmentAmount.value]
-        .some(value => value !== '' &&
-          !window.GastoProMoneyScale.hasAtMostTwoDecimalPlaces(value))) {
-        loanMessage = 'Os valores recebido, total a pagar e parcela devem ter no máximo 2 casas decimais.';
-      } else if (!Number.isFinite(received) || received < 0 ||
-        received > 9999999999.99 || !Number.isFinite(total) ||
-        total < received || total > 9999999999.99 ||
-        !Number.isInteger(count) || count < 1 || count > 480 ||
-        !Number.isFinite(installment) ||
-        Math.abs(Math.round(installment * 100) * count - Math.round(total * 100)) > count) {
-        loanMessage = 'Informe valores válidos; a diferença entre o total e as parcelas não pode exceder R$ 0,01 por parcela.';
-      } else if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
-        loanMessage = 'Informe um dia de vencimento entre 1 e 31.';
-      } else if (!isValidLoanDate(loanReceivedDate.value) ||
-        !loanFirstMonth.value || !/^\d{4}-(0[1-9]|1[0-2])$/.test(loanFirstMonth.value)) {
-        loanMessage = 'Informe uma data de recebimento e o mês da primeira parcela válidos.';
-      } else if (FinanceData.getAccounts().length &&
-        (!accountId || !FinanceData.getAccounts().some(account => account.id === accountId))) {
-        loanMessage = 'Escolha a conta que recebeu o empréstimo.';
-      }
-      if (loanMessage) {
-        loanError.textContent = loanMessage;
-        loanError.hidden = false;
-        return;
-      }
-      loanError.hidden = true;
-      if (!FinanceData.getAccounts().length) {
-        try {
-          accountId = await requestFirstEntryAccount();
-        } catch (error) {
-          console.error('Erro ao preparar a conta do empréstimo:', error);
-          reportSubmitNoEffect('loan', 'Não foi possível confirmar a conta do empréstimo. Tente novamente.');
-          return;
-        }
-        if (!accountId) {
-          reportSubmitNoEffect('loan', 'Empréstimo não salvo: a conta de destino não foi confirmada.');
-          return;
-        }
-      }
-      const saveButton = e.submitter || e.currentTarget.querySelector('button[type="submit"]');
-      const saveResult = await withSaving(saveButton, async () => {
-        try {
-          const savedLoan = FinanceData.add({
-            type: 'loan',
-            desc,
-            amount: installment,
-            accountId,
-            dueDay,
-            startMonth: loanFirstMonth.value,
-            loanReceivedAmount: received,
-            loanReceivedDate: loanReceivedDate.value,
-            loanTotalPayable: total,
-            loanInstallmentCount: count
-          });
-          if (!savedLoan) {
-            loanError.textContent = 'Não foi possível salvar. Confira a conta e os dados do empréstimo.';
-            loanError.hidden = false;
-            return;
-          }
-          completeEntrySave('expense');
-          checkDebtVisibility();
-          document.getElementById('expenseDesc').focus();
-          renderAll();
-          await waitForAuthenticatedSave();
-        } catch (error) {
-          console.error('Erro ao adicionar empréstimo:', error);
-          loanError.textContent = 'Ocorreu um erro ao salvar o empréstimo. Tente novamente.';
-          loanError.hidden = false;
-        }
-      });
-      if (saveResult === false) {
-        reportSubmitNoEffect('loan', 'Outro salvamento está em andamento. Aguarde e tente novamente.');
-      }
       return;
     }
     if (isNaN(amount) || amount <= 0) {

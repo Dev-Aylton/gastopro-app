@@ -639,16 +639,13 @@ describe('Diagnóstico local temporário', () => {
     document.body.appendChild(host);
     const cases = [
       { formType: 'income', category: 'submit sem efeito: ganho' },
-      { formType: 'expense', category: 'submit sem efeito: gasto' },
-      { formType: 'expense', loan: true, category: 'submit sem efeito: empréstimo' }
+      { formType: 'expense', category: 'submit sem efeito: gasto' }
     ];
 
     try {
       for (const testCase of cases) {
         const form = document.createElement('form');
-        form.innerHTML = `${testCase.loan
-          ? '<select id="expenseType"><option value="loan" selected>Empréstimo</option></select>'
-          : ''}<div hidden><input type="text" required /></div><button type="submit">Enviar</button>`;
+        form.innerHTML = '<div hidden><input type="text" required /></div><button type="submit">Enviar</button>';
         host.appendChild(form);
         let submitted = false;
         form.addEventListener('submit', event => {
@@ -13515,6 +13512,394 @@ describe('Login OAuth com Google', () => {
     assertFalse(source.includes('@'));
     assertFalse(source.toLowerCase().includes('secret'));
     assertFalse(source.toLowerCase().includes('password'));
+  });
+});
+
+// ================================================================
+// RELATÓRIO FINAL
+// ================================================================
+
+function makeLoanTemplate(overrides = {}) {
+  return {
+    id: 'loan-candidate',
+    type: 'fixed',
+    desc: 'Empréstimo teste',
+    category: 'Empréstimo',
+    amount: 60,
+    day: '15',
+    accountId: 'loan-account',
+    active: true,
+    startMonth: '2026-03',
+    endMonth: '2026-04',
+    loanReceivedAmount: 100,
+    loanReceivedDate: '2026-02-01',
+    loanTotalPayable: 120,
+    loanInstallmentCount: 2,
+    paidMonths: {},
+    ...overrides
+  };
+}
+
+async function waitForLoanCondition(predicate) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await new Promise(resolve => window.setTimeout(resolve, 5));
+  }
+  throw new Error(
+    `A operação do formulário de empréstimos não terminou a tempo: ` +
+    `templates=${FinanceData.getTemplates().length}, ` +
+    `error=${document.getElementById('loanFormError')?.textContent || ''}, ` +
+    `toast=${document.getElementById('toast')?.textContent || ''}.`
+  );
+}
+
+async function makeLoanFormFixture(options = {}) {
+  setupMockLocalStorage();
+  const previousAuth = window.SupabaseAuth;
+  const previousRender = window.renderAll;
+  const syncCalls = { deletedEntries: [] };
+  const authSuccess = async () => ({ success: true });
+  window.SupabaseAuth = {
+    client: {},
+    saveCloudAccounts: authSuccess,
+    saveCloudCreditCards: authSuccess,
+    saveCloudCreditCardPurchases: authSuccess,
+    saveCloudFixedImportRules: authSuccess,
+    saveCloudProfile: authSuccess,
+    saveCloudEntries: authSuccess,
+    saveCloudTemplates: authSuccess,
+    deleteCloudEntries: async ids => {
+      syncCalls.deletedEntries.push([...ids]);
+      return { success: true };
+    },
+    deleteCloudTemplates: authSuccess,
+    saveCloudGoals: authSuccess,
+    deleteCloudGoals: authSuccess,
+    deleteCloudAccounts: authSuccess,
+    deleteCloudCreditCards: authSuccess,
+    deleteCloudCreditCardPurchases: authSuccess
+  };
+  const userId = 'loan-form-test-user';
+  localStorage.setItem('gastopro_last_uid', userId);
+  FinanceData.saveProfile({ name: 'Pessoa teste', email: 'teste@example.com', userId });
+  const account = {
+    id: crypto.randomUUID(),
+    name: 'Conta teste',
+    institution: null,
+    type: 'PF',
+    initialBalance: 0
+  };
+  if (!options.noAccount) await FinanceData.saveAccounts([account], { flush: false });
+
+  const host = document.createElement('div');
+  host.innerHTML = `
+    <form id="loanForm">
+      <input type="hidden" id="loanEditId" />
+      <input id="loanDesc" required />
+      <input id="loanReceivedAmount" type="number" step="0.01" required />
+      <input id="loanReceivedDate" type="date" required />
+      <input id="loanTotalPayable" type="number" step="0.01" required />
+      <input id="loanInstallmentCount" type="number" min="1" max="480" required />
+      <input id="loanInstallmentAmount" type="number" step="0.01" readonly required />
+      <input id="loanDueDay" type="number" min="1" max="31" required />
+      <input id="loanFirstMonth" type="month" required />
+      <select id="loanAccount" required>
+        <option value="">Selecione uma conta</option>
+        ${options.noAccount ? '' : `<option value="${account.id}">${account.name}</option>`}
+      </select>
+      <p id="loanAccountNotice"></p>
+      <p id="loanFormError" role="alert" hidden></p>
+      <p id="loanFormTitle"></p>
+      <button id="loanSubmitBtn" type="submit">Salvar empréstimo</button>
+      <button id="loanCancelEditBtn" type="button" hidden>Cancelar edição</button>
+    </form>
+    <section id="loanConflictPreview" hidden>
+      <div id="loanConflictItems"></div>
+      <button id="loanInsertAnywayBtn" type="button">Inserir mesmo assim</button>
+      <button id="loanRemoveConflictBtn" type="button" disabled>Remover o item existente e inserir</button>
+      <button id="loanCancelConflictBtn" type="button">Cancelar</button>
+    </section>
+    <div id="confirmModal">
+      <div id="confirmIconWrapper"><i id="confirmIcon"></i></div>
+      <h3 id="confirmTitle"></h3><p id="confirmMessage"></p>
+      <label id="confirmRememberOption" hidden><input id="confirmRememberCheckbox" type="checkbox" /><span id="confirmRememberLabel"></span></label>
+      <div id="confirmPhraseGroup" hidden><input id="confirmPhraseInput" /><label id="confirmPhraseLabel"></label></div>
+      <button id="confirmBackupBtn" type="button"></button>
+      <button id="confirmCancelBtn" type="button">Cancelar</button>
+      <button id="confirmOkBtn" type="button">Confirmar</button>
+    </div>
+    <div id="toast"></div>
+  `;
+  document.body.appendChild(host);
+  window.renderAll = () => {};
+  window.GastoProLoanUI.bindForm(host.querySelector('#loanForm'));
+  return {
+    host,
+    account,
+    syncCalls,
+    cleanup() {
+      host.remove();
+      window.SupabaseAuth = previousAuth;
+      window.renderAll = previousRender;
+    }
+  };
+}
+
+function fillLoanForm(fixture, overrides = {}) {
+  const values = {
+    loanDesc: 'Empréstimo novo',
+    loanReceivedAmount: '100',
+    loanReceivedDate: '2026-02-01',
+    loanTotalPayable: '120',
+    loanInstallmentCount: '2',
+    loanInstallmentAmount: '60.00',
+    loanDueDay: '15',
+    loanFirstMonth: '2026-03',
+    loanAccount: fixture.account ? fixture.account.id : '',
+    ...overrides
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    fixture.host.querySelector(`#${id}`).value = value;
+  });
+}
+
+describe('Empréstimos — resumo, conflitos e formulário', () => {
+  it('calcula parcelas pagas, restantes, próxima, valores e mês final', () => {
+    const summary = window.GastoProLoans.getLoanSummary(makeLoanTemplate({
+      paidMonths: { '2026-03': true }
+    }));
+    assertEqual(summary, {
+      paidInstallments: 1,
+      remainingInstallments: 1,
+      nextInstallmentMonth: '2026-04',
+      nextInstallmentAmount: 60,
+      totalPayable: 120,
+      remainingAmount: 60,
+      lastInstallmentMonth: '2026-04',
+      percentagePaid: 50
+    });
+  });
+
+  it('detecta ganho de mesmo valor a até 7 dias em qualquer conta e ignora exclusões', () => {
+    const candidate = makeLoanTemplate();
+    const match = makeIncome({
+      id: 'income-match',
+      amount: 100.01,
+      date: '2026-02-08',
+      accountId: 'another-account'
+    });
+    const deleted = { ...match, id: 'income-deleted', deletedAt: '2026-02-09T00:00:00Z' };
+    const conflicts = window.GastoProLoans.detectLoanConflicts(candidate, [match, deleted], []);
+    assertEqual(conflicts.map(item => item.id), ['income-match']);
+    assertTrue(conflicts[0].reason.includes('7 dias'));
+    assertEqual(window.GastoProLoans.detectLoanConflicts(candidate, [
+      { ...match, date: '2026-02-09' }
+    ], []).length, 0);
+  });
+
+  it('detecta os dois critérios de empréstimo existente', () => {
+    const candidate = makeLoanTemplate();
+    const sameReceipt = makeLoanTemplate({
+      id: 'same-receipt',
+      amount: 40,
+      loanInstallmentCount: 3,
+      startMonth: '2026-04'
+    });
+    const samePlan = makeLoanTemplate({
+      id: 'same-plan',
+      loanReceivedAmount: 500,
+      loanReceivedDate: '2026-01-01'
+    });
+    const conflicts = window.GastoProLoans.detectLoanConflicts(candidate, [], [sameReceipt, samePlan]);
+    assertEqual(conflicts.map(item => item.id), ['same-receipt', 'same-plan']);
+    assertTrue(conflicts[0].reason.includes('mesmo valor recebido'));
+    assertTrue(conflicts[1].reason.includes('número de parcelas'));
+  });
+
+  it('detecta modelo comum ativo com mesma parcela e vencimento, mas ignora inativo', () => {
+    const candidate = makeLoanTemplate();
+    const matching = makeFixed({
+      id: 'fixed-match',
+      amount: 60,
+      dueDay: 15,
+      day: '15',
+      startMonth: '2026-02'
+    });
+    const inactive = { ...matching, id: 'fixed-paused', active: false };
+    const conflicts = window.GastoProLoans.detectLoanConflicts(candidate, [], [matching, inactive]);
+    assertEqual(conflicts.map(item => item.id), ['fixed-match']);
+    assertTrue(conflicts[0].reason.toLowerCase().includes('modelo recorrente ativo'));
+  });
+
+  itAsync('salva um empréstimo pelo clique real sem criar renda', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      fillLoanForm(fixture);
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => FinanceData.getTemplates().length === 1 &&
+        !fixture.host.querySelector('#loanSubmitBtn').disabled);
+      const saved = FinanceData.getTemplates()[0];
+      assertEqual(saved.loanReceivedAmount, 100);
+      assertEqual(saved.amount, 60);
+      assertEqual(saved.paidMonths, {});
+      assertEqual(FinanceData.getEntries(), []);
+      assertEqual(saved.day, '15');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('salva dois empréstimos distintos pelo formulário próprio', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      fillLoanForm(fixture);
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => FinanceData.getTemplates().length === 1 &&
+        !fixture.host.querySelector('#loanSubmitBtn').disabled);
+      fillLoanForm(fixture, {
+        loanDesc: 'Segundo empréstimo',
+        loanReceivedAmount: '250',
+        loanReceivedDate: '2026-05-01',
+        loanTotalPayable: '300',
+        loanInstallmentCount: '3',
+        loanInstallmentAmount: '100.00',
+        loanDueDay: '20',
+        loanFirstMonth: '2026-06'
+      });
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => FinanceData.getTemplates().length === 2 &&
+        !fixture.host.querySelector('#loanSubmitBtn').disabled);
+      assertEqual(FinanceData.getTemplates().map(loan => loan.desc), [
+        'Empréstimo novo', 'Segundo empréstimo'
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('inserir mesmo assim mantém o item encontrado na prévia', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      const existing = makeIncome({
+        id: crypto.randomUUID(),
+        amount: 100,
+        date: '2026-02-01',
+        accountId: fixture.account.id
+      });
+      await FinanceData.saveEntries([existing], { flush: false });
+      fillLoanForm(fixture);
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => !fixture.host.querySelector('#loanConflictPreview').hidden);
+      assertTrue(fixture.host.querySelector('#loanConflictItems').textContent.includes(existing.desc));
+      assertEqual(FinanceData.getTemplates(), []);
+      fixture.host.querySelector('#loanInsertAnywayBtn').click();
+      await waitForLoanCondition(() => FinanceData.getTemplates().length === 1 &&
+        !fixture.host.querySelector('#loanInsertAnywayBtn').disabled &&
+        fixture.host.querySelector('#loanConflictPreview').hidden);
+      assertEqual(FinanceData.getEntries().map(entry => entry.id), [existing.id]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('remover e inserir confirma e sincroniza somente o item escolhido', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      const chosen = makeIncome({
+        id: crypto.randomUUID(),
+        amount: 100,
+        date: '2026-02-01',
+        accountId: fixture.account.id
+      });
+      const retained = makeIncome({
+        id: crypto.randomUUID(),
+        amount: 400,
+        date: '2026-02-01',
+        accountId: fixture.account.id
+      });
+      await FinanceData.saveEntries([chosen, retained], { flush: false });
+      fillLoanForm(fixture);
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => !fixture.host.querySelector('#loanConflictPreview').hidden);
+      fixture.host.querySelector('input[name="loanConflictChoice"]').click();
+      const removeButton = fixture.host.querySelector('#loanRemoveConflictBtn');
+      assertFalse(removeButton.disabled);
+      removeButton.click();
+      await waitForLoanCondition(() =>
+        fixture.host.querySelector('#confirmModal').classList.contains('active')
+      );
+      fixture.host.querySelector('#confirmOkBtn').click();
+      await waitForLoanCondition(() =>
+        FinanceData.getTemplates().length === 1 &&
+        FinanceData.getEntries().every(entry => entry.id !== chosen.id) &&
+        fixture.host.querySelector('#toast').textContent.includes('Empréstimo salvo')
+      );
+      assertEqual(FinanceData.getEntries().map(entry => entry.id), [retained.id]);
+      assertEqual(fixture.syncCalls.deletedEntries, [[chosen.id]]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('cancelar a prévia mantém todos os itens e mostra aviso', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      const existing = makeIncome({
+        id: crypto.randomUUID(),
+        amount: 100,
+        date: '2026-02-01',
+        accountId: fixture.account.id
+      });
+      await FinanceData.saveEntries([existing], { flush: false });
+      fillLoanForm(fixture);
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => !fixture.host.querySelector('#loanConflictPreview').hidden);
+      fixture.host.querySelector('#loanCancelConflictBtn').click();
+      assertEqual(FinanceData.getTemplates(), []);
+      assertEqual(FinanceData.getEntries().map(entry => entry.id), [existing.id]);
+      assertTrue(fixture.host.querySelector('#toast').textContent.includes('cancelada'));
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('não remove nada antes da escolha explícita', async () => {
+    const fixture = await makeLoanFormFixture();
+    try {
+      const existing = makeIncome({
+        id: crypto.randomUUID(),
+        amount: 100,
+        date: '2026-02-01',
+        accountId: fixture.account.id
+      });
+      await FinanceData.saveEntries([existing], { flush: false });
+      fillLoanForm(fixture);
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => !fixture.host.querySelector('#loanConflictPreview').hidden);
+      assertTrue(fixture.host.querySelector('#loanRemoveConflictBtn').disabled);
+      assertEqual(FinanceData.getEntries().map(entry => entry.id), [existing.id]);
+      assertEqual(FinanceData.getTemplates(), []);
+      fixture.host.querySelector('#loanCancelConflictBtn').click();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  itAsync('avisa e registra categoria fixa quando a conta obrigatória está ausente', async () => {
+    const fixture = await makeLoanFormFixture({ noAccount: true });
+    try {
+      fillLoanForm(fixture);
+      fixture.host.querySelector('#loanSubmitBtn').click();
+      await waitForLoanCondition(() => window.GastoProDiagnostics.list().some(item =>
+        item.type === 'submit-no-effect' &&
+        item.data.category === 'submit sem efeito: empréstimo'
+      ));
+      assertEqual(FinanceData.getTemplates(), []);
+      assertTrue(fixture.host.querySelector('#loanAccountNotice').textContent.includes('Cadastre uma conta'));
+      assertTrue(fixture.host.querySelector('#toast').textContent.includes('Cadastre uma conta'));
+    } finally {
+      fixture.cleanup();
+    }
   });
 });
 
