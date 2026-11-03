@@ -763,7 +763,7 @@ returns table (
 language plpgsql
 stable
 security definer
-set search_path = public
+set search_path to ''
 as $$
 begin
   if not public.is_admin() then
@@ -778,7 +778,7 @@ begin
       users.created_at as signup_at,
       users.last_sign_in_at as last_seen_at,
       users.raw_user_meta_data ->> 'name' as metadata_name,
-      row_number() over (order by users.created_at, users.id) as position,
+      pg_catalog.row_number() over (order by users.created_at, users.id) as position,
       coalesce(consents.admin_visibility, false) as can_show_identity
     from auth.users as users
     left join public.user_consents as consents on consents.user_id = users.id
@@ -800,7 +800,7 @@ end;
 $$;
 
 revoke execute on function public.admin_list_users() from public, anon;
-grant execute on function public.admin_list_users() to authenticated;
+grant execute on function public.admin_list_users() to authenticated, service_role;
 
 create or replace function public.admin_feedback_authors()
 returns table (
