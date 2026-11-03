@@ -480,6 +480,29 @@ describe('FinanceData — Isolamento entre usuários', () => {
 });
 
 describe('Diagnóstico local temporário', () => {
+  it('resume grupos e código da falha de logout sem expor dados ou mensagem arbitrária', () => {
+    const format = window.GastoProLogoutFailureHelpers.format;
+    const message = format({
+      failureCategories: [
+        { category: 'entries', id: 'private-entry-id', description: 'Descrição privada' },
+        { category: 'accounts' },
+        { category: 'unknown', value: 'private-value' }
+      ],
+      error: { code: 'PGRST204', message: 'Descrição privada e private-value' }
+    });
+
+    assertTrue(message.includes('Lançamentos (entries)'));
+    assertTrue(message.includes('Contas (accounts)'));
+    assertTrue(message.includes('PGRST204'));
+    assertFalse(message.includes('private-entry-id'));
+    assertFalse(message.includes('Descrição privada'));
+    assertFalse(message.includes('private-value'));
+    assertFalse(message.includes('unknown'));
+    assertTrue(window.GastoProLogoutFailureHelpers.format({
+      failureCategories: [],
+      error: { code: 'private-code', message: 'private-message' }
+    }).includes('falha de sincronização sem código do servidor'));
+  });
   setupMockLocalStorage();
 
   it('mantém somente as 100 entradas mais recentes', () => {

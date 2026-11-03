@@ -1667,6 +1667,45 @@ async function waitForAuthenticatedSave() {
   return FinanceData.flushPendingSync(profile.userId);
 }
 
+function formatLogoutSyncFailure(result) {
+  const groups = {
+    entries: 'Lançamentos (entries)',
+    templates: 'Modelos (fixed_templates)',
+    goals: 'Metas (goals)',
+    accounts: 'Contas (accounts)',
+    creditCards: 'Cartões (credit_cards)',
+    creditCardPurchases: 'Compras no cartão (credit_card_purchases)',
+    rules: 'Regras de importação (fixed_import_rules)',
+    profile: 'Perfil (profiles)',
+    session: 'Sessão',
+    reconciliation: 'Reconciliação',
+    transactional: 'Operações transacionais'
+  };
+  const failedGroups = [...new Set(
+    (Array.isArray(result && result.failureCategories) ? result.failureCategories : [])
+      .map(failure => {
+        const category = failure && failure.category;
+        return typeof category === 'string' && Object.prototype.hasOwnProperty.call(groups, category)
+          ? groups[category]
+          : null;
+      })
+      .filter(Boolean)
+  )];
+  const code = result && result.error && typeof result.error.code === 'string'
+    ? result.error.code.trim()
+    : '';
+  const safeCode = /^[A-Z0-9_]{1,20}$/.test(code) ? code : '';
+  const reason = [
+    `Grupos: ${failedGroups.length ? failedGroups.join(', ') : 'sincronização não identificada'}.`,
+    safeCode ? `Código: ${safeCode}.` : 'Motivo: falha de sincronização sem código do servidor.'
+  ].join(' ');
+  return `Seus dados continuam neste aparelho. Baixe uma cópia de segurança para restaurar no app antes de tentar sair novamente. ${reason}`;
+}
+
+window.GastoProLogoutFailureHelpers = Object.freeze({
+  format: formatLogoutSyncFailure
+});
+
 window.GastoProAuthHelpers = {
   normalizeEmail(email) {
     return typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -10401,7 +10440,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!syncResult.success) {
         showConfirm({
           title: 'Não foi possível sincronizar',
-          message: 'Seus dados continuam neste aparelho. Baixe uma cópia de segurança para restaurar no app antes de tentar sair novamente.',
+          message: formatLogoutSyncFailure(syncResult),
           iconClass: 'fa-solid fa-cloud-arrow-up',
           okLabel: 'Cópia de segurança (para restaurar no app)',
           okBtnClass: 'btn-primary',
