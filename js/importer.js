@@ -34,6 +34,7 @@ const GastoProImporter = (() => {
   const UNSUPPORTED_FILE_WARNING = 'Formato não suportado. Use CSV, OFX, PDF, XML ou TXT.';
   const CSV_HEADER_WARNING = 'Cabeçalho CSV inválido. Use o modelo oficial para importar.';
   let lastWarnings = [];
+  let lastIgnoredRows = [];
 
   const CATEGORY_RULES = [
     { keys: ['ifood', 'rappi', 'uber eats', 'uber eat', 'delivery', 'mcdonalds', 'mc donalds',
@@ -223,9 +224,28 @@ const GastoProImporter = (() => {
     lastWarnings = [...new Set(warnings)];
   }
 
-  function lineIgnored(line) {
-    return line.trim().startsWith('#') ||
-      /\b(?:saldo|total|limite)\b|\bfatura\s+anterior\b/.test(normalize(line));
+  function getIgnoredLineReason(line) {
+    if (line.trim().startsWith('#')) return 'Comentário';
+    if (/\b(?:saldo|total|limite)\b|\bfatura\s+anterior\b/.test(normalize(line))) {
+      return 'Saldo, total, limite ou fatura anterior';
+    }
+    return '';
+  }
+
+  function recordIgnoredLine(line, reason, date = '', description = '') {
+    const text = String(line || '').slice(0, MAX_LINE_CHARS);
+    const dateText = date || (text.match(/\b\d{4}-\d{2}-\d{2}\b|\b\d{2}[/-]\d{2}(?:[/-]\d{2,4})?\b/) || [])[0];
+    const cleanedDescription = description || text
+      .replace(/^#\s*/, '')
+      .replace(/\b\d{4}-\d{2}-\d{2}\b|\b\d{2}[/-]\d{2}(?:[/-]\d{2,4})?\b/g, ' ')
+      .replace(/R\$\s*[\d.,-]+|(?:^|\s)[+-]?(?:\d{1,3}(?:[.,]\d{3})*|\d+)[.,]\d{2}(?=\s|$)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    lastIgnoredRows.push({
+      date: parseDate(dateText) || '',
+      desc: truncateText(cleanedDescription || 'Linha ignorada', 300),
+      reason
+    });
   }
 
   function isDateHeader(header) {
@@ -274,6 +294,7 @@ const GastoProImporter = (() => {
 
   function parseCSV(text, today = new Date()) {
     setWarnings();
+    lastIgnoredRows = [];
     if (!text || !text.trim()) {
       setWarnings([CSV_HEADER_WARNING]);
       return [];
@@ -292,6 +313,13 @@ const GastoProImporter = (() => {
       setWarnings([...lastWarnings, CSV_HEADER_WARNING]);
       return [];
     }
+    lines.slice(0, header.index).forEach(line => {
+      if (!line.trim()) return;
+      const reason = line.length > MAX_LINE_CHARS
+        ? 'Linha longa'
+        : getIgnoredLineReason(line) || 'Linha anterior ao cabeçalho';
+      recordIgnoredLine(line, reason);
+    });
 
     const headers = header.headers;
     const idxDate = headers.findIndex(isDateHeader);
@@ -331,25 +359,42 @@ const GastoProImporter = (() => {
       if (!line) continue;
       if (line.length > MAX_LINE_CHARS) {
         warnings.push('Linhas com mais de 500 caracteres foram ignoradas.');
+        recordIgnoredLine(line, 'Linha longa');
         continue;
       }
-      if (lineIgnored(line)) continue;
+      const ignoredReason = getIgnoredLineReason(line);
+      if (ignoredReason) {
+        const ignoredColumns = splitCSVLine(line, header.separator);
+        const ignoredValueAt = columnIndex =>
+          (ignoredColumns[columnIndex] || '').replace(/^"|"$/g, '').trim();
+        recordIgnoredLine(
+          line,
+          ignoredReason,
+          ignoredValueAt(idxDate),
+          ignoredValueAt(idxDesc)
+        );
+        continue;
+      }
       const columns = splitCSVLine(line, header.separator);
       const valueAt = columnIndex => (columns[columnIndex] || '').replace(/^"|"$/g, '').trim();
+      const rawDate = valueAt(idxDate);
+      const rawDesc = valueAt(idxDesc);
       const activeValue = idxActive >= 0 ? normalize(valueAt(idxActive)) : '';
       if (['nao', 'false', '0'].includes(activeValue)) {
         inactiveCount++;
+        recordIgnoredLine(line, 'Inativa', rawDate, rawDesc);
         continue;
       }
-      const rawDate = valueAt(idxDate);
-      const rawDesc = valueAt(idxDesc);
       const explicitType = idxType >= 0 ? normalize(valueAt(idxType)) : '';
       const debit = idxDebit >= 0 ? parseMoney(valueAt(idxDebit)) : 0;
       const credit = idxCredit >= 0 ? parseMoney(valueAt(idxCredit)) : 0;
       const signedAmount = idxDebit >= 0 || idxCredit >= 0
         ? credit - debit
         : parseMoneySigned(valueAt(idxAmount));
-      if (!rawDesc && signedAmount === 0) continue;
+      if (!rawDesc && signedAmount === 0) {
+        recordIgnoredLine(line, 'Sem descrição e valor', rawDate, rawDesc);
+        continue;
+      }
       const date = parseDate(rawDate, today);
       const rawCategory = idxCategory >= 0 ? valueAt(idxCategory) : '';
       const normalizedCategory = normalize(rawCategory);
@@ -620,6 +665,7 @@ const GastoProImporter = (() => {
   }
 
   async function parseFile(file, today = new Date()) {
+    lastIgnoredRows = [];
     const extension = getFileExtension(file);
     if (!SUPPORTED_FILE_EXTENSIONS.has(extension)) {
       setWarnings([UNSUPPORTED_FILE_WARNING]);
@@ -657,6 +703,7 @@ const GastoProImporter = (() => {
 
   function parseOFX(text) {
     setWarnings();
+    lastIgnoredRows = [];
     if (text.length > MAX_CSV_CHARS) {
       setWarnings(['O extrato OFX excede 1 MB; reduza o arquivo e tente novamente.']);
       return [];
@@ -727,6 +774,7 @@ const GastoProImporter = (() => {
 
   function parseNFeXML(text) {
     setWarnings();
+    lastIgnoredRows = [];
     if (/<!DOCTYPE|<!ENTITY/i.test(text)) {
       setWarnings(['XML inválido.']);
       return [];
@@ -780,6 +828,7 @@ const GastoProImporter = (() => {
 
   function parseRawText(text) {
     setWarnings();
+    lastIgnoredRows = [];
     if (!text || !text.trim()) return [];
     if (text.length > MAX_RAW_CHARS) {
       setWarnings(['O texto colado excede 200.000 caracteres.']);
@@ -807,9 +856,14 @@ const GastoProImporter = (() => {
       if (!line) continue;
       if (line.length > MAX_LINE_CHARS) {
         warnings.push('Linhas com mais de 500 caracteres foram ignoradas.');
+        recordIgnoredLine(line, 'Linha longa');
         continue;
       }
-      if (lineIgnored(line)) continue;
+      const ignoredReason = getIgnoredLineReason(line);
+      if (ignoredReason) {
+        recordIgnoredLine(line, ignoredReason);
+        continue;
+      }
       let match = line.match(startDate);
       let dateText;
       let desc;
@@ -824,7 +878,10 @@ const GastoProImporter = (() => {
           signedAmount = parseMoneySigned(signedAmount);
         } else {
           match = line.match(noDate);
-          if (!match) continue;
+          if (!match) {
+            recordIgnoredLine(line, 'Formato não reconhecido');
+            continue;
+          }
           [, desc, signedAmount] = match;
           signedAmount = parseMoneySigned(signedAmount);
           dateText = '';
@@ -851,6 +908,7 @@ const GastoProImporter = (() => {
 
   function parsePixPayload(payload, today = new Date()) {
     setWarnings();
+    lastIgnoredRows = [];
     let offset = 0;
     let crcOffset = -1;
     const fields = {};
@@ -913,6 +971,7 @@ const GastoProImporter = (() => {
 
   function parseBoletoLine(digits, today = new Date()) {
     setWarnings();
+    lastIgnoredRows = [];
     if (typeof digits !== 'string' || !/^\d+$/.test(digits) || ![47, 48].includes(digits.length)) {
       setWarnings(['Linha digitável inválida.']);
       return [];
@@ -1033,6 +1092,10 @@ const GastoProImporter = (() => {
     return [...lastWarnings];
   }
 
+  function getLastIgnoredRows() {
+    return lastIgnoredRows.map(row => ({ ...row }));
+  }
+
   // ================================================================
   // CONSTRUTOR DE ENTRY
   // ================================================================
@@ -1094,7 +1157,7 @@ const GastoProImporter = (() => {
   return {
     parseCSV, parseRawText, parseOFX, parsePixPayload, parseBoletoLine, groupTextItemsIntoLines,
     autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
-    parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, shiftMonth, detectInstallment, detectCsvInstallment, matchDebtTemplate,
+    parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, getLastIgnoredRows, shiftMonth, detectInstallment, detectCsvInstallment, matchDebtTemplate,
     buildInstallmentDebt, parseFile, isSupportedFile, UNSUPPORTED_FILE_WARNING, createCSVTemplate
   };
 

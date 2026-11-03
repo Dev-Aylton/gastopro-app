@@ -5766,6 +5766,55 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   scrollbar-color: var(--border) var(--theme-accent-transparent);
 }
 
+.import-stage-indicator {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+.import-completion-section {
+  display: grid;
+  gap: 1rem;
+}
+
+.import-completion-section[hidden],
+.import-not-imported[hidden] {
+  display: none;
+}
+
+.import-completion-section h4,
+.import-completion-section p,
+.import-completion-section ul {
+  margin: 0;
+}
+
+.import-not-imported {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+}
+
+.import-not-imported summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.import-not-imported ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.import-not-imported li {
+  line-height: 1.5;
+}
+
 /* Cabeçalho do modal */
 .import-header {
   display: flex;

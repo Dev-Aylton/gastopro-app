@@ -1131,6 +1131,14 @@ function collectRecurringImportCandidates(rows, minimumMonths = 2) {
   });
 }
 
+function getImportCandidateSuggestions(rows, existingCandidates, limit = 8) {
+  const existingKeys = new Set((existingCandidates || []).map(candidate => candidate.key));
+  const maxSuggestions = Math.max(0, Math.min(8, Math.floor(Number(limit) || 0)));
+  return collectRecurringImportCandidates(rows, 1)
+    .filter(candidate => !existingKeys.has(candidate.key))
+    .slice(0, maxSuggestions);
+}
+
 function markRecurringImportRows(rows) {
   const candidates = collectRecurringImportCandidates(rows);
   const candidateByIndex = new Map();
@@ -1383,6 +1391,7 @@ window.GastoProImportHelpers = Object.freeze({
   cleanRecurringImportDescription,
   markRecurringImportRows,
   collectRecurringImportCandidates,
+  getImportCandidateSuggestions,
   findRecurringImportCandidates,
   areRecurringImportCandidatesResolved,
   mergeRecurringImportCandidates,
@@ -2310,6 +2319,7 @@ function renderAdminView() {
             <span class="tag-badge admin-feedback-read-badge" data-read="${message.admin_read_at ? 'true' : 'false'}">
               ${message.admin_read_at ? 'Lida' : 'Não lida'}
             </span>
+            ${message.admin_archived_at ? '<span class="tag-badge">Arquivada</span>' : ''}
             <time datetime="${escapeHtml(message.created_at || '')}">${escapeHtml(formatFeedbackDate(message.created_at))}</time>
           </div>
           <p class="feedback-message-text">${escapeHtml(message.message)}</p>
@@ -2334,11 +2344,16 @@ function renderAdminView() {
               </div>
             </div>
           ` : `
-            ${message.admin_read_at ? '' : `
-              <button type="button" class="btn-secondary admin-action-button" data-action="admin-mark-read" data-id="${escapeHtml(message.id)}">
-                Marcar como lida
-              </button>
-            `}
+            <button type="button" class="btn-secondary admin-action-button"
+              data-action="${message.admin_read_at ? 'admin-mark-unread' : 'admin-mark-read'}"
+              data-id="${escapeHtml(message.id)}">
+              ${message.admin_read_at ? 'Marcar como não lida' : 'Marcar como lida'}
+            </button>
+            <button type="button" class="btn-secondary admin-action-button"
+              data-action="${message.admin_archived_at ? 'admin-unarchive' : 'admin-archive'}"
+              data-id="${escapeHtml(message.id)}">
+              ${message.admin_archived_at ? 'Desarquivar' : 'Arquivar'}
+            </button>
             <button type="button" class="btn-secondary admin-action-button" data-action="admin-reply" data-id="${escapeHtml(message.id)}">
               ${message.reply ? 'Editar resposta' : 'Responder'}
             </button>
@@ -2351,8 +2366,8 @@ function renderAdminView() {
   container.innerHTML = `
     <div class="filter-buttons admin-feedback-filters" role="group" aria-label="Filtrar mensagens">
       <button type="button" class="filter-btn ${adminViewState.filter === 'new' ? 'active' : ''}" data-action="admin-filter" data-filter="new" aria-pressed="${adminViewState.filter === 'new'}">Novas</button>
-      <button type="button" class="filter-btn ${adminViewState.filter === 'answered' ? 'active' : ''}" data-action="admin-filter" data-filter="answered" aria-pressed="${adminViewState.filter === 'answered'}">Respondidas</button>
       <button type="button" class="filter-btn ${adminViewState.filter === 'all' ? 'active' : ''}" data-action="admin-filter" data-filter="all" aria-pressed="${adminViewState.filter === 'all'}">Todas</button>
+      <button type="button" class="filter-btn ${adminViewState.filter === 'archived' ? 'active' : ''}" data-action="admin-filter" data-filter="archived" aria-pressed="${adminViewState.filter === 'archived'}">Arquivadas</button>
     </div>
     <p class="admin-feedback-notice ${adminViewState.noticeType === 'error' ? 'feedback-notice-error' : ''}" role="${adminViewState.noticeType === 'error' ? 'alert' : 'status'}" aria-live="polite">${escapeHtml(adminViewState.notice)}</p>
     ${adminViewState.loading && !adminViewState.messages.length ? '<p role="status">Carregando mensagens...</p>' : ''}
@@ -2425,38 +2440,110 @@ async function refreshAdminFeedbackNotifications() {
   return true;
 }
 
-async function markAdminFeedbackRead(id) {
+async function setAdminFeedbackReadState(id, isRead) {
   const message = adminViewState.messages.find(item => item.id === id);
-  if (message && message.admin_read_at) {
-    adminUnreadFeedbackIds.delete(id);
-    syncAdminFeedbackNotifications([...adminUnreadFeedbackIds]);
-    adminViewState.newCount = getUnreadAdminFeedbackCount();
-    updateAdminNavigation();
-    renderNotificationCenter();
-    return { success: true, alreadyRead: true };
-  }
-  if (adminFeedbackReadRequests.has(id)) return { success: true, pending: true };
-  adminFeedbackReadRequests.add(id);
-  try {
-    const result = await window.SupabaseAuth.markFeedbackRead(id);
-    if (!result.success) {
-      console.warn('[GastoPro] Não foi possível marcar a mensagem como lida:', result.error);
-      return result;
-    }
-    if (message) message.admin_read_at = result.readAt || new Date().toISOString();
-    adminUnreadFeedbackIds.delete(id);
+  if (message && Boolean(message.admin_read_at) === isRead) {
+    if (isRead) adminUnreadFeedbackIds.delete(id);
+    else adminUnreadFeedbackIds.add(id);
     syncAdminFeedbackNotifications([...adminUnreadFeedbackIds]);
     adminViewState.newCount = getUnreadAdminFeedbackCount();
     updateAdminNavigation();
     renderNotificationCenter();
     if (state.currentView === 'admin') renderAdminView();
+    return { success: true, alreadyInState: true, alreadyRead: isRead };
+  }
+  if (adminFeedbackReadRequests.has(id)) return { success: true, pending: true };
+  adminFeedbackReadRequests.add(id);
+  try {
+    const result = await (isRead
+      ? window.SupabaseAuth.markFeedbackRead(id)
+      : window.SupabaseAuth.markFeedbackUnread(id));
+    if (!result.success) {
+      adminViewState.notice = result.error || 'Não foi possível atualizar o estado da mensagem.';
+      adminViewState.noticeType = 'error';
+      showToast(adminViewState.notice, 'error');
+      renderAdminView();
+      return result;
+    }
+    if (message) message.admin_read_at = isRead
+      ? result.admin_read_at || result.readAt || new Date().toISOString()
+      : null;
+    if (isRead) adminUnreadFeedbackIds.delete(id);
+    else adminUnreadFeedbackIds.add(id);
+    syncAdminFeedbackNotifications([...adminUnreadFeedbackIds]);
+    adminViewState.newCount = getUnreadAdminFeedbackCount();
+    adminViewState.notice = isRead ? 'Mensagem marcada como lida.' : 'Mensagem marcada como não lida.';
+    adminViewState.noticeType = 'status';
+    updateAdminNavigation();
+    renderNotificationCenter();
+    if (state.currentView === 'admin') renderAdminView();
     return result;
   } catch (error) {
-    console.warn('[GastoPro] Não foi possível marcar a mensagem como lida:', error);
-    return { success: false, error: window.SupabaseAuth.getFeedbackErrorMessage(error) };
+    console.warn('[GastoPro] Não foi possível atualizar a leitura da mensagem:', error);
+    adminViewState.notice = 'Não foi possível atualizar a leitura da mensagem. Tente novamente.';
+    adminViewState.noticeType = 'error';
+    showToast(adminViewState.notice, 'error');
+    renderAdminView();
+    return { success: false, error: adminViewState.notice };
   } finally {
     adminFeedbackReadRequests.delete(id);
   }
+}
+
+async function markAdminFeedbackRead(id) {
+  return setAdminFeedbackReadState(id, true);
+}
+
+async function markAdminFeedbackUnread(id) {
+  return setAdminFeedbackReadState(id, false);
+}
+
+async function updateAdminFeedbackArchive(id, archived) {
+  const message = adminViewState.messages.find(item => item.id === id);
+  const result = await (archived
+    ? window.SupabaseAuth.archiveFeedback(id)
+    : window.SupabaseAuth.unarchiveFeedback(id));
+  if (!result.success) {
+    adminViewState.notice = result.error || 'Não foi possível atualizar o arquivamento.';
+    adminViewState.noticeType = 'error';
+    showToast(adminViewState.notice, 'error');
+    renderAdminView();
+    return result;
+  }
+  if (message) message.admin_archived_at = archived ? result.admin_archived_at : null;
+  if (archived) adminUnreadFeedbackIds.delete(id);
+  syncAdminFeedbackNotifications([...adminUnreadFeedbackIds]);
+  adminViewState.newCount = getUnreadAdminFeedbackCount();
+  adminViewState.notice = archived ? 'Mensagem arquivada.' : 'Mensagem desarquivada.';
+  adminViewState.noticeType = 'status';
+  adminViewState.messages = adminViewState.messages.filter(item => item.id !== id);
+  updateAdminNavigation();
+  renderNotificationCenter();
+  renderAdminView();
+  await Promise.all([
+    loadAdminMessages({ reset: true }),
+    refreshAdminFeedbackNotifications()
+  ]);
+  if (state.currentView === 'admin') {
+    adminViewState.notice = archived ? 'Mensagem arquivada.' : 'Mensagem desarquivada.';
+    adminViewState.noticeType = 'status';
+    renderAdminView();
+  }
+  return result;
+}
+
+function confirmAdminFeedbackArchive(id, archived) {
+  const message = adminViewState.messages.find(item => item.id === id);
+  if (!message) return;
+  showConfirm({
+    title: archived ? 'Arquivar mensagem?' : 'Desarquivar mensagem?',
+    message: archived
+      ? 'A mensagem sairá das Novas e do sino do Admin, mas continuará visível para a pessoa que a enviou. Deseja arquivar?'
+      : 'A mensagem voltará à lista de mensagens não arquivadas. Deseja continuar?',
+    iconClass: archived ? 'fa-solid fa-box-archive' : 'fa-solid fa-box-open',
+    okLabel: archived ? 'Arquivar' : 'Desarquivar',
+    onConfirm: () => updateAdminFeedbackArchive(id, archived)
+  });
 }
 
 async function loadAdminMessages({ reset = false } = {}) {
@@ -4738,6 +4825,10 @@ window.GastoProNotificationCenter = {
   getAdminFeedbackUnreadCount: getUnreadAdminFeedbackCount,
   getAdminFeedbackUnreadIds: () => [...adminUnreadFeedbackIds],
   markFeedbackRead: markAdminFeedbackRead,
+  markFeedbackUnread: markAdminFeedbackUnread,
+  archiveFeedback: id => updateAdminFeedbackArchive(id, true),
+  unarchiveFeedback: id => updateAdminFeedbackArchive(id, false),
+  refreshAdminFeedbackNotifications,
   markRead: markNotificationAsRead,
   dismiss: dismissNotification,
   clearAll: clearAllNotifications,
@@ -7583,7 +7674,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       case 'admin-filter': {
         const filter = actionElement.dataset.filter;
-        if (!['new', 'answered', 'all'].includes(filter)) break;
+        if (!['new', 'all', 'archived'].includes(filter)) break;
         adminViewState.filter = filter;
         adminViewState.editingId = null;
         adminViewState.draftReply = '';
@@ -7611,6 +7702,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       case 'admin-mark-read':
         if (adminViewState.access === 'allowed' && id) markAdminFeedbackRead(id);
+        break;
+      case 'admin-mark-unread':
+        if (adminViewState.access === 'allowed' && id) markAdminFeedbackUnread(id);
+        break;
+      case 'admin-archive':
+        if (adminViewState.access === 'allowed' && id) confirmAdminFeedbackArchive(id, true);
+        break;
+      case 'admin-unarchive':
+        if (adminViewState.access === 'allowed' && id) updateAdminFeedbackArchive(id, false);
         break;
       case 'admin-send-reply':
         saveAdminReply(id);
@@ -8609,7 +8709,8 @@ document.addEventListener('DOMContentLoaded', () => {
               if (!categorySync.success) return;
               showToast(failedCount
                 ? `${changed.length} lançamento${changed.length === 1 ? '' : 's'} atualizado${changed.length === 1 ? '' : 's'}; ${failedCount} não puderam ser alterados.`
-                : `${changed.length} lançamento${changed.length === 1 ? '' : 's'} atualizado${changed.length === 1 ? '' : 's'} com a categoria ${category}.`);
+                : `${changed.length} lançamento${changed.length === 1 ? '' : 's'} atualizado${changed.length === 1 ? '' : 's'} com a categoria ${category}.`,
+              failedCount ? 'error' : 'success');
             }),
             onSecondary: () => showToast('Categoria atualizada somente neste lançamento.')
           });
@@ -10637,7 +10738,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const result = FinanceData.saveProfile(profile, { queueSync: true });
         if (!result.success) {
           if (result.error && result.error.name === 'QuotaExceededError') {
-            showToast('O armazenamento do navegador está cheio. Remova alguns dados e tente novamente.');
+            showToast('O armazenamento do navegador está cheio. Remova alguns dados e tente novamente.', 'error');
           } else {
             showToast('Não foi possível salvar a foto neste aparelho.', 'error');
           }
@@ -10771,7 +10872,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ? 'Dados locais mantidos; não foi possível sincronizar agora.'
           : 'Dados atualizados com sucesso!';
       if (hasCloudSession && !isCloud) trackUsageEvent('sync_error');
-      showToast(refreshMessage);
+      showToast(refreshMessage, hasCloudSession && !isCloud ? 'error' : 'success');
 
       // Se a sidebar ou o drawer estiverem abertos, fecha-os
       closeMobileSidebar();
@@ -10860,7 +10961,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (controllerChanged) {
         window.location.reload();
       } else {
-        showToast('Nova versão encontrada. Tente novamente em instantes.');
+        showToast('Nova versão encontrada. Tente novamente em instantes.', 'error');
       }
     } catch (error) {
       console.warn('[GastoPro] Erro ao buscar nova versão do app:', error);
@@ -10932,14 +11033,91 @@ document.addEventListener('DOMContentLoaded', () => {
   const backToImportPreviewBtn = document.getElementById('backToImportPreviewBtn');
   const backToImportDecisionBtn = document.getElementById('backToImportDecisionBtn');
   const finalConfirmImportBtn = document.getElementById('finalConfirmImportBtn');
+  const importStageStatus = document.getElementById('importStageStatus');
+  const importWorkflowContent = document.getElementById('importWorkflowContent');
+  const importCompletionSection = document.getElementById('importCompletionSection');
+  const closeImportCompletionBtn = document.getElementById('closeImportCompletionBtn');
   let importSaving = false;
   let importDecisionCandidates = [];
   let importCandidateDecisions = new Map();
+  let _importIgnoredRows = [];
+
+  function setImportStage(stage) {
+    const stages = {
+      choose: 'Etapa 1 de 4 — Escolher arquivo ou texto',
+      preview: 'Etapa 2 de 4 — Conferir prévia',
+      decisions: 'Etapa 3 de 4 — Revisar gastos fixos',
+      confirm: 'Etapa 4 de 4 — Confirmar importação',
+      complete: 'Etapa 4 de 4 — Importação concluída'
+    };
+    if (importStageStatus) importStageStatus.textContent = stages[stage] || stages.choose;
+  }
 
   function showImportDecisionStep(step) {
     if (importPreviewSection) importPreviewSection.classList.toggle('visible', step === 'preview');
     if (importFixedDecisionSection) importFixedDecisionSection.hidden = step !== 'decisions';
     if (importFinalConfirmSection) importFinalConfirmSection.hidden = step !== 'confirm';
+    setImportStage(step);
+  }
+
+  function getImportNotImportedItems(importedIndexes) {
+    const items = _importIgnoredRows.map(row => ({ ...row }));
+    const existingEntries = FinanceData.getEntries();
+    _importParsedRows.forEach((row, index) => {
+      if (importedIndexes && importedIndexes.has(index)) return;
+      let reason = '';
+      if (row.invalid) {
+        reason = row.invalidReason || 'Dados inválidos.';
+      } else if (row.dueDayMissing) {
+        reason = 'Dia de vencimento ausente ou inválido.';
+      } else if (row.importSkipReason) {
+        reason = row.importSkipReason;
+      } else if (row.duplicate && !row.selected) {
+        const rowDate = row.date ? Date.parse(`${row.date}T00:00:00Z`) : NaN;
+        const matchingEntry = existingEntries.find(entry => {
+          if (!row.accountId || entry.accountId !== row.accountId ||
+              Math.round(Number(entry.amount) * 100) !== Math.round(Number(row.amount) * 100) ||
+              (entry.type === 'income') !== (getImportPreviewType(row) === 'income') ||
+              !entry.date || !Number.isFinite(rowDate)) return false;
+          const entryDate = Date.parse(`${entry.date}T00:00:00Z`);
+          return Number.isFinite(entryDate) &&
+            Math.abs(entryDate - rowDate) <= 2 * 24 * 60 * 60 * 1000;
+        });
+        const matchingTemplate = !matchingEntry && (row.type === 'fixed' || row.type === 'debt')
+          ? FinanceData.getTemplates().find(template =>
+            normalizeFixedDescription(template.desc) === normalizeFixedDescription(row.desc) &&
+            Math.abs(Math.round(Number(template.amount) * 100) - Math.round(Number(row.amount) * 100)) <= 1 &&
+            template.startMonth === row.startMonth &&
+            template.accountId === row.accountId
+          )
+          : null;
+        const matchingItem = matchingEntry || matchingTemplate;
+        reason = matchingItem
+          ? `Duplicado de “${matchingItem.desc}”${
+            matchingEntry && matchingEntry.date
+              ? ` (${matchingEntry.date.slice(0, 10).split('-').reverse().join('/')})`
+              : matchingTemplate && matchingTemplate.startMonth
+                ? ` (início ${matchingTemplate.startMonth.split('-').reverse().join('/')})`
+                : ''
+          }.`
+          : 'Possível duplicado de lançamento existente.';
+      } else if (!row.selected) {
+        reason = 'Não selecionado para importação.';
+      }
+      if (reason) items.push({ date: row.date || '', desc: row.desc, reason });
+    });
+    return items;
+  }
+
+  function renderImportNotImported(details, countElement, list, importedIndexes) {
+    if (!details || !countElement || !list) return;
+    const items = getImportNotImportedItems(importedIndexes);
+    countElement.textContent = String(items.length);
+    details.hidden = items.length === 0;
+    list.innerHTML = items.map(item => {
+      const date = item.date ? item.date.split('-').reverse().join('/') : 'Data não identificada';
+      return `<li><strong>${escapeHtml(item.desc)}</strong> — ${escapeHtml(date)} — ${escapeHtml(item.reason)}</li>`;
+    }).join('');
   }
 
   function resetImportDecisionFlow() {
@@ -10954,6 +11132,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderImportDecisionCandidates() {
     if (!importFixedCandidateList) return;
+    const suggestions = !importFixedSearchInput || !importFixedSearchInput.value.trim()
+      ? getImportCandidateSuggestions(_importParsedRows, importDecisionCandidates)
+      : [];
     importFixedCandidateList.innerHTML = importDecisionCandidates.map((candidate, index) => {
       const decision = importCandidateDecisions.get(candidate.key) || { type: null, active: null };
       const months = candidate.months.join(', ');
@@ -10976,7 +11157,27 @@ document.addEventListener('DOMContentLoaded', () => {
               data-candidate-active="${index}" ${decision.active === false ? 'checked' : ''} /> Inativo</label>
           </fieldset>
         </article>`;
-    }).join('') || '<p class="import-help-note">Nenhum candidato sugerido. Use a busca para adicionar um gasto fixo.</p>';
+    }).join('') || '<p class="import-help-note">Nenhum candidato na lista. Use a busca para adicionar outro gasto fixo.</p>';
+    if (suggestions.length) {
+      importFixedCandidateList.insertAdjacentHTML('beforeend', `
+        <div class="import-fixed-suggestions">
+          <p class="import-help-note">Sugestões locais da prévia — selecione para revisar:</p>
+          <ul>${suggestions.map((candidate, index) => `
+            <li><button type="button" class="btn-secondary" data-import-suggestion="${index}">
+              ${escapeHtml(candidate.description)}
+            </button></li>`).join('')}</ul>
+        </div>`);
+      importFixedCandidateList.querySelectorAll('[data-import-suggestion]').forEach(button => {
+        button.addEventListener('click', () => {
+          const suggestion = suggestions[Number(button.dataset.importSuggestion)];
+          if (!suggestion || !importFixedSearchInput) return;
+          importFixedSearchInput.value = suggestion.description;
+          searchImportFixedCandidate({ preventDefault() {} });
+        });
+      });
+    } else if (importFixedSearchStatus && !importFixedSearchInput?.value.trim()) {
+      importFixedSearchStatus.textContent = 'Sugestões baseadas somente nas descrições desta prévia.';
+    }
 
     importFixedCandidateList.querySelectorAll('[data-candidate-choice]').forEach(input => {
       input.addEventListener('change', event => {
@@ -11101,15 +11302,63 @@ document.addEventListener('DOMContentLoaded', () => {
     // Esconde preview
     if (importPreviewSection) importPreviewSection.classList.remove('visible');
     resetImportDecisionFlow();
+    _importIgnoredRows = [];
+    if (importWorkflowContent) importWorkflowContent.hidden = false;
+    if (importCompletionSection) importCompletionSection.hidden = true;
+    const closeButton = document.getElementById('closeImportModalBtn');
+    if (closeButton) closeButton.hidden = false;
+    setImportStage('choose');
     if (importPreviewTbody)   importPreviewTbody.innerHTML = '';
     if (previewCountBadge)    previewCountBadge.textContent = '0 itens';
     if (importSelectAll)      importSelectAll.checked = true;
     _importSourceRows = [];
     _importParsedRows = [];
+    _importIgnoredRows = [];
     if (importDuplicateSelectionNote) {
       importDuplicateSelectionNote.textContent = '';
       importDuplicateSelectionNote.hidden = true;
     }
+  }
+
+  function showImportCompletion(importedItems, paymentItems, importedIndexes) {
+    const summary = document.getElementById('importCompletionSummary');
+    const countsList = document.getElementById('importCompletionCounts');
+    const total = importedItems.length + paymentItems.length;
+    const notImportedCount = getImportNotImportedItems(importedIndexes).length;
+    if (summary) {
+      summary.textContent = `${total} item(ns) importado(s), incluindo ${paymentItems.length} baixa(s) de parcela; ${notImportedCount} item(ns) não importado(s).`;
+    }
+    if (countsList) {
+      const counts = new Map([
+        ['Receitas', 0],
+        ['Gastos variáveis', 0],
+        ['Contas fixas', 0],
+        ['Dívidas', 0],
+        ['Baixas de parcelas', paymentItems.length]
+      ]);
+      importedItems.forEach(item => {
+        const label = item.type === 'income' ? 'Receitas'
+          : item.type === 'fixed' ? 'Contas fixas'
+            : item.type === 'debt' || item.isDebt ? 'Dívidas'
+              : 'Gastos variáveis';
+        counts.set(label, counts.get(label) + 1);
+      });
+      countsList.innerHTML = [...counts]
+        .map(([label, count]) => `<li>${escapeHtml(label)}: ${count}</li>`)
+        .join('') || '<li>Nenhum lançamento importado.</li>';
+    }
+    renderImportNotImported(
+      document.getElementById('importNotImportedCompletion'),
+      document.getElementById('importNotImportedCompletionCount'),
+      document.getElementById('importNotImportedCompletionList'),
+      importedIndexes
+    );
+    setImportStage('complete');
+    if (importWorkflowContent) importWorkflowContent.hidden = true;
+    if (importCompletionSection) importCompletionSection.hidden = false;
+    const closeButton = document.getElementById('closeImportModalBtn');
+    if (closeButton) closeButton.hidden = true;
+    document.getElementById('importCompletionTitle')?.focus();
   }
 
   function updateImportAccountSelector(selectedId = '') {
@@ -11208,6 +11457,12 @@ document.addEventListener('DOMContentLoaded', () => {
         </td></tr>`;
       if (previewCountBadge) previewCountBadge.textContent = '0 itens';
       if (importPreviewSection) importPreviewSection.classList.add('visible');
+      renderImportNotImported(
+        document.getElementById('importNotImportedPreview'),
+        document.getElementById('importNotImportedPreviewCount'),
+        document.getElementById('importNotImportedPreviewList')
+      );
+      setImportStage('preview');
       return;
     }
 
@@ -11307,6 +11562,11 @@ document.addEventListener('DOMContentLoaded', () => {
         row.selected = event.target.checked;
         row.selectionTouched = true;
         renderImportDueDaySummary(_importParsedRows);
+        renderImportNotImported(
+          document.getElementById('importNotImportedPreview'),
+          document.getElementById('importNotImportedPreviewCount'),
+          document.getElementById('importNotImportedPreviewList')
+        );
       });
       tr.querySelector('.import-cat-select').addEventListener('change', event => {
         row.category = event.target.value;
@@ -11326,6 +11586,11 @@ document.addEventListener('DOMContentLoaded', () => {
           Boolean(row.installment)
         );
         renderImportDueDaySummary(_importParsedRows);
+        renderImportNotImported(
+          document.getElementById('importNotImportedPreview'),
+          document.getElementById('importNotImportedPreviewCount'),
+          document.getElementById('importNotImportedPreviewList')
+        );
         const warning = tr.querySelector('.import-due-day-warning');
         if (warning) warning.textContent = getImportDueDayMonthWarning(row, e.target.value);
       });
@@ -11364,6 +11629,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (importPreviewSection) importPreviewSection.classList.add('visible');
     if (importSelectAll) importSelectAll.checked = rows.length > 0 && rows.every(row => row.selected);
+    renderImportNotImported(
+      document.getElementById('importNotImportedPreview'),
+      document.getElementById('importNotImportedPreviewCount'),
+      document.getElementById('importNotImportedPreviewList')
+    );
+    setImportStage('preview');
   }
 
   // Armazena as linhas parseadas para uso posterior na confirmação
@@ -11450,7 +11721,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const file = csvFileInput.files[0];
     if (!GastoProImporter.isSupportedFile(file)) {
       csvFileInput.value = '';
-      showToast(GastoProImporter.UNSUPPORTED_FILE_WARNING);
+      showToast(GastoProImporter.UNSUPPORTED_FILE_WARNING, 'error');
       return;
     }
     const isPdf = file.name.toLowerCase().endsWith('.pdf');
@@ -11462,6 +11733,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (pdfReadingStatus) pdfReadingStatus.hidden = !isPdf;
     try {
       const rows = await GastoProImporter.parseFile(file);
+      _importIgnoredRows = GastoProImporter.getLastIgnoredRows();
       const hadWarnings = prepareImportRows(rows);
       if (_importParsedRows.length > 0 && !hadWarnings) {
         showToast(`${_importParsedRows.length} lançamentos encontrados no arquivo!`);
@@ -11479,7 +11751,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleTextParse() {
     const text = importRawTextarea ? importRawTextarea.value : '';
     if (!text.trim()) {
-      showToast('Cole o texto do extrato antes de analisar.');
+      showToast('Cole o texto do extrato antes de analisar.', 'error');
       return;
     }
     if (text.length > 200_000) {
@@ -11487,7 +11759,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     try {
-      const hadWarnings = prepareImportRows(GastoProImporter.parseRawText(text));
+      const rows = GastoProImporter.parseRawText(text);
+      _importIgnoredRows = GastoProImporter.getLastIgnoredRows();
+      const hadWarnings = prepareImportRows(rows);
       if (_importParsedRows.length > 0 && !hadWarnings) {
         showToast(`${_importParsedRows.length} lançamentos encontrados!`);
       }
@@ -11521,7 +11795,7 @@ document.addEventListener('DOMContentLoaded', () => {
         importTargetAccountError.textContent = message;
         importTargetAccountError.hidden = false;
       }
-      showToast(message);
+      showToast(message, 'error');
       return;
     }
 
@@ -11538,6 +11812,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const debtItems = [];
     const launches = [];
     const payments = [];
+    const importedIndexes = new Set();
     const candidateByIndex = new Map();
     importDecisionCandidates.forEach(candidate => candidate.indexes.forEach(index =>
       candidateByIndex.set(index, candidate)
@@ -11627,6 +11902,9 @@ document.addEventListener('DOMContentLoaded', () => {
           active: fixed.active,
           paidMonths: fixed.paidMonths
         });
+        candidate.indexes.forEach(candidateIndex => {
+          if (_importParsedRows[candidateIndex].selected) importedIndexes.add(candidateIndex);
+        });
         return;
       }
       if (!cb.checked) return;
@@ -11638,6 +11916,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (type === 'fixed' || type === 'debt') {
         debtItems.push(GastoProImporter.buildEntry({ ...row, category }, type));
+        importedIndexes.add(i);
         return;
       }
 
@@ -11647,12 +11926,16 @@ document.addEventListener('DOMContentLoaded', () => {
           'variable',
           getImportPaidValue(row)
         ));
+        importedIndexes.add(i);
         return;
       }
 
       if ((type === 'variable' || type === 'income') && row.installment && row.linkedTemplateId) {
         if (getImportPaidValue(row)) {
           payments.push({ id: row.linkedTemplateId, ym: row.date.substring(0, 7) });
+          importedIndexes.add(i);
+        } else {
+          sourceRow.importSkipReason = 'Parcela marcada como não paga.';
         }
         return;
       }
@@ -11667,6 +11950,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (getImportPaidValue(row)) debt.paidMonths[month] = true;
           else delete debt.paidMonths[month];
           debtItems.push(debt);
+          importedIndexes.add(i);
           return;
         }
       }
@@ -11678,6 +11962,7 @@ document.addEventListener('DOMContentLoaded', () => {
       );
 
       launches.push(entry);
+      importedIndexes.add(i);
     });
 
     items.push(...debtItems, ...launches);
@@ -11710,17 +11995,8 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
         trackUsageEvent('import_completed');
-        const debtCount = debtItems.length;
-        const paymentCount = payments.length;
-        const launchCount = launches.length;
-        showToast(
-          `${debtCount} conta${debtCount === 1 ? '' : 's'} a pagar criada${debtCount === 1 ? '' : 's'}, ` +
-          `${paymentCount} baixa${paymentCount === 1 ? '' : 's'} registrada${paymentCount === 1 ? '' : 's'} e ` +
-          `${launchCount} lançamento${launchCount === 1 ? '' : 's'} importado${launchCount === 1 ? '' : 's'} com sucesso!` +
-          (excludedDueDayRows ? ` ${excludedDueDayRows} linha(s) sem dia ficaram pendentes.` : '')
-        );
         renderAll();
-        closeImportModal(true);
+        showImportCompletion(result.items, payments, importedIndexes);
       } catch (err) {
         console.error('[GastoPro Importer] Erro ao salvar os lançamentos:', err);
         trackUsageEvent('import_save_error');
@@ -11762,6 +12038,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Fechar modal
   if (closeImportModalBtn) closeImportModalBtn.addEventListener('click', closeImportModal);
   if (cancelImportBtn)     cancelImportBtn.addEventListener('click', closeImportModal);
+  if (closeImportCompletionBtn) {
+    closeImportCompletionBtn.addEventListener('click', () => closeImportModal(true));
+  }
 
   // Fechar ao clicar no overlay
   if (importModal) {
@@ -11786,7 +12065,7 @@ document.addEventListener('DOMContentLoaded', () => {
           document.getElementById('csvDropTitle').textContent = 'Arraste o arquivo aqui';
           document.getElementById('csvDropSub').textContent = 'ou clique para selecionar o arquivo (.csv, .ofx, .xml, .pdf)';
         }
-        showToast(GastoProImporter.UNSUPPORTED_FILE_WARNING);
+        showToast(GastoProImporter.UNSUPPORTED_FILE_WARNING, 'error');
         return;
       }
       if (file && csvDropZone) {
@@ -11862,6 +12141,11 @@ document.addEventListener('DOMContentLoaded', () => {
             : '';
       }
       renderImportDueDaySummary(_importParsedRows);
+      renderImportNotImported(
+        document.getElementById('importNotImportedPreview'),
+        document.getElementById('importNotImportedPreviewCount'),
+        document.getElementById('importNotImportedPreviewList')
+      );
     });
   }
 
@@ -12418,7 +12702,7 @@ document.addEventListener('DOMContentLoaded', () => {
       wizardState.fixedNew.length + Object.values(wizardState.varItems).filter(amount => amount > 0).length +
       wizardState.varCustom.length;
     if (!itemsToSave) {
-      showToast('Nenhum dado foi informado para salvar.');
+      showToast('Nenhum dado foi informado para salvar.', 'error');
       closeWizard();
       return;
     }
@@ -12526,7 +12810,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Os lançamentos foram salvos neste aparelho, mas a sincronização ficou pendente.');
       }
     } else {
-      showToast('Nenhum dado foi informado para salvar.');
+      showToast('Nenhum dado foi informado para salvar.', 'error');
     }
 
     closeWizard();

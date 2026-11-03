@@ -3971,6 +3971,7 @@ describe('Canal Fale comigo', () => {
     const previousClient = window.SupabaseAuth.client;
     const previousAccess = adminViewState.access;
     const previousMessages = adminViewState.messages;
+    const previousFilter = adminViewState.filter;
     const previousEditingId = adminViewState.editingId;
     const previousDraftReply = adminViewState.draftReply;
     const host = document.createElement('div');
@@ -3986,6 +3987,7 @@ describe('Canal Fale comigo', () => {
       reply: null,
       replied_at: null,
       admin_read_at: null,
+      admin_archived_at: null,
       created_at: '2026-10-29T12:00:00Z'
     }, {
       id: '550e8400-e29b-41d4-a716-446655440005',
@@ -3996,6 +3998,7 @@ describe('Canal Fale comigo', () => {
       reply: null,
       replied_at: null,
       admin_read_at: '2026-10-30T12:30:00Z',
+      admin_archived_at: null,
       created_at: '2026-10-30T12:00:00Z'
     }];
     const authors = [
@@ -4021,6 +4024,7 @@ describe('Canal Fale comigo', () => {
             return this;
           },
           eq() { return this; },
+          is() { return this; },
           order() { return this; },
           range: async () => ({ data: rows, error: null })
         };
@@ -4029,7 +4033,7 @@ describe('Canal Fale comigo', () => {
     try {
       const result = await window.SupabaseAuth.fetchAllFeedback({ status: 'new', limit: 20, offset: 0 });
       assertTrue(result.success);
-      assertEqual(selectedColumns, 'id, user_id, category, message, status, reply, replied_at, admin_read_at, created_at');
+      assertEqual(selectedColumns, 'id, user_id, category, message, status, reply, replied_at, admin_read_at, admin_archived_at, created_at');
       assertEqual(result.messages[0].author, {
         userNumber: 2,
         displayName: 'Usuário nº 2',
@@ -4060,14 +4064,72 @@ describe('Canal Fale comigo', () => {
         [...host.querySelectorAll('.admin-feedback-read-badge')].map(badge => badge.textContent.trim()),
         ['Não lida', 'Lida']
       );
+      assertEqual(
+        [...host.querySelectorAll('.admin-feedback-filters button')].map(button => button.textContent.trim()),
+        ['Novas', 'Todas', 'Arquivadas']
+      );
+      assertTrue(host.querySelector('[data-action="admin-archive"]'));
       assertEqual(host.querySelector('.admin-reply-editor label').textContent, 'Resposta para Pessoa autorizada');
+      adminViewState.filter = 'archived';
+      adminViewState.messages = [{
+        ...result.messages[0],
+        admin_archived_at: '2026-11-02T10:00:00Z'
+      }];
+      adminViewState.editingId = null;
+      renderAdminView();
+      assertTrue(host.querySelector('[data-action="admin-unarchive"]'));
     } finally {
       host.remove();
       adminViewState.access = previousAccess;
       adminViewState.messages = previousMessages;
+      adminViewState.filter = previousFilter;
       adminViewState.editingId = previousEditingId;
       adminViewState.draftReply = previousDraftReply;
       window.SupabaseAuth.client = previousClient;
+    }
+  });
+
+  itAsync('filtra feedback arquivado fora de Todas e Novas e o inclui em Arquivadas', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const previousCheckIsAdmin = window.SupabaseAuth.checkIsAdmin;
+    const filters = [];
+    window.SupabaseAuth.checkIsAdmin = async () => true;
+    window.SupabaseAuth.client = {
+      from() {
+        return {
+          select() { return this; },
+          order() { return this; },
+          eq(column, value) { filters.push(['eq', column, value]); return this; },
+          is(column, value) { filters.push(['is', column, value]); return this; },
+          not(column, operator, value) {
+            filters.push(['not', column, operator, value]);
+            return this;
+          },
+          range: async () => ({ data: [], error: null })
+        };
+      },
+      rpc: async () => ({ data: [], error: null })
+    };
+    try {
+      for (const status of ['new', 'all', 'archived']) {
+        filters.length = 0;
+        const result = await window.SupabaseAuth.fetchAllFeedback({ status });
+        assertTrue(result.success);
+        if (status === 'new') {
+          assertTrue(filters.some(filter => filter[0] === 'eq' && filter[1] === 'status' && filter[2] === 'new'));
+          assertTrue(filters.some(filter => filter[0] === 'is' && filter[1] === 'admin_archived_at'));
+        } else if (status === 'all') {
+          assertTrue(filters.some(filter => filter[0] === 'is' && filter[1] === 'admin_archived_at'));
+          assertFalse(filters.some(filter => filter[0] === 'not'));
+        } else {
+          assertTrue(filters.some(filter =>
+            filter[0] === 'not' && filter[1] === 'admin_archived_at' && filter[2] === 'is'
+          ));
+        }
+      }
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+      window.SupabaseAuth.checkIsAdmin = previousCheckIsAdmin;
     }
   });
 
@@ -4107,10 +4169,10 @@ describe('Canal Fale comigo', () => {
       await openAdminView();
       assertEqual(requestedStatuses[0], 'new');
 
-      adminViewState.filter = 'answered';
+      adminViewState.filter = 'all';
       await loadAdminMessages({ reset: true });
-      assertEqual(requestedStatuses[1], 'answered');
-      assertEqual(adminViewState.filter, 'answered');
+      assertEqual(requestedStatuses[1], 'all');
+      assertEqual(adminViewState.filter, 'all');
     } finally {
       host.remove();
       state.currentView = previousCurrentView;
@@ -4164,7 +4226,15 @@ describe('Canal Fale comigo', () => {
             }
             return this;
           },
-          is() {
+          is(column) {
+            if (selectedColumns === 'id') {
+              assertEqual(column, 'admin_read_at');
+              return Promise.resolve({
+                data: [],
+                error: countFailure
+              });
+            }
+            if (column === 'admin_read_at' || selectedColumns.startsWith('id, user_id')) return this;
             return Promise.resolve({
               data: [],
               error: countFailure
@@ -4284,10 +4354,15 @@ describe('Canal Fale comigo', () => {
             return this;
           },
           is(column, value) {
-            assertEqual(column, 'admin_read_at');
             readAtFilter = value;
+            if (column === 'admin_read_at') return this;
+            assertEqual(column, 'admin_archived_at');
             return Promise.resolve({
-              data: feedbackIds.map(id => ({ id, admin_read_at: null })),
+              data: feedbackIds.map(id => ({
+                id,
+                admin_read_at: null,
+                admin_archived_at: null
+              })),
               error: null
             });
           }
@@ -4297,7 +4372,7 @@ describe('Canal Fale comigo', () => {
     try {
       const result = await window.SupabaseAuth.countUnreadFeedback();
       assertTrue(result.success);
-      assertEqual(selectedColumns, 'id, admin_read_at');
+      assertEqual(selectedColumns, 'id, admin_read_at, admin_archived_at');
       assertNull(readAtFilter);
       assertEqual(result.count, 2);
       assertEqual(result.ids, feedbackIds);
@@ -4306,7 +4381,7 @@ describe('Canal Fale comigo', () => {
     }
   });
 
-  itAsync('grava admin_read_at em uma única coluna e apenas para mensagens ainda não lidas', async () => {
+  itAsync('grava admin_read_at em uma única coluna e confirma a linha atualizada', async () => {
     const previousClient = window.SupabaseAuth.client;
     const previousCheckIsAdmin = window.SupabaseAuth.checkIsAdmin;
     const messageId = '550e8400-e29b-41d4-a716-446655440006';
@@ -4326,12 +4401,14 @@ describe('Canal Fale comigo', () => {
             assertEqual(column, 'id');
             return this;
           },
-          is(column, value) {
-            calls.column = column;
-            calls.value = value;
-            assertEqual(column, 'admin_read_at');
-            return Promise.resolve({ error: null });
-          }
+          select(columns) {
+            calls.column = columns;
+            return this;
+          },
+          maybeSingle: async () => ({
+            data: { id: messageId, admin_read_at: calls.payload.admin_read_at },
+            error: null
+          })
         };
       }
     };
@@ -4340,13 +4417,93 @@ describe('Canal Fale comigo', () => {
       assertTrue(result.success);
       assertEqual(calls.update, 1);
       assertEqual(calls.id, messageId);
-      assertEqual(calls.column, 'admin_read_at');
-      assertNull(calls.value);
+      assertEqual(calls.column, 'id, admin_read_at');
       assertEqual(Object.keys(calls.payload), ['admin_read_at']);
       assertTrue(Number.isFinite(Date.parse(calls.payload.admin_read_at)));
     } finally {
       window.SupabaseAuth.client = previousClient;
       window.SupabaseAuth.checkIsAdmin = previousCheckIsAdmin;
+    }
+  });
+
+  itAsync('arquiva e desarquiva usando somente admin_archived_at e rejeita zero linhas', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    const previousCheckIsAdmin = window.SupabaseAuth.checkIsAdmin;
+    const messageId = '550e8400-e29b-41d4-a716-446655440011';
+    const writes = [];
+    let returnNoRow = false;
+    window.SupabaseAuth.checkIsAdmin = async () => true;
+    window.SupabaseAuth.client = {
+      from(table) {
+        assertEqual(table, 'feedback_messages');
+        return {
+          update(payload) {
+            writes.push({ payload });
+            return this;
+          },
+          eq(column, value) {
+            assertEqual(column, 'id');
+            writes[writes.length - 1].id = value;
+            return this;
+          },
+          select(columns) {
+            writes[writes.length - 1].columns = columns;
+            return this;
+          },
+          maybeSingle: async () => ({
+            data: returnNoRow ? null : {
+              id: messageId,
+              ...writes[writes.length - 1].payload
+            },
+            error: null
+          })
+        };
+      }
+    };
+    try {
+      const archived = await window.SupabaseAuth.archiveFeedback(messageId);
+      assertTrue(archived.success);
+      assertEqual(Object.keys(writes[0].payload), ['admin_archived_at']);
+      assertEqual(writes[0].columns, 'id, admin_archived_at');
+      assertTrue(Number.isFinite(Date.parse(writes[0].payload.admin_archived_at)));
+
+      const unarchived = await window.SupabaseAuth.unarchiveFeedback(messageId);
+      assertTrue(unarchived.success);
+      assertEqual(Object.keys(writes[1].payload), ['admin_archived_at']);
+      assertNull(writes[1].payload.admin_archived_at);
+
+      returnNoRow = true;
+      const missing = await window.SupabaseAuth.archiveFeedback(messageId);
+      assertFalse(missing.success);
+      assertTrue(missing.error.includes('não foi encontrada'));
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+      window.SupabaseAuth.checkIsAdmin = previousCheckIsAdmin;
+    }
+  });
+
+  itAsync('marca mensagem arquivada como lida sem alterar o arquivamento', async () => {
+    const previousState = { ...adminViewState };
+    const previousMarkFeedbackRead = window.SupabaseAuth.markFeedbackRead;
+    const archivedAt = '2026-11-02T10:00:00Z';
+    const messageId = '550e8400-e29b-41d4-a716-446655440012';
+    adminViewState.messages = [{
+      id: messageId,
+      admin_read_at: null,
+      admin_archived_at: archivedAt
+    }];
+    window.SupabaseAuth.markFeedbackRead = async () => ({
+      success: true,
+      admin_read_at: '2026-11-03T10:00:00Z'
+    });
+    try {
+      const result = await window.GastoProNotificationCenter.markFeedbackRead(messageId);
+      assertTrue(result.success);
+      assertEqual(adminViewState.messages[0].admin_read_at, '2026-11-03T10:00:00Z');
+      assertEqual(adminViewState.messages[0].admin_archived_at, archivedAt);
+    } finally {
+      Object.assign(adminViewState, previousState);
+      window.SupabaseAuth.markFeedbackRead = previousMarkFeedbackRead;
     }
   });
 
@@ -4433,14 +4590,19 @@ describe('Canal Fale comigo', () => {
       from() {
         return {
           select(columns) {
-            assertEqual(columns, 'id, admin_read_at');
+            assertEqual(columns, 'id, admin_read_at, admin_archived_at');
             return this;
           },
           is(column, value) {
-            assertEqual(column, 'admin_read_at');
             assertNull(value);
+            if (column === 'admin_read_at') return this;
+            assertEqual(column, 'admin_archived_at');
             return Promise.resolve({
-              data: messageIds.map(id => ({ id, admin_read_at: null })),
+              data: messageIds.map(id => ({
+                id,
+                admin_read_at: null,
+                admin_archived_at: null
+              })),
               error: null
             });
           }
@@ -8386,6 +8548,29 @@ describe('GastoProImporter — parsing e limites', () => {
     assertEqual(rows[0].desc, 'EXEMPLO FICTÍCIO');
   });
 
+  it('informa motivos das linhas ignoradas pelo analisador sem expor valores', () => {
+    const longDescription = 'x'.repeat(510);
+    const rows = GastoProImporter.parseCSV([
+      '# comentário do banco',
+      'data;descricao;valor;ativo',
+      '2026-01-02;Saldo anterior;100,00;sim',
+      '2026-01-03;Despesa inativa;15,00;nao',
+      `2026-01-04;${longDescription};25,00;sim`,
+      '2026-01-05;Mercado;30,00;sim'
+    ].join('\r\n'), new Date(2026, 0, 1));
+    const ignored = GastoProImporter.getLastIgnoredRows();
+    assertEqual(rows.length, 1);
+    assertEqual(ignored.length, 4);
+    assertTrue(ignored.some(item => item.reason === 'Comentário'));
+    assertTrue(ignored.some(item => item.reason === 'Saldo, total, limite ou fatura anterior'));
+    assertTrue(ignored.some(item => item.reason === 'Inativa'));
+    assertTrue(ignored.some(item => item.reason === 'Linha longa'));
+    assertTrue(ignored.every(item =>
+      !item.desc.includes('100,00') && !item.desc.includes('15,00') &&
+      !item.desc.includes('25,00')
+    ));
+  });
+
   it('usa rótulo claro para exportar cópias de segurança em confirmações', () => {
     const host = document.createElement('div');
     host.innerHTML = `
@@ -8955,6 +9140,22 @@ describe('GastoProImporter — CSV futuro e parcelas mensais', () => {
     assertEqual(list.added.length, 1);
     assertEqual(list.candidates[0].description, 'Moto Táxi');
     assertEqual(rows[0].type, 'variable');
+  });
+
+  it('limita a oito sugestões locais e omite descrições já na lista', () => {
+    const rows = GastoProImporter.markDuplicates(
+      GastoProImporter.parseCSV(`Data;Descrição;Valor\n${Array.from({ length: 10 }, (_, index) =>
+        `${tomorrowString};Loja recorrente ${index + 1};-18,00`
+      ).join('\n')}`),
+      []
+    );
+    const suggestions = window.GastoProImportHelpers.getImportCandidateSuggestions(
+      rows,
+      [{ key: 'loja recorrente 1' }],
+      10
+    );
+    assertEqual(suggestions.length, 8);
+    assertFalse(suggestions.some(candidate => candidate.key === 'loja recorrente 1'));
   });
 
   itAsync('cria fixo confirmado sem fim e projeta nos meses seguintes', async () => {
@@ -12291,6 +12492,28 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     assertTrue(appSource.includes('deleteAllMyDataBtn.addEventListener(\'click\', openDeleteAllMyDataModal)'));
   });
 
+  itAsync('mantém etapas e tela final acessíveis no fluxo de importação', async () => {
+    const [htmlResponse, appResponse] = await Promise.all([
+      fetch('../index.html'),
+      fetch('../js/app.js')
+    ]);
+    assertTrue(htmlResponse.ok && appResponse.ok, 'Não foi possível carregar o fluxo de importação.');
+    const appDocument = new DOMParser().parseFromString(await htmlResponse.text(), 'text/html');
+    const appSource = await appResponse.text();
+    const stage = appDocument.getElementById('importStageStatus');
+    const completion = appDocument.getElementById('importCompletionSection');
+    const excludedPreview = appDocument.getElementById('importNotImportedPreview');
+
+    assertTrue(stage && stage.getAttribute('aria-live') === 'polite');
+    assertTrue(completion && completion.hidden);
+    assertEqual(appDocument.getElementById('importCompletionTitle').textContent, 'Importação concluída');
+    assertTrue(appDocument.getElementById('closeImportCompletionBtn'));
+    assertTrue(excludedPreview && excludedPreview.querySelector('#importNotImportedPreviewList'));
+    assertTrue(appSource.includes("setImportStage('complete')"));
+    assertTrue(appSource.includes('showImportCompletion(result.items, payments, importedIndexes)'));
+    assertTrue(appSource.includes('renderImportNotImported'));
+  });
+
   itAsync('usa chevron que gira sem adicionar !important', async () => {
     const response = await fetch('../css/style.css');
     assertTrue(response.ok, 'Não foi possível carregar o CSS do app.');
@@ -14421,6 +14644,202 @@ describe('Painel do usuário e avisos', () => {
       assertEqual(toast.querySelector('i').className, 'fa-solid fa-circle-check');
       assertEqual(toast.querySelector('i').style.color, 'var(--success)');
     } finally {
+      host.remove();
+    }
+  });
+
+  itAsync('usa o tipo error em todos os toasts de falha enumerados', async () => {
+    const response = await fetch('../js/app.js');
+    assertTrue(response.ok, 'Não foi possível carregar app.js.');
+    const source = await response.text();
+    const getToastCall = (marker, fromIndex = 0) => {
+      const markerIndex = source.indexOf(marker, fromIndex);
+      assertTrue(markerIndex >= 0, `Chamada não localizada: ${marker}`);
+      const start = source.lastIndexOf('showToast(', markerIndex);
+      assertTrue(start >= 0, `showToast não localizado para: ${marker}`);
+      let depth = 0;
+      let quote = null;
+      let escaped = false;
+      for (let index = start; index < source.length; index += 1) {
+        const char = source[index];
+        if (quote) {
+          if (escaped) escaped = false;
+          else if (char === '\\') escaped = true;
+          else if (char === quote) quote = null;
+          continue;
+        }
+        if (char === "'" || char === '"' || char === '`') {
+          quote = char;
+        } else if (char === '(') {
+          depth += 1;
+        } else if (char === ')' && --depth === 0) {
+          return source.slice(start, index + 1);
+        }
+      }
+      throw new Error(`Chamada showToast incompleta: ${marker}`);
+    };
+    const checks = [
+      ['showToast(failedCount', 1],
+      ["showToast('O armazenamento do navegador está cheio.", 1],
+      ["showToast('Nova versão encontrada.", 1],
+      ['showToast(refreshMessage', 1],
+      ['showToast(GastoProImporter.UNSUPPORTED_FILE_WARNING', 2],
+      ["showToast('Cole o texto do extrato antes de analisar.", 1],
+      ["showToast(message, 'error')", 2],
+      ["showToast('Nenhum dado foi informado para salvar.", 2]
+    ];
+
+    checks.forEach(([marker, expectedCount]) => {
+      let offset = 0;
+      let found = 0;
+      while ((offset = source.indexOf(marker, offset)) >= 0) {
+        const call = getToastCall(marker, offset);
+        assertTrue(call.includes("'error'"), `${marker}: ${call}`);
+        found += 1;
+        offset += marker.length;
+        if (marker === "showToast(message);") break;
+      }
+      assertEqual(found, expectedCount, `${marker}: quantidade de chamadas`);
+    });
+    assertTrue(getToastCall('showToast(refreshMessage').includes(
+      "hasCloudSession && !isCloud ? 'error' : 'success'"
+    ));
+  });
+
+  itAsync('exclui variável pelo fluxo real sem esvaziar indevidamente a aba nem Ganhos', async () => {
+    setupMockLocalStorage();
+    const userId = 'expense-delete-test-user';
+    const previousFlush = FinanceData.flushPendingSync;
+    const previousRender = window.renderAll;
+    const previousMonth = { year: state.currentYear, month: state.currentMonth };
+    const previousFilter = state.expenseFilter;
+    const deletedIds = [];
+    const account = { id: crypto.randomUUID(), name: 'Conta teste' };
+    const entries = [
+      { id: crypto.randomUUID(), type: 'fixed', desc: 'Aluguel', amount: 900,
+        date: '2026-11-01', month: '2026-11', accountId: account.id, paid: false },
+      { id: crypto.randomUUID(), type: 'variable', desc: 'Mercado A', amount: 500,
+        date: '2026-11-05', month: '2026-11', accountId: account.id, paid: true },
+      { id: crypto.randomUUID(), type: 'variable', desc: 'Mercado B', amount: 719.94,
+        date: '2026-11-08', month: '2026-11', accountId: account.id, paid: true },
+      { id: crypto.randomUUID(), type: 'income', desc: 'Salário', amount: 3200,
+        date: '2026-11-01', month: '2026-11', accountId: account.id, paid: true }
+    ];
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <span id="incomesPageTotal"></span><div id="incomesListDetailed"></div>
+      <span id="expensesPageTotal"></span><span id="subtotalFixedLabel"></span>
+      <span id="subtotalVarLabel"></span><div id="expensesListDetailed"></div>
+      <div id="confirmModal">
+        <div id="confirmIconWrapper"><i id="confirmIcon"></i></div>
+        <h2 id="confirmTitle"></h2><p id="confirmMessage"></p>
+        <div id="confirmPhraseGroup"><input id="confirmPhraseInput"><label id="confirmPhraseLabel"></label></div>
+        <div id="confirmRememberOption"><input id="confirmRememberCheckbox"><span id="confirmRememberLabel"></span></div>
+        <button id="confirmBackupBtn"></button><button id="confirmCancelBtn">Cancelar</button>
+        <button id="confirmOkBtn">Confirmar</button>
+      </div>
+      <div id="toast"></div>
+    `;
+    document.body.appendChild(host);
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: 'Teste', userId });
+    await FinanceData.saveAccounts([account], { flush: false });
+    await FinanceData.saveEntries(entries, { flush: false });
+    state.currentYear = 2026;
+    state.currentMonth = 11;
+    state.expenseFilter = 'variable';
+
+    window.renderAll = () => {
+      renderCount += 1;
+      const monthItems = FinanceData.getByMonth('2026-11');
+      const incomes = monthItems.filter(item => item.type === 'income');
+      const fixed = monthItems.filter(item => item.type === 'fixed');
+      const variables = monthItems.filter(item => item.type === 'variable');
+      window.GastoProIncomeListHelpers.render(incomes, incomes.reduce((sum, item) => sum + item.amount, 0));
+      window.GastoProExpenseListHelpers.render(
+        fixed, variables,
+        fixed.reduce((sum, item) => sum + item.amount, 0),
+        variables.reduce((sum, item) => sum + item.amount, 0),
+        [...fixed, ...variables].reduce((sum, item) => sum + item.amount, 0)
+      );
+    };
+    let syncSucceeds = false;
+    let renderCount = 0;
+    FinanceData.flushPendingSync = async () => {
+      const pending = FinanceData.getPendingSync();
+      const currentDeleted = pending.deletedEntries.filter(id => deletedIds.includes(id));
+      if (currentDeleted.length) {
+        if (!syncSucceeds) return { success: false, error: new Error('Falha simulada') };
+        pending.deletedEntries = pending.deletedEntries.filter(id => !currentDeleted.includes(id));
+        FinanceData.savePendingSync(pending);
+      }
+      return { success: true };
+    };
+
+    const confirmDeletion = async entry => {
+      const previousRenderCount = renderCount;
+      window.deleteEntry(entry.id);
+      host.querySelector('#confirmOkBtn').click();
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (renderCount > previousRenderCount &&
+          !FinanceData.getEntries().some(item => item.id === entry.id)) return;
+        await new Promise(resolve => window.setTimeout(resolve, 5));
+      }
+      throw new Error(`A exclusão não terminou: ${entry.desc}`);
+    };
+
+    try {
+      window.renderAll();
+      assertEqual(host.querySelectorAll('#expensesListDetailed .control-center-item').length, 2);
+      assertEqual(
+        host.querySelector('#subtotalVarLabel').textContent.trim(),
+        `− ${formatCurrency(1219.94)}`
+      );
+      assertEqual(host.querySelectorAll('#incomesListDetailed .control-center-item').length, 1);
+
+      deletedIds.push(entries[1].id);
+      await confirmDeletion(entries[1]);
+      assertEqual(state.expenseFilter, 'variable');
+      assertEqual(host.querySelectorAll('#expensesListDetailed .control-center-item').length, 1);
+      assertEqual(host.querySelector('#expensesListDetailed [data-entry-id]').dataset.entryId, entries[2].id);
+      assertTrue(FinanceData.getPendingSync().deletedEntries.includes(entries[1].id));
+
+      const tombstoneAt = '2099-01-01T00:00:00.000Z';
+      FinanceData.applyCloudSyncRecord(
+        'entries', { id: entries[1].id }, tombstoneAt, tombstoneAt, userId
+      );
+      assertFalse(FinanceData.getByMonth('2026-11').some(item => item.id === entries[1].id));
+      assertFalse(FinanceData.getPendingSync().deletedEntries.includes(entries[1].id));
+      window.renderAll();
+      assertEqual(host.querySelectorAll('#expensesListDetailed .control-center-item').length, 1);
+
+      syncSucceeds = true;
+      deletedIds.push(entries[2].id);
+      await confirmDeletion(entries[2]);
+      assertEqual(FinanceData.getPendingSync().deletedEntries.includes(entries[2].id), false);
+      FinanceData.reconcileSyncVersions(
+        userId,
+        [entries[0], entries[3]],
+        null, null, null, null, null,
+        { entries: { [entries[2].id]: '2099-01-02T00:00:00.000Z' } },
+        { entries: { [entries[0].id]: '2098-01-01T00:00:00.000Z' } }
+      );
+      window.renderAll();
+      assertEqual(state.expenseFilter, 'variable');
+      assertEqual(host.querySelectorAll('#expensesListDetailed .control-center-item').length, 0);
+      assertTrue(host.querySelector('#expensesListDetailed').textContent.includes('Nenhum gasto neste mês.'));
+      assertEqual(host.querySelectorAll('#incomesListDetailed .control-center-item').length, 1);
+
+      deletedIds.push(entries[3].id);
+      await confirmDeletion(entries[3]);
+      assertEqual(host.querySelectorAll('#incomesListDetailed .control-center-item').length, 0);
+      assertTrue(host.querySelector('#incomesListDetailed').textContent.includes('Nenhum ganho neste mês.'));
+    } finally {
+      FinanceData.flushPendingSync = previousFlush;
+      window.renderAll = previousRender;
+      state.currentYear = previousMonth.year;
+      state.currentMonth = previousMonth.month;
+      state.expenseFilter = previousFilter;
       host.remove();
     }
   });

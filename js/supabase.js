@@ -1088,15 +1088,17 @@ const SupabaseAuth = {
     }
     try {
       const { data, error } = await this.client.from('feedback_messages')
-        .select('id, admin_read_at')
-        .is('admin_read_at', null);
+        .select('id, admin_read_at, admin_archived_at')
+        .is('admin_read_at', null)
+        .is('admin_archived_at', null);
       if (error) {
         recordAdminQueryFailure('feedback_messages.count_unread', error);
         return { success: false, error: this.getFeedbackErrorMessage(error) };
       }
       if (!Array.isArray(data) || data.some(item =>
         !item || !isValidCloudUuid(item.id) || item.admin_read_at !== null ||
-        Object.keys(item).some(key => !['id', 'admin_read_at'].includes(key))
+        item.admin_archived_at !== null ||
+        Object.keys(item).some(key => !['id', 'admin_read_at', 'admin_archived_at'].includes(key))
       )) {
         return { success: false, error: 'A resposta do servidor contém mensagens não lidas inválidas.' };
       }
@@ -1108,7 +1110,7 @@ const SupabaseAuth = {
   },
 
   async fetchAllFeedback({ status = 'all', limit = 20, offset = 0 } = {}) {
-    if (!['new', 'answered', 'all'].includes(status)) {
+    if (!['new', 'all', 'archived'].includes(status)) {
       return { success: false, error: 'O filtro de mensagens é inválido.' };
     }
     const safeLimit = Math.min(100, Math.max(1, Math.floor(Number(limit) || 20)));
@@ -1120,9 +1122,15 @@ const SupabaseAuth = {
       const feedbackQuery = (async () => {
         try {
           let query = this.client.from('feedback_messages')
-            .select('id, user_id, category, message, status, reply, replied_at, admin_read_at, created_at')
+            .select('id, user_id, category, message, status, reply, replied_at, admin_read_at, admin_archived_at, created_at')
             .order('created_at', { ascending: status === 'new' });
-          if (status !== 'all') query = query.eq('status', status);
+          if (status === 'new') {
+            query = query.eq('status', 'new').is('admin_archived_at', null);
+          } else if (status === 'archived') {
+            query = query.not('admin_archived_at', 'is', null);
+          } else {
+            query = query.is('admin_archived_at', null);
+          }
           return await query.range(safeOffset, safeOffset + safeLimit - 1);
         } catch (error) {
           recordAdminQueryFailure('feedback_messages.select', error);
@@ -1158,6 +1166,7 @@ const SupabaseAuth = {
       if (!Array.isArray(data) || data.some(item =>
         !item || typeof item !== 'object' ||
         !isValidCloudUuid(item.user_id) || !authorsById.has(item.user_id) ||
+        item.admin_archived_at !== null && typeof item.admin_archived_at !== 'string' ||
         ['name', 'email', 'description', 'amount', 'account', 'goal', 'avatar'].some(key =>
           Object.prototype.hasOwnProperty.call(item, key)
         )
@@ -1182,23 +1191,58 @@ const SupabaseAuth = {
   },
 
   async markFeedbackRead(id) {
+    return this.updateAdminFeedbackField(
+      id, 'admin_read_at', new Date().toISOString(), 'feedback_messages.mark_read'
+    );
+  },
+
+  async markFeedbackUnread(id) {
+    return this.updateAdminFeedbackField(
+      id, 'admin_read_at', null, 'feedback_messages.mark_unread'
+    );
+  },
+
+  async archiveFeedback(id) {
+    return this.updateAdminFeedbackField(
+      id, 'admin_archived_at', new Date().toISOString(), 'feedback_messages.archive'
+    );
+  },
+
+  async unarchiveFeedback(id) {
+    return this.updateAdminFeedbackField(
+      id, 'admin_archived_at', null, 'feedback_messages.unarchive'
+    );
+  },
+
+  async updateAdminFeedbackField(id, column, value, operation) {
     if (!isValidCloudUuid(id)) return { success: false, error: 'A mensagem selecionada é inválida.' };
+    if (!['admin_read_at', 'admin_archived_at'].includes(column)) {
+      return { success: false, error: 'A alteração selecionada não é válida.' };
+    }
     if (!this.client || !(await this.checkIsAdmin())) {
       return { success: false, error: 'Área restrita.' };
     }
-    const readAt = new Date().toISOString();
     try {
-      const { error } = await this.client.from('feedback_messages')
-        .update({ admin_read_at: readAt })
+      const { data, error } = await this.client.from('feedback_messages')
+        .update({ [column]: value })
         .eq('id', id)
-        .is('admin_read_at', null);
+        .select(`id, ${column}`)
+        .maybeSingle();
       if (error) {
-        recordAdminQueryFailure('feedback_messages.mark_read', error);
+        recordAdminQueryFailure(operation, error);
         return { success: false, error: this.getFeedbackErrorMessage(error) };
       }
-      return { success: true, readAt };
+      if (!data || data.id !== id) {
+        const missingError = new Error('A mensagem não foi encontrada ou não foi atualizada.');
+        recordAdminQueryFailure(operation, missingError);
+        return { success: false, error: missingError.message };
+      }
+      return {
+        success: true,
+        [column]: data[column]
+      };
     } catch (error) {
-      recordAdminQueryFailure('feedback_messages.mark_read', error);
+      recordAdminQueryFailure(operation, error);
       return { success: false, error: this.getFeedbackErrorMessage(error) };
     }
   },

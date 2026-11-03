@@ -407,7 +407,7 @@
               </div>
               <div class="action-text">
                 <strong>Buscar nova versão do app</strong>
-                <span>Versão v4.56</span>
+                <span>Versão v4.57</span>
               </div>
             </button>
             <div class="drawer-about-help">
@@ -1238,7 +1238,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.56</span>
+          <span class="badge badge-version">v4.57</span>
         </div>
       </footer>
 
@@ -1944,6 +1944,8 @@
         <button class="modal-close-btn" id="closeImportModalBtn" title="Fechar" aria-label="Fechar importação">&times;</button>
       </div>
 
+      <p class="import-stage-indicator" id="importStageStatus" aria-live="polite">Etapa 1 de 4 — Escolher arquivo ou texto</p>
+      <div id="importWorkflowContent">
       <details class="import-help">
         <summary>
           <i class="fa-solid fa-circle-question import-help-icon" aria-hidden="true"></i>
@@ -2065,6 +2067,10 @@
         </div>
         <p class="import-help-note" id="importDuplicateSelectionNote" aria-live="polite" hidden></p>
         <p class="import-due-day-summary" id="importDueDaySummary" role="status" aria-live="polite" hidden></p>
+        <details class="import-not-imported" id="importNotImportedPreview" hidden>
+          <summary>Itens que ficaram de fora (<span id="importNotImportedPreviewCount">0</span>)</summary>
+          <ul id="importNotImportedPreviewList"></ul>
+        </details>
 
         <p class="import-help-note">Confira a categoria e o tipo de cada linha. Sugestões de gastos fixos não alteram os lançamentos sem sua decisão.</p>
 
@@ -2108,6 +2114,7 @@
             <input id="importFixedSearchInput" type="search" autocomplete="off" />
             <button type="submit" class="btn-secondary">Buscar</button>
           </div>
+          <p class="import-help-note">Deixe a busca vazia para ver até oito sugestões locais baseadas nas descrições da prévia.</p>
           <p class="import-help-note" id="importFixedSearchStatus" aria-live="polite"></p>
         </form>
         <div class="import-fixed-candidate-list" id="importFixedCandidateList" aria-live="polite"></div>
@@ -2127,6 +2134,18 @@
             <i class="fa-solid fa-check"></i> Importar Selecionados
           </button>
         </div>
+      </section>
+      </div>
+
+      <section class="import-completion-section" id="importCompletionSection" aria-labelledby="importCompletionTitle" hidden>
+        <h4 id="importCompletionTitle">Importação concluída</h4>
+        <p id="importCompletionSummary" role="status" aria-live="polite"></p>
+        <ul id="importCompletionCounts"></ul>
+        <details class="import-not-imported" id="importNotImportedCompletion" hidden>
+          <summary>Itens que não foram importados (<span id="importNotImportedCompletionCount">0</span>)</summary>
+          <ul id="importNotImportedCompletionList"></ul>
+        </details>
+        <button type="button" class="btn-import-confirm" id="closeImportCompletionBtn">Fechar</button>
       </section>
 
     </div>
