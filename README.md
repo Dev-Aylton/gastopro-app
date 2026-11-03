@@ -3,7 +3,7 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.49-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.50-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
 ![Testes](https://img.shields.io/badge/Testes-575%20casos-10b981?style=for-the-badge)
@@ -14,19 +14,45 @@
 
 1. [Título, badges e resumo](#-gastopro--controle-de-gastos--saúde-financeira)
 2. [Sumário](#-sumário)
-3. [Sobre o projeto e autor](#-sobre-o-projeto-e-autor)
-4. [Funcionalidades](#-funcionalidades)
-5. [Arquitetura e estrutura de arquivos](#-arquitetura-e-estrutura-de-arquivos)
-6. [Referência técnica](#-referência-técnica)
-7. [Segurança e privacidade](#-segurança-e-privacidade)
-8. [Banco de dados](#-banco-de-dados)
-9. [Testes](#-testes)
-10. [Executar, configurar e publicar](#-executar-configurar-e-publicar)
-11. [Dependências e integridade](#-dependências-e-integridade)
-12. [Decisões de produto](#-decisões-de-produto)
-13. [Roadmap](#-roadmap)
-14. [Changelog](#-changelog)
-15. [Licença](#-licença)
+3. [Apresentação](#-apresentação)
+4. [Sobre o projeto e autor](#-sobre-o-projeto-e-autor)
+5. [Funcionalidades](#-funcionalidades)
+6. [Arquitetura e estrutura de arquivos](#-arquitetura-e-estrutura-de-arquivos)
+7. [Referência técnica](#-referência-técnica)
+8. [Segurança e privacidade](#-segurança-e-privacidade)
+9. [Banco de dados](#-banco-de-dados)
+10. [Testes](#-testes)
+11. [Executar, configurar e publicar](#-executar-configurar-e-publicar)
+12. [Dependências e integridade](#-dependências-e-integridade)
+13. [Decisões de produto](#-decisões-de-produto)
+14. [Roadmap](#-roadmap)
+15. [Changelog](#-changelog)
+16. [Licença](#-licença)
+
+---
+
+## 🚀 Apresentação
+
+O GastoPro ajuda a organizar as finanças com menos digitação: analisa extratos, sugere os campos e permite conferir os dados antes de importar. O arquivo é lido no navegador e não é enviado; os dados financeiros salvos no app podem sincronizar com o Supabase quando há login.
+
+### Importação
+- Aceita CSV, TXT, OFX, XML de NF-e e PDF com texto selecionável. CSV/TXT precisam de cabeçalho reconhecido; OFX é lido por transação e o XML é interpretado como NF-e.
+- CSV/TXT, OFX e XML têm limite de 1 MB; o PDF, 10 MB e 30 páginas. PDFs escaneados sem texto selecionável não são reconhecidos automaticamente.
+- A prévia permite conferir e ajustar as linhas antes de confirmar; cada lote aceita até 500 linhas.
+
+### Privacidade e acesso
+- As opções de consentimento são opcionais e começam desligadas; a telemetria também fica desativada por padrão.
+- O Painel Admin mostra indicadores agregados e não exibe lançamentos individuais, descrições, valores, contas, metas ou fotos de perfil.
+- O acesso pode ser feito com e-mail e senha ou com a conta Google.
+
+### Stack e arquitetura
+Frontend em HTML, CSS e JavaScript sem framework de aplicação; hospedagem no GitHub Pages; Supabase para autenticação e sincronização; PWA com manifest e Service Worker.
+
+| Camada | Responsabilidade |
+|---|---|
+| Navegador | Interface, leitura e prévia local de arquivos e armazenamento dos dados do app. |
+| Supabase | Autenticação, sincronização da conta e policies RLS por usuário. |
+| Painel Admin | Indicadores agregados e ferramentas administrativas de mensagens, sem acesso às linhas financeiras individuais. |
 
 ---
 
@@ -110,7 +136,7 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 - Compartilhamento em dispositivos compatíveis; nos demais casos, download ou abertura do PDF.
 
 ### 📥 Importação de extratos
-- Arraste e solte ou selecione um arquivo (.csv, .ofx, .xml ou .pdf).
+- Arraste e solte ou selecione um arquivo (.csv, .txt, .ofx, .xml ou .pdf).
 - PDF de extrato ou fatura com texto selecionável, até 10 MB e 30 páginas. A leitura é local e aproximada; PDFs escaneados não são reconhecidos automaticamente. Confira os dados na prévia.
 - Detecção automática de colunas Data, Descrição e Valor, sem configuração manual.
 - OFX em formato SGML ou XML, incluindo descrições e acentos em Windows-1252. O tipo (receita ou gasto) usa `TRNTYPE` quando presente.
@@ -467,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.49`. Suíte atual: **575 testes**.
+`CACHE_NAME` atual: `gastopro-v4.50`. Suíte atual: **575 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -694,6 +720,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-069 — Nome Google inicial e diagnóstico local de sincronização** / Descrição: preenche o nome do perfil vazio com `full_name` ou `name` da primeira entrada Google sem substituir nome escolhido; registra no Diagnóstico temporário a categoria ou tipo transacional que falhou, com código fixo e sem dados pessoais, somente neste aparelho. A seção temporária será removida no U-12. / Critério de pronto: 567 testes aprovados, zero falhas/pendências; mocks de Supabase usados; tela e login Google real não verificados. / Arquivos: `js/app.js`, `js/data.js`, `tests/gastopro.test.js`, `sw.js`, `index.html`, `README.md`.
 - [x] **RM-070 — Avatar Google inicial no perfil** / Descrição: usa como avatar inicial apenas URL HTTPS validada de `googleusercontent.com`; preserva escolha/remoção, não baixa a imagem e usa avatar local em falha. CSP libera somente o domínio de imagem em `img-src`; política descreve armazenamento do endereço. / Critério de pronto: 572 testes aprovados, zero falhas/pendências; Supabase mockado para validar persistência; visual/toque e login Google real não verificados. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `supabase/schema.sql`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-071 — Diagnóstico dos formulários, modelo CSV e tutoriais recolhíveis** / Descrição: retornos sem efeito dos formulários mostram aviso e registram apenas categoria fixa no Diagnóstico local; modelo CSV inclui BOM UTF-8 e CRLF sem alterar o cabeçalho; tutoriais do painel ficam recolhidos em controle acessível. / Critério de pronto: 575 testes aprovados, zero falhas/pendências; Supabase mockado; Excel, visual e toque não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/importer.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
+- [x] **RM-072 — Apresentação do produto e teste de rolagem determinístico** / Descrição: documenta proposta, importação, privacidade, acesso e arquitetura; estabiliza o teste de navegação até Metas fixando a altura de viewport no fixture, sem alterar a lógica do app. / Critério de pronto: 575 testes aprovados em duas execuções, zero falhas/pendências; consultas Supabase mockadas. / Arquivos: `README.md`, `tests/gastopro.test.js`, `index.html`, `sw.js`.
 
 ### Em dúvida
 
@@ -705,7 +732,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.49 — 02/11/2026 (versão atual)
+### v4.50 — 02/11/2026 (versão atual)
+
+- RM-072: adiciona apresentação com regras de importação, privacidade e arquitetura; fixa a viewport do fixture de rolagem para tornar a asserção determinística, sem mudar o app. A frase da Política de Privacidade descreve a remoção do avatar conforme o código. Test-runner: 575 aprovados em duas execuções, zero falhas/pendências; Supabase mockado.
+
+### v4.49 — 02/11/2026
 
 - RM-071: formulários mostram aviso e registram categoria fixa local quando validação ou fluxo de conta/salvamento impede o envio; modelo CSV recebe BOM UTF-8 e CRLF e continua aceito pelo importador; tutoriais do painel passam a ficar recolhidos por padrão com `aria-expanded` sincronizado. Test-runner: 575 aprovados, zero falhas/pendências; Supabase mockado; Excel e visual/toque não verificados em tela.
 

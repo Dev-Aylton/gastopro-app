@@ -6359,9 +6359,11 @@ describe('Dashboard mobile', () => {
     const originalSwitch = window.switchToView;
     const originalRequestAnimationFrame = window.requestAnimationFrame;
     const originalScrollTo = window.scrollTo;
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight');
     const destinations = [];
     const scrolls = [];
     const initialScrollY = window.scrollY;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
     const topbar = document.createElement('header');
     topbar.className = 'topbar';
     topbar.style.position = 'sticky';
@@ -6389,7 +6391,7 @@ describe('Dashboard mobile', () => {
     goalsPanel.getBoundingClientRect = () => ({
       top: 900, bottom: 1040, height: 140, left: 0, right: 0, width: 0
     });
-    document.body.append(topbar, bottomNav, goalsPanel);
+    document.body.prepend(topbar, bottomNav, goalsPanel);
 
     window.switchToView = view => {
       destinations.push(view);
@@ -6421,6 +6423,8 @@ describe('Dashboard mobile', () => {
       window.switchToView = originalSwitch;
       window.requestAnimationFrame = originalRequestAnimationFrame;
       window.scrollTo = originalScrollTo;
+      if (originalInnerHeight) Object.defineProperty(window, 'innerHeight', originalInnerHeight);
+      else delete window.innerHeight;
       topbar.remove();
       bottomNav.remove();
       goalsPanel.remove();
