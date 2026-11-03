@@ -11423,6 +11423,119 @@ describe('FinanceData — exclusão durante sincronização', () => {
   });
 });
 
+describe('RM-016 — Simulador de cenários', () => {
+  const simulator = window.GastoProSimulator;
+
+  it('projeta pagamento extra único e mensal sem inventar juros', () => {
+    const debt = {
+      remainingAmount: 600, amount: 100, remainingMonths: 6,
+      isLoan: false, nextInstallmentMonth: '2026-01'
+    };
+    const once = simulator.simulateDebtPayoff(debt, 100, 'once');
+    const monthly = simulator.simulateDebtPayoff(debt, 50, 'monthly');
+
+    assertEqual(once.baseMonths, 6);
+    assertEqual(once.simulatedMonths, 5);
+    assertEqual(once.monthsSaved, 1);
+    assertEqual(once.basePayoffMonth, '2026-06');
+    assertEqual(once.simulatedPayoffMonth, '2026-05');
+    assertEqual(monthly.simulatedMonths, 4);
+    assertEqual(monthly.monthsSaved, 2);
+    assertTrue(once.estimateWithoutInterest);
+    assertFalse(once.interestIncluded);
+  });
+
+  it('usa o saldo a pagar já registrado no empréstimo e trata dívida quitada', () => {
+    const loan = simulator.simulateDebtPayoff({
+      remainingAmount: 620, amount: 100, remainingMonths: 6,
+      isLoan: true, loanCost: 20, nextInstallmentMonth: '2026-01'
+    }, 20, 'monthly');
+    const paid = simulator.simulateDebtPayoff({
+      remainingAmount: 0, amount: 100, remainingMonths: 0
+    }, 50, 'once', '2026-01');
+
+    assertEqual(loan.simulatedMonths, 6);
+    assertTrue(loan.estimateWithoutInterest);
+    assertFalse(loan.interestIncluded);
+    assertTrue(paid.isPaidOff);
+    assertEqual(paid.series, []);
+    assertEqual(paid.monthsSaved, 0);
+  });
+
+  it('mantém a previsão quando o valor extra é zero', () => {
+    const result = simulator.simulateDebtPayoff({
+      remainingAmount: 250, amount: 100, remainingMonths: 3
+    }, 0, 'monthly', '2026-01');
+
+    assertEqual(result.simulatedMonths, result.baseMonths);
+    assertEqual(result.simulatedPayoffMonth, result.basePayoffMonth);
+    assertEqual(result.monthsSaved, 0);
+    assertEqual(result.series.map(item => item.baseBalance),
+      result.series.map(item => item.simulatedBalance));
+  });
+
+  it('calcula cortes de 0% e 100% e arredonda a economia anual', () => {
+    const noCut = simulator.simulateCategoryCut([100, 200, 300], 0, '2026-01');
+    const fullCut = simulator.simulateCategoryCut([100, 200, 300], 100, '2026-01');
+
+    assertEqual(noCut.monthlyAverage, 200);
+    assertEqual(noCut.monthlySavings, 0);
+    assertEqual(noCut.annualSavings, 0);
+    assertEqual(fullCut.monthlySavings, 200);
+    assertEqual(fullCut.annualSavings, 2400);
+    assertEqual(fullCut.series.length, 12);
+    assertTrue(fullCut.series.every(item => item.simulatedSpending === 0));
+  });
+
+  it('retorna estado vazio e usa apenas os meses com gastos pagos disponíveis', () => {
+    const empty = simulator.simulateCategoryCut([], 25, '2026-01');
+    const sparse = simulator.simulateCategoryCut([
+      { month: '2026-01', amount: 10.1 },
+      { month: '2026-04', amount: 20.2 }
+    ], 25, '2026-05');
+
+    assertFalse(empty.sufficientData);
+    assertEqual(empty.monthsUsed, 0);
+    assertTrue(sparse.sufficientData);
+    assertEqual(sparse.monthsUsed, 2);
+    assertEqual(sparse.monthlyAverage, 15.15);
+    assertEqual(sparse.monthlySavings, 3.79);
+  });
+
+  it('gera séries base/simulada sem alterar lançamentos, templates ou metas', () => {
+    setupMockLocalStorage();
+    FinanceData.saveEntries([
+      { id: 'simulator-entry', type: 'variable', desc: 'Mercado', amount: 12.35,
+        category: 'Alimentação', month: '2026-01', date: '2026-01-03', paid: true }
+    ]);
+    FinanceData.saveTemplates([{
+      id: 'simulator-template', type: 'fixed', desc: 'Parcela', amount: 50,
+      category: 'Financiamento', active: true, startMonth: '2026-01',
+      endMonth: '2026-02', day: '10', isDebt: true, paidMonths: {}
+    }]);
+    FinanceData.saveGoals([{ id: 'simulator-goal', category: 'Alimentação', limit: 500 }]);
+    const before = JSON.stringify({
+      entries: FinanceData.getEntries(),
+      templates: FinanceData.getTemplates(),
+      goals: FinanceData.getGoals()
+    });
+
+    const debt = simulator.simulateDebtPayoff({
+      remainingAmount: 100, amount: 50, remainingMonths: 2
+    }, 10, 'monthly', '2026-01');
+    const cut = simulator.simulateCategoryCut([12.35, 18.45], 20, '2026-03');
+    const after = JSON.stringify({
+      entries: FinanceData.getEntries(),
+      templates: FinanceData.getTemplates(),
+      goals: FinanceData.getGoals()
+    });
+
+    assertEqual(debt.series.map(item => item.month), ['2026-01', '2026-02']);
+    assertEqual(cut.series[0].baseSpending, 15.4);
+    assertEqual(before, after);
+  });
+});
+
 describe('Relatório Financeiro — buildReportData', () => {
   setupMockLocalStorage();
 
@@ -14404,6 +14517,83 @@ describe('Filtro de contas na home e relatório do contador', () => {
       [withoutPendingExpenses.totalExpenses, withoutPendingExpenses.paidExpenses],
       [25, 25]
     );
+  });
+
+  it('RM-045 usa o mesmo cálculo de previsão e pago do card no relatório', () => {
+    setupMockLocalStorage();
+    const month = '2026-11';
+    FinanceData.saveEntries([
+      { id: 'report-shared-income', type: 'income', amount: 1000, category: 'Salário',
+        desc: 'Salário', month, date: `${month}-01`, paid: true },
+      { id: 'report-shared-variable-paid', type: 'variable', amount: 20,
+        category: 'Mercado', desc: 'Mercado', month, date: `${month}-02`, paid: true },
+      { id: 'report-shared-variable-pending', type: 'variable', amount: 30,
+        category: 'Mercado', desc: 'Compra futura', month, date: `${month}-28`, paid: false }
+    ]);
+    FinanceData.saveTemplates([
+      { id: 'report-shared-fixed', desc: 'Aluguel', amount: 100, category: 'Moradia',
+        type: 'fixed', active: true, startMonth: month, endMonth: null, day: '05',
+        paidMonths: { [month]: true } },
+      { id: 'report-shared-debt', desc: 'Parcela', amount: 40, category: 'Financiamento',
+        type: 'fixed', isDebt: true, active: true, startMonth: month, endMonth: '2026-12',
+        day: '10', paidMonths: { [month]: false } }
+    ]);
+
+    const report = buildReportData({
+      type: 'month', from: month, to: month, includeDetails: true
+    });
+    const items = FinanceData.getByMonth(month);
+    const debtIds = new Set(window.GastoProReportHelpers
+      .getDebtCenterData(month, FinanceData.getTemplates()).items.map(item => String(item.id)));
+    const expenses = window.GastoProAccountFilterHelpers.getExpenseSummary(
+      items.filter(item => item.type === 'fixed' && !debtIds.has(String(item.id))),
+      items.filter(item => (item.type === 'debt' ||
+        item.type === 'fixed' && debtIds.has(String(item.id)))),
+      items.filter(item => item.type === 'variable')
+    );
+    const dashboard = window.GastoProAccountFilterHelpers.getDashboardSummary(
+      items, FinanceData.getAccounts(), 'all'
+    );
+
+    assertEqual(report.monthly[0].forecast, expenses.forecast);
+    assertEqual(report.monthly[0].paidExpenses, expenses.paidExpenses);
+    assertEqual(report.monthly[0].forecast, dashboard.totalExpenses);
+    assertEqual(report.monthly[0].paidExpenses, dashboard.paidExpenses);
+  });
+
+  itAsync('neutraliza fórmulas nos dois CSVs e grava descrições XLSX como texto', async () => {
+    const report = {
+      meta: { period: 'novembro de 2026', accountLabel: 'Todas as contas' },
+      monthly: [],
+      incomeCategories: [],
+      categories: [],
+      entries: {
+        income: [{
+          date: '2026-11-05', description: ' =1+1', category: 'Renda & "Extras"',
+          amount: -25.5, paid: true, kind: 'income', account: 'Conta'
+        }],
+        fixed: [],
+        debts: [],
+        variable: [{
+          date: '2026-11-06', description: '\t=1+1', category: 'Casa',
+          amount: 12.34, paid: false, kind: 'variable', account: 'Conta'
+        }]
+      }
+    };
+    const csv = buildReportCsv(report);
+    const accountantCsv = buildAccountantReportCsv(report);
+    assertTrue(csv.includes("' =1+1"));
+    assertTrue(csv.includes("'\t=1+1"));
+    assertTrue(accountantCsv.includes("' =1+1"));
+    assertTrue(accountantCsv.includes("'\t=1+1"));
+
+    const xlsx = buildReportXlsx(report);
+    assertEqual(xlsx.type, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const xlsxText = new TextDecoder().decode(new Uint8Array(await xlsx.arrayBuffer()));
+    assertTrue(xlsxText.includes('<t xml:space="preserve"> =1+1</t>'));
+    assertTrue(xlsxText.includes('<t xml:space="preserve">\t=1+1</t>'));
+    assertFalse(/<f(?:\s|>)/.test(xlsxText));
+    assertTrue(xlsxText.includes('Renda &amp; &quot;Extras&quot;'));
   });
 
   it('RM-089: inclui dívidas pagas e pendentes sem alterar o saldo', () => {

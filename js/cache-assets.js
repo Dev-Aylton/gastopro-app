@@ -17,6 +17,7 @@ self.GastoProCacheAssets = Object.freeze({
     './js/a11y.js',
     './js/xlsx-writer.js',
     './js/report.js',
+    './js/simulator.js',
     './assets/fontawesome/css/all.min.css',
     './assets/fontawesome/webfonts/fa-solid-900.woff2',
     './assets/fontawesome/webfonts/fa-regular-400.woff2',

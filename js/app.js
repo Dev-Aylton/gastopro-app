@@ -446,6 +446,7 @@ const VIEW_TITLES = {
   loans:     'Empréstimos',
   cards:     'Cartões',
   accounts:  'Contas',
+  simulator: 'Simulador',
   contact:   'Fale comigo',
   admin:     'Admin'
 };
@@ -3796,6 +3797,291 @@ window.GastoProLoanUI = Object.freeze({
  *  4. Atualiza os badges da sidebar e o saldo da topbar.
  *  5. Delega para as funções de renderização de cada tela.
  */
+let simulatorDebtChart = null;
+let simulatorCategoryChart = null;
+
+function getSimulatorCompletedMonths(count = 6) {
+  const now = new Date();
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - count + index, 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  });
+}
+
+function getSimulatorCategoryHistory() {
+  const historyByCategory = new Map();
+  getSimulatorCompletedMonths().forEach(month => {
+    const totals = new Map();
+    FinanceData.getByMonth(month)
+      .filter(item => item && ['fixed', 'variable', 'debt'].includes(item.type) &&
+        item.paid === true && item.active !== false)
+      .forEach(item => {
+        const category = GastoProCategories.normalize(item.category || 'Outros');
+        totals.set(category, (totals.get(category) || 0) + Number(item.amount || 0));
+      });
+    totals.forEach((amount, category) => {
+      if (amount <= 0) return;
+      const amounts = historyByCategory.get(category) || [];
+      amounts.push({ month, amount });
+      historyByCategory.set(category, amounts);
+    });
+  });
+  return historyByCategory;
+}
+
+function formatSimulatorMonth(month) {
+  if (!month) return '—';
+  const [year, value] = month.split('-').map(Number);
+  return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' })
+    .format(new Date(year, value - 1, 1));
+}
+
+function renderSimulatorChart(canvas, result, measure) {
+  if (typeof Chart === 'undefined') {
+    throw new Error('O gráfico local não está disponível neste aparelho.');
+  }
+  const rootStyle = getComputedStyle(document.documentElement);
+  const color = name => rootStyle.getPropertyValue(name).trim();
+  const debtMode = measure === 'debt';
+  const baseColor = color(debtMode ? '--text-muted' : '--danger');
+  const simulatedColor = color(debtMode ? '--primary-text' : '--success');
+  const labels = result.series.map(item => formatSimulatorMonth(item.month));
+  const datasets = debtMode
+    ? [
+      {
+        label: 'Cenário base — linha tracejada, marcadores quadrados',
+        data: result.series.map(item => item.baseBalance),
+        borderColor: baseColor,
+        pointBackgroundColor: baseColor,
+        pointStyle: 'rect',
+        borderDash: [7, 5]
+      },
+      {
+        label: 'Cenário simulado — linha contínua, marcadores circulares',
+        data: result.series.map(item => item.simulatedBalance),
+        borderColor: simulatedColor,
+        pointBackgroundColor: simulatedColor,
+        pointStyle: 'circle'
+      }
+    ]
+    : [
+      {
+        label: 'Cenário base — linha tracejada, marcadores quadrados',
+        data: result.series.map(item => item.baseSpending),
+        borderColor: baseColor,
+        pointBackgroundColor: baseColor,
+        pointStyle: 'rect',
+        borderDash: [7, 5]
+      },
+      {
+        label: 'Cenário simulado — linha contínua, marcadores circulares',
+        data: result.series.map(item => item.simulatedSpending),
+        borderColor: simulatedColor,
+        pointBackgroundColor: simulatedColor,
+        pointStyle: 'circle'
+      }
+    ];
+  const previous = debtMode ? simulatorDebtChart : simulatorCategoryChart;
+  if (previous) previous.destroy();
+  const chart = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets: datasets.map(dataset => ({
+      ...dataset,
+      fill: false,
+      borderWidth: 2,
+      pointRadius: 2,
+      tension: 0.15
+    })) },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: {
+          labels: {
+            color: color('--text-main'),
+            usePointStyle: true,
+            boxWidth: 18
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: context => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: color('--text-muted'), maxTicksLimit: 8 },
+          grid: { color: color('--border') }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: color('--text-muted'),
+            callback: value => formatCurrency(value)
+          },
+          grid: { color: color('--border') }
+        }
+      }
+    }
+  });
+  if (debtMode) simulatorDebtChart = chart;
+  else simulatorCategoryChart = chart;
+}
+
+function renderSimulatorView() {
+  const debtSelect = document.getElementById('simulatorDebtSelect');
+  const debtForm = document.getElementById('simulatorDebtForm');
+  const debtEmpty = document.getElementById('simulatorDebtEmpty');
+  const categorySelect = document.getElementById('simulatorCategorySelect');
+  const categoryForm = document.getElementById('simulatorCategoryForm');
+  const categoryEmpty = document.getElementById('simulatorCategoryEmpty');
+  if (!debtSelect || !categorySelect || !window.GastoProReportHelpers) return;
+
+  const month = getYearMonthString(state.currentYear, state.currentMonth);
+  const templates = FinanceData.getActiveTemplates();
+  const debts = window.GastoProReportHelpers.getDebtCenterData(month, templates).items;
+  const previousDebtId = debtSelect.value;
+  debtSelect.innerHTML = debts.map(item =>
+    `<option value="${escapeHtml(item.id)}">${escapeHtml(item.description)} — ${formatCurrency(item.remainingAmount)} restantes</option>`
+  ).join('');
+  if (debts.some(item => item.id === previousDebtId)) debtSelect.value = previousDebtId;
+  if (debtEmpty) debtEmpty.hidden = debts.length > 0;
+  if (debtForm) debtForm.hidden = debts.length === 0;
+
+  const historyByCategory = getSimulatorCategoryHistory();
+  const previousCategory = categorySelect.value;
+  const categories = Array.from(historyByCategory.keys()).sort((left, right) =>
+    left.localeCompare(right, 'pt-BR')
+  );
+  categorySelect.innerHTML = categories.map(category =>
+    `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`
+  ).join('');
+  if (categories.includes(previousCategory)) categorySelect.value = previousCategory;
+  if (categoryEmpty) categoryEmpty.hidden = categories.length > 0;
+  if (categoryForm) categoryForm.hidden = categories.length === 0;
+}
+
+function parseSimulatorAmount(value) {
+  const text = String(value || '').trim().replace(/\s/g, '');
+  const normalized = text.includes(',')
+    ? text.replace(/\./g, '').replace(',', '.')
+    : text;
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new TypeError('Informe um valor válido igual ou maior que zero.');
+  }
+  return amount;
+}
+
+function bindSimulatorForms() {
+  const debtForm = document.getElementById('simulatorDebtForm');
+  if (debtForm && debtForm.dataset.bound !== 'true') {
+    debtForm.dataset.bound = 'true';
+    debtForm.addEventListener('submit', event => {
+      event.preventDefault();
+      const result = document.getElementById('simulatorDebtResult');
+      const chartWrap = document.getElementById('simulatorDebtChartWrap');
+      const canvas = document.getElementById('simulatorDebtChart');
+      try {
+        const month = getYearMonthString(state.currentYear, state.currentMonth);
+        const debtId = document.getElementById('simulatorDebtSelect').value;
+        const debt = window.GastoProReportHelpers.getDebtCenterData(
+          month, FinanceData.getActiveTemplates()
+        ).items.find(item => item.id === debtId);
+        if (!debt) throw new Error('Selecione uma dívida disponível.');
+        const simulation = window.GastoProSimulator.simulateDebtPayoff(
+          debt,
+          parseSimulatorAmount(document.getElementById('simulatorDebtExtra').value),
+          document.getElementById('simulatorDebtFrequency').value,
+          debt.nextInstallmentMonth || month
+        );
+        if (simulation.isPaidOff) {
+          result.innerHTML = '<p class="simulator-empty">Esta dívida já está quitada.</p>';
+          result.hidden = false;
+          chartWrap.hidden = true;
+          return;
+        }
+        result.innerHTML = `
+          <div class="simulator-result-comparison">
+            <section class="simulator-result-card">
+              <h4>Cenário base</h4>
+              <p>Quitação estimada em ${escapeHtml(formatSimulatorMonth(simulation.basePayoffMonth))}.</p>
+            </section>
+            <section class="simulator-result-card">
+              <h4>Com valor extra</h4>
+              <p>Quitação estimada em ${escapeHtml(formatSimulatorMonth(simulation.simulatedPayoffMonth))}.</p>
+              <p>${simulation.monthsSaved} mês${simulation.monthsSaved === 1 ? '' : 'es'} economizado${simulation.monthsSaved === 1 ? '' : 's'}.</p>
+            </section>
+          </div>
+          <p class="simulator-result-note">Estimativa sem juros: o cadastro guarda valores e parcelas, mas não uma taxa periódica para recalcular os juros.</p>`;
+        result.hidden = false;
+        chartWrap.hidden = false;
+        renderSimulatorChart(canvas, simulation, 'debt');
+      } catch (error) {
+        if (simulatorDebtChart) simulatorDebtChart.destroy();
+        simulatorDebtChart = null;
+        chartWrap.hidden = true;
+        result.textContent = error.message || 'Não foi possível simular esta dívida.';
+        result.hidden = false;
+      }
+    });
+  }
+
+  const categoryForm = document.getElementById('simulatorCategoryForm');
+  if (categoryForm && categoryForm.dataset.bound !== 'true') {
+    categoryForm.dataset.bound = 'true';
+    categoryForm.addEventListener('submit', event => {
+      event.preventDefault();
+      const result = document.getElementById('simulatorCategoryResult');
+      const chartWrap = document.getElementById('simulatorCategoryChartWrap');
+      const canvas = document.getElementById('simulatorCategoryChart');
+      try {
+        const category = document.getElementById('simulatorCategorySelect').value;
+        const amounts = getSimulatorCategoryHistory().get(category) || [];
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const simulation = window.GastoProSimulator.simulateCategoryCut(
+          amounts,
+          Number(document.getElementById('simulatorCategoryCut').value),
+          window.GastoProSimulator.monthAtOffset(currentMonth, 1)
+        );
+        if (!simulation.sufficientData) {
+          result.textContent = 'Não há dados pagos da categoria para calcular uma média.';
+          result.hidden = false;
+          chartWrap.hidden = true;
+          return;
+        }
+        result.innerHTML = `
+          <div class="simulator-result-comparison">
+            <section class="simulator-result-card">
+              <h4>Cenário base</h4>
+              <p>Média mensal em ${simulation.monthsUsed} mês${simulation.monthsUsed === 1 ? '' : 'es'} com gastos pagos: ${formatCurrency(simulation.monthlyAverage)}.</p>
+            </section>
+            <section class="simulator-result-card">
+              <h4>Com corte de ${simulation.percentage}%</h4>
+              <p>Novo gasto médio: ${formatCurrency(simulation.monthlyAverage - simulation.monthlySavings)} por mês.</p>
+              <p>Economia: ${formatCurrency(simulation.monthlySavings)}/mês e ${formatCurrency(simulation.annualSavings)} em 12 meses.</p>
+            </section>
+          </div>
+          <p class="simulator-result-note">Média calculada nos últimos 6 meses concluídos com gastos pagos na categoria; meses sem lançamento pago nessa categoria são ignorados.</p>`;
+        result.hidden = false;
+        chartWrap.hidden = false;
+        renderSimulatorChart(canvas, simulation, 'spending');
+      } catch (error) {
+        if (simulatorCategoryChart) simulatorCategoryChart.destroy();
+        simulatorCategoryChart = null;
+        chartWrap.hidden = true;
+        result.textContent = error.message || 'Não foi possível simular esse corte.';
+        result.hidden = false;
+      }
+    });
+  }
+}
+
+bindSimulatorForms();
+
 function renderAll() {
   migrateLegacyAccountAssignments();
   updateAccountSelects();
@@ -3873,6 +4159,7 @@ function renderAll() {
   renderCreditCardsPanel();
   renderContactView();
   renderAdminView();
+  if (state.currentView === 'simulator') renderSimulatorView();
   updateAdminNavigation();
 }
 
@@ -4706,12 +4993,7 @@ function getDashboardAccountSummary(items, accounts, filter) {
   );
   const variables = filteredItems.filter(item => item.type === 'variable');
   const totalIncome = incomes.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const totalFixed = fixed.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const totalVariable = variables.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const expenses = [...fixed, ...debts, ...variables];
-  const paidExpenses = expenses
-    .filter(item => item.paid === true)
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const expenseSummary = getDashboardExpenseSummary(fixed, debts, variables);
   return {
     items: filteredItems,
     incomes,
@@ -4719,18 +5001,38 @@ function getDashboardAccountSummary(items, accounts, filter) {
     debts,
     variables,
     totalIncome,
-    totalFixed,
-    totalVariable,
-    totalExpenses: totalFixed + totalVariable +
-      debts.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-    paidExpenses,
-    balance: totalIncome - totalFixed - totalVariable
+    totalFixed: expenseSummary.fixed,
+    totalVariable: expenseSummary.variable,
+    totalExpenses: expenseSummary.forecast,
+    paidExpenses: expenseSummary.paidExpenses,
+    balance: totalIncome - expenseSummary.fixed - expenseSummary.variable
+  };
+}
+
+function getDashboardExpenseSummary(fixed, debts, variables) {
+  const activeFixed = (fixed || []).filter(item => item.active !== false || item.paid);
+  const activeDebts = (debts || []).filter(item => item.active !== false || item.paid);
+  const variableItems = variables || [];
+  const totalFixed = activeFixed.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const totalDebts = activeDebts.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const totalVariable = variableItems.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const forecast = totalFixed + totalDebts + totalVariable;
+  const paidExpenses = [...activeFixed, ...activeDebts, ...variableItems]
+    .filter(item => item.paid === true)
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  return {
+    fixed: totalFixed,
+    debts: totalDebts,
+    variable: totalVariable,
+    forecast,
+    paidExpenses
   };
 }
 
 window.GastoProAccountFilterHelpers = Object.freeze({
   filterItems: filterFinancialItemsByAccount,
-  getDashboardSummary: getDashboardAccountSummary
+  getDashboardSummary: getDashboardAccountSummary,
+  getExpenseSummary: getDashboardExpenseSummary
 });
 
 const NOTIFICATION_PREFERENCES_KEY = 'gastopro_notification_preferences_v1';

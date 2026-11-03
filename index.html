@@ -102,6 +102,10 @@
               <i class="fa-solid fa-building-columns"></i>
               <span>Contas</span>
             </button>
+            <button class="nav-item" data-view="simulator" id="navSimulator">
+              <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+              <span>Simulador</span>
+            </button>
             <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
               <i class="fa-solid fa-file-import"></i>
               <span>Importar Extrato</span>
@@ -417,7 +421,7 @@
               </div>
               <div class="action-text">
                 <strong>Buscar nova versão do app</strong>
-                <span>Versão v4.66</span>
+                <span>Versão v4.67</span>
               </div>
             </button>
             <div class="drawer-about-help">
@@ -1193,6 +1197,80 @@
           </div>
         </section>
 
+        <section class="view-section" id="view-simulator">
+          <div class="view-header-card">
+            <div class="view-header-info">
+              <div class="view-icon-badge"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></div>
+              <div>
+                <h2>Simulador de cenários</h2>
+                <p>Compare projeções com base nos seus lançamentos e dívidas cadastrados.</p>
+              </div>
+            </div>
+          </div>
+          <p class="simulator-disclaimer">Simulação ilustrativa, não é recomendação financeira.</p>
+          <div class="simulator-grid">
+            <section class="panel-box simulator-panel" aria-labelledby="simulatorDebtTitle">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <div class="panel-icon bg-green-soft"><i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i></div>
+                  <div>
+                    <h3 id="simulatorDebtTitle">Pagar dívida extra</h3>
+                    <p>Veja como um valor adicional pode antecipar a quitação.</p>
+                  </div>
+                </div>
+              </div>
+              <p class="simulator-empty" id="simulatorDebtEmpty" role="status" hidden>
+                Não há dívidas ativas cadastradas para simular.
+              </p>
+              <form id="simulatorDebtForm">
+                <label for="simulatorDebtSelect">Dívida</label>
+                <select id="simulatorDebtSelect" required></select>
+                <label for="simulatorDebtExtra">Valor extra (R$)</label>
+                <input id="simulatorDebtExtra" type="text" inputmode="decimal" value="0,00" required />
+                <label for="simulatorDebtFrequency">Frequência do valor extra</label>
+                <select id="simulatorDebtFrequency">
+                  <option value="once">Uma vez</option>
+                  <option value="monthly">Todo mês</option>
+                </select>
+                <button class="btn-primary simulator-action-btn" type="submit">Simular quitação</button>
+              </form>
+              <div class="simulator-result" id="simulatorDebtResult" aria-live="polite" hidden></div>
+              <div class="simulator-chart-wrap" id="simulatorDebtChartWrap" hidden>
+                <canvas id="simulatorDebtChart" role="img"
+                  aria-label="Gráfico de linha do saldo devedor no cenário base e no simulado"></canvas>
+              </div>
+            </section>
+
+            <section class="panel-box simulator-panel" aria-labelledby="simulatorCategoryTitle">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <div class="panel-icon bg-orange-soft"><i class="fa-solid fa-scissors" aria-hidden="true"></i></div>
+                  <div>
+                    <h3 id="simulatorCategoryTitle">Cortar categoria</h3>
+                    <p>Estime a economia a partir dos gastos pagos recentes.</p>
+                  </div>
+                </div>
+              </div>
+              <p class="simulator-empty" id="simulatorCategoryEmpty" role="status" hidden>
+                Não há dados de gastos pagos suficientes para calcular médias por categoria.
+              </p>
+              <form id="simulatorCategoryForm">
+                <label for="simulatorCategorySelect">Categoria</label>
+                <select id="simulatorCategorySelect" required></select>
+                <label for="simulatorCategoryCut">Redução desejada (%)</label>
+                <input id="simulatorCategoryCut" type="number" inputmode="decimal"
+                  min="0" max="100" step="1" value="20" required />
+                <button class="btn-primary simulator-action-btn" type="submit">Simular corte</button>
+              </form>
+              <div class="simulator-result" id="simulatorCategoryResult" aria-live="polite" hidden></div>
+              <div class="simulator-chart-wrap" id="simulatorCategoryChartWrap" hidden>
+                <canvas id="simulatorCategoryChart" role="img"
+                  aria-label="Gráfico de linha dos gastos mensais no cenário base e no simulado"></canvas>
+              </div>
+            </section>
+          </div>
+        </section>
+
         <section class="view-section" id="view-contact">
           <div class="view-header-card">
             <div class="view-header-info">
@@ -1255,7 +1333,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.66</span>
+          <span class="badge badge-version">v4.67</span>
         </div>
       </footer>
 
@@ -2615,6 +2693,7 @@
   <script src="js/a11y.js"></script>
   <script src="js/xlsx-writer.js"></script>
   <script src="js/report.js"></script>
+  <script src="js/simulator.js"></script>
 </body>
 
 </html>

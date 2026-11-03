@@ -62,34 +62,28 @@
   }
 
   function getMonthTotals(rows, debtIds) {
-    const activeFixed = rows.fixed.filter(item => item.active !== false || item.paid);
+    const fixed = rows.fixed.filter(item => !debtIds.has(String(item.id)));
+    const debts = rows.fixed.filter(item => debtIds.has(String(item.id)));
     const income = rows.income.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const fixed = activeFixed
-      .filter(item => !debtIds.has(String(item.id)))
-      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const debts = activeFixed
-      .filter(item => debtIds.has(String(item.id)))
-      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const variable = rows.variable.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const expenses = fixed + debts + variable;
-    const paidExpenses = [...activeFixed, ...rows.variable]
-      .filter(item => item.paid === true)
-      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const expenseSummary = window.GastoProAccountFilterHelpers.getExpenseSummary(
+      fixed, debts, rows.variable
+    );
+    const expenses = expenseSummary.forecast;
     const balance = income - expenses;
     return {
       income: roundMoney(income),
-      fixed: roundMoney(fixed),
-      debts: roundMoney(debts),
-      variable: roundMoney(variable),
+      fixed: roundMoney(expenseSummary.fixed),
+      debts: roundMoney(expenseSummary.debts),
+      variable: roundMoney(expenseSummary.variable),
       expenses: roundMoney(expenses),
       forecast: roundMoney(expenses),
-      paidExpenses: roundMoney(paidExpenses),
+      paidExpenses: roundMoney(expenseSummary.paidExpenses),
       balance: roundMoney(balance),
       percentages: {
-        fixed: income ? Math.round(((fixed + debts) / income) * 100) : 0,
-        variable: income ? Math.round((variable / income) * 100) : 0,
+        fixed: income ? Math.round(((expenseSummary.fixed + expenseSummary.debts) / income) * 100) : 0,
+        variable: income ? Math.round((expenseSummary.variable / income) * 100) : 0,
         savings: income
-          ? Math.max(0, 100 - Math.round(((fixed + debts) / income) * 100) - Math.round((variable / income) * 100))
+          ? Math.max(0, 100 - Math.round(((expenseSummary.fixed + expenseSummary.debts) / income) * 100) - Math.round((expenseSummary.variable / income) * 100))
           : 0
       }
     };
@@ -660,4 +654,5 @@
   window.sanitizePdfText = sanitizePdfText;
   window.formatReportPercentage = formatReportPercentage;
   window.getReportLabels = () => ({ ...REPORT_LABELS });
+  window.GastoProReportHelpers.roundMoney = roundMoney;
 })();

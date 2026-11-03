@@ -157,6 +157,42 @@
     ⚠️ <strong>Isolamento:</strong> Os testes usam um mock do localStorage — seus dados reais do GastoPro <strong>não são afetados</strong>.
   </div>
 
+  <div id="wizardTestFixture" hidden>
+    <button id="sidebarWizardBtn" type="button"></button>
+    <div id="wizardModal">
+      <div id="wStep1"></div><div id="wStep2"></div><div id="wStep3"></div><div id="wStep4"></div>
+      <div id="wLine1"></div><div id="wLine2"></div><div id="wLine3"></div>
+      <div id="wDot1"></div><div id="wDot2"></div><div id="wDot3"></div><div id="wDot4"></div>
+      <div id="wPanel1">
+        <div id="wizardIncomeList"></div>
+        <input id="wIncomeDesc" /><input id="wIncomeAmount" /><input id="wIncomeDate" />
+        <button id="wAddIncomeBtn" type="button"></button>
+      </div>
+      <div id="wPanel2">
+        <div id="wizardFixedChecklist"></div><div id="wizardFixedList"></div>
+        <input id="wFixedDesc" /><input id="wFixedAmount" /><input id="wFixedDay" />
+        <button id="wAddFixedBtn" type="button"></button>
+      </div>
+      <div id="wPanel3">
+        <div id="wizardCategoryGrid"></div><div id="wizardVarList"></div>
+        <input id="wVarDesc" /><input id="wVarAmount" /><input id="wVarDay" />
+        <button id="wAddVarBtn" type="button"></button>
+      </div>
+      <div id="wPanel4">
+        <div class="wizard-account-field"><select id="wizardAccount" class="account-select"></select></div>
+        <span id="wResIncome"></span><span id="wResExpense"></span><span id="wResBalance"></span>
+        <span id="wRulePctFixed"></span><span id="wRulePctVar"></span><span id="wRulePctSave"></span>
+        <div id="wRuleBarFixed"></div><div id="wRuleBarVar"></div><div id="wRuleBarSave"></div>
+        <span id="wizardResultEmoji"></span><span id="wizardResultTitle"></span>
+        <span id="wizardResultSubtitle"></span><div id="wizardDiagnosisBanner"></div>
+        <i id="wizardDiagnosisIcon"></i><span id="wizardDiagnosisText"></span>
+      </div>
+      <button id="closeWizardBtn" type="button"></button>
+      <button id="wizardBackBtn" type="button"></button>
+      <button id="wizardNextBtn" type="button"></button>
+    </div>
+  </div>
+
   <!--
     ORDEM DE CARREGAMENTO OBRIGATÓRIA:
     1. supabase.js — Define o cliente e helpers de sincronização/validação
@@ -178,6 +214,7 @@
   <script src="../js/a11y.js"></script>
   <script src="../js/xlsx-writer.js"></script>
   <script src="../js/report.js"></script>
+  <script src="../js/simulator.js"></script>
   <script src="../js/importer.js"></script>
   <script src="../js/cache-assets.js"></script>
   <script src="gastopro.test.js"></script>

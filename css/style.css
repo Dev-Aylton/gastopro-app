@@ -1766,6 +1766,122 @@ body {
   }
 }
 
+.simulator-disclaimer,
+.simulator-empty {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-main);
+  line-height: 1.5;
+}
+
+.simulator-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 1rem;
+}
+
+.simulator-panel {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  align-content: start;
+}
+
+.simulator-panel form {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.simulator-panel label {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.simulator-panel input,
+.simulator-panel select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 16px;
+}
+
+.simulator-panel input:focus-visible,
+.simulator-panel select:focus-visible,
+.simulator-action-btn:focus-visible {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.simulator-action-btn {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 0.35rem;
+}
+
+.simulator-result {
+  display: grid;
+  gap: 0.75rem;
+  color: var(--text-main);
+}
+
+.simulator-result-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.simulator-result-card {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+
+.simulator-result-card h4 {
+  margin: 0 0 0.4rem;
+  color: var(--text-main);
+}
+
+.simulator-result-card p,
+.simulator-result-note {
+  margin: 0;
+  color: var(--text-main);
+  line-height: 1.5;
+}
+
+.simulator-result-note {
+  color: var(--text-muted);
+}
+
+.simulator-chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 260px;
+  min-width: 0;
+}
+
+.simulator-chart-wrap canvas {
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  .simulator-grid,
+  .simulator-result-comparison {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .btn-danger-action:hover {
   border-color: rgba(var(--theme-rgb-border-ef4444), 0.4);
 }
