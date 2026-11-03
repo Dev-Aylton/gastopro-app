@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.52-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.53-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-594%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-595%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -493,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.52`. Suíte atual: **594 testes**.
+`CACHE_NAME` atual: `gastopro-v4.53`. Suíte atual: **595 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -723,6 +723,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-072 — Apresentação do produto e teste de rolagem determinístico** / Descrição: documenta proposta, importação, privacidade, acesso e arquitetura; estabiliza o teste de navegação até Metas fixando a altura de viewport no fixture, sem alterar a lógica do app. / Critério de pronto: 575 testes aprovados em duas execuções, zero falhas/pendências; consultas Supabase mockadas. / Arquivos: `README.md`, `tests/gastopro.test.js`, `index.html`, `sw.js`.
 - [x] **RM-073 — Aba dedicada de Empréstimos** / Descrição: adiciona tela, formulário próprio, resumo das parcelas, conflitos com prévia e escolha explícita para manter, excluir ou cancelar; mantém recebimentos fora da renda e sincroniza exclusões pelo fluxo existente, sem migration. / Critério de pronto: 586 testes aprovados em duas execuções, zero falhas/pendências; Supabase mockado; visual e toque não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/loans.js`, `js/cache-assets.js`, `css/style.css`, `tests/gastopro.test.js`, `tests/test-runner.html`, `README.md`.
 - [x] **RM-074 — Destaque do login Google, modelo CSV e rótulos de cópia** / Descrição: reforça o botão Google com contraste acessível; mantém o modelo CSV sem linhas de comentário e ensina as regras na importação; esclarece que a cópia de segurança restaura no app e renomeia o relatório para leitura/impressão. / Critério de pronto: 589 testes aprovados em duas execuções, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela. / Arquivos: `css/style.css`, `index.html`, `js/app.js`, `js/data.js`, `js/importer.js`, `tests/gastopro.test.js`, `README.md`, `sw.js`.
+- [x] **RM-075 — Exclusão idempotente de regra de importação ausente** / Descrição: trata como sucesso a exclusão de `fixed_import_rules` quando a linha do usuário não existe na nuvem, sem mudar o comportamento das demais tabelas. / Critério de pronto: 595 testes aprovados em duas execuções consecutivas, zero falhas/pendências; testes Supabase mockados. / Arquivos: `js/supabase.js`, `tests/gastopro.test.js`, `README.md`, `index.html`, `sw.js`.
 
 ### Em dúvida
 
@@ -734,7 +735,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.52 — 02/11/2026 (versão atual)
+### v4.53 — 03/11/2026 (versão atual)
+
+- RM-075: trata exclusão de linha ausente como sucesso idempotente somente para `fixed_import_rules`; outras tabelas continuam exigindo confirmação de exclusão. Test-runner: 595 aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado.
+
+### v4.52 — 02/11/2026 (versão anterior)
 
 - RM-074: destaca Entrar com Google com altura mínima de 48 px e contraste calculado acima de 4,5:1 nos dois temas; remove comentários do modelo CSV mantendo compatibilidade com arquivos antigos; explica a cópia de segurança para restaurar no app e renomeia o relatório para leitura/impressão. Test-runner: 589 aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela.
 - Testes adicionais (somente testes): cobre limites de validação do formulário de Empréstimos e aplicação real dos temas no botão Google. Test-runner: 594 aprovados em duas execuções, zero falhas/pendências; Supabase mockado.

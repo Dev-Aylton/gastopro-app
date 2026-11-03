@@ -1661,6 +1661,7 @@ const SupabaseAuth = {
       if (remote.error) return this.reportCloudError(`Erro ao confirmar exclusão de ${table}`, remote.error);
       if (remote.data && remote.data.deleted_at) continue;
       if (!remote.data) {
+        if (table === 'fixed_import_rules' && keyColumn === 'user_id') continue;
         return this.reportCloudError(`Erro ao confirmar exclusão de ${table}`,
           new Error(`O registro ${id} não foi encontrado após tentar excluí-lo.`));
       }

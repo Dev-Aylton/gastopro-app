@@ -5002,6 +5002,34 @@ describe('FinanceData — clearAll()', () => {
     }
   });
 
+  itAsync('markCloudDeleted trata regra de importação ausente como exclusão idempotente', async () => {
+    const previousClient = window.SupabaseAuth.client;
+    window.SupabaseAuth.client = {
+      from() {
+        let operation = null;
+        return {
+          update() { operation = 'update'; return this; },
+          select() { if (!operation) operation = 'select'; return this; },
+          eq() { return this; },
+          maybeSingle() {
+            return Promise.resolve({ data: null, error: null });
+          },
+          then(resolve, reject) {
+            return Promise.resolve({ data: [], error: null }).then(resolve, reject);
+          }
+        };
+      }
+    };
+    try {
+      const result = await window.SupabaseAuth.markCloudDeleted(
+        'fixed_import_rules', 'user_id', ['reset-user'], 'fixedImportRules', 'reset-user'
+      );
+      assertTrue(result.success);
+    } finally {
+      window.SupabaseAuth.client = previousClient;
+    }
+  });
+
   itAsync('markCloudDeleted envia mais de 100 IDs em atualizações individuais mockadas', async () => {
     const previousClient = window.SupabaseAuth.client;
     const ids = Array.from({ length: 205 }, () => crypto.randomUUID());
