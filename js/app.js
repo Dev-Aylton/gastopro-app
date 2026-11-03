@@ -4497,6 +4497,46 @@ window.GastoProGoogleAuthHelpers = Object.freeze({
   applyPriority: applyGoogleAuthPriority
 });
 
+function createUpdateReloadScheduler({ isBusy, reload, notify, schedule = (callback, delay) => window.setTimeout(callback, delay) }) {
+  let timer = null;
+  let requested = false;
+  let completed = false;
+  let noticeShown = false;
+
+  const attemptReload = () => {
+    timer = null;
+    if (!requested || completed) return;
+    if (isBusy()) {
+      if (!noticeShown) {
+        notify();
+        noticeShown = true;
+      }
+      timer = schedule(attemptReload, 1000);
+      return;
+    }
+    requested = false;
+    completed = true;
+    reload();
+  };
+
+  return Object.freeze({
+    request() {
+      if (completed) return false;
+      requested = true;
+      if (timer !== null) return false;
+      attemptReload();
+      return true;
+    },
+    isPending() {
+      return requested && !completed;
+    }
+  });
+}
+
+window.GastoProUpdateReloadHelpers = Object.freeze({
+  createScheduler: createUpdateReloadScheduler
+});
+
 function getDashboardAccountSummary(items, accounts, filter) {
   const filteredItems = filterFinancialItemsByAccount(items, accounts, filter);
   const incomes = filteredItems.filter(item => item.type === 'income');
@@ -10995,6 +11035,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let isRefreshing = false;
   let isCheckingAppVersion = false;
+  const updateReloadScheduler = window.GastoProUpdateReloadHelpers.createScheduler({
+    isBusy: () => hasOpenSyncEditor() || activeSyncs.size > 0,
+    reload: () => window.location.reload(),
+    notify: () => showToast('A atualização será aplicada ao terminar a edição ou a sincronização.')
+  });
 
   async function handleAppRefresh() {
     if (isRefreshing) return;
@@ -11126,7 +11171,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (controllerChanged) {
-        window.location.reload();
+        updateReloadScheduler.request();
       } else {
         showToast('Nova versão encontrada. Tente novamente em instantes.', 'error');
       }

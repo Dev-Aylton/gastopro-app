@@ -493,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.59`. Suíte atual: **613 testes**.
+`CACHE_NAME` atual: `gastopro-v4.60`. Suíte atual: **617 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -741,7 +741,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.59 — 03/11/2026 (versão atual)
+### v4.60 — 03/11/2026 (versão atual)
 
 - RM-081: a confirmação de logout identifica os grupos com falha e mostra um código seguro quando disponível; detalhes arbitrários e dados do lançamento não são exibidos. Test-runner: 613 aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela.
 

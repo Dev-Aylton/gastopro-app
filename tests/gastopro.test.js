@@ -8442,6 +8442,92 @@ describe('Restauração da navegação após atualização', () => {
   });
 });
 
+describe('Atualização do app — RM-082', () => {
+  function createSchedulerHarness(isBusy) {
+    const scheduled = [];
+    let reloadCount = 0;
+    let noticeCount = 0;
+    const scheduler = window.GastoProUpdateReloadHelpers.createScheduler({
+      isBusy,
+      reload: () => { reloadCount++; },
+      notify: () => { noticeCount++; },
+      schedule: (callback, delay) => {
+        const timer = { callback, delay };
+        scheduled.push(timer);
+        return timer;
+      }
+    });
+    return {
+      scheduler,
+      scheduled,
+      get reloadCount() { return reloadCount; },
+      get noticeCount() { return noticeCount; },
+      runNext() {
+        const timer = scheduled.shift();
+        if (timer) timer.callback();
+      }
+    };
+  }
+
+  it('não recarrega enquanto um modal de edição estiver aberto', () => {
+    let editorOpen = true;
+    const harness = createSchedulerHarness(() => editorOpen);
+    harness.scheduler.request();
+    assertEqual(harness.reloadCount, 0);
+    assertEqual(harness.noticeCount, 1);
+    assertEqual(harness.scheduled.length, 1);
+    assertEqual(harness.scheduled[0].delay, 1000);
+
+    editorOpen = false;
+    harness.runNext();
+    assertEqual(harness.reloadCount, 1);
+    assertEqual(harness.scheduled.length, 0);
+  });
+
+  it('não recarrega enquanto uma sincronização estiver ativa', () => {
+    let syncActive = true;
+    const harness = createSchedulerHarness(() => syncActive);
+    harness.scheduler.request();
+    assertEqual(harness.reloadCount, 0);
+    assertEqual(harness.noticeCount, 1);
+    assertEqual(harness.scheduled.length, 1);
+
+    syncActive = false;
+    harness.runNext();
+    assertEqual(harness.reloadCount, 1);
+    assertEqual(harness.scheduled.length, 0);
+  });
+
+  it('recarrega uma vez imediatamente quando não há edição nem sync', () => {
+    const harness = createSchedulerHarness(() => false);
+    harness.scheduler.request();
+    assertEqual(harness.reloadCount, 1);
+    assertEqual(harness.scheduled.length, 0);
+    assertFalse(harness.scheduler.isPending());
+  });
+
+  it('controllerchange repetidos mantêm um timer e um único reload', () => {
+    let busy = true;
+    const harness = createSchedulerHarness(() => busy);
+    harness.scheduler.request();
+    harness.scheduler.request();
+    harness.scheduler.request();
+    assertEqual(harness.scheduled.length, 1);
+    assertEqual(harness.noticeCount, 1);
+
+    harness.runNext();
+    assertEqual(harness.scheduled.length, 1);
+    harness.scheduler.request();
+    assertEqual(harness.scheduled.length, 1);
+
+    busy = false;
+    harness.runNext();
+    harness.scheduler.request();
+    assertEqual(harness.reloadCount, 1);
+    assertEqual(harness.scheduled.length, 0);
+  });
+});
+
 describe('Lógica de Negócio — Regra 50/30/20', () => {
   it('deve calcular porcentagens corretamente com renda conhecida', () => {
     const totalIncome   = 4000;
