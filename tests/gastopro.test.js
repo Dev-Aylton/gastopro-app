@@ -13781,6 +13781,39 @@ function fillLoanForm(fixture, overrides = {}) {
 }
 
 describe('Empréstimos — resumo, conflitos e formulário', () => {
+  itAsync('aceita empréstimo com mês final compatível com as parcelas', async () => {
+    setupMockLocalStorage();
+    const loan = makeLoanTemplate({
+      id: crypto.randomUUID(),
+      accountId: crypto.randomUUID(),
+      amount: 100,
+      startMonth: '2026-03',
+      endMonth: '2026-05',
+      loanTotalPayable: 300,
+      loanInstallmentCount: 3
+    });
+    const result = await FinanceData.saveTemplates([loan], { flush: false });
+    assertTrue(result.success);
+    assertEqual(FinanceData.getTemplates()[0].endMonth, '2026-05');
+  });
+
+  itAsync('recusa empréstimo com mês final incompatível com as parcelas', async () => {
+    setupMockLocalStorage();
+    const loan = makeLoanTemplate({
+      id: crypto.randomUUID(),
+      accountId: crypto.randomUUID(),
+      amount: 100,
+      startMonth: '2026-03',
+      endMonth: '2026-04',
+      loanTotalPayable: 300,
+      loanInstallmentCount: 3
+    });
+    const result = await FinanceData.saveTemplates([loan], { flush: false });
+    assertFalse(result.success);
+    assertEqual(result.error, 'O mês final do empréstimo não corresponde à quantidade de parcelas.');
+    assertEqual(FinanceData.getTemplates(), []);
+  });
+
   it('calcula parcelas pagas, restantes, próxima, valores e mês final', () => {
     const summary = window.GastoProLoans.getLoanSummary(makeLoanTemplate({
       paidMonths: { '2026-03': true }
