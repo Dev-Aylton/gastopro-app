@@ -653,6 +653,113 @@ describe('Diagnóstico local temporário', () => {
     assertEqual(diagnostics.list(), []);
   });
 
+  itAsync('mantém o painel de diagnóstico oculto por padrão', async () => {
+    const [indexResponse, appResponse] = await Promise.all([
+      fetch('../index.html'),
+      fetch('../js/app.js')
+    ]);
+    assertTrue(indexResponse.ok);
+    assertTrue(appResponse.ok);
+    const source = new DOMParser().parseFromString(await indexResponse.text(), 'text/html');
+    const appSource = await appResponse.text();
+    assertTrue(source.getElementById('diagnosticDetails').hasAttribute('hidden'));
+    assertTrue(appSource.includes("localStorage.getItem(DIAGNOSTIC_VISIBLE_KEY) === 'true'"));
+    assertTrue(appSource.includes("document.querySelectorAll('.badge-version').forEach"));
+  });
+
+  it('alterna e persiste a visibilidade após sete toques', () => {
+    const key = 'gastopro_diag_visible';
+    const previousValue = localStorage.getItem(key);
+    let now = 1000;
+    const notices = [];
+    try {
+      localStorage.removeItem(key);
+      const controller = window.GastoProDiagnosticsVisibilityHelpers.createController({
+        initialVisible: false,
+        now: () => now,
+        persist: visible => localStorage.setItem(key, String(visible)),
+        notify: visible => notices.push(visible)
+      });
+      for (let tap = 0; tap < 6; tap++) assertFalse(controller.handleTap());
+      assertTrue(controller.handleTap());
+      assertTrue(controller.visible);
+      assertEqual(localStorage.getItem(key), 'true');
+      assertEqual(notices, [true]);
+
+      const reloaded = window.GastoProDiagnosticsVisibilityHelpers.createController({
+        initialVisible: localStorage.getItem(key) === 'true',
+        persist: visible => localStorage.setItem(key, String(visible))
+      });
+      assertTrue(reloaded.visible);
+      for (let tap = 0; tap < 6; tap++) assertFalse(reloaded.handleTap());
+      assertTrue(reloaded.handleTap());
+      assertFalse(reloaded.visible);
+      assertEqual(localStorage.getItem(key), 'false');
+      assertEqual(notices, [true]);
+    } finally {
+      if (previousValue === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, previousValue);
+    }
+  });
+
+  it('reinicia a sequência quando os sete toques excedem quatro segundos', () => {
+    let now = 0;
+    const controller = window.GastoProDiagnosticsVisibilityHelpers.createController({
+      initialVisible: false,
+      now: () => now
+    });
+    for (let tap = 0; tap < 6; tap++) {
+      now = tap * 1000;
+      assertFalse(controller.handleTap());
+    }
+    for (let tap = 0; tap < 5; tap++) assertFalse(controller.handleTap());
+    assertTrue(controller.handleTap());
+    assertTrue(controller.visible);
+  });
+
+  it('registra falhas de sync localmente sem mensagem nem dados privados', () => {
+    const diagnostics = window.GastoProDiagnostics;
+    diagnostics.clear();
+    window.GastoProSyncDiagnostics.recordFailure('excecao', {
+      name: 'TypeError',
+      status: 503,
+      code: 'ECONNRESET',
+      message: 'mensagem privada',
+      value: 'valor privado',
+      description: 'descrição privada',
+      userId: 'identificador privado'
+    });
+    const failure = diagnostics.list().find(item => item.type === 'sync-failure');
+    assertEqual(failure.data.category, 'rede');
+    assertEqual(failure.data.status, 503);
+    assertEqual(failure.data.code, 'ECONNRESET');
+    const serialized = localStorage.getItem(diagnostics.key);
+    assertFalse(serialized.includes('mensagem privada'));
+    assertFalse(serialized.includes('valor privado'));
+    assertFalse(serialized.includes('descrição privada'));
+    assertFalse(serialized.includes('identificador privado'));
+    diagnostics.clear();
+    window.GastoProSyncDiagnostics.recordFailure('invalida');
+    const invalidCategory = diagnostics.list().find(item => item.type === 'sync-failure');
+    assertEqual(invalidCategory.data, { category: 'excecao' });
+    diagnostics.clear();
+  });
+
+  it('mantém inalterada a lista de eventos de telemetria Supabase', () => {
+    assertEqual(window.GastoProTelemetryConstants.eventNames, [
+      'screen_dashboard',
+      'screen_incomes',
+      'screen_expenses',
+      'screen_accounts',
+      'screen_contact',
+      'screen_import',
+      'import_completed',
+      'import_parse_error',
+      'import_save_error',
+      'sync_error'
+    ]);
+  });
+
   itAsync('avisa e registra quando validação nativa impede o envio do formulário', async () => {
     setupMockLocalStorage();
     const diagnostics = window.GastoProDiagnostics;

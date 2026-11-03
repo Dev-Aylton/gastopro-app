@@ -20,6 +20,13 @@ const USAGE_EVENT_NAMES = Object.freeze([
 
 window.GastoProTelemetryConstants = { eventNames: USAGE_EVENT_NAMES };
 
+function recordSyncDiagnosticFailure(error, fallbackCategory = 'excecao') {
+  const diagnostics = window.GastoProSyncDiagnostics;
+  if (diagnostics && typeof diagnostics.recordFailure === 'function') {
+    diagnostics.recordFailure(fallbackCategory, error);
+  }
+}
+
 function hasAtMostTwoDecimalPlaces(value) {
   const match = String(value).trim().match(/^[+-]?(?:\d+(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i);
   if (!match) return false;
@@ -728,11 +735,19 @@ const SupabaseAuth = {
     }
   },
 
-  async fetchAllPages(fetchPage) {
+  async fetchAllPages(fetchPage, recordSyncFailure = false) {
     const rows = [];
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await fetchPage(from, from + 999);
-      if (error || !Array.isArray(data)) return null;
+      const response = await fetchPage(from, from + 999);
+      const { data, error } = response || {};
+      if (error) {
+        if (recordSyncFailure) recordSyncDiagnosticFailure(error);
+        return null;
+      }
+      if (!Array.isArray(data)) {
+        if (recordSyncFailure) recordSyncDiagnosticFailure(null, 'resposta_incompleta');
+        return null;
+      }
       rows.push(...data);
       if (data.length < 1000) return rows;
     }
@@ -1575,12 +1590,13 @@ const SupabaseAuth = {
         .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
-        .range(from, to));
+        .range(from, to), true);
       if (!data) return null;
 
       // Mapeia colunas do banco para o formato do GastoPro
       return (data || []).map(mapEntryFromCloud);
     } catch (e) {
+      recordSyncDiagnosticFailure(e);
       console.warn('[Supabase] Falha de conexão ao buscar entries:', e);
       return null;
     }
@@ -1744,11 +1760,12 @@ const SupabaseAuth = {
         .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
-        .range(from, to));
+        .range(from, to), true);
       if (!data) return null;
 
       return (data || []).map(mapTemplateFromCloud);
     } catch (e) {
+      recordSyncDiagnosticFailure(e);
       console.warn('[Supabase] Falha ao buscar templates:', e);
       return null;
     }
@@ -1851,7 +1868,7 @@ const SupabaseAuth = {
         .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
-        .range(from, to));
+        .range(from, to), true);
       if (!data) return null;
       return data.map(row => ({
         id: row.id,
@@ -1864,6 +1881,7 @@ const SupabaseAuth = {
         updatedAt: row.updated_at
       }));
     } catch (e) {
+      recordSyncDiagnosticFailure(e);
       console.warn('[Supabase] Falha ao buscar contas:', e);
       return null;
     }
@@ -1957,10 +1975,11 @@ const SupabaseAuth = {
         .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
-        .range(from, to));
+        .range(from, to), true);
       if (!data) return null;
       return data.map(mapCreditCardFromCloud);
     } catch (error) {
+      recordSyncDiagnosticFailure(error);
       console.warn('[Supabase] Falha ao buscar cartões:', error);
       return null;
     }
@@ -2043,7 +2062,7 @@ const SupabaseAuth = {
         .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
-        .range(from, to));
+        .range(from, to), true);
       if (!data) return null;
       return data.map(row => ({
         id: row.id,
@@ -2063,6 +2082,7 @@ const SupabaseAuth = {
         updatedAt: row.updated_at
       }));
     } catch (error) {
+      recordSyncDiagnosticFailure(error);
       console.warn('[Supabase] Falha ao buscar compras no cartão:', error);
       return null;
     }
@@ -2145,7 +2165,11 @@ const SupabaseAuth = {
   },
 
   async fetchCloudProfile(userId) {
-    if (!this.client) return { success: false, error: new Error('Cliente Supabase não inicializado.') };
+    if (!this.client) {
+      const error = new Error('Cliente Supabase não inicializado.');
+      recordSyncDiagnosticFailure(error);
+      return { success: false, error };
+    }
     try {
       const sessionUserId = await this.getAuthenticatedUserId(userId);
       if (!sessionUserId) {
@@ -2157,6 +2181,7 @@ const SupabaseAuth = {
         .is('deleted_at', null)
         .maybeSingle();
       if (error) {
+        recordSyncDiagnosticFailure(error);
         return this.reportCloudError('Falha ao buscar perfil', error);
       }
       return {
@@ -2164,6 +2189,7 @@ const SupabaseAuth = {
         profile: data ? { id: data.id, name: data.name || '', avatar: data.avatar || null, updatedAt: data.updated_at } : null
       };
     } catch (error) {
+      recordSyncDiagnosticFailure(error);
       return this.reportCloudError('Falha ao buscar perfil', error);
     }
   },
@@ -2215,13 +2241,14 @@ const SupabaseAuth = {
         .eq('user_id', sessionUserId)
         .is('deleted_at', null)
         .order('category', { ascending: true })
-        .range(from, to));
+        .range(from, to), true);
       if (!data) return null;
       return data.map(row => ({
         category: row.category,
         limit: Number(row.limit_amount)
       }));
     } catch (e) {
+      recordSyncDiagnosticFailure(e);
       console.warn('[Supabase] Falha ao buscar metas:', e);
       return null;
     }
@@ -2318,15 +2345,19 @@ const SupabaseAuth = {
         .is('deleted_at', null)
         .maybeSingle();
       if (error) {
+        recordSyncDiagnosticFailure(error);
         console.warn('[Supabase] Falha ao buscar regras de importação:', error);
         return null;
       }
       if (!data) return [];
-      return Array.isArray(data.rules) &&
-        data.rules.every(rule => typeof rule === 'string' && rule.trim().length <= 300)
-        ? [...new Set(data.rules.map(rule => rule.trim()).filter(Boolean))]
-        : null;
+      if (!Array.isArray(data.rules) ||
+        !data.rules.every(rule => typeof rule === 'string' && rule.trim().length <= 300)) {
+        recordSyncDiagnosticFailure(null, 'resposta_incompleta');
+        return null;
+      }
+      return [...new Set(data.rules.map(rule => rule.trim()).filter(Boolean))];
     } catch (error) {
+      recordSyncDiagnosticFailure(error);
       console.warn('[Supabase] Falha ao buscar regras de importação:', error);
       return null;
     }

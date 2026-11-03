@@ -452,10 +452,16 @@ const VIEW_TITLES = {
 
 const DIAGNOSTIC_LOG_KEY = 'gastopro_diagnostic_log_v1';
 const DIAGNOSTIC_LOG_LIMIT = 100;
+const DIAGNOSTIC_VISIBLE_KEY = 'gastopro_diag_visible';
 const DIAGNOSTIC_EVENT_TYPES = new Set([
   'auth-state', 'view-switch', 'page-load', 'pageshow', 'visibilitychange',
   'focus', 'online', 'offline', 'sync', 'refresh', 'controllerchange', 'admin-check',
-  'admin-query-error', 'app-update-notice', 'pending-sync-failure', 'submit-no-effect'
+  'admin-query-error', 'app-update-notice', 'pending-sync-failure', 'submit-no-effect',
+  'sync-failure'
+]);
+const SYNC_FAILURE_CATEGORIES = new Set([
+  'sessao', 'rede', 'conflito', 'rpc', 'resposta_incompleta', 'merge',
+  'preparacao_local', 'excecao'
 ]);
 const DIAGNOSTIC_VIEW_IDS = new Set(Object.keys(VIEW_TITLES));
 const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
@@ -474,7 +480,8 @@ const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
   'admin-query-error': ['query', 'code', 'message'],
   'app-update-notice': [],
   'pending-sync-failure': ['category', 'operationType', 'errorCode'],
-  'submit-no-effect': ['category', 'fieldId']
+  'submit-no-effect': ['category', 'fieldId'],
+  'sync-failure': ['category', 'status', 'code']
 });
 
 function getLocalDiagnosticTime(date = new Date()) {
@@ -519,6 +526,15 @@ function normalizeDiagnosticData(type, data) {
     } else if (key === 'query' &&
       ['admin_feedback_authors', 'admin_list_users', 'feedback_messages.select',
         'feedback_messages.count_unread', 'feedback_messages.mark_read'].includes(value)) {
+      normalized[key] = value;
+    } else if (type === 'sync-failure' && key === 'category' &&
+      SYNC_FAILURE_CATEGORIES.has(value)) {
+      normalized[key] = value;
+    } else if (type === 'sync-failure' && key === 'status' &&
+      Number.isInteger(value) && value >= 100 && value <= 599) {
+      normalized[key] = value;
+    } else if (type === 'sync-failure' && key === 'code' &&
+      typeof value === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(value)) {
       normalized[key] = value;
     } else if (key === 'category' &&
       ['entries', 'templates', 'goals', 'accounts', 'creditCards', 'creditCardPurchases',
@@ -599,6 +615,84 @@ window.GastoProDiagnostics = {
     return `${entry.time} | ${entry.type} | tela: ${entry.view} | ${JSON.stringify(entry.data)}`;
   }
 };
+
+function getSyncFailureStatus(error) {
+  const contextStatus = error && error.context && error.context.status;
+  const status = error && (error.status || error.statusCode || contextStatus);
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+}
+
+function getSyncFailureCode(error) {
+  const code = error && error.code;
+  return typeof code === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(code) ? code : null;
+}
+
+function classifySyncFailure(error, fallbackCategory = 'excecao') {
+  const status = getSyncFailureStatus(error);
+  const code = getSyncFailureCode(error);
+  if (status === 401 || status === 403 || code === '42501') return 'sessao';
+  if (status === 409 || ['23505', '40001'].includes(code)) return 'conflito';
+  if (code && (/^PGRST\d+$/.test(code) || code === 'P0001')) return 'rpc';
+
+  const message = error && typeof error.message === 'string'
+    ? error.message.toLowerCase()
+    : '';
+  if (error && (navigator.onLine === false || error.name === 'TypeError' ||
+    /failed to fetch|network|offline|connection|fetch failed|load failed|econn|etimedout/.test(message) ||
+    code && /^(ECONN|ETIMEDOUT|ENET)/.test(code))) {
+    return 'rede';
+  }
+  return SYNC_FAILURE_CATEGORIES.has(fallbackCategory) ? fallbackCategory : 'excecao';
+}
+
+function recordSyncFailureDiagnostic(fallbackCategory, error) {
+  const category = classifySyncFailure(error, fallbackCategory);
+  const data = { category };
+  const status = getSyncFailureStatus(error);
+  const code = getSyncFailureCode(error);
+  if (status !== null) data.status = status;
+  if (code) data.code = code;
+  window.GastoProDiagnostics.record('sync-failure', data);
+}
+
+function createDiagnosticVisibilityController(options = {}) {
+  let visible = options.initialVisible === true;
+  let tapCount = 0;
+  let sequenceStartedAt = null;
+  const now = typeof options.now === 'function' ? options.now : Date.now;
+  const persist = typeof options.persist === 'function' ? options.persist : () => {};
+  const notify = typeof options.notify === 'function' ? options.notify : () => {};
+
+  return Object.freeze({
+    get visible() {
+      return visible;
+    },
+    handleTap() {
+      const currentTime = now();
+      if (sequenceStartedAt === null || currentTime - sequenceStartedAt > 4000) {
+        tapCount = 0;
+        sequenceStartedAt = currentTime;
+      }
+      tapCount += 1;
+      if (tapCount < 7) return false;
+
+      tapCount = 0;
+      sequenceStartedAt = null;
+      visible = !visible;
+      persist(visible);
+      notify(visible);
+      return true;
+    }
+  });
+}
+
+window.GastoProSyncDiagnostics = Object.freeze({
+  recordFailure: recordSyncFailureDiagnostic
+});
+
+window.GastoProDiagnosticsVisibilityHelpers = Object.freeze({
+  createController: createDiagnosticVisibilityController
+});
 
 const SUBMIT_DIAGNOSTIC_CATEGORIES = Object.freeze({
   income: 'submit sem efeito: ganho',
@@ -692,6 +786,34 @@ const diagnosticClearButton = document.getElementById('diagnosticClearButton');
 const diagnosticStatus = document.getElementById('diagnosticStatus');
 
 if (diagnosticDetails) {
+  let diagnosticsVisible = false;
+  try {
+    diagnosticsVisible = localStorage.getItem(DIAGNOSTIC_VISIBLE_KEY) === 'true';
+  } catch (error) {
+    console.warn('[GastoPro] Não foi possível ler a preferência local de diagnóstico:', error);
+  }
+  const visibilityController = createDiagnosticVisibilityController({
+    initialVisible: diagnosticsVisible,
+    persist(visible) {
+      try {
+        localStorage.setItem(DIAGNOSTIC_VISIBLE_KEY, String(visible));
+      } catch (error) {
+        console.error('[GastoPro] Não foi possível salvar a preferência local de diagnóstico:', error);
+      }
+    },
+    notify(visible) {
+      showToast(`Diagnóstico ${visible ? 'ativado' : 'desativado'}`);
+    }
+  });
+  diagnosticDetails.hidden = !diagnosticsVisible;
+  if (!diagnosticsVisible) diagnosticDetails.open = false;
+  document.querySelectorAll('.badge-version').forEach(badge => {
+    badge.addEventListener('click', () => {
+      if (!visibilityController.handleTap()) return;
+      diagnosticDetails.hidden = !visibilityController.visible;
+      if (!visibilityController.visible) diagnosticDetails.open = false;
+    });
+  });
   diagnosticDetails.addEventListener('toggle', () => {
     if (diagnosticDetails.open) renderDiagnosticLog();
   });
@@ -10005,17 +10127,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function requestAutomaticSync(reason, syncAction = syncUserDataFromCloud, now = Date.now()) {
     if (document.visibilityState === 'hidden' && reason !== 'online') return false;
-    const sessionUser = window.SupabaseAuth && await window.SupabaseAuth.getSessionUser();
+    let sessionUser;
+    try {
+      sessionUser = window.SupabaseAuth && await window.SupabaseAuth.getSessionUser();
+    } catch (error) {
+      recordSyncFailureDiagnostic('excecao', error);
+      throw error;
+    }
     if (!sessionUser || !sessionUser.id) return false;
     if (reason === 'online') subscribeToUserRealtime(sessionUser.id);
     if (hasOpenSyncEditor()) {
       fullSyncDeferredForEditor = true;
       return false;
     }
-    if (activeSyncs.has(sessionUser.id)) return activeSyncs.get(sessionUser.id);
-    return automaticSyncGate.run(now, () => syncAction === syncUserDataFromCloud
-      ? syncAction(sessionUser.id, 'automatic')
-      : syncAction(sessionUser.id));
+    try {
+      if (activeSyncs.has(sessionUser.id)) return await activeSyncs.get(sessionUser.id);
+      return await automaticSyncGate.run(now, () => syncAction === syncUserDataFromCloud
+        ? syncAction(sessionUser.id, 'automatic')
+        : syncAction(sessionUser.id));
+    } catch (error) {
+      recordSyncFailureDiagnostic('excecao', error);
+      throw error;
+    }
   }
 
   window.GastoProSyncLifecycle = {
@@ -10043,7 +10176,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const syncPromise = (async () => {
       try {
         const sessionUser = await window.SupabaseAuth.getSessionUser();
-        if (!sessionUser || sessionUser.id !== userId) return false;
+        if (!sessionUser || sessionUser.id !== userId) {
+          recordSyncFailureDiagnostic('sessao');
+          return false;
+        }
 
         try {
           await syncConsentForUser(sessionUser);
@@ -10053,7 +10189,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const localSync = await FinanceData.prepareLocalDataForSync(userId);
-        if (!localSync.success) return false;
+        if (!localSync.success) {
+          recordSyncFailureDiagnostic('preparacao_local', localSync.error);
+          return false;
+        }
 
         const [cloudEntries, cloudTemplates, cloudGoals, cloudAccounts, cloudFixedImportRules, cloudCreditCards, cloudCreditCardPurchases, cloudProfileResult] = await Promise.all([
           window.SupabaseAuth.fetchCloudEntries(userId),
@@ -10061,12 +10200,14 @@ document.addEventListener('DOMContentLoaded', () => {
           Promise.resolve()
             .then(() => window.SupabaseAuth.fetchCloudGoals(userId))
             .catch(error => {
+              recordSyncFailureDiagnostic('excecao', error);
               console.warn('[GastoPro] Não foi possível buscar metas na nuvem:', error);
               return null;
             }),
           Promise.resolve()
             .then(() => window.SupabaseAuth.fetchCloudAccounts(userId))
             .catch(error => {
+              recordSyncFailureDiagnostic('excecao', error);
               console.warn('[GastoPro] Não foi possível buscar contas na nuvem:', error);
               return null;
             }),
@@ -10075,6 +10216,7 @@ document.addEventListener('DOMContentLoaded', () => {
               ? window.SupabaseAuth.fetchCloudFixedImportRules(userId)
               : null)
             .catch(error => {
+              recordSyncFailureDiagnostic('excecao', error);
               console.warn('[GastoPro] Não foi possível buscar regras de importação na nuvem:', error);
               return null;
             }),
@@ -10083,6 +10225,7 @@ document.addEventListener('DOMContentLoaded', () => {
               ? window.SupabaseAuth.fetchCloudCreditCards(userId)
               : null)
             .catch(error => {
+              recordSyncFailureDiagnostic('excecao', error);
               console.warn('[GastoPro] Não foi possível buscar cartões na nuvem:', error);
               return null;
             }),
@@ -10091,6 +10234,7 @@ document.addEventListener('DOMContentLoaded', () => {
               ? window.SupabaseAuth.fetchCloudCreditCardPurchases(userId)
               : null)
             .catch(error => {
+              recordSyncFailureDiagnostic('excecao', error);
               console.warn('[GastoPro] Não foi possível buscar compras no cartão na nuvem:', error);
               return null;
             }),
@@ -10101,6 +10245,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!Array.isArray(cloudEntries) || !Array.isArray(cloudTemplates) ||
           !Array.isArray(cloudAccounts)) {
+          recordSyncFailureDiagnostic('resposta_incompleta');
           console.warn('[GastoPro] Sincronização incompleta; os dados locais foram mantidos.');
           showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho', 'error');
           return false;
@@ -10119,6 +10264,7 @@ document.addEventListener('DOMContentLoaded', () => {
           userId, cloudEntries, cloudTemplates, localSync.success, cloudGoals, cloudAccounts,
           cloudFixedImportRules, cloudCreditCards, cloudCreditCardPurchases
         )) {
+          recordSyncFailureDiagnostic('merge');
           console.warn('[GastoPro] Sincronização ignorada: o usuário local não corresponde à sessão.');
           showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho', 'error');
           return false;
@@ -10128,6 +10274,7 @@ document.addEventListener('DOMContentLoaded', () => {
         subscribeToUserRealtime(userId);
         return true;
       } catch (e) {
+        recordSyncFailureDiagnostic('excecao', e);
         console.warn('[GastoPro] Aviso de sincronização na nuvem:', e);
         return false;
       }
@@ -11092,6 +11239,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       refreshResult = 'failure';
       console.warn('[GastoPro] Erro durante o refresh:', err);
+      recordSyncFailureDiagnostic('excecao', err);
       trackUsageEvent('sync_error');
       restoreAppViewState(viewSnapshot);
       showToast('Dados locais atualizados.');
