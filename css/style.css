@@ -5431,29 +5431,36 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.3rem;
+  gap: 10px;
   width: 100%;
   min-height: 48px;
   margin: 0;
-  padding: 0.65rem 1rem;
-  border: 1px solid #64748b;
+  padding: 0.65rem 12px;
+  border: 1px solid #747775;
   border-radius: var(--radius-md);
-  background: #f8fafc;
-  color: #202124;
+  background: #ffffff;
+  color: #1f1f1f;
   font: inherit;
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.btn-auth-google img {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  object-fit: contain;
+}
+
 .btn-auth-google:hover:not(:disabled) {
-  background: #e8eef5;
+  background: #f8f9fa;
 }
 
 .btn-auth-google:active:not(:disabled) {
-  background: #dce5ef;
+  background: #f1f3f4;
 }
 
 .btn-auth-google:focus-visible {
@@ -5461,31 +5468,10 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   outline-offset: 2px;
 }
 
-.auth-google-word {
-  display: inline-flex;
-  white-space: nowrap;
-}
-
-.auth-google-letter--blue {
-  color: #1967d2;
-}
-
-.auth-google-letter--red {
-  color: #b3261e;
-}
-
-.auth-google-letter--yellow {
-  color: #8a5a00;
-}
-
-.auth-google-letter--green {
-  color: #137333;
-}
-
 .btn-auth-google:disabled {
   cursor: wait;
   opacity: 0.72;
-  background: #e2e8f0;
+  background: #f1f3f4;
 }
 
 /* Banner de Alerta */
@@ -5794,6 +5780,28 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 /* ================================================================
    MODAL DE IMPORTAÇÃO DE EXTRATOS (Importer)
    ================================================================ */
+
+:root .sidebar-nav .nav-item-import:not(.active) {
+  background: var(--success-bg);
+  border-color: var(--success);
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+:root .sidebar-nav .nav-item-import:not(.active) i {
+  color: var(--success);
+}
+
+:root .sidebar-nav .nav-item-import:not(.active):hover {
+  background: var(--success-bg);
+  border-color: var(--success);
+  color: var(--text-main);
+}
+
+:root .sidebar-nav .nav-item-import:not(.active):focus-visible {
+  outline: 2px solid var(--success);
+  outline-offset: 2px;
+}
 
 .nav-item-import .nav-import-badge {
   background: var(--bg-input);

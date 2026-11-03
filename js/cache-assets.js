@@ -21,6 +21,7 @@ self.GastoProCacheAssets = Object.freeze({
     './assets/fontawesome/webfonts/fa-regular-400.woff2',
     './assets/inter-latin-ext.woff2',
     './assets/inter-latin.woff2',
+    './assets/google-g.svg',
     './manifest.json'
   ]),
   optional: Object.freeze([

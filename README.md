@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.59-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.63-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-613%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-626%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -493,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.62`. Suíte atual: **626 testes**.
+`CACHE_NAME` atual: `gastopro-v4.63`. Suíte atual: **626 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -730,8 +730,9 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-079 — Etapas de importação, motivos de exclusão e estado de feedback** / Descrição: mostra as etapas da importação, uma conclusão com quantidades e itens não importados com motivo; registra linhas ignoradas pelo analisador e oferece sugestões locais; conclui filtros e ações de arquivamento/leitura no Admin; mantém o filtro após exclusão variável com sincronização pendente. / Critério de pronto: 609 testes aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; migration de arquivamento existente não executada; visual/toque não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/supabase.js`, `js/importer.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-080 — Estados de envio, templates ativos e saldo OFX** / Descrição: anuncia Enviando/Salvo/Erro e pendência de nuvem nos formulários de Ganhos, Gastos e Empréstimos; oculta templates com tombstone apenas nas telas sem removê-los do sync ou backup; exibe na prévia OFX o banco, conta mascarada e saldo/data, sem persistir metadados. / Critério de pronto: 612 testes aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/importer.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-081 — Motivo local de falha ao sair** / Descrição: identifica grupos e código seguro da falha de sincronização na confirmação de logout, sem expor valores, descrições ou mensagens arbitrárias. / Critério de pronto: 613 testes aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela. / Arquivos: `js/app.js`, `tests/gastopro.test.js`, `index.html`, `sw.js`, `README.md`.
-- [x] **RM-083 — Destaque acessível do login Google** / Descrição: destaca somente o botão de entrada Google com fundo neutro, letras coloridas com contraste acessível, nome acessível e estados de interação; mantém ID e fluxo OAuth. / Critério de pronto: 621 testes aprovados em duas execuções consecutivas, zero falhas/pendências; visual em iPhone não verificado. / Arquivos: `index.html`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
+- [x] **RM-083 — Destaque acessível do login Google** / Descrição: destaca somente o botão de entrada Google com fundo branco, G oficial local, nome acessível e estados de interação; mantém ID e fluxo OAuth. / Critério de pronto: 626 testes aprovados em duas execuções consecutivas, zero falhas/pendências; visual em iPhone não verificado. / Arquivos: `assets/google-g.svg`, `index.html`, `css/style.css`, `js/cache-assets.js`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-084 — Diagnóstico local de falhas de sincronização e acesso temporário** / Descrição: classifica falhas de sync apenas no registro local com status/código seguros, e revela o painel de diagnóstico por sete toques no selo de versão, com preferência local persistente. / Critério de pronto: 626 testes aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual e toque em iPhone não verificados. / Arquivos: `index.html`, `js/app.js`, `js/supabase.js`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
+- [x] **RM-085 — Destaque do Importar Extrato no menu** / Descrição: diferencia o item de importação do estado selecionado com ícone/borda de acento, fundo suave, texto em negrito e foco visível nos dois temas; mantém a etiqueta NOVO e o destaque roxo ativo. / Critério de pronto: 626 testes aprovados em duas execuções consecutivas, zero falhas/pendências; aparência e toque em iPhone não verificados. / Arquivos: `css/style.css`, `tests/gastopro.test.js`, `README.md`.
 
 ### Em dúvida
 
@@ -743,14 +744,18 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.62 — 03/11/2026 (versão atual)
+### v4.63 — 03/11/2026 (versão atual)
+
+- RM-083: substitui as letras coloridas do botão Google por um G oficial local em SVG, mantém nome acessível e fluxo OAuth e adiciona o asset ao cache offline. RM-085: destaca Importar Extrato com acento distinto do estado selecionado nos dois temas, mantendo NOVO. Test-runner: 626 aprovados em duas execuções consecutivas, zero falhas/pendências; contraste calculado; visual/toque em iPhone não verificados.
+
+### v4.62 — 03/11/2026 (versão anterior)
 
 - RM-084: registra falhas de sincronização no diagnóstico local com categoria, status HTTP e código seguro quando disponíveis; não grava mensagens, valores nem identificadores. O painel fica oculto por padrão e abre/fecha após sete toques no selo de versão, com preferência somente local; lista de telemetria Supabase inalterada. Test-runner: 626 aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual e toque em iPhone não verificados.
 
 ### v4.61 — 03/11/2026 (versão anterior)
 
 - RM-081: a confirmação de logout identifica os grupos com falha e mostra um código seguro quando disponível; detalhes arbitrários e dados do lançamento não são exibidos. Test-runner: 613 aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela.
-- RM-083: dá destaque ao botão Google com fundo neutro, nome acessível e letras em cores de alto contraste sem imagem ou ícone; fluxo OAuth e botão de e-mail preservados. Test-runner: 621 aprovados em duas execuções consecutivas, zero falhas/pendências; visual em iPhone não verificado.
+- RM-083: introduz destaque acessível do botão Google com nome acessível e fluxo OAuth preservado. Test-runner: 621 aprovados em duas execuções consecutivas, zero falhas/pendências; visual em iPhone não verificado.
 
 ### v4.58 — 03/11/2026
 
