@@ -8587,6 +8587,89 @@ describe('Lógica de Negócio — paidMonths por mês isolado', () => {
 });
 
 describe('Prioridade do login Google', () => {
+  function createGoogleButton() {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.id = 'googleSignInBtn';
+    button.className = 'btn-auth-google btn-primary';
+    button.setAttribute('aria-label', 'Entrar com Google');
+    button.innerHTML = `
+      <span class="auth-google-prefix">Entrar com</span>
+      <span class="auth-google-word" aria-hidden="true"><span class="auth-google-letter auth-google-letter--blue">G</span><span class="auth-google-letter auth-google-letter--red">o</span><span class="auth-google-letter auth-google-letter--yellow">o</span><span class="auth-google-letter auth-google-letter--blue">g</span><span class="auth-google-letter auth-google-letter--green">l</span><span class="auth-google-letter auth-google-letter--red">e</span></span>`;
+    return button;
+  }
+
+  it('RM-083: mantém botão acessível com o nome de Google', () => {
+    const button = createGoogleButton();
+    assertEqual(button.id, 'googleSignInBtn');
+    assertEqual(button.type, 'button');
+    assertEqual(button.getAttribute('aria-label'), 'Entrar com Google');
+    assertTrue(button.querySelector('.auth-google-word').getAttribute('aria-hidden') === 'true');
+  });
+
+  it('RM-083: usa apenas letras coloridas, sem imagens, SVG ou marca isolada', () => {
+    const button = createGoogleButton();
+    document.body.appendChild(button);
+    const word = button.querySelector('.auth-google-word');
+    const letters = [...word.querySelectorAll('.auth-google-letter')];
+    try {
+      assertFalse(Boolean(button.querySelector('img, svg')));
+      assertEqual(letters.map(letter => letter.textContent).join(''), 'Google');
+      assertEqual(button.querySelector('.auth-google-prefix').textContent.trim(), 'Entrar com');
+      assertEqual(letters.map(letter => getComputedStyle(letter).color), [
+        'rgb(25, 103, 210)', 'rgb(179, 38, 30)', 'rgb(138, 90, 0)',
+        'rgb(25, 103, 210)', 'rgb(19, 115, 51)', 'rgb(179, 38, 30)'
+      ]);
+    } finally {
+      button.remove();
+    }
+  });
+
+  it('RM-083: CSS do botão tem foco e estados sem regras proibidas', () => {
+    const googleRules = [];
+    const visitRules = rules => {
+      Array.from(rules).forEach(rule => {
+        if (rule.selectorText && /\.btn-auth-google|\.auth-google-(?:word|letter)/.test(rule.selectorText)) {
+          googleRules.push(rule.cssText);
+        }
+        if (rule.cssRules) visitRules(rule.cssRules);
+      });
+    };
+    Array.from(document.styleSheets).forEach(sheet => {
+      try {
+        visitRules(sheet.cssRules);
+      } catch {
+        return;
+      }
+    });
+    const css = googleRules.join('\n');
+    assertTrue(css.includes(':hover'));
+    assertTrue(css.includes(':active'));
+    assertTrue(css.includes(':focus-visible'));
+    assertTrue(css.includes(':disabled'));
+    assertFalse(/!important|\bword-break\s*:\s*(break-all|break-word)|overflow-wrap\s*:\s*anywhere/i.test(css));
+  });
+
+  it('RM-083: preserva classe, tipo e estado desabilitado usados no login', () => {
+    const button = createGoogleButton();
+    const fixture = document.createElement('div');
+    const tabs = document.createElement('div');
+    const loginTab = document.createElement('button');
+    loginTab.id = 'tabLoginBtn';
+    tabs.appendChild(loginTab);
+    fixture.append(tabs, button);
+    document.body.appendChild(fixture);
+    try {
+      assertTrue(window.GastoProGoogleAuthHelpers.applyPriority(document));
+      assertEqual(button.className, 'btn-auth-google btn-primary');
+      assertEqual(button.type, 'button');
+      button.disabled = true;
+      assertTrue(button.disabled);
+    } finally {
+      fixture.remove();
+    }
+  });
+
   it('posiciona Google primeiro e principal nas abas Entrar e Criar Conta', () => {
     const fixture = document.createElement('div');
     const tabs = document.createElement('div');
@@ -8629,14 +8712,11 @@ describe('Prioridade do login Google', () => {
     }
   });
 
-  it('mantém o botão Google com 48 px e contraste mínimo nos dois temas', () => {
+  it('mantém dimensões e contraste do botão Google nos dois temas e larguras', () => {
     const originalTheme = document.documentElement.getAttribute('data-theme');
     const wrapper = document.createElement('div');
-    const button = document.createElement('button');
-    wrapper.style.width = '320px';
+    const button = createGoogleButton();
     button.style.transition = 'none';
-    button.className = 'btn-auth-google btn-primary';
-    button.textContent = 'Entrar com Google';
     wrapper.appendChild(button);
     document.body.appendChild(wrapper);
     const channel = value => {
@@ -8649,29 +8729,41 @@ describe('Prioridade do login Google', () => {
       const [red, green, blue] = color.match(/\d+/g).map(Number);
       return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
     };
-    const backgrounds = [];
+    const letterColors = [];
+    const contrastRatio = (foreground, background) => {
+      const foregroundLuminance = luminance(foreground);
+      const backgroundLuminance = luminance(background);
+      return (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) /
+        (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+    };
     try {
       for (const theme of ['dark', 'light']) {
         if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
         else document.documentElement.removeAttribute('data-theme');
         wrapper.setAttribute('data-theme', theme);
-        assertEqual(document.documentElement.getAttribute('data-theme'),
-          theme === 'light' ? 'light' : null);
         const style = getComputedStyle(button);
-        assertEqual(style.backgroundColor, theme === 'light'
-          ? 'rgb(67, 56, 202)'
-          : 'rgb(79, 70, 229)');
-        backgrounds.push(style.backgroundColor);
-        const foreground = luminance(style.color);
-        const background = luminance(style.backgroundColor);
-        const contrast = (Math.max(foreground, background) + 0.05) /
-          (Math.min(foreground, background) + 0.05);
+        assertEqual(style.backgroundColor, 'rgb(248, 250, 252)');
         assertEqual(style.minHeight, '48px');
-        assertEqual(style.width, '320px');
-        assertTrue(contrast >= 4.5, `${theme}: contraste ${contrast.toFixed(2)}:1`);
+        assertEqual(style.fontSize, '16px');
+        assertTrue(contrastRatio(style.color, style.backgroundColor) >= 4.5);
+        const colors = [...button.querySelectorAll('.auth-google-letter')].map(letter =>
+          getComputedStyle(letter).color
+        );
+        letterColors.push(colors);
+        colors.forEach(color => {
+          assertTrue(contrastRatio(color, style.backgroundColor) >= 4.5,
+            `${theme}: contraste ${contrastRatio(color, style.backgroundColor).toFixed(2)}:1`);
+        });
+        for (const width of [320, 360, 390, 768, 1024, 1280, 844]) {
+          wrapper.style.width = `${width}px`;
+          assertEqual(getComputedStyle(button).width, `${width}px`);
+          assertTrue(button.scrollWidth <= button.clientWidth,
+            `${theme}, ${width}px: conteúdo sem corte`);
+        }
+        assertTrue(contrastRatio('rgb(26, 115, 232)', style.backgroundColor) >= 3);
+        assertTrue(contrastRatio('rgb(100, 116, 139)', style.backgroundColor) >= 3);
       }
-      assertTrue(backgrounds[0] !== backgrounds[1],
-        'as cores renderizadas do botão devem mudar entre os temas');
+      assertEqual(letterColors[0], letterColors[1]);
     } finally {
       if (originalTheme === null) document.documentElement.removeAttribute('data-theme');
       else document.documentElement.setAttribute('data-theme', originalTheme);

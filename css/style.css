@@ -5428,29 +5428,64 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 }
 
 .btn-auth-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
   width: 100%;
   min-height: 48px;
   margin: 0;
   padding: 0.65rem 1rem;
-  border: 1px solid transparent;
+  border: 1px solid #64748b;
   border-radius: var(--radius-md);
-  background: var(--primary-strong);
-  color: var(--theme-text-ffffff);
+  background: #f8fafc;
+  color: #202124;
   font: inherit;
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .btn-auth-google:hover:not(:disabled) {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: #e8eef5;
+}
+
+.btn-auth-google:active:not(:disabled) {
+  background: #dce5ef;
+}
+
+.btn-auth-google:focus-visible {
+  outline: 3px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+.auth-google-word {
+  display: inline-flex;
+  white-space: nowrap;
+}
+
+.auth-google-letter--blue {
+  color: #1967d2;
+}
+
+.auth-google-letter--red {
+  color: #b3261e;
+}
+
+.auth-google-letter--yellow {
+  color: #8a5a00;
+}
+
+.auth-google-letter--green {
+  color: #137333;
 }
 
 .btn-auth-google:disabled {
   cursor: wait;
   opacity: 0.72;
+  background: #e2e8f0;
 }
 
 /* Banner de Alerta */

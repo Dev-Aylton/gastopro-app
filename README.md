@@ -493,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.60`. Suíte atual: **617 testes**.
+`CACHE_NAME` atual: `gastopro-v4.61`. Suíte atual: **621 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -730,6 +730,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-079 — Etapas de importação, motivos de exclusão e estado de feedback** / Descrição: mostra as etapas da importação, uma conclusão com quantidades e itens não importados com motivo; registra linhas ignoradas pelo analisador e oferece sugestões locais; conclui filtros e ações de arquivamento/leitura no Admin; mantém o filtro após exclusão variável com sincronização pendente. / Critério de pronto: 609 testes aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; migration de arquivamento existente não executada; visual/toque não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/supabase.js`, `js/importer.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-080 — Estados de envio, templates ativos e saldo OFX** / Descrição: anuncia Enviando/Salvo/Erro e pendência de nuvem nos formulários de Ganhos, Gastos e Empréstimos; oculta templates com tombstone apenas nas telas sem removê-los do sync ou backup; exibe na prévia OFX o banco, conta mascarada e saldo/data, sem persistir metadados. / Critério de pronto: 612 testes aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `js/importer.js`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-081 — Motivo local de falha ao sair** / Descrição: identifica grupos e código seguro da falha de sincronização na confirmação de logout, sem expor valores, descrições ou mensagens arbitrárias. / Critério de pronto: 613 testes aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela. / Arquivos: `js/app.js`, `tests/gastopro.test.js`, `index.html`, `sw.js`, `README.md`.
+- [x] **RM-083 — Destaque acessível do login Google** / Descrição: destaca somente o botão de entrada Google com fundo neutro, letras coloridas com contraste acessível, nome acessível e estados de interação; mantém ID e fluxo OAuth. / Critério de pronto: 621 testes aprovados em duas execuções consecutivas, zero falhas/pendências; visual em iPhone não verificado. / Arquivos: `index.html`, `css/style.css`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 
 ### Em dúvida
 
@@ -741,9 +742,10 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.60 — 03/11/2026 (versão atual)
+### v4.61 — 03/11/2026 (versão atual)
 
 - RM-081: a confirmação de logout identifica os grupos com falha e mostra um código seguro quando disponível; detalhes arbitrários e dados do lançamento não são exibidos. Test-runner: 613 aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual/toque não verificados em tela.
+- RM-083: dá destaque ao botão Google com fundo neutro, nome acessível e letras em cores de alto contraste sem imagem ou ícone; fluxo OAuth e botão de e-mail preservados. Test-runner: 621 aprovados em duas execuções consecutivas, zero falhas/pendências; visual em iPhone não verificado.
 
 ### v4.58 — 03/11/2026
 
