@@ -1509,6 +1509,39 @@ function applyFixedImportRules(rows, rules) {
   });
 }
 
+function getImportSelectAllState(rows, checked) {
+  const canSelect = row => !row.invalid && !row.duplicate &&
+    !row.typeSignMismatch && !row.reviewOwnAccountMovement;
+  const excluded = checked ? rows.filter(row => !row.invalid && !canSelect(row)) : [];
+  const duplicateCount = excluded.filter(row =>
+    row.duplicate && !row.typeSignMismatch && !row.reviewOwnAccountMovement
+  ).length;
+  const typeSignCount = excluded.filter(row => row.typeSignMismatch).length;
+  const movementCount = excluded.filter(row =>
+    !row.typeSignMismatch && row.reviewOwnAccountMovement
+  ).length;
+  const reasons = [];
+  if (duplicateCount) {
+    reasons.push(duplicateCount === 1
+      ? '1 possível duplicado'
+      : `${duplicateCount} possíveis duplicados`);
+  }
+  if (typeSignCount) {
+    reasons.push(typeSignCount === 1
+      ? '1 linha para revisar tipo e sinal'
+      : `${typeSignCount} linhas para revisar tipo e sinal`);
+  }
+  if (movementCount) {
+    reasons.push(movementCount === 1
+      ? '1 movimentação entre suas contas ou investimento'
+      : `${movementCount} movimentações entre suas contas ou investimentos`);
+  }
+  return {
+    selected: rows.map(row => checked && canSelect(row)),
+    message: reasons.length ? `Selecionar todos deixou de fora: ${reasons.join('; ')}.` : ''
+  };
+}
+
 window.GastoProImportHelpers = Object.freeze({
   cleanRecurringImportDescription,
   markRecurringImportRows,
@@ -1530,6 +1563,7 @@ window.GastoProImportHelpers = Object.freeze({
   getDueDayExclusionIndexes: getImportDueDayExclusionIndexes,
   getDueDayExcludedMessage: getImportDueDayExcludedMessage,
   getDueDayPreview: getImportDueDayPreview,
+  getImportSelectAllState,
   requiresImportPaymentReview,
   getImportAccountId,
   normalizeFixedDescription,
@@ -11432,6 +11466,10 @@ document.addEventListener('DOMContentLoaded', () => {
         reason = 'Dia de vencimento ausente ou inválido.';
       } else if (row.importSkipReason) {
         reason = row.importSkipReason;
+      } else if (row.typeSignMismatch) {
+        reason = 'Revisar tipo e sinal.';
+      } else if (row.reviewOwnAccountMovement) {
+        reason = 'Parece movimentação entre suas contas ou investimento.';
       } else if (row.duplicate && !row.selected) {
         const rowDate = row.date ? Date.parse(`${row.date}T00:00:00Z`) : NaN;
         const matchingEntry = existingEntries.find(entry => {
@@ -11862,6 +11900,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const rowStatus = [
         row.invalid ? '<span class="import-row-status invalid">Data inválida</span>' : '',
         row.duplicate ? '<span class="import-row-status duplicate">Parece já lançado</span>' : '',
+        row.typeSignMismatch
+          ? '<span class="import-row-status duplicate">Revisar tipo e sinal</span>' : '',
+        row.reviewOwnAccountMovement
+          ? '<span class="import-row-status duplicate">Parece movimentação entre suas contas ou investimento</span>' : '',
         row.fixedByRule ? '<span class="import-row-status pending">Regra salva: Fixo</span>' : '',
         row.pending ? '<span class="import-row-status pending">Sugestão: a pagar</span>' : '',
         `<span class="import-row-status pending import-review-status" ${needsPaymentReview ? '' : 'hidden'}>Revisar</span>`
@@ -11910,6 +11952,15 @@ document.addEventListener('DOMContentLoaded', () => {
           ${paymentPeriodDisplay}
           ${dueDayDisplay}
           <small class="import-due-day-warning">${escapeHtml(dueDayMonthWarning)}</small>
+          ${row.typeSignMismatch
+            ? '<small class="import-row-reason">O tipo informado não combina com o sinal do valor.</small>'
+            : ''}
+          ${row.reviewOwnAccountMovement
+            ? '<small class="import-row-reason">Confira se deseja importar esta movimentação entre suas contas ou investimento.</small>'
+            : ''}
+          ${row.cardInvoiceNotice
+            ? '<small class="import-row-reason">Pagamento de fatura: não importe também as compras deste cartão para não contar duas vezes.</small>'
+            : ''}
           ${row.invalidReason ? `<small class="import-row-reason">${escapeHtml(row.invalidReason)}</small>` : ''}
         </td>
         <td class="col-category">
@@ -12053,7 +12104,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (row.type === 'fixed' || row.type === 'debt') {
           const duplicate = row.duplicate ||
             GastoProImporter.isTemplateDuplicate(row, templates, accountId);
-          return { ...row, duplicate, selected: !row.invalid && !duplicate };
+          return {
+            ...row,
+            duplicate,
+            selected: !row.invalid && !duplicate &&
+              !row.typeSignMismatch && !row.reviewOwnAccountMovement
+          };
         }
         if (row.duplicate || row.invalid || !row.installment) return row;
         const template = GastoProImporter.matchDebtTemplate(row, templates);
@@ -12075,7 +12131,8 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (row.duplicate) {
         updated.selected = false;
       } else if (previous.duplicate) {
-        updated.selected = !row.invalid;
+        updated.selected = !row.invalid &&
+          !row.typeSignMismatch && !row.reviewOwnAccountMovement;
       } else {
         updated.selected = previous.selected;
       }
@@ -12497,22 +12554,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const checkboxes = importPreviewTbody
         ? importPreviewTbody.querySelectorAll('.import-row-check')
         : [];
-      const duplicateCount = importSelectAll.checked
-        ? _importParsedRows.filter(row => row.duplicate && !row.invalid).length
-        : 0;
+      const selectionState = getImportSelectAllState(_importParsedRows, importSelectAll.checked);
       checkboxes.forEach(cb => {
         if (cb.disabled) return;
         const row = _importParsedRows[Number(cb.dataset.row)];
-        row.selected = importSelectAll.checked && !row.duplicate;
+        row.selected = selectionState.selected[Number(cb.dataset.row)];
+        row.selectionTouched = true;
         cb.checked = row.selected;
       });
       if (importDuplicateSelectionNote) {
-        importDuplicateSelectionNote.hidden = duplicateCount === 0;
-        importDuplicateSelectionNote.textContent = duplicateCount === 1
-          ? '1 possível duplicado ficou desmarcado.'
-          : duplicateCount > 1
-            ? `${duplicateCount} possíveis duplicados ficaram desmarcados.`
-            : '';
+        importDuplicateSelectionNote.hidden = !selectionState.message;
+        importDuplicateSelectionNote.textContent = selectionState.message;
       }
       renderImportDueDaySummary(_importParsedRows);
       renderImportNotImported(

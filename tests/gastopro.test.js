@@ -7639,12 +7639,15 @@ describe('Tutorial de importação de extrato', () => {
     }
   });
 
-  it('contém três passos curtos sem nomes de bancos', () => {
+  it('RM-088: explica formatos móveis e a limitação de OFX no iPhone', () => {
     const guide = GastoProOnboarding.getStatementGuide();
     const text = `${guide.steps.map(step => step.text).join(' ')} ${guide.note}`;
     assertEqual(guide.steps.length, 3);
     assertTrue(guide.steps[0].text.includes('procure “Extrato”'));
     assertTrue(guide.steps[1].text.includes('Salvar em Arquivos'));
+    assertTrue(guide.steps[1].text.includes(
+      'No iPhone, arquivos OFX baixados do e-mail podem não aparecer no app Arquivos.'
+    ));
     assertTrue(guide.steps[2].text.includes('confira a prévia antes de confirmar'));
     assertEqual(guide.note, 'O nome dos botões muda de banco para banco.');
     assertFalse(/\b(nubank|ita[uú]|bradesco|santander|banco do brasil|caixa|inter|c6)\b/i.test(text));
@@ -8816,6 +8819,50 @@ describe('Prioridade do login Google', () => {
     }
   });
 
+  itAsync('RM-087: mantém os botões de login e cadastro secundários e acessíveis', async () => {
+    const [indexResponse, cssResponse, appResponse] = await Promise.all([
+      fetch('../index.html'),
+      fetch('../css/style.css'),
+      fetch('../js/app.js')
+    ]);
+    assertTrue(indexResponse.ok && cssResponse.ok && appResponse.ok);
+    const index = new DOMParser().parseFromString(await indexResponse.text(), 'text/html');
+    const login = index.querySelector('#submitLoginBtn');
+    const register = index.querySelector('#submitRegisterBtn');
+    assertTrue(login.classList.contains('btn-auth-submit'));
+    assertTrue(register.classList.contains('btn-auth-submit'));
+    assertEqual(login.type, 'submit');
+    assertEqual(register.type, 'submit');
+    assertEqual(login.textContent.trim(), 'Entrar no GastoPro');
+    assertEqual(register.textContent.trim(), 'Criar Minha Conta Gratuita');
+    assertEqual(login.getAttribute('aria-label'), null);
+    login.disabled = true;
+    assertTrue(login.disabled);
+    login.disabled = false;
+    assertFalse(login.disabled);
+
+    const css = await cssResponse.text();
+    const secondary = css.match(/\.btn-auth-submit\.btn-secondary\s*\{([^}]+)\}/);
+    assertTrue(Boolean(secondary));
+    assertTrue(/min-height:\s*46px/.test(secondary[1]));
+    assertTrue(/background:\s*transparent/.test(secondary[1]));
+    assertTrue(/border:\s*1\.5px solid var\(--primary-text\)/.test(secondary[1]));
+    assertTrue(/font-size:\s*1rem/.test(secondary[1]));
+    assertTrue(css.includes('.btn-auth-submit.btn-secondary:focus-visible'));
+    assertTrue(css.includes('.btn-auth-submit.btn-secondary:disabled'));
+    assertFalse(/!important|\bword-break\s*:\s*(break-all|break-word)|overflow-wrap\s*:\s*anywhere/i.test(
+      `${secondary[1]} ${css.match(/\.btn-auth-submit\.btn-secondary:focus-visible\s*\{([^}]+)\}/)[1]}`
+    ));
+
+    const app = await appResponse.text();
+    const loginHandler = app.slice(
+      app.indexOf('// Submissão do Formulário de Login'),
+      app.indexOf('// Submissão do Formulário de Cadastro')
+    );
+    assertTrue(/submitBtn\.disabled\s*=\s*true/.test(loginHandler));
+    assertTrue(/submitBtn\.disabled\s*=\s*false/.test(loginHandler));
+  });
+
   it('posiciona Google primeiro e principal nas abas Entrar e Criar Conta', () => {
     const fixture = document.createElement('div');
     const tabs = document.createElement('div');
@@ -9094,6 +9141,110 @@ describe('GastoProImporter — parsing e limites', () => {
     assertEqual(GastoProImporter.parseMoney('45,90'), 45.9);
     assertEqual(GastoProImporter.parseMoney('1.234,56'), 1234.56);
     assertEqual(GastoProImporter.parseMoney('1234.56'), 1234.56);
+  });
+
+  it('RM-086: arredonda valores CSV, texto/PDF e OFX em centavos', () => {
+    const csvRows = GastoProImporter.parseCSV(
+      'data;descricao;valor\n' +
+      '2026-01-10;Exemplo;0,30000000000000004\n' +
+      '2026-01-11;Exemplo;1.005\n' +
+      '2026-01-12;Exemplo;1234,565\n' +
+      '2026-01-13;Exemplo;-1,005'
+    );
+    assertEqual(csvRows.map(row => [row.amount, row.signedAmount]), [
+      [0.3, 0.3], [1.01, 1.01], [1234.57, 1234.57], [1.01, -1.01]
+    ]);
+
+    const textRows = GastoProImporter.parseRawText(
+      '10/01/2026 Exemplo 1,005\n11/01/2026 Exemplo -1234,565'
+    );
+    assertEqual(textRows.map(row => [row.amount, row.signedAmount]), [
+      [1.01, 1.01], [1234.57, -1234.57]
+    ]);
+
+    const ofxRows = GastoProImporter.parseOFX(
+      '<OFX><BANKTRANLIST>' +
+      '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260110<TRNAMT>-1234.565<MEMO>Exemplo</STMTTRN>' +
+      '</BANKTRANLIST></OFX>'
+    );
+    assertEqual([ofxRows[0].amount, ofxRows[0].signedAmount], [1234.57, -1234.57]);
+  });
+
+  it('RM-086: sinaliza conflito entre tipo explícito e sinal sem alterar tipo ou valor', () => {
+    const parsed = GastoProImporter.parseCSV(
+      'data;descricao;valor;tipo\n' +
+      '2026-01-10;Crédito contraditório;-12,34;income\n' +
+      '2026-01-11;Débito contraditório;56,78;variable'
+    );
+    const rows = GastoProImporter.markDuplicates(parsed, []);
+    assertEqual(rows.map(row => [row.type, row.amount, row.signedAmount, row.selected]), [
+      ['income', 12.34, -12.34, false],
+      ['variable', 56.78, 56.78, false]
+    ]);
+    assertTrue(rows.every(row => row.typeSignMismatch));
+
+    const ofxRows = GastoProImporter.markDuplicates(GastoProImporter.parseOFX(
+      '<OFX><BANKTRANLIST>' +
+      '<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20260110<TRNAMT>-12.34<MEMO>Exemplo</STMTTRN>' +
+      '</BANKTRANLIST></OFX>'
+    ), []);
+    assertTrue(ofxRows[0].typeSignMismatch);
+    assertEqual([ofxRows[0].type, ofxRows[0].signedAmount], ['income', -12.34]);
+  });
+
+  it('RM-086: sinaliza termos de movimentação própria e não marca recebimentos genéricos', () => {
+    assertEqual(GastoProImporter.REVIEW_MOVEMENT_TERMS, [
+      'aplic', 'resgate', 'poupanca', 'investimento', 'cdb', 'rdb', 'lci', 'lca',
+      'fgts', 'antecipacao', 'entre contas', 'mesma titularidade', 'transferencia propria'
+    ]);
+    GastoProImporter.REVIEW_MOVEMENT_TERMS.forEach(term => {
+      const [row] = GastoProImporter.parseCSV(
+        `data;descricao;valor\n2026-01-10;Movimentação ${term};-10,00`
+      );
+      assertTrue(row.reviewOwnAccountMovement, `O termo "${term}" deve ser sinalizado`);
+    });
+    ['APLICAÇÃO', 'Poupança', 'Transferência própria'].forEach(description => {
+      const [row] = GastoProImporter.parseCSV(
+        `data;descricao;valor\n2026-01-10;${description};-10,00`
+      );
+      assertTrue(row.reviewOwnAccountMovement, `${description} deve ser normalizado`);
+    });
+    ['Transferência recebida', 'Pix recebido'].forEach(description => {
+      const [row] = GastoProImporter.parseCSV(
+        `data;descricao;valor\n2026-01-10;${description};10,00`
+      );
+      assertFalse(row.reviewOwnAccountMovement, `${description} não deve ser sinalizado`);
+    });
+  });
+
+  it('RM-086: avisa sobre fatura sem desmarcar nem deduplicar linhas do mesmo arquivo', () => {
+    const parsed = GastoProImporter.parseCSV(
+      'data;descricao;valor\n' +
+      '2026-01-10;Pagamento de fatura cartão;-250,00\n' +
+      '2026-01-11;Mercado exemplo;-25,00\n' +
+      '2026-01-11;Mercado exemplo;-25,00'
+    );
+    const rows = GastoProImporter.markDuplicates(parsed, []);
+    assertEqual(rows[0].type, 'variable');
+    assertTrue(rows[0].cardInvoiceNotice);
+    assertTrue(rows[0].selected);
+    assertEqual(rows.slice(1).map(row => [row.duplicate, row.selected]), [
+      [false, true], [false, true]
+    ]);
+  });
+
+  it('RM-086: Selecionar todos exclui e discrimina linhas sinalizadas', () => {
+    const result = window.GastoProImportHelpers.getImportSelectAllState([
+      { duplicate: true },
+      { typeSignMismatch: true },
+      { reviewOwnAccountMovement: true },
+      {},
+      { invalid: true }
+    ], true);
+    assertEqual(result.selected, [false, false, false, true, false]);
+    assertTrue(result.message.includes('1 possível duplicado'));
+    assertTrue(result.message.includes('1 linha para revisar tipo e sinal'));
+    assertTrue(result.message.includes('1 movimentação entre suas contas ou investimento'));
   });
 
   it('parseDate deve converter datas brasileiras e preservar ISO', () => {

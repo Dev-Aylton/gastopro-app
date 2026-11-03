@@ -58,7 +58,7 @@
         alt: 'Ilustração genérica de um celular com a opção Extrato'
       },
       {
-        text: 'Escolha o período e toque em “Exportar” ou “Baixar”. No celular, prefira CSV ou PDF; o OFX é melhor para quem usa computador. Ao baixar, escolha “Salvar em Arquivos” para achar o arquivo depois.',
+        text: 'Escolha o período e toque em “Exportar” ou “Baixar”. No celular, prefira CSV ou PDF; o OFX é melhor para quem usa computador. No iPhone, arquivos OFX baixados do e-mail podem não aparecer no app Arquivos. Ao baixar, escolha “Salvar em Arquivos” para achar o arquivo depois.',
         illustration: 'assets/statement-guide-step-2.svg',
         alt: 'Ilustração genérica de um período selecionado e um arquivo sendo baixado'
       },

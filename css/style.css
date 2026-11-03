@@ -5692,9 +5692,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 }
 
 .btn-auth-submit.btn-secondary {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  color: var(--text-main);
+  min-height: 46px;
+  background: transparent;
+  border: 1.5px solid var(--primary-text);
+  color: var(--primary-text);
+  font-size: 1rem;
+  font-weight: 600;
   box-shadow: none;
 }
 
@@ -5722,12 +5725,29 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 }
 
 .btn-auth-submit.btn-secondary:hover {
-  border-color: var(--primary);
+  border-color: var(--primary-text);
+  background: var(--primary-bg);
   box-shadow: none;
+  filter: none;
+}
+
+.btn-auth-submit.btn-secondary:focus-visible {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.btn-auth-submit.btn-secondary:disabled {
+  background: var(--bg-card-hover);
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .btn-auth-submit:active {
   transform: translateY(0);
+}
+
+.btn-auth-submit.btn-secondary:active:not(:disabled) {
+  background: var(--primary-bg);
 }
 
 /* Divisor e Modo Convidado */

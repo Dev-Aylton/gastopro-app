@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.63-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.64-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-626%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-632%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -493,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.63`. Suíte atual: **626 testes**.
+`CACHE_NAME` atual: `gastopro-v4.64`. Suíte atual: **632 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -733,6 +733,9 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-083 — Destaque acessível do login Google** / Descrição: destaca somente o botão de entrada Google com fundo branco, G oficial local, nome acessível e estados de interação; mantém ID e fluxo OAuth. / Critério de pronto: 626 testes aprovados em duas execuções consecutivas, zero falhas/pendências; visual em iPhone não verificado. / Arquivos: `assets/google-g.svg`, `index.html`, `css/style.css`, `js/cache-assets.js`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-084 — Diagnóstico local de falhas de sincronização e acesso temporário** / Descrição: classifica falhas de sync apenas no registro local com status/código seguros, e revela o painel de diagnóstico por sete toques no selo de versão, com preferência local persistente. / Critério de pronto: 626 testes aprovados em duas execuções consecutivas, zero falhas/pendências; Supabase mockado; visual e toque em iPhone não verificados. / Arquivos: `index.html`, `js/app.js`, `js/supabase.js`, `tests/gastopro.test.js`, `sw.js`, `README.md`.
 - [x] **RM-085 — Destaque do Importar Extrato no menu** / Descrição: diferencia o item de importação do estado selecionado com ícone/borda de acento, fundo suave, texto em negrito e foco visível nos dois temas; mantém a etiqueta NOVO e o destaque roxo ativo. / Critério de pronto: 626 testes aprovados em duas execuções consecutivas, zero falhas/pendências; aparência e toque em iPhone não verificados. / Arquivos: `css/style.css`, `tests/gastopro.test.js`, `README.md`.
+- [x] **RM-086 — Arredondamento e sinalização na importação** / Descrição: arredonda valores em centavos nos formatos CSV, texto/PDF, OFX, XML, Pix e boleto; sinaliza divergência explícita de tipo/sinal e movimentações próprias/investimentos sem seleção automática; avisa sobre pagamento de fatura sem deduplicar linhas do arquivo. / Critério de pronto: 632 testes aprovados em duas execuções consecutivas, zero falhas/pendências; comportamento de seleção automatizada coberto. / Arquivos: `js/importer.js`, `js/app.js`, `tests/gastopro.test.js`, `README.md`.
+- [x] **RM-087 — Botões secundários de login e cadastro** / Descrição: aplica fundo transparente, borda/texto na cor de acento, foco visível e estado desabilitado aos botões Entrar no GastoPro e Criar Minha Conta Gratuita. Contraste texto/borda: 5,83:1 (escuro), 9,93:1 (claro); foco: 3,89:1 (escuro), 6,29:1 (claro). / Critério de pronto: 632 testes aprovados em duas execuções consecutivas; tamanhos responsivos e aparência em iPhone não verificados em tela. / Arquivos: `css/style.css`, `tests/gastopro.test.js`, `README.md`.
+- [x] **RM-088 — Aviso de OFX no guia de extrato** / Descrição: orienta que arquivos OFX baixados do e-mail podem não aparecer no app Arquivos do iPhone; preserva os demais passos. / Critério de pronto: texto coberto pela suíte de 632 testes; apresentação visual não verificada em tela. / Arquivos: `js/onboarding.js`, `tests/gastopro.test.js`, `README.md`.
 
 ### Em dúvida
 
@@ -744,7 +747,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.63 — 03/11/2026 (versão atual)
+### v4.64 — 03/11/2026 (versão atual)
+
+- RM-086: arredonda valores importados em centavos; sinaliza divergência de tipo/sinal e movimentações próprias/investimentos para revisão, sem deduplicar linhas do mesmo arquivo; mantém pagamentos de fatura selecionados com aviso. RM-087: aplica estilo secundário aos botões de login/cadastro compartilhando a classe existente. RM-088: explica a limitação de arquivos OFX de e-mail no iPhone. Test-runner: 632 aprovados em duas execuções consecutivas, zero falhas/pendências; contraste calculado; visual/toque em iPhone não verificados.
+
+### v4.63 — 03/11/2026 (versão anterior)
 
 - RM-083: substitui as letras coloridas do botão Google por um G oficial local em SVG, mantém nome acessível e fluxo OAuth e adiciona o asset ao cache offline. RM-085: destaca Importar Extrato com acento distinto do estado selecionado nos dois temas, mantendo NOVO. Test-runner: 626 aprovados em duas execuções consecutivas, zero falhas/pendências; contraste calculado; visual/toque em iPhone não verificados.
 

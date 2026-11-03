@@ -100,6 +100,10 @@ const GastoProImporter = (() => {
       'rendimento', 'dividendo', 'cashback', 'reembolso', 'estorno'],
       category: 'Receita' }
   ];
+  const REVIEW_MOVEMENT_TERMS = Object.freeze([
+    'aplic', 'resgate', 'poupanca', 'investimento', 'cdb', 'rdb', 'lci', 'lca',
+    'fgts', 'antecipacao', 'entre contas', 'mesma titularidade', 'transferencia propria'
+  ]);
 
   // ================================================================
   // FUNÇÕES PRIVADAS
@@ -148,6 +152,33 @@ const GastoProImporter = (() => {
     return String(value == null ? '' : value).slice(0, maxLength);
   }
 
+  function roundToCents(value) {
+    if (!Number.isFinite(value)) return 0;
+    const sign = Math.sign(value);
+    return sign * Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100;
+  }
+
+  function roundedAmountFields(value) {
+    const signedAmount = roundToCents(value);
+    return { amount: Math.abs(signedAmount), signedAmount };
+  }
+
+  function applyDescriptionReviews(row) {
+    const description = normalize(row.desc);
+    row.reviewOwnAccountMovement = REVIEW_MOVEMENT_TERMS.some(term =>
+      term === 'aplic'
+        ? description.includes(term)
+        : containsWholeKey(description, term)
+    );
+    row.cardInvoiceNotice =
+      /\b(?:pagamento\s+(?:de\s+|da\s+)?fatura|pgto\s+(?:de\s+|da\s+)?fatura|fatura\s+(?:(?:do|de)\s+)?cartao)\b/.test(description);
+    return row;
+  }
+
+  function hasImportReviewFlag(row) {
+    return Boolean(row.typeSignMismatch || row.reviewOwnAccountMovement);
+  }
+
   function parseMoneySigned(value) {
     if (value == null || value === '') return 0;
     let text = String(value).trim().replace(/R\$\s?/gi, '').replace(/\s/g, '');
@@ -170,7 +201,7 @@ const GastoProImporter = (() => {
 
     const number = Number(text);
     if (!Number.isFinite(number)) return 0;
-    return isNegative ? -number : number;
+    return roundToCents(isNegative ? -number : number);
   }
 
   function parseMoney(value) {
@@ -409,8 +440,7 @@ const GastoProImporter = (() => {
       const row = {
         date,
         desc: truncateText(rawDesc || 'Lançamento importado', 300),
-        amount: Math.abs(signedAmount),
-        signedAmount,
+        ...roundedAmountFields(signedAmount),
         category: truncateText(canonicalCategory || defaultCategory, 100),
         invalid: !date,
         invalidReason: date ? '' : 'Data inválida ou ausente.',
@@ -421,6 +451,9 @@ const GastoProImporter = (() => {
       row.dueDay = parsedDueDay >= 1 && parsedDueDay <= 31 ? parsedDueDay : null;
       if (idxType >= 0 && ['income', 'fixed', 'debt', 'variable'].includes(explicitType)) {
         row.type = explicitType;
+        row.typeSignMismatch = row.signedAmount !== 0 &&
+          ((explicitType === 'income' && row.signedAmount < 0) ||
+            (explicitType !== 'income' && row.signedAmount > 0));
         if (explicitType === 'fixed' || explicitType === 'debt') {
           const validMonth = value => {
             const match = value.match(/^(\d{4})-(\d{2})$/);
@@ -438,6 +471,7 @@ const GastoProImporter = (() => {
       } else {
         defaultTypeRows.push(row);
       }
+      applyDescriptionReviews(row);
       rows.push(row);
     }
     if (lines.length > lastLine) warnings.push('O extrato excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.');
@@ -766,23 +800,24 @@ const GastoProImporter = (() => {
       const memo = getField(block, 'MEMO');
       const originalDesc = decodeDescription(memo || getField(block, 'NAME'));
       const desc = truncateText(originalDesc || 'Lançamento importado', 300);
-      const row = {
+      const row = applyDescriptionReviews({
         date,
         desc,
-        amount: Math.abs(signedAmount),
-        signedAmount,
+        ...roundedAmountFields(signedAmount),
         category: truncateText(autoDetectIncomeCategory(originalDesc) ||
           autoDetectCategory(originalDesc), 100),
         invalid: !date,
         invalidReason: date ? '' : 'Data inválida ou ausente.',
         raw: truncateText(match[0].trim(), MAX_LINE_CHARS)
-      };
+      });
       const transactionType = getField(block, 'TRNTYPE').toUpperCase();
       if (['CREDIT', 'DEP', 'DIRECTDEP', 'INT', 'DIV'].includes(transactionType)) {
         row.type = 'income';
+        row.typeSignMismatch = signedAmount < 0;
       } else if (['DEBIT', 'PAYMENT', 'CHECK', 'ATM', 'FEE', 'SRVCHG', 'POS', 'CASH',
         'REPEATPMT', 'DIRECTDEBIT'].includes(transactionType)) {
         row.type = 'variable';
+        row.typeSignMismatch = signedAmount > 0;
       } else {
         defaultTypeRows.push(row);
       }
@@ -838,17 +873,16 @@ const GastoProImporter = (() => {
     const products = elements(infNFe, 'xProd').slice(0, 3).map(item => item.textContent.trim());
     const desc = truncateText(`${emitente} — NF ${number}`, 300);
     const invalid = !date || !totalText;
-    return [{
+    return [applyDescriptionReviews({
       date,
       desc,
-      amount,
-      signedAmount: -amount,
+      ...roundedAmountFields(-amount),
       category: truncateText(autoDetectCategory(`${emitente} ${products.join(' ')}`), 100),
       type: 'variable',
       invalid,
       invalidReason: invalid ? 'Data de emissão ou valor total ausente ou inválido.' : '',
       raw: truncateText(text, MAX_LINE_CHARS)
-    }];
+    })];
   }
 
   function parseRawText(text) {
@@ -870,7 +904,7 @@ const GastoProImporter = (() => {
     const lines = text.split(/\r?\n/);
     const result = [];
     const warnings = [];
-    const amountPattern = '([+-]?\\s*(?:R\\$\\s*)?(?:\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:[,.]\\d{1,2})?)';
+    const amountPattern = '([+-]?\\s*(?:R\\$\\s*)?(?:\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:[,.]\\d+)?)';
     const datePattern = '(\\d{4}-\\d{2}-\\d{2}|\\d{2}[/-]\\d{2}(?:[/-]\\d{2,4})?(?:\\s+\\d{1,2}:\\d{2})?)';
     const startDate = new RegExp(`^${datePattern}\\s+(.+?)\\s+${amountPattern}$`);
     const endDate = new RegExp(`^${amountPattern}\\s+(.+?)\\s+${datePattern}$`);
@@ -913,16 +947,15 @@ const GastoProImporter = (() => {
         }
       }
       const date = parseDate(dateText);
-      result.push({
+      result.push(applyDescriptionReviews({
         date,
         desc: truncateText(desc.trim(), 300),
-        amount: Math.abs(signedAmount),
-        signedAmount,
+        ...roundedAmountFields(signedAmount),
         category: truncateText(autoDetectIncomeCategory(desc) || autoDetectCategory(desc), 100),
         invalid: !date,
         invalidReason: date ? '' : 'Data inválida ou ausente.',
         raw: line
-      });
+      }));
     }
     if (lines.length > MAX_ROWS) warnings.push('O texto excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.');
     applyDefaultTypes(result);
@@ -981,17 +1014,16 @@ const GastoProImporter = (() => {
     const desc = truncateText(fields['59'] || 'Pagamento Pix', 300);
     const date = formatIsoDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
     const invalid = !fields['54'] || amount === 0;
-    return [{
+    return [applyDescriptionReviews({
       date,
       desc,
-      amount,
-      signedAmount: -amount,
+      ...roundedAmountFields(-amount),
       category: autoDetectCategory(desc),
       type: 'variable',
       invalid,
       invalidReason: invalid ? 'Pix sem valor definido' : '',
       raw: truncateText(payload, MAX_LINE_CHARS)
-    }];
+    })];
   }
 
   function parseBoletoLine(digits, today = new Date()) {
@@ -1046,11 +1078,10 @@ const GastoProImporter = (() => {
       }
     }
 
-    return [{
+    return [applyDescriptionReviews({
       date,
       desc,
-      amount,
-      signedAmount: -amount,
+      ...roundedAmountFields(-amount),
       category: autoDetectCategory(desc),
       type: 'variable',
       dueDay,
@@ -1059,7 +1090,7 @@ const GastoProImporter = (() => {
       invalidReason,
       raw: truncateText(digits, MAX_LINE_CHARS),
       pending: true
-    }];
+    })];
   }
 
   function isTemplateDuplicate(row, templates, accountId = row.accountId) {
@@ -1109,7 +1140,11 @@ const GastoProImporter = (() => {
           existing.direction === comparable.direction &&
           Math.abs(existing.dateOrdinal - comparable.dateOrdinal) <= 2;
       }));
-      return { ...candidate, duplicate, selected: !candidate.invalid && !duplicate };
+      return {
+        ...candidate,
+        duplicate,
+        selected: !candidate.invalid && !duplicate && !hasImportReviewFlag(candidate)
+      };
     });
   }
 
@@ -1143,7 +1178,7 @@ const GastoProImporter = (() => {
       return {
         type,
         desc: truncateText(row.desc, 300),
-        amount: row.amount,
+        amount: roundToCents(Number(row.amount)),
         category: truncateText(row.category, 100),
         dueDay: row.dueDay,
         date: dueDate,
@@ -1156,7 +1191,7 @@ const GastoProImporter = (() => {
     return {
       type:     type,
       desc:     truncateText(row.desc, 300),
-      amount:   row.amount,
+      amount:   roundToCents(Number(row.amount)),
       category: truncateText(row.category, 100),
       date:     row.date,
       month:    fallbackMonth,
@@ -1188,7 +1223,7 @@ const GastoProImporter = (() => {
     autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
     parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, getLastIgnoredRows, shiftMonth, detectInstallment, detectCsvInstallment, matchDebtTemplate,
     buildInstallmentDebt, parseFile, isSupportedFile, UNSUPPORTED_FILE_WARNING, createCSVTemplate,
-    getLastOFXStatementInfo
+    getLastOFXStatementInfo, REVIEW_MOVEMENT_TERMS
   };
 
 })();
