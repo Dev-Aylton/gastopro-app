@@ -611,7 +611,7 @@ function reportSubmitNoEffect(formType, message, fieldId = null) {
   if (!category) throw new TypeError('Formulário de lançamento inválido.');
   const data = fieldId ? { category, fieldId } : { category };
   window.GastoProDiagnostics.record('submit-no-effect', data);
-  showToast(message);
+  showToast(message, 'error');
 }
 
 function bindSubmitValidationFeedback(form, formType) {
@@ -2561,14 +2561,17 @@ function getDailyBudgetInfo(balance, year, month, today) {
  *
  * @param {string} msg - Mensagem a exibir no toast.
  */
-function showToast(msg) {
+function showToast(msg, type = 'success') {
   const toast = document.getElementById('toast');
   if (!toast) return;
 
   // Construção segura via DOM — evita XSS com innerHTML
   const icon = document.createElement('i');
-  icon.className = 'fa-solid fa-circle-check';
-  icon.style.color = '#10b981';
+  const isError = type === 'error';
+  icon.className = isError
+    ? 'fa-solid fa-triangle-exclamation'
+    : 'fa-solid fa-circle-check';
+  icon.style.color = isError ? 'var(--danger-text)' : 'var(--success)';
 
   const span = document.createElement('span');
   span.textContent = msg; // textContent não interpreta HTML — seguro com qualquer input
@@ -3174,7 +3177,8 @@ async function persistLoanCandidate(candidate, editId) {
   renderAll();
   showToast(!syncResult.success
     ? 'Empréstimo salvo neste aparelho; a sincronização com a nuvem ficará pendente.'
-    : editId ? 'Empréstimo atualizado.' : 'Empréstimo salvo.');
+    : editId ? 'Empréstimo atualizado.' : 'Empréstimo salvo.',
+  syncResult.success ? 'success' : 'error');
 }
 
 async function finishLoanConflictChoice(choice, conflictId) {
@@ -3287,7 +3291,7 @@ function bindLoansForm(form = document.getElementById('loanForm')) {
   });
   document.getElementById('loanCancelConflictBtn')?.addEventListener('click', () => {
     hideLoanConflictPreview();
-    showToast('Empréstimo não salvo: operação cancelada.');
+    showToast('Empréstimo não salvo: operação cancelada.', 'error');
     reportSubmitNoEffect('loan', 'Empréstimo não salvo: operação cancelada.');
   });
   preview.addEventListener('change', event => {
@@ -3316,7 +3320,7 @@ function editLoan(id) {
     template.id === id && template.loanReceivedAmount != null
   );
   if (!loan) {
-    showToast('Empréstimo não encontrado. Atualize a tela e tente novamente.');
+    showToast('Empréstimo não encontrado. Atualize a tela e tente novamente.', 'error');
     return;
   }
   showConfirm({
@@ -3358,7 +3362,7 @@ function deleteLoan(id) {
     template.id === id && template.loanReceivedAmount != null
   );
   if (!loan) {
-    showToast('Empréstimo não encontrado. Atualize a tela e tente novamente.');
+    showToast('Empréstimo não encontrado. Atualize a tela e tente novamente.', 'error');
     return;
   }
   showConfirm({
@@ -3372,10 +3376,11 @@ function deleteLoan(id) {
         renderAll();
         showToast(result && result.success
           ? 'Empréstimo excluído.'
-          : 'Não foi possível sincronizar a exclusão do empréstimo. Tente novamente.');
+          : 'Não foi possível sincronizar a exclusão do empréstimo. Tente novamente.',
+        result && result.success ? 'success' : 'error');
       } catch (error) {
         console.error('Erro ao excluir empréstimo:', error);
-        showToast('Não foi possível excluir o empréstimo. Tente novamente.');
+        showToast('Não foi possível excluir o empréstimo. Tente novamente.', 'error');
       }
     }
   });
@@ -3383,21 +3388,21 @@ function deleteLoan(id) {
 
 async function markLoanInstallmentPaid(id, month) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month || '')) {
-    showToast('Não foi possível marcar a parcela: mês inválido.');
+    showToast('Não foi possível marcar a parcela: mês inválido.', 'error');
     reportSubmitNoEffect('loan', 'Parcela não marcada: mês inválido.');
     return;
   }
   try {
     const result = await FinanceData.markPaid(id, month);
     if (!result || !result.success) {
-      showToast('Não foi possível marcar a parcela como paga. Tente novamente.');
+      showToast('Não foi possível marcar a parcela como paga. Tente novamente.', 'error');
       return;
     }
     renderAll();
     showToast('Parcela marcada como paga.');
   } catch (error) {
     console.error('Erro ao marcar parcela do empréstimo:', error);
-    showToast('Não foi possível marcar a parcela como paga. Tente novamente.');
+    showToast('Não foi possível marcar a parcela como paga. Tente novamente.', 'error');
   }
 }
 
@@ -3513,7 +3518,7 @@ function migrateLegacyAccountAssignments(render = renderAll) {
   FinanceData.migrateUnassignedAccounts().then(result => {
     if (!result.success) {
       console.error('[GastoPro] Não foi possível atribuir os lançamentos antigos à Conta principal:', result.error);
-      showToast('Não foi possível migrar lançamentos sem conta. Tente novamente.');
+      showToast('Não foi possível migrar lançamentos sem conta. Tente novamente.', 'error');
       return;
     }
     if (result.migrated) {
@@ -3529,7 +3534,7 @@ function migrateLegacyAccountAssignments(render = renderAll) {
     }
   }).catch(error => {
     console.error('[GastoPro] Erro ao migrar lançamentos sem conta:', error);
-    showToast('Não foi possível migrar lançamentos sem conta. Tente novamente.');
+    showToast('Não foi possível migrar lançamentos sem conta. Tente novamente.', 'error');
   }).finally(() => {
     accountMigrationInProgress = false;
   });
@@ -5064,7 +5069,7 @@ function renderFinancialInsights() {
     if (importReviewNotice) notificationEvents.push(importReviewNotice);
     syncNotificationEvents(notificationEvents);
   } catch (error) {
-    showToast('Não foi possível atualizar a central de avisos neste aparelho.');
+    showToast('Não foi possível atualizar a central de avisos neste aparelho.', 'error');
   }
   renderNotificationCenter();
   alertContainer.innerHTML = alerts.length
@@ -6531,14 +6536,14 @@ function deleteCreditCard(id) {
         const result = await FinanceData.deleteCreditCard(id);
         renderAll();
         if (!result.success) {
-          showToast(`O cartão foi removido localmente, mas a sincronização falhou: ${result.error && result.error.message || result.error || 'erro desconhecido'}`);
+          showToast(`O cartão foi removido localmente, mas a sincronização falhou: ${result.error && result.error.message || result.error || 'erro desconhecido'}`, 'error');
           return;
         }
         showToast('Cartão excluído.');
       } catch (error) {
         console.error('[GastoPro] Falha ao excluir cartão:', error);
         renderAll();
-        showToast(`Não foi possível excluir o cartão: ${error.message || error}`);
+        showToast(`Não foi possível excluir o cartão: ${error.message || error}`, 'error');
       }
     }
   });
@@ -6547,7 +6552,7 @@ function deleteCreditCard(id) {
 function openAdjustAccountModal(id = '') {
   const accounts = FinanceData.getAccounts();
   if (!accounts.length) {
-    showToast('Cadastre uma conta antes de ajustar o saldo.');
+    showToast('Cadastre uma conta antes de ajustar o saldo.', 'error');
     return;
   }
   const accountSelect = document.getElementById('adjustAccountId');
@@ -6732,14 +6737,14 @@ function deleteAccount(id) {
         const result = await FinanceData.deleteAccount(id);
         renderAll();
         if (!result.success) {
-          showToast(`Não foi possível concluir a sincronização da exclusão: ${result.error && result.error.message || result.error || 'erro desconhecido'}`);
+          showToast(`Não foi possível concluir a sincronização da exclusão: ${result.error && result.error.message || result.error || 'erro desconhecido'}`, 'error');
           return;
         }
         showToast('Conta excluída. Os lançamentos vinculados foram mantidos sem conta.');
       } catch (error) {
         console.error('[GastoPro] Falha ao excluir conta:', error);
         renderAll();
-        showToast(`Não foi possível excluir a conta: ${error.message || error}`);
+        showToast(`Não foi possível excluir a conta: ${error.message || error}`, 'error');
       }
     }
   });
@@ -6888,7 +6893,7 @@ window.togglePaidEntry = async function(id, kind = null, installmentNumber = nul
   if (kind === 'credit-card') {
     const result = await FinanceData.toggleCreditCardPurchasePaid(id, Number(installmentNumber));
     if (!result.success) {
-      showToast(`Não foi possível registrar o pagamento da parcela: ${result.error && result.error.message || result.error || 'erro desconhecido'}`);
+      showToast(`Não foi possível registrar o pagamento da parcela: ${result.error && result.error.message || result.error || 'erro desconhecido'}`, 'error');
     }
   } else {
     FinanceData.togglePaid(id, currentYm);
@@ -6904,7 +6909,7 @@ async function markImportedPaidAsReviewed(id) {
     showToast('Lançamento marcado como conferido.');
   } catch (error) {
     console.error('[GastoPro] Não foi possível concluir a revisão do lançamento:', error);
-    showToast('Não foi possível salvar a revisão deste lançamento.');
+    showToast('Não foi possível salvar a revisão deste lançamento.', 'error');
   }
 }
 
@@ -6913,7 +6918,7 @@ async function changeImportedPaidToPending(id) {
   const target = entries.find(entry => entry.id === id);
   if (!target) {
     console.warn('[GastoPro] Lançamento para revisão não encontrado:', id);
-    showToast('Este lançamento não está mais disponível.');
+    showToast('Este lançamento não está mais disponível.', 'error');
     return;
   }
 
@@ -6923,7 +6928,7 @@ async function changeImportedPaidToPending(id) {
   );
   if (!result.success) {
     console.error('[GastoPro] Não foi possível alterar o lançamento para pendente:', result.error);
-    showToast('Não foi possível alterar este lançamento para pendente.');
+    showToast('Não foi possível alterar este lançamento para pendente.', 'error');
     return;
   }
 
@@ -6935,7 +6940,7 @@ async function changeImportedPaidToPending(id) {
   } catch (error) {
     console.error('[GastoPro] O lançamento foi alterado, mas não foi possível atualizar a lista de revisão:', error);
     if (document.getElementById('currentMonthLabel')) renderAll();
-    showToast('Lançamento pendente, mas a lista de revisão não pôde ser atualizada.');
+    showToast('Lançamento pendente, mas a lista de revisão não pôde ser atualizada.', 'error');
   }
 }
 
@@ -7246,7 +7251,7 @@ document.addEventListener('DOMContentLoaded', () => {
         savePaymentMethodPreference(kind, paymentMethod);
       } catch (error) {
         console.error('[GastoPro] Não foi possível atualizar a forma de pagamento preferida:', error);
-        showToast('A forma foi selecionada, mas não foi possível salvar sua preferência.');
+        showToast('A forma foi selecionada, mas não foi possível salvar sua preferência.', 'error');
       }
     }
     if (kind === 'expense') {
@@ -7784,7 +7789,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         saveNotificationPreferences({ [type]: input.checked });
       } catch (error) {
-        showToast('Não foi possível salvar essa preferência neste aparelho.');
+        showToast('Não foi possível salvar essa preferência neste aparelho.', 'error');
         return;
       }
       renderFinancialInsights();
@@ -7839,14 +7844,14 @@ document.addEventListener('DOMContentLoaded', () => {
       e.target.disabled = true;
       FinanceData.assignUnassignedAccount(kind, id, accountId).then(result => {
         if (!result.success) {
-          showToast(result.error && result.error.message || result.error || 'Não foi possível vincular a conta.');
+          showToast(result.error && result.error.message || result.error || 'Não foi possível vincular a conta.', 'error');
           return;
         }
         renderAll();
         showToast('Conta vinculada ao lançamento.');
       }).catch(error => {
         console.error('[GastoPro] Falha ao vincular conta ao lançamento:', error);
-        showToast('Não foi possível vincular a conta ao lançamento.');
+        showToast('Não foi possível vincular a conta ao lançamento.', 'error');
       }).finally(() => {
         e.target.disabled = false;
       });
@@ -8524,7 +8529,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'Gasto fixo salvo neste aparelho; a sincronização ficou pendente.');
         } catch (error) {
           console.error('[GastoPro] Erro ao converter lançamento em gasto fixo:', error);
-          showToast(error.message || 'Não foi possível converter para gasto fixo.');
+          showToast(error.message || 'Não foi possível converter para gasto fixo.', 'error');
         }
       });
 
@@ -8565,7 +8570,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (purchaseSource) {
           const installmentCount = Number(document.getElementById('editInstallments').value);
           if ((purchaseSource.paidInstallments || []).some(number => number > installmentCount)) {
-            showToast('Não é possível reduzir as parcelas abaixo de uma parcela já paga.');
+            showToast('Não é possível reduzir as parcelas abaixo de uma parcela já paga.', 'error');
             return;
           }
           updatedFields.cardId = document.getElementById('editCreditCard').value;
@@ -8576,7 +8581,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const updated = await FinanceData.update(id, updatedFields);
         if (!updated) {
-          showToast('Não é possível alterar entre lançamento pontual e recorrente pela edição.');
+          showToast('Não é possível alterar entre lançamento pontual e recorrente pela edição.', 'error');
           return;
         }
 
@@ -8613,7 +8618,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } catch (error) {
         console.error('[GastoPro] Erro ao salvar alterações:', error);
-        showToast(error.message || 'Não foi possível salvar as alterações. Tente novamente.');
+        showToast(error.message || 'Não foi possível salvar as alterações. Tente novamente.', 'error');
       }
     });
   });
@@ -8880,13 +8885,13 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const result = await FinanceData.exportAllUserData();
         if (!result.success) {
-          showToast(result.error || 'Não foi possível exportar seus dados.');
+          showToast(result.error || 'Não foi possível exportar seus dados.', 'error');
           return;
         }
         showToast('Exportação JSON concluída com seus dados e mensagens de feedback.');
       } catch (error) {
         console.error('[GastoPro] Falha ao exportar todos os dados:', error);
-        showToast('Não foi possível exportar seus dados. Tente novamente.');
+        showToast('Não foi possível exportar seus dados. Tente novamente.', 'error');
       } finally {
         exportBtn.disabled = false;
       }
@@ -8902,7 +8907,7 @@ document.addEventListener('DOMContentLoaded', () => {
       restoreBackupFile.value = '';
       if (!file) return;
       if (file.size > 5 * 1024 * 1024) {
-        showToast('A cópia de segurança excede o limite de 5 MB.');
+        showToast('A cópia de segurança excede o limite de 5 MB.', 'error');
         return;
       }
 
@@ -8915,7 +8920,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const preview = GastoProBackupHelpers.validate(text);
         if (preview.error) {
-          showToast(preview.error);
+          showToast(preview.error, 'error');
           return;
         }
 
@@ -8924,7 +8929,7 @@ document.addEventListener('DOMContentLoaded', () => {
           try {
             const result = await FinanceData.importJSON(text, mode);
             if (!result.success) {
-              showToast(result.error || 'Não foi possível restaurar a cópia de segurança.');
+              showToast(result.error || 'Não foi possível restaurar a cópia de segurança.', 'error');
               return;
             }
             renderAll();
@@ -8935,7 +8940,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('confirmModal').classList.remove('active');
           } catch (error) {
             console.error('[GastoPro] Falha ao restaurar cópia de segurança:', error);
-            showToast(error.message || 'Não foi possível restaurar a cópia de segurança.');
+            showToast(error.message || 'Não foi possível restaurar a cópia de segurança.', 'error');
           }
         });
         showConfirm({
@@ -8951,7 +8956,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       } catch (error) {
         console.error('[GastoPro] Falha ao ler cópia de segurança:', error);
-        showToast('Não foi possível ler o arquivo de cópia de segurança.');
+        showToast('Não foi possível ler o arquivo de cópia de segurança.', 'error');
       }
     });
   }
@@ -8979,7 +8984,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderUserProfile();
         renderAll();
         if (!result.success) {
-          showToast('Alguns dados não foram apagados na nuvem. As exclusões locais ficaram pendentes de sincronização. Tente novamente.');
+          showToast('Alguns dados não foram apagados na nuvem. As exclusões locais ficaram pendentes de sincronização. Tente novamente.', 'error');
           return;
         }
         showToast('Dados financeiros zerados.');
@@ -9009,14 +9014,14 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (result && result.localOnly) {
           showToast('Preferência salva neste aparelho. Entre na conta para sincronizar.');
         } else if (result && !result.success) {
-          showToast('Preferência salva neste aparelho, mas não sincronizada. Tente novamente.');
+          showToast('Preferência salva neste aparelho, mas não sincronizada. Tente novamente.', 'error');
         } else {
           showToast('Preferência de privacidade atualizada.');
         }
       } catch (error) {
         console.error('[GastoPro] Não foi possível atualizar a preferência de privacidade:', error);
         toggle.checked = previous;
-        showToast('Não foi possível salvar essa preferência neste aparelho.');
+        showToast('Não foi possível salvar essa preferência neste aparelho.', 'error');
       } finally {
         consentToggles.forEach(input => { input.disabled = false; });
       }
@@ -9789,7 +9794,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!Array.isArray(cloudEntries) || !Array.isArray(cloudTemplates) ||
           !Array.isArray(cloudAccounts)) {
           console.warn('[GastoPro] Sincronização incompleta; os dados locais foram mantidos.');
-          showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
+          showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho', 'error');
           return false;
         }
 
@@ -9799,7 +9804,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         } else {
           console.warn('[GastoPro] Não foi possível buscar o perfil na nuvem:', cloudProfileResult.error);
-          showToast('O perfil local foi preservado; não foi possível buscar o perfil na nuvem.');
+          showToast('O perfil local foi preservado; não foi possível buscar o perfil na nuvem.', 'error');
         }
 
         if (!FinanceData.mergeCloudData(
@@ -9807,7 +9812,7 @@ document.addEventListener('DOMContentLoaded', () => {
           cloudFixedImportRules, cloudCreditCards, cloudCreditCardPurchases
         )) {
           console.warn('[GastoPro] Sincronização ignorada: o usuário local não corresponde à sessão.');
-          showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho');
+          showToast('Não foi possível sincronizar; seus dados continuam salvos neste aparelho', 'error');
           return false;
         }
 
@@ -10183,7 +10188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await window.SupabaseAuth.signOut();
       } catch (e) {
         console.warn('[GastoPro] Falha ao encerrar sessão:', e);
-        showToast('Não foi possível encerrar a sessão. Seus dados continuam salvos neste aparelho.');
+        showToast('Não foi possível encerrar a sessão. Seus dados continuam salvos neste aparelho.', 'error');
         return;
       }
       clearUserSessionData();
@@ -10527,7 +10532,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (error) {
         if (objectUrl) URL.revokeObjectURL(objectUrl);
         console.error('[GastoPro] Erro ao abrir a foto:', error);
-        showToast(error.message || 'Não foi possível abrir a imagem.');
+        showToast(error.message || 'Não foi possível abrir a imagem.', 'error');
       }
     }
 
@@ -10537,7 +10542,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!file) return;
 
       if (!isSupportedAvatarType(file.type)) {
-        showToast('Selecione uma imagem JPEG, PNG ou WebP.');
+        showToast('Selecione uma imagem JPEG, PNG ou WebP.', 'error');
         return;
       }
 
@@ -10634,7 +10639,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (result.error && result.error.name === 'QuotaExceededError') {
             showToast('O armazenamento do navegador está cheio. Remova alguns dados e tente novamente.');
           } else {
-            showToast('Não foi possível salvar a foto neste aparelho.');
+            showToast('Não foi possível salvar a foto neste aparelho.', 'error');
           }
           return;
         }
@@ -10661,7 +10666,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const profile = window.GastoProAvatarGallery.selectPreset(FinanceData.getProfile(), value);
       const result = FinanceData.saveProfile(profile, { queueSync: true });
       if (!result.success) {
-        showToast('Não foi possível salvar o avatar neste aparelho.');
+        showToast('Não foi possível salvar o avatar neste aparelho.', 'error');
         return;
       }
       renderUserProfile();
@@ -10675,7 +10680,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const profile = window.GastoProAvatarGallery.removePhoto(FinanceData.getProfile());
       const result = FinanceData.saveProfile(profile, { queueSync: true });
       if (!result.success) {
-        showToast('Não foi possível remover a foto neste aparelho.');
+        showToast('Não foi possível remover a foto neste aparelho.', 'error');
         return;
       }
       renderUserProfile();
@@ -10807,14 +10812,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       if (!('serviceWorker' in navigator)) {
-        showToast('Não foi possível buscar uma versão nova neste navegador.');
+        showToast('Não foi possível buscar uma versão nova neste navegador.', 'error');
         return;
       }
 
       serviceWorker = navigator.serviceWorker;
       registration = await serviceWorker.getRegistration();
       if (!registration || typeof registration.update !== 'function') {
-        showToast('Não foi possível verificar atualizações do app.');
+        showToast('Não foi possível verificar atualizações do app.', 'error');
         return;
       }
 
@@ -10859,7 +10864,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (error) {
       console.warn('[GastoPro] Erro ao buscar nova versão do app:', error);
-      showToast('Não foi possível verificar atualizações do app.');
+      showToast('Não foi possível verificar atualizações do app.', 'error');
     } finally {
       if (controllerChangeTimeout) clearTimeout(controllerChangeTimeout);
       if (registration && onUpdateFound) {
@@ -11157,7 +11162,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     console.error('[GastoPro] Não foi possível apagar a regra de importação:', result.error);
-    showToast('Não foi possível apagar a regra de importação.');
+    showToast('Não foi possível apagar a regra de importação.', 'error');
   }
 
   /** Alterna entre as abas CSV e Texto do modal. */
@@ -11439,7 +11444,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /** Lê o arquivo selecionado e faz o parse. */
   async function handleCsvParse() {
     if (!csvFileInput || !csvFileInput.files || !csvFileInput.files[0]) {
-      showToast('Selecione um arquivo antes de analisar.');
+      showToast('Selecione um arquivo antes de analisar.', 'error');
       return;
     }
     const file = csvFileInput.files[0];
@@ -11450,7 +11455,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const isPdf = file.name.toLowerCase().endsWith('.pdf');
     if (file.size > (isPdf ? 10_000_000 : 1_000_000)) {
-      showToast(isPdf ? 'O PDF excede 10 MB.' : 'O arquivo deve ter no máximo 1 MB.');
+      showToast(isPdf ? 'O PDF excede 10 MB.' : 'O arquivo deve ter no máximo 1 MB.', 'error');
       return;
     }
     const pdfReadingStatus = document.getElementById('pdfReadingStatus');
@@ -11464,7 +11469,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       console.error('[GastoPro Importer] Erro ao ler o arquivo:', err);
       trackUsageEvent('import_parse_error');
-      showToast('Erro ao ler o arquivo. Verifique o formato.');
+      showToast('Erro ao ler o arquivo. Verifique o formato.', 'error');
     } finally {
       if (pdfReadingStatus) pdfReadingStatus.hidden = true;
     }
@@ -11478,7 +11483,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (text.length > 200_000) {
-      showToast('O texto colado excede 200.000 caracteres.');
+      showToast('O texto colado excede 200.000 caracteres.', 'error');
       return;
     }
     try {
@@ -11489,7 +11494,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       console.error('[GastoPro Importer] Erro ao parsear texto:', err);
       trackUsageEvent('import_parse_error');
-      showToast('Erro ao interpretar o texto. Verifique o formato.');
+      showToast('Erro ao interpretar o texto. Verifique o formato.', 'error');
     }
   }
 
@@ -11693,14 +11698,15 @@ document.addEventListener('DOMContentLoaded', () => {
             renderNotificationCenter();
           } catch (error) {
             console.error('[GastoPro] Os lançamentos foram importados, mas não foi possível registrar a revisão:', error);
-            showToast('Importação concluída, mas não foi possível salvar a lista de itens para conferência.');
+            showToast('Importação concluída, mas não foi possível salvar a lista de itens para conferência.', 'error');
           }
         }
         if (!result.success) {
           trackUsageEvent('import_save_error');
           showToast(result.syncResult
             ? 'O lote ficou salvo neste aparelho e aguarda sincronização.'
-            : result.error || 'Não foi possível salvar o lote importado.');
+            : result.error || 'Não foi possível salvar o lote importado.',
+          'error');
           return;
         }
         trackUsageEvent('import_completed');
@@ -11718,12 +11724,13 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (err) {
         console.error('[GastoPro Importer] Erro ao salvar os lançamentos:', err);
         trackUsageEvent('import_save_error');
-        showToast('Não foi possível concluir a importação. Tente novamente.');
+        showToast('Não foi possível concluir a importação. Tente novamente.', 'error');
       }
     } else {
       showToast(excludedDueDayRows
         ? `${excludedDueDayRows} linha(s) sem dia válido ficaram fora da importação; edite o dia e tente novamente.`
-        : 'Selecione ao menos um lançamento para importar.');
+        : 'Selecione ao menos um lançamento para importar.',
+      'error');
     }
   }
 
@@ -11827,7 +11834,7 @@ document.addEventListener('DOMContentLoaded', () => {
         new Blob([GastoProImporter.createCSVTemplate()], { type: 'text/csv;charset=utf-8' }),
         'gastopro-modelo-importacao.csv'
       );
-      if (!downloaded) showToast('Não foi possível baixar o modelo CSV neste navegador.');
+      if (!downloaded) showToast('Não foi possível baixar o modelo CSV neste navegador.', 'error');
     });
   }
 
@@ -12127,8 +12134,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const amount = (wIncomeAmount ? parseFloat(wIncomeAmount.value)   : 0);
     const date   = (wIncomeDate   ? wIncomeDate.value                 : '');
 
-    if (!desc) { showToast('Informe a descrição da renda.'); return; }
-    if (!amount || amount <= 0) { showToast('Informe um valor válido.'); return; }
+    if (!desc) { showToast('Informe a descrição da renda.', 'error'); return; }
+    if (!amount || amount <= 0) { showToast('Informe um valor válido.', 'error'); return; }
 
     wizardState.incomes.push({ desc, amount, date: date || null });
     if (wIncomeDesc)   wIncomeDesc.value   = '';
@@ -12208,10 +12215,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const dueDayValue = wFixedDay ? wFixedDay.value : '';
     const dueDay = dueDayValue === '' ? null : Number(dueDayValue);
 
-    if (!desc)   { showToast('Informe a descrição do gasto fixo.'); return; }
-    if (!amount || amount <= 0) { showToast('Informe um valor válido.'); return; }
+    if (!desc)   { showToast('Informe a descrição do gasto fixo.', 'error'); return; }
+    if (!amount || amount <= 0) { showToast('Informe um valor válido.', 'error'); return; }
     if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
-      showToast('Informe um dia de vencimento entre 1 e 31.');
+      showToast('Informe um dia de vencimento entre 1 e 31.', 'error');
       return;
     }
 
@@ -12290,10 +12297,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const dueDayValue = wVarDay ? wVarDay.value : '';
     const dueDay = dueDayValue === '' ? null : Number(dueDayValue);
 
-    if (!desc)   { showToast('Informe a descrição do gasto.'); return; }
-    if (!amount || amount <= 0) { showToast('Informe um valor válido.'); return; }
+    if (!desc)   { showToast('Informe a descrição do gasto.', 'error'); return; }
+    if (!amount || amount <= 0) { showToast('Informe um valor válido.', 'error'); return; }
     if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) {
-      showToast('Informe um dia de vencimento entre 1 e 31.');
+      showToast('Informe um dia de vencimento entre 1 e 31.', 'error');
       return;
     }
 
@@ -12403,7 +12410,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const varDueValue = wVarDay ? wVarDay.value : '';
     const varDueDay = varDueValue === '' ? null : Number(varDueValue);
     if (hasVariableItems && (!Number.isInteger(varDueDay) || varDueDay < 1 || varDueDay > 31)) {
-      showToast('Informe um dia de vencimento entre 1 e 31 para os gastos variáveis.');
+      showToast('Informe um dia de vencimento entre 1 e 31 para os gastos variáveis.', 'error');
       goToWizardStep(3, 'back');
       return;
     }
@@ -12417,7 +12424,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     let accountId = document.getElementById('wizardAccount').value || null;
     if (FinanceData.getAccounts().length && !accountId) {
-      showToast('Escolha uma conta de destino antes de salvar.');
+      showToast('Escolha uma conta de destino antes de salvar.', 'error');
       return;
     }
     if (!FinanceData.getAccounts().length) {
@@ -12533,7 +12540,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (step === 1) {
       if (wizardState.incomes.length === 0) {
-        showToast('Adicione ao menos uma fonte de renda antes de avançar.');
+        showToast('Adicione ao menos uma fonte de renda antes de avançar.', 'error');
         return;
       }
       goToWizardStep(2, 'forward');
@@ -12550,7 +12557,7 @@ document.addEventListener('DOMContentLoaded', () => {
           await handleWizardFinish();
         } catch (error) {
           console.error('[GastoPro] Erro ao salvar o lançamento rápido:', error);
-          showToast(error.message || 'Não foi possível salvar o lançamento rápido.');
+          showToast(error.message || 'Não foi possível salvar o lançamento rápido.', 'error');
         }
       });
     }
@@ -12670,7 +12677,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (sessionState.status === 'indeterminate') {
           if (localUserId) {
             console.warn('[GastoPro] Sessão indeterminada; os dados locais foram preservados.');
-            showToast('Não foi possível verificar a sessão. Seus dados locais foram preservados.');
+            showToast('Não foi possível verificar a sessão. Seus dados locais foram preservados.', 'error');
           }
         } else if (sessionState.status === 'signed_out') {
           const action = window.GastoProSessionHelpers.getSignedOutAction(
@@ -12691,7 +12698,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {
         console.warn('[GastoPro] Falha ao restaurar sessão; os dados locais foram preservados:', e);
         if (localUserId) {
-          showToast('Não foi possível verificar a sessão. Seus dados locais foram preservados.');
+          showToast('Não foi possível verificar a sessão. Seus dados locais foram preservados.', 'error');
         }
       }
 
@@ -12959,11 +12966,11 @@ function initGoalModalListeners() {
       const limit    = parseFloat(document.getElementById('goalLimitInput').value);
 
       if (!category) {
-        showToast('⚠️ Selecione uma categoria antes de salvar.');
+        showToast('⚠️ Selecione uma categoria antes de salvar.', 'error');
         return;
       }
       if (!limit || limit <= 0) {
-        showToast('⚠️ Informe um valor de limite válido (maior que zero).');
+        showToast('⚠️ Informe um valor de limite válido (maior que zero).', 'error');
         return;
       }
 
@@ -12976,7 +12983,7 @@ function initGoalModalListeners() {
           if (syncResult.success) showToast(`✅ Meta de ${category}: ${formatCurrency(limit)} salva!`);
         } catch (error) {
           console.error('[GastoPro] Erro ao salvar meta:', error);
-          showToast(error.message || 'Não foi possível salvar a meta.');
+          showToast(error.message || 'Não foi possível salvar a meta.', 'error');
         }
       });
     });

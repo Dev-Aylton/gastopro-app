@@ -7830,7 +7830,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 
 /* Link de privacidade no drawer */
 .drawer-privacy-link {
-  color: var(--primary);
+  color: var(--primary-text);
   font-size: 0.78rem;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -7841,7 +7841,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
   margin-top: 0.3rem;
 }
 
-.drawer-privacy-link:hover { color: var(--primary-hover); }
+.drawer-privacy-link:hover { color: var(--primary-text); }
 
 @media (max-width: 600px) {
   .modal-privacy-content {

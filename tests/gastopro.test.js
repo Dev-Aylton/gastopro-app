@@ -12116,7 +12116,7 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     assertFalse(sidebar.contains(navContact), 'Fale comigo fora do sidebar');
     assertFalse(dangerZone.open, 'zona de perigo fechada inicialmente');
     assertEqual(drawerSections, [
-      'Perfil', 'Preferências', 'Conta', 'Dados e cópia de segurança', 'Ajuda', 'Zona de perigo'
+      'Perfil', 'Conta', 'Privacidade', 'Dados e cópia de segurança', 'App', 'Avançado'
     ]);
     assertEqual(expectedIds.filter(id => !allIds.includes(id)), [], 'IDs existentes preservados');
     assertEqual(allIds.filter((id, index) => allIds.indexOf(id) !== index), [], 'IDs sem duplicação');
@@ -14251,6 +14251,177 @@ describe('Empréstimos — resumo, conflitos e formulário', () => {
       assertTrue(fixture.host.querySelector('#toast').textContent.includes('Cadastre uma conta'));
     } finally {
       fixture.cleanup();
+    }
+  });
+});
+
+describe('Painel do usuário e avisos', () => {
+  itAsync('preserva ações e apresenta blocos acessíveis em telas estreitas e largas', async () => {
+    const [indexResponse, appResponse] = await Promise.all([
+      fetch('../index.html'),
+      fetch('../js/app.js')
+    ]);
+    assertTrue(indexResponse.ok, 'index.html disponível para validar o painel');
+    assertTrue(appResponse.ok, 'app.js disponível para validar os handlers');
+    const indexDocument = new DOMParser().parseFromString(await indexResponse.text(), 'text/html');
+    const appSource = await appResponse.text();
+    const sourceDrawer = indexDocument.getElementById('profileDrawer');
+    const sourceVersion = indexDocument.querySelector('.badge-version').textContent.trim();
+    assertTrue(Boolean(sourceDrawer));
+    const frame = await getResponsiveFixtureFrame(320, 800);
+    const frameDocument = frame.contentDocument;
+    const frameWindow = frame.contentWindow;
+    const fixture = frameDocument.getElementById('fixtureApp');
+    fixture.innerHTML = sourceDrawer.outerHTML;
+    let drawer = fixture.querySelector('#profileDrawer');
+    drawer.classList.add('open');
+    drawer.removeAttribute('inert');
+    drawer.setAttribute('aria-hidden', 'false');
+    drawer.style.transition = 'none';
+
+    try {
+      const sectionTitles = [...drawer.querySelectorAll('.drawer-body > .drawer-section > h4')]
+        .map(title => title.textContent.trim());
+      assertEqual(sectionTitles, [
+        'Perfil', 'Conta', 'Privacidade', 'Dados e cópia de segurança', 'App', 'Avançado'
+      ]);
+      const preservedControls = [
+        ['openAuthModalBtn', "'openAuthModalBtn'"], ['logoutBtn', "'logoutBtn'"],
+        ['refreshAppBtn', "'refreshAppBtn'"], ['drawerRefreshBtn', "'drawerRefreshBtn'"],
+        ['drawerPrivacyLink', "'drawerPrivacyLink'"],
+        ['adminVisibilityEnabled', "'adminVisibilityEnabled'"],
+        ['usageTelemetryEnabled', "'usageTelemetryEnabled'"],
+        ['exportBtn', "'exportBtn'"], ['restoreBackupBtn', "'restoreBackupBtn'"],
+        ['openReportModalBtn', "'openReportModalBtn'"],
+        ['reopenOnboardingBtn', "'reopenOnboardingBtn'"],
+        ['userTutorials', "'userTutorials'"], ['navContact', 'open-contact'],
+        ['diagnosticDetails', "'diagnosticDetails'"],
+        ['irreversibleActions', "'irreversibleActions'"],
+        ['clearDataBtn', "'clearDataBtn'"],
+        ['deleteAllMyDataBtn', "'deleteAllMyDataBtn'"],
+        ['deleteAccountBtn', "'deleteAccountBtn'"]
+      ];
+      preservedControls.forEach(([id, handlerReference]) => {
+        assertTrue(Boolean(drawer.querySelector(`#${id}`)), `controle ${id} preservado`);
+        assertTrue(appSource.includes(handlerReference), `handler de ${id} preservado`);
+      });
+      assertFalse(drawer.querySelector('#userTutorials').open, 'Tutoriais recolhidos por padrão');
+      assertEqual(drawer.querySelector('#userTutorials > summary').getAttribute('aria-expanded'), 'false');
+      assertEqual(
+        drawer.querySelector('#userTutorials > summary .irreversible-actions-chevron').tagName,
+        'svg'
+      );
+      assertEqual(
+        drawer.querySelector('#drawerRefreshBtn .action-text span').textContent.trim(),
+        `Versão ${sourceVersion}`
+      );
+
+      const parseColor = value => {
+        const hex = value.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+        if (hex) {
+          const digits = hex[1].length === 3
+            ? hex[1].split('').map(char => char + char).join('')
+            : hex[1];
+          return digits.match(/.{2}/g).map(channel => parseInt(channel, 16));
+        }
+        const rgb = value.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+        return rgb ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])] : null;
+      };
+      const contrast = (foreground, background) => {
+        const luminance = color => color.map(channel => {
+          const value = channel / 255;
+          return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+        }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+        const first = luminance(foreground);
+        const second = luminance(background);
+        return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+      };
+      const sizes = [[320, 800], [360, 800], [390, 844], [768, 900], [1024, 900],
+        [1280, 900], [844, 390]];
+
+      for (const theme of ['dark', 'light']) {
+        frameDocument.documentElement.dataset.theme = theme;
+        frameDocument.body.dataset.theme = theme;
+        for (const [width, height] of sizes) {
+          await getResponsiveFixtureFrame(width, height);
+          const drawerRect = drawer.getBoundingClientRect();
+          assertTrue(drawerRect.width > 0, `${width}px ${theme}: painel visível`);
+          assertTrue(drawer.scrollWidth <= drawer.clientWidth,
+            `${width}px ${theme}: painel sem corte horizontal`);
+          const textElements = drawer.querySelectorAll([
+            '.drawer-section-title', '.drawer-action-btn .action-text *',
+            '.privacy-consent-setting strong', '.privacy-consent-setting small',
+            '.drawer-privacy-link', '.diagnostic-details > summary',
+            '.irreversible-actions-summary .action-text *', '.irreversible-action-description'
+          ].join(','));
+          textElements.forEach(element => {
+            const rect = element.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            assertTrue(element.scrollWidth <= element.clientWidth,
+              `${width}px ${theme}: texto sem corte (${element.textContent.trim()})`);
+            const style = frameWindow.getComputedStyle(element);
+            assertFalse(['break-all', 'break-word'].includes(style.wordBreak),
+              `${width}px ${theme}: quebra de palavra proibida`);
+            assertFalse(style.overflowWrap === 'anywhere',
+              `${width}px ${theme}: overflow-wrap anywhere`);
+          });
+          drawer.querySelectorAll('button, a, summary, [role="button"], .privacy-consent-setting')
+            .forEach(element => {
+              const rect = element.getBoundingClientRect();
+              if (!rect.width || !rect.height) return;
+              assertTrue(rect.height >= 44,
+                `${width}px ${theme}: alvo de toque de ${element.id || element.textContent.trim()} com ${rect.height}px`);
+            });
+          const rootStyle = frameWindow.getComputedStyle(frameDocument.documentElement);
+          ['--bg-card', '--bg-input'].forEach(surface =>
+            ['--text-main', '--text-muted', '--text-dim', '--primary-text', '--danger-text']
+              .forEach(token => {
+                assertTrue(contrast(
+                  parseColor(rootStyle.getPropertyValue(token)),
+                  parseColor(rootStyle.getPropertyValue(surface))
+                ) >= 4.5, `${width}px ${theme}: contraste ${token} sobre ${surface}`);
+              })
+          );
+          if ([[320, 800], [390, 844], [844, 390]].some(([measuredWidth, measuredHeight]) =>
+            measuredWidth === width && measuredHeight === height
+          )) {
+            const responseDocument = new DOMParser().parseFromString(
+              indexDocument.documentElement.outerHTML, 'text/html'
+            );
+            fixture.innerHTML = responseDocument.querySelector('.app-shell').outerHTML;
+            const footer = fixture.querySelector('.app-footer');
+            const footerRect = footer.getBoundingClientRect();
+            assertFalse(footerRect.top < height && footerRect.bottom > 0,
+              `${width}x${height}: rodapé não fica visível sem rolagem`);
+            fixture.innerHTML = sourceDrawer.outerHTML;
+            drawer = fixture.querySelector('#profileDrawer');
+            drawer.classList.add('open');
+            drawer.removeAttribute('inert');
+            drawer.setAttribute('aria-hidden', 'false');
+            drawer.style.transition = 'none';
+          }
+        }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
+    }
+  });
+
+  it('usa alerta nos toasts de erro e mantém o check nos de sucesso', () => {
+    const host = document.createElement('div');
+    const toast = document.createElement('div');
+    toast.id = 'toast';
+    host.appendChild(toast);
+    document.body.appendChild(host);
+    try {
+      window.showToast('Falha simulada', 'error');
+      assertEqual(toast.querySelector('i').className, 'fa-solid fa-triangle-exclamation');
+      assertEqual(toast.querySelector('i').style.color, 'var(--danger-text)');
+      window.showToast('Salvo com sucesso', 'success');
+      assertEqual(toast.querySelector('i').className, 'fa-solid fa-circle-check');
+      assertEqual(toast.querySelector('i').style.color, 'var(--success)');
+    } finally {
+      host.remove();
     }
   });
 });

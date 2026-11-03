@@ -300,28 +300,6 @@
             </button>
           </section>
 
-          <section class="drawer-section drawer-privacy-section">
-            <h4 class="drawer-section-title">Preferências</h4>
-            <label class="privacy-consent-setting" for="adminVisibilityEnabled">
-              <input type="checkbox" id="adminVisibilityEnabled" />
-              <span>
-                <strong>Permitir que o administrador veja meu nome e e-mail</strong>
-                <small>Desligado por padrão. Você pode revogar a qualquer momento.</small>
-              </span>
-            </label>
-            <label class="privacy-consent-setting" for="usageTelemetryEnabled">
-              <input type="checkbox" id="usageTelemetryEnabled" />
-              <span>
-                <strong>Compartilhar dados de uso para melhorar o app</strong>
-                <small>Desligado por padrão. Compartilha apenas eventos de uso sem texto livre ou dados financeiros.</small>
-              </span>
-            </label>
-            <p class="privacy-sync-status" id="privacySyncStatus" role="status" aria-live="polite" hidden>
-              Alteração ainda não enviada ao servidor
-            </p>
-            <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Política de Privacidade</a>
-          </section>
-
           <section class="drawer-section drawer-account-section">
             <h4 class="drawer-section-title">Conta</h4>
             <div class="drawer-account-controls">
@@ -352,16 +330,29 @@
                 <span>Sincronizar e atualizar esta tela</span>
               </div>
             </button>
-            <button id="drawerRefreshBtn" class="drawer-action-btn" title="Buscar nova versão do app" aria-label="Buscar nova versão do app">
-              <div class="action-icon bg-primary-soft">
-                <i class="fa-solid fa-cloud-arrow-down text-primary" id="drawerRefreshIcon" aria-hidden="true"></i>
-              </div>
-              <div class="action-text">
-                <strong>Buscar nova versão do app</strong>
-                <span>Verificar atualizações do aplicativo</span>
-              </div>
-            </button>
             </div>
+          </section>
+
+          <section class="drawer-section drawer-privacy-section">
+            <h4 class="drawer-section-title">Privacidade</h4>
+            <label class="privacy-consent-setting" for="adminVisibilityEnabled">
+              <input type="checkbox" id="adminVisibilityEnabled" />
+              <span>
+                <strong>Permitir que o administrador veja meu nome e e-mail</strong>
+                <small>Desligado por padrão. Você pode revogar a qualquer momento.</small>
+              </span>
+            </label>
+            <label class="privacy-consent-setting" for="usageTelemetryEnabled">
+              <input type="checkbox" id="usageTelemetryEnabled" />
+              <span>
+                <strong>Compartilhar dados de uso para melhorar o app</strong>
+                <small>Desligado por padrão. Compartilha apenas eventos de uso sem texto livre ou dados financeiros.</small>
+              </span>
+            </label>
+            <p class="privacy-sync-status" id="privacySyncStatus" role="status" aria-live="polite" hidden>
+              Alteração ainda não enviada ao servidor
+            </p>
+            <a href="#" id="drawerPrivacyLink" class="drawer-privacy-link">Política de Privacidade</a>
           </section>
 
           <section class="drawer-section drawer-data-section">
@@ -405,12 +396,20 @@
           </section>
 
           <section class="drawer-section drawer-about-section">
-            <h4 class="drawer-section-title">Ajuda</h4>
-            <p class="drawer-about-version">Versão <span class="badge badge-version">v4.55</span></p>
+            <h4 class="drawer-section-title">App</h4>
             <div class="app-update-notice" id="appUpdateNotice" role="status" hidden>
               <span>Nova versão disponível.</span>
               <button type="button" class="btn-secondary" id="appUpdateCheckBtn">Atualizar</button>
             </div>
+            <button id="drawerRefreshBtn" class="drawer-action-btn" title="Buscar nova versão do app" aria-label="Buscar nova versão do app">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-solid fa-cloud-arrow-down text-primary" id="drawerRefreshIcon" aria-hidden="true"></i>
+              </div>
+              <div class="action-text">
+                <strong>Buscar nova versão do app</strong>
+                <span>Versão v4.56</span>
+              </div>
+            </button>
             <div class="drawer-about-help">
             <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
               <div class="action-icon bg-primary-soft">
@@ -421,27 +420,6 @@
                 <span>Rever as dicas de primeiro acesso</span>
               </div>
             </button>
-            <button type="button" id="navContact" class="drawer-action-btn contact-shortcut" data-action="open-contact">
-              <div class="action-icon bg-primary-soft">
-                <i class="fa-regular fa-comment-dots text-primary" aria-hidden="true"></i>
-              </div>
-              <div class="action-text">
-                <strong>Fale comigo</strong>
-                <span>Enviar mensagem e acompanhar respostas</span>
-              </div>
-            </button>
-            <details class="diagnostic-details" id="diagnosticDetails">
-              <summary>Diagnóstico (temporário)</summary>
-              <p class="diagnostic-description">
-                O registro fica só neste aparelho e não é enviado a ninguém.
-              </p>
-              <div class="diagnostic-actions">
-                <button type="button" class="btn-secondary" id="diagnosticCopyButton">Copiar registro</button>
-                <button type="button" class="btn-secondary" id="diagnosticClearButton">Limpar registro</button>
-              </div>
-              <p class="diagnostic-status" id="diagnosticStatus" role="status" aria-live="polite"></p>
-              <ol class="diagnostic-log-list" id="diagnosticLogList" aria-label="Eventos de diagnóstico"></ol>
-            </details>
             <details class="how-to-use-section" id="userTutorials">
               <summary class="irreversible-actions-summary" aria-expanded="false">
                 <span class="action-text">
@@ -454,10 +432,33 @@
               </summary>
               <div class="how-to-use-topics" id="howToUseTopics"></div>
             </details>
+            <button type="button" id="navContact" class="drawer-action-btn contact-shortcut" data-action="open-contact">
+              <div class="action-icon bg-primary-soft">
+                <i class="fa-regular fa-comment-dots text-primary" aria-hidden="true"></i>
+              </div>
+              <div class="action-text">
+                <strong>Fale comigo</strong>
+                <span>Enviar mensagem e acompanhar respostas</span>
+              </div>
+            </button>
             </div>
           </section>
 
-          <details class="drawer-section irreversible-actions" id="irreversibleActions">
+          <section class="drawer-section drawer-advanced-section">
+            <h4 class="drawer-section-title">Avançado</h4>
+            <details class="diagnostic-details" id="diagnosticDetails">
+              <summary>Diagnóstico (temporário)</summary>
+              <p class="diagnostic-description">
+                O registro fica só neste aparelho e não é enviado a ninguém.
+              </p>
+              <div class="diagnostic-actions">
+                <button type="button" class="btn-secondary" id="diagnosticCopyButton">Copiar registro</button>
+                <button type="button" class="btn-secondary" id="diagnosticClearButton">Limpar registro</button>
+              </div>
+              <p class="diagnostic-status" id="diagnosticStatus" role="status" aria-live="polite"></p>
+              <ol class="diagnostic-log-list" id="diagnosticLogList" aria-label="Eventos de diagnóstico"></ol>
+            </details>
+          <details class="irreversible-actions" id="irreversibleActions">
             <summary class="irreversible-actions-summary" aria-expanded="false">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
               <span class="action-text">
@@ -494,6 +495,7 @@
               <p class="irreversible-action-description">Remove a conta de login e todos os dados vinculados na nuvem e neste aparelho.</p>
             </div>
           </details>
+          </section>
         </div>
       </aside>
 
@@ -1236,7 +1238,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.55</span>
+          <span class="badge badge-version">v4.56</span>
         </div>
       </footer>
 
