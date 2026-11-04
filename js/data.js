@@ -67,6 +67,7 @@ const STORAGE_PROFILE = 'gastopro_profile_real_v2';
 /** Chave das metas de teto de gastos por categoria. */
 const STORAGE_GOALS = 'gastopro_goals_v1';
 const STORAGE_ACCOUNTS = 'gastopro_accounts_v1';
+const STORAGE_BALANCE_CHECKS = 'gastopro_balance_checks_v1';
 const STORAGE_CREDIT_CARDS = 'gastopro_credit_cards_v1';
 const STORAGE_CREDIT_CARD_PURCHASES = 'gastopro_credit_card_purchases_v1';
 const STORAGE_LEGACY_CREDIT_CARD_PREVIOUS_SPENT = 'gastopro_credit_card_previous_spent_v1';
@@ -87,6 +88,76 @@ const CREDIT_CARD_ISSUERS = [
   'Nubank', 'Itaú', 'Bradesco', 'Santander', 'Banco do Brasil', 'Caixa',
   'Inter', 'C6', 'BTG', 'Mercado Pago', 'PicPay', 'Outro'
 ];
+
+function getBalanceChecksDate() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch (error) {
+    return '';
+  }
+}
+
+function readBalanceChecks() {
+  try {
+    const raw = localStorage.getItem(STORAGE_BALANCE_CHECKS);
+    if (!raw) return {};
+    const value = JSON.parse(raw);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function writeBalanceChecks(checks) {
+  try {
+    localStorage.setItem(STORAGE_BALANCE_CHECKS, JSON.stringify(checks));
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function precisaConfirmarSaldo(conta) {
+  if (!conta || !conta.id) return false;
+  const check = readBalanceChecks()[conta.id];
+  return !check || typeof check.lastConfirmed !== 'string' || check.importedAfter === true;
+}
+
+function confirmarSaldo(contaId) {
+  if (!contaId) return false;
+  const checks = readBalanceChecks();
+  checks[contaId] = {
+    lastConfirmed: getBalanceChecksDate(),
+    importedAfter: false
+  };
+  return writeBalanceChecks(checks);
+}
+
+function marcarImportacao(contaId) {
+  if (!contaId) return false;
+  const checks = readBalanceChecks();
+  const current = checks[contaId] && typeof checks[contaId] === 'object' ? checks[contaId] : {};
+  checks[contaId] = {
+    lastConfirmed: typeof current.lastConfirmed === 'string' ? current.lastConfirmed : null,
+    importedAfter: true
+  };
+  return writeBalanceChecks(checks);
+}
+
+function limparConta(contaId) {
+  if (!contaId) return false;
+  const checks = readBalanceChecks();
+  if (!Object.prototype.hasOwnProperty.call(checks, contaId)) return true;
+  delete checks[contaId];
+  return writeBalanceChecks(checks);
+}
 const DEFAULT_CREDIT_CARD_COLOR = '#6366f1';
 const CREDIT_CARD_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 
@@ -2433,6 +2504,7 @@ const FinanceData = {
     }
     const accountResult = await this.saveAccounts(accounts.filter(account => account.id !== id), { flush: false });
     if (!accountResult.success) return accountResult;
+    limparConta(id);
     const pending = this.getPendingSync();
     pending.transactionalOperations ||= [];
     if (!pending.transactionalOperations.some(operation =>
@@ -3375,6 +3447,7 @@ const FinanceData = {
         STORAGE_TEMPLATES,
         STORAGE_GOALS,
         STORAGE_ACCOUNTS,
+        STORAGE_BALANCE_CHECKS,
         STORAGE_CREDIT_CARDS,
         STORAGE_CREDIT_CARD_PURCHASES,
         STORAGE_FIXED_IMPORT_RULES,
@@ -3443,6 +3516,11 @@ const FinanceData = {
     await this.saveCreditCards([], { flush: false });
     this.saveGoals([]);
     await this.saveFixedImportRules([], { flush: false });
+    try {
+      localStorage.removeItem(STORAGE_BALANCE_CHECKS);
+    } catch (error) {
+      // O estado local pode estar indisponível.
+    }
     if (window.GastoProInsightDismissal) {
       window.GastoProInsightDismissal.clear();
     } else {
@@ -3724,3 +3802,11 @@ const FinanceData = {
 };
 
 window.FinanceData = FinanceData;
+window.GastoProBalanceChecks = {
+  STORAGE_KEY: STORAGE_BALANCE_CHECKS,
+  precisaConfirmarSaldo,
+  confirmarSaldo,
+  marcarImportacao,
+  limparConta,
+  read: readBalanceChecks
+};

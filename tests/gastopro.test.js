@@ -1221,6 +1221,58 @@ describe('Estados vazios das telas', () => {
 describe('FinanceData — Contas Bancárias', () => {
   setupMockLocalStorage();
 
+  describe('Aviso local de confirmação de saldo', () => {
+    const balanceChecksKey = 'gastopro_balance_checks_v1';
+
+    it('pede confirmação para conta nunca confirmada', () => {
+      setupMockLocalStorage();
+      assertTrue(window.GastoProBalanceChecks.precisaConfirmarSaldo({ id: 'account-never-confirmed' }));
+    });
+
+    it('não pede confirmação imediatamente após confirmar a conta', () => {
+      setupMockLocalStorage();
+      assertTrue(window.GastoProBalanceChecks.confirmarSaldo('account-confirmed'));
+      assertFalse(window.GastoProBalanceChecks.precisaConfirmarSaldo({ id: 'account-confirmed' }));
+    });
+
+    it('pede confirmação quando uma importação ocorre após a confirmação', () => {
+      setupMockLocalStorage();
+      window.GastoProBalanceChecks.confirmarSaldo('account-imported');
+      window.GastoProBalanceChecks.marcarImportacao('account-imported');
+      assertTrue(window.GastoProBalanceChecks.precisaConfirmarSaldo({ id: 'account-imported' }));
+      assertEqual(JSON.parse(localStorage.getItem(balanceChecksKey))['account-imported'].importedAfter, true);
+    });
+
+    it('remove o registro de uma conta excluída', () => {
+      setupMockLocalStorage();
+      window.GastoProBalanceChecks.confirmarSaldo('account-deleted');
+      window.GastoProBalanceChecks.limparConta('account-deleted');
+      assertEqual(window.GastoProBalanceChecks.read()['account-deleted'], undefined);
+    });
+
+    it('trata storage corrompido sem lançar erro', () => {
+      setupMockLocalStorage();
+      localStorage.setItem(balanceChecksKey, '{dados-invalidos');
+      assertTrue(window.GastoProBalanceChecks.precisaConfirmarSaldo({ id: 'account-corrupt' }));
+      assertTrue(window.GastoProBalanceChecks.confirmarSaldo('account-corrupt'));
+    });
+
+    itAsync('apaga as confirmações em clearAll()', async () => {
+      setupMockLocalStorage();
+      window.GastoProBalanceChecks.confirmarSaldo('account-clear-all');
+      await FinanceData.clearAll();
+      assertEqual(localStorage.getItem(balanceChecksKey), null);
+    });
+
+    itAsync('apaga as confirmações em deleteAllUserData()', async () => {
+      setupMockLocalStorage();
+      window.GastoProBalanceChecks.confirmarSaldo('account-delete-all');
+      const result = await FinanceData.deleteAllUserData('APAGAR DADOS');
+      assertTrue(result.success);
+      assertEqual(localStorage.getItem(balanceChecksKey), null);
+    });
+  });
+
   function makeAccountFlowFixture() {
     const host = document.createElement('div');
     host.innerHTML = `

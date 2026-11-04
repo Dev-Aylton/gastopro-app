@@ -4393,6 +4393,7 @@ function renderAccountsView() {
       </div>
       <div class="account-item-right">
         <strong class="account-balance-amount ${getFinancialAmountPresentation(FinanceData.getAccountBalance(account.id), { signed: true }).className}">${escapeHtml(getFinancialAmountPresentation(FinanceData.getAccountBalance(account.id), { signed: true }).text)}</strong>
+        ${renderBalanceCheckNotice(account.id)}
         <div class="account-item-actions">
           <button type="button" class="btn-secondary account-action-button" data-action="edit-account" data-id="${escapeHtml(account.id)}" aria-label="Editar conta ${escapeHtml(account.name)}" title="Editar">
             <i class="fa-solid fa-pen"></i><span>Editar</span>
@@ -4430,6 +4431,7 @@ function renderAccountBalancesPanel() {
   const filterLabel = getAccountBalanceFilterLabel(accounts, state.accountBalanceFilter);
   setFinancialAmount(display, amount, { signed: true });
   setFinancialAmount(document.getElementById('dashboardCurrentBalance'), amount);
+  renderDashboardBalanceCheckNotice();
   renderDashboardBalanceWarning(amount);
   if (label) label.textContent = filterLabel;
   if (empty) {
@@ -4441,6 +4443,7 @@ function renderAccountBalancesPanel() {
           Cadastrar conta
         </button>`;
     }
+
   }
   const topbarBalance = document.getElementById('topbarBalance');
   const topbarEmpty = document.getElementById('topbarBalanceEmpty');
@@ -4453,6 +4456,40 @@ function renderAccountBalancesPanel() {
   if (topbarDateNote) topbarDateNote.hidden =
     !accountsNeedBalanceDateNotice(accounts, state.accountBalanceFilter);
   renderFinancialInsights();
+}
+
+const dismissedBalanceCheckIds = new Set();
+
+function renderBalanceCheckNotice(accountId, compact = false) {
+  if (dismissedBalanceCheckIds.has(accountId) ||
+    !window.GastoProBalanceChecks || !window.GastoProBalanceChecks.precisaConfirmarSaldo(
+      FinanceData.getAccounts().find(account => account.id === accountId)
+    )) return '';
+  return `
+    <div class="balance-check-notice${compact ? ' balance-check-notice-compact' : ''}">
+      <span>Confira se o saldo desta conta é o mesmo que aparece no seu banco.</span>
+      <div class="balance-check-actions">
+        <button type="button" class="btn-secondary" data-action="confirm-balance-check" data-id="${escapeHtml(accountId)}">Confere</button>
+        <button type="button" class="btn-secondary" data-action="reject-balance-check" data-id="${escapeHtml(accountId)}">Não confere</button>
+        <button type="button" class="btn-secondary" data-action="dismiss-balance-check" data-id="${escapeHtml(accountId)}">Depois</button>
+      </div>
+    </div>`;
+}
+
+function renderDashboardBalanceCheckNotice() {
+  const container = document.getElementById('dashboardBalanceCheckNotice');
+  if (!container) return;
+  const accounts = FinanceData.getAccounts();
+  let selectedAccounts = accounts;
+  if (state.accountBalanceFilter.startsWith('account:')) {
+    const id = state.accountBalanceFilter.slice('account:'.length);
+    selectedAccounts = accounts.filter(account => account.id === id);
+  } else if (state.accountBalanceFilter === 'PF' || state.accountBalanceFilter === 'PJ') {
+    selectedAccounts = accounts.filter(account => account.type === state.accountBalanceFilter);
+  }
+  const account = selectedAccounts.find(item => Boolean(renderBalanceCheckNotice(item.id, true)));
+  container.innerHTML = account ? renderBalanceCheckNotice(account.id, true) : '';
+  container.hidden = !account;
 }
 
 function renderDashboardBalanceWarning(balance) {
@@ -8925,6 +8962,22 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'adjust-account':
         openAdjustAccountModal(id);
         break;
+      case 'confirm-balance-check':
+        if (window.GastoProBalanceChecks && id) {
+          window.GastoProBalanceChecks.confirmarSaldo(id);
+          dismissedBalanceCheckIds.delete(id);
+          renderAll();
+        }
+        break;
+      case 'reject-balance-check':
+        dismissedBalanceCheckIds.add(id);
+        openAdjustAccountModal(id);
+        renderAll();
+        break;
+      case 'dismiss-balance-check':
+        dismissedBalanceCheckIds.add(id);
+        renderAll();
+        break;
       case 'open-balance-adjustment':
         openAdjustAccountModal();
         break;
@@ -13238,6 +13291,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (items.length > 0 || payments.length > 0) {
       try {
         const result = await FinanceData.importBatch(items, payments);
+        if (result.success) {
+          [...new Set([...items, ...payments]
+            .map(item => item && item.accountId)
+            .filter(Boolean))]
+            .forEach(accountId => window.GastoProBalanceChecks?.marcarImportacao(accountId));
+        }
         const persistedEntryIds = new Set(FinanceData.getEntries().map(entry => entry.id));
         const reviewIds = result.items
           .slice(debtItems.length)
