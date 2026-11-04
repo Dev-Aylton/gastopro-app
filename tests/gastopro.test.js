@@ -14829,6 +14829,278 @@ describe('Login OAuth com Google', () => {
   });
 });
 
+const WIZARD_TEST_ACCOUNT = {
+  id: 'wizard-test-account',
+  name: 'Conta de teste',
+  institution: null,
+  type: 'PF',
+  initialBalance: 0,
+  balanceDate: null
+};
+
+function snapshotWizardStorage(storage) {
+  const snapshot = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    snapshot.push([key, storage.getItem(key)]);
+  }
+  return snapshot;
+}
+
+function restoreWizardStorage(storage, snapshot) {
+  storage.clear();
+  snapshot.forEach(([key, value]) => storage.setItem(key, value));
+}
+
+async function withIsolatedWizard(testFn) {
+  const parentStorage = window.localStorage;
+  const parentStorageSnapshot = snapshotWizardStorage(parentStorage);
+  const parentBodyClass = document.body.className;
+  const parentActiveElement = document.activeElement;
+  let frame = null;
+  let frameStorageSnapshot = null;
+
+  try {
+    const response = await fetch('../index.html');
+    if (!response.ok) throw new Error('Não foi possível carregar o HTML do app para o Wizard.');
+    const source = await response.text();
+    const baseHref = new URL('../', window.location.href).href;
+    const storageSeed = {
+      gastopro_accounts_v1: JSON.stringify([WIZARD_TEST_ACCOUNT]),
+      gastopro_tutorial_seen: 'true',
+      gastopro_account_setup_seen: 'true'
+    };
+    const bootstrap = `<script>
+      (() => {
+        const values = new Map(Object.entries(${JSON.stringify(storageSeed)}));
+        Object.defineProperty(window, 'localStorage', {
+          configurable: true,
+          value: {
+            getItem: key => values.has(String(key)) ? values.get(String(key)) : null,
+            setItem: (key, value) => values.set(String(key), String(value)),
+            removeItem: key => values.delete(String(key)),
+            clear: () => values.clear(),
+            key: index => [...values.keys()][index] || null,
+            get length() { return values.size; }
+          }
+        });
+        window.__wizardNetworkRequests = [];
+        window.fetch = input => {
+          window.__wizardNetworkRequests.push(String(input && input.url || input));
+          return Promise.reject(new Error('Rede desativada nos testes do Wizard.'));
+        };
+        window.__wizardReady = new Promise(resolve =>
+          window.addEventListener('gastopro:account-data-ready', resolve, { once: true })
+        );
+      })();
+    </script>`;
+    const html = source.replace('<head>', `<head><base href="${baseHref}">${bootstrap}`);
+    if (html === source) throw new Error('Não foi possível preparar o HTML isolado do Wizard.');
+
+    frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;height:900px;border:0;';
+    const loaded = new Promise((resolve, reject) => {
+      const timeoutId = window.setTimeout(
+        () => reject(new Error('Timeout ao carregar a aplicação isolada do Wizard.')),
+        10000
+      );
+      frame.addEventListener('load', () => {
+        window.clearTimeout(timeoutId);
+        resolve();
+      }, { once: true });
+      frame.addEventListener('error', () => {
+        window.clearTimeout(timeoutId);
+        reject(new Error('Não foi possível carregar a aplicação isolada do Wizard.'));
+      }, { once: true });
+    });
+    frame.srcdoc = html;
+    document.body.appendChild(frame);
+    await loaded;
+
+    const wizardWindow = frame.contentWindow;
+    const wizardDocument = frame.contentDocument;
+    assertNotNull(wizardWindow.__wizardReady, 'A aplicação isolada deve iniciar o listener de prontidão.');
+    await Promise.race([
+      wizardWindow.__wizardReady,
+      new Promise((_, reject) => window.setTimeout(
+        () => reject(new Error('Timeout ao inicializar a aplicação isolada do Wizard.')),
+        10000
+      ))
+    ]);
+    frameStorageSnapshot = snapshotWizardStorage(wizardWindow.localStorage);
+
+    await testFn(wizardWindow, wizardDocument);
+    assertEqual(wizardWindow.__wizardNetworkRequests, [], 'O teste não deve chamar a rede ou o Supabase.');
+    assertEqual(snapshotWizardStorage(parentStorage), parentStorageSnapshot,
+      'O Wizard isolado não deve alterar o localStorage compartilhado da suite.');
+    assertEqual(document.body.className, parentBodyClass,
+      'O Wizard isolado não deve alterar as classes do DOM compartilhado da suite.');
+  } finally {
+    if (frameStorageSnapshot && frame && frame.contentWindow) {
+      restoreWizardStorage(frame.contentWindow.localStorage, frameStorageSnapshot);
+    }
+    if (frame) frame.remove();
+    restoreWizardStorage(parentStorage, parentStorageSnapshot);
+    document.body.className = parentBodyClass;
+    if (parentActiveElement && parentActiveElement.isConnected &&
+      typeof parentActiveElement.focus === 'function') {
+      parentActiveElement.focus();
+    }
+  }
+}
+
+function getWizardActiveStep(wizardDocument) {
+  const active = [...wizardDocument.querySelectorAll('.wizard-panel')]
+    .find(panel => panel.classList.contains('active'));
+  return active ? Number(active.id.replace('wPanel', '')) : null;
+}
+
+function openIsolatedWizard(wizardDocument) {
+  wizardDocument.getElementById('sidebarWizardBtn').click();
+  assertTrue(wizardDocument.getElementById('wizardModal').classList.contains('active'));
+  assertEqual(getWizardActiveStep(wizardDocument), 1);
+}
+
+function addWizardIncome(wizardDocument, description, amount) {
+  const today = new Date();
+  const date = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0')
+  ].join('-');
+  wizardDocument.getElementById('wIncomeDesc').value = description;
+  wizardDocument.getElementById('wIncomeAmount').value = String(amount);
+  wizardDocument.getElementById('wIncomeDate').value = date;
+  wizardDocument.getElementById('wAddIncomeBtn').click();
+  return date;
+}
+
+describe('Wizard de Lançamento Rápido', () => {
+  itAsync('avança e volta entre os quatro passos preservando a renda temporária', async () => {
+    await withIsolatedWizard(async (wizardWindow, wizardDocument) => {
+      openIsolatedWizard(wizardDocument);
+      addWizardIncome(wizardDocument, 'Salário de teste', 5000);
+      wizardDocument.getElementById('wizardNextBtn').click();
+      assertEqual(getWizardActiveStep(wizardDocument), 2);
+      wizardDocument.getElementById('wizardNextBtn').click();
+      assertEqual(getWizardActiveStep(wizardDocument), 3);
+      wizardDocument.getElementById('wizardNextBtn').click();
+      assertEqual(getWizardActiveStep(wizardDocument), 4);
+      wizardDocument.getElementById('wizardBackBtn').click();
+      assertEqual(getWizardActiveStep(wizardDocument), 3);
+      wizardDocument.getElementById('wizardBackBtn').click();
+      assertEqual(getWizardActiveStep(wizardDocument), 2);
+      wizardDocument.getElementById('wizardBackBtn').click();
+      assertEqual(getWizardActiveStep(wizardDocument), 1);
+      assertTrue(wizardDocument.getElementById('wizardIncomeList').textContent.includes('Salário de teste'));
+      assertEqual(wizardWindow.FinanceData.getEntries(), []);
+    });
+  });
+
+  itAsync('bloqueia o avanço quando ainda não existe uma renda válida', async () => {
+    await withIsolatedWizard(async (wizardWindow, wizardDocument) => {
+      openIsolatedWizard(wizardDocument);
+      wizardDocument.getElementById('wizardNextBtn').click();
+      assertEqual(getWizardActiveStep(wizardDocument), 1);
+
+      wizardDocument.getElementById('wIncomeDesc').value = 'Renda inválida';
+      wizardDocument.getElementById('wIncomeAmount').value = '0';
+      wizardDocument.getElementById('wAddIncomeBtn').click();
+      assertEqual(wizardDocument.getElementById('wizardIncomeList').querySelectorAll('.wizard-item-card').length, 0);
+      wizardDocument.getElementById('wizardNextBtn').click();
+
+      assertEqual(getWizardActiveStep(wizardDocument), 1);
+      assertEqual(wizardWindow.FinanceData.getEntries(), []);
+    });
+  });
+
+  itAsync('salva renda, gasto fixo e variável na conta isolada selecionada', async () => {
+    await withIsolatedWizard(async (wizardWindow, wizardDocument) => {
+      openIsolatedWizard(wizardDocument);
+      const incomeDate = addWizardIncome(wizardDocument, 'Salário do Wizard', 5000);
+      const month = incomeDate.slice(0, 7);
+      wizardDocument.getElementById('wizardNextBtn').click();
+
+      wizardDocument.getElementById('wFixedDesc').value = 'Aluguel do Wizard';
+      wizardDocument.getElementById('wFixedAmount').value = '1000';
+      wizardDocument.getElementById('wFixedDay').value = '10';
+      wizardDocument.getElementById('wAddFixedBtn').click();
+      wizardDocument.getElementById('wizardNextBtn').click();
+
+      const marketInput = [...wizardDocument.querySelectorAll('.wizard-cat-input')]
+        .find(input => input.dataset.cat === 'Mercado');
+      assertNotNull(marketInput, 'A categoria Mercado deve estar disponível no passo de variáveis.');
+      marketInput.value = '500';
+      marketInput.dispatchEvent(new wizardWindow.Event('input', { bubbles: true }));
+      wizardDocument.getElementById('wVarDay').value = '15';
+      wizardDocument.getElementById('wizardNextBtn').click();
+      wizardDocument.getElementById('wizardAccount').value = WIZARD_TEST_ACCOUNT.id;
+      wizardDocument.getElementById('wizardNextBtn').click();
+
+      await new Promise((resolve, reject) => {
+        const timeoutId = window.setTimeout(
+          () => reject(new Error('Timeout ao concluir o salvamento do Wizard.')),
+          5000
+        );
+        const poll = () => {
+          if (!wizardDocument.getElementById('wizardModal').classList.contains('active')) {
+            window.clearTimeout(timeoutId);
+            resolve();
+            return;
+          }
+          window.setTimeout(poll, 10);
+        };
+        poll();
+      });
+
+      const entries = wizardWindow.FinanceData.getEntries();
+      const income = entries.find(entry => entry.desc === 'Salário do Wizard');
+      const variable = entries.find(entry => entry.desc === 'Mercado');
+      const fixed = wizardWindow.FinanceData.getTemplates()
+        .find(template => template.desc === 'Aluguel do Wizard');
+      assertEqual(entries.length, 2);
+      assertEqual(income.type, 'income');
+      assertEqual(income.amount, 5000);
+      assertEqual(income.date, incomeDate);
+      assertEqual(income.paid, true);
+      assertEqual(income.accountId, WIZARD_TEST_ACCOUNT.id);
+      assertEqual(variable.type, 'variable');
+      assertEqual(variable.amount, 500);
+      assertEqual(variable.category, 'Mercado');
+      assertEqual(variable.date, `${month}-01`);
+      assertEqual(variable.debtInfo.dueDay, 15);
+      assertEqual(variable.accountId, WIZARD_TEST_ACCOUNT.id);
+      assertTrue(fixed, 'O gasto fixo deve ser salvo como template recorrente.');
+      assertEqual(fixed.amount, 1000);
+      assertEqual(fixed.day, '10');
+      assertEqual(fixed.startMonth, month);
+      assertEqual(fixed.accountId, WIZARD_TEST_ACCOUNT.id);
+      assertEqual(wizardWindow.FinanceData.getAccounts().length, 1);
+    });
+  });
+
+  itAsync('fechar pelo botão ou pelo overlay descarta os dados ainda não salvos', async () => {
+    await withIsolatedWizard(async (wizardWindow, wizardDocument) => {
+      const initialStorage = snapshotWizardStorage(wizardWindow.localStorage);
+      openIsolatedWizard(wizardDocument);
+      addWizardIncome(wizardDocument, 'Renda cancelada', 3000);
+      wizardDocument.getElementById('closeWizardBtn').click();
+      assertFalse(wizardDocument.getElementById('wizardModal').classList.contains('active'));
+      assertEqual(wizardWindow.FinanceData.getEntries(), []);
+      assertEqual(wizardWindow.FinanceData.getTemplates(), []);
+      assertEqual(snapshotWizardStorage(wizardWindow.localStorage), initialStorage);
+
+      openIsolatedWizard(wizardDocument);
+      addWizardIncome(wizardDocument, 'Renda descartada', 4000);
+      wizardDocument.getElementById('wizardModal').click();
+      assertFalse(wizardDocument.getElementById('wizardModal').classList.contains('active'));
+      assertEqual(wizardWindow.FinanceData.getEntries(), []);
+      assertEqual(wizardWindow.FinanceData.getTemplates(), []);
+      assertEqual(snapshotWizardStorage(wizardWindow.localStorage), initialStorage);
+    });
+  });
+});
+
 // ================================================================
 // RELATÓRIO FINAL
 // ================================================================
