@@ -457,7 +457,7 @@ const DIAGNOSTIC_VISIBLE_KEY = 'gastopro_diag_visible';
 const DIAGNOSTIC_EVENT_TYPES = new Set([
   'auth-state', 'view-switch', 'page-load', 'pageshow', 'visibilitychange',
   'focus', 'online', 'offline', 'sync', 'refresh', 'controllerchange', 'admin-check',
-  'admin-query-error', 'app-update-notice', 'pending-sync-failure', 'submit-no-effect',
+  'admin-query-error', 'push-sync', 'app-update-notice', 'pending-sync-failure', 'submit-no-effect',
   'sync-failure'
 ]);
 const SYNC_FAILURE_CATEGORIES = new Set([
@@ -479,6 +479,7 @@ const DIAGNOSTIC_ALLOWED_DATA_KEYS = Object.freeze({
   controllerchange: [],
   'admin-check': ['phase', 'result', 'buttonVisibleBefore', 'buttonVisibleAfter'],
   'admin-query-error': ['query', 'code', 'message'],
+  'push-sync': ['result'],
   'app-update-notice': [],
   'pending-sync-failure': ['category', 'operationType', 'errorCode'],
   'submit-no-effect': ['category', 'fieldId'],
@@ -5144,11 +5145,7 @@ let pushPreferenceStatusMessage = '';
 
 function recordPushDiagnostic(result, reason) {
   if (!window.GastoProDiagnostics || typeof window.GastoProDiagnostics.record !== 'function') return;
-  window.GastoProDiagnostics.record('push-sync', {
-    phase: 'end',
-    result,
-    reason
-  });
+  window.GastoProDiagnostics.record('push-sync', { result });
 }
 
 function isPushFeatureAvailable() {
@@ -5370,13 +5367,6 @@ async function handlePushDuePreferenceChange(enabled) {
   let subscription = null;
   let saved = false;
   try {
-    const client = window.SupabaseAuth && window.SupabaseAuth.client;
-    const user = window.SupabaseAuth && await window.SupabaseAuth.getSessionUser();
-    if (!user || !user.id || !client) {
-      setPushPreferenceStatus('Conecte-se à sua conta para ativar os avisos push.');
-      return;
-    }
-
     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     const guidance = window.GastoProPushHelpers.getPushActivationGuidance(
       isAppRunningStandalone(),
@@ -5384,6 +5374,7 @@ async function handlePushDuePreferenceChange(enabled) {
     );
     if (guidance) {
       setPushPreferenceStatus(guidance);
+      if (toggle) toggle.checked = false;
       return;
     }
 
@@ -5391,6 +5382,15 @@ async function handlePushDuePreferenceChange(enabled) {
     if (permission !== 'granted') permission = await Notification.requestPermission();
     if (permission !== 'granted') {
       setPushPreferenceStatus('Permissão negada. A preferência de avisos ficou desligada.');
+      if (toggle) toggle.checked = false;
+      return;
+    }
+
+    const client = window.SupabaseAuth && window.SupabaseAuth.client;
+    const user = window.SupabaseAuth && await window.SupabaseAuth.getSessionUser();
+    if (!user || !user.id || !client) {
+      setPushPreferenceStatus('Conecte-se à sua conta para ativar os avisos push.');
+      if (toggle) toggle.checked = false;
       return;
     }
 
@@ -6257,8 +6257,12 @@ function renderDashboardView(incomes, fixed, variables, totalIncome, totalFixed,
   );
 
   // --- KPI: Gastos do Mês ---
-  setFinancialAmount(document.getElementById('totalExpensesForecastDisplay'), -totalExpenses, { signed: true });
   setFinancialAmount(document.getElementById('totalPaidExpensesDisplay'), -paidExpenses, { signed: true });
+  setFinancialAmount(
+    document.getElementById('totalExpensesForecastDisplay'),
+    -(totalExpenses - paidExpenses),
+    { signed: true }
+  );
 
   // --- Cálculo das porcentagens para a regra 50/30/20 ---
   // Evita divisão por zero quando não há renda cadastrada
@@ -7278,7 +7282,15 @@ function renderIncomesView(incomes, totalIncome) {
  * @param {number} totalExpenses - totalFixed + totalVariable.
  */
 function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalExpenses) {
-  setFinancialAmount(document.getElementById('expensesPageTotal'), -totalExpenses, { signed: true, tone: 'inverse' });
+  const paidExpenses = [...(fixed || []).filter(item => item.active !== false || item.paid), ...(variables || [])]
+    .filter(item => item.paid === true)
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  setFinancialAmount(document.getElementById('expensesPageTotal'), -paidExpenses, { signed: true, tone: 'inverse' });
+  setFinancialAmount(
+    document.getElementById('expensesPageForecast'),
+    -(totalExpenses - paidExpenses),
+    { signed: true, tone: 'inverse' }
+  );
   setFinancialAmount(document.getElementById('subtotalFixedLabel'), -totalFixed, { signed: true });
   setFinancialAmount(document.getElementById('subtotalVarLabel'), -totalVariable, { signed: true });
 

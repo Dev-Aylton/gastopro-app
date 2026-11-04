@@ -12674,6 +12674,33 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     }
   });
 
+  it('registra somente o resultado nos diagnósticos de push', () => {
+    const previousDiagnosticLog = localStorage.getItem(window.GastoProDiagnostics.key);
+    try {
+      window.GastoProDiagnostics.clear();
+      window.GastoProDiagnostics.record('push-sync', {
+        result: 'failure',
+        phase: 'end',
+        reason: 'endpoint privado',
+        endpoint: 'https://push.example/private',
+        p256dh: 'chave-secreta',
+        amount: 125.5,
+        userId: 'usuario-privado'
+      });
+      const entries = window.GastoProDiagnostics.list();
+      const event = entries[entries.length - 1];
+      assertEqual(event.type, 'push-sync');
+      assertEqual(event.data, { result: 'failure' });
+      assertFalse(JSON.stringify(event).includes('push.example'));
+      assertFalse(JSON.stringify(event).includes('chave-secreta'));
+      assertFalse(JSON.stringify(event).includes('usuario-privado'));
+      assertFalse(JSON.stringify(event).includes('125.5'));
+    } finally {
+      if (previousDiagnosticLog === null) localStorage.removeItem(window.GastoProDiagnostics.key);
+      else localStorage.setItem(window.GastoProDiagnostics.key, previousDiagnosticLog);
+    }
+  });
+
   it('exibe o aviso de atualização somente quando há service worker aguardando', () => {
     const previousDiagnosticLog = localStorage.getItem(window.GastoProDiagnostics.key);
     const host = document.createElement('div');
@@ -14517,6 +14544,36 @@ describe('Filtro de contas na home e relatório do contador', () => {
       [withoutPendingExpenses.totalExpenses, withoutPendingExpenses.paidExpenses],
       [25, 25]
     );
+  });
+
+  it('exibe como principal o pago e mantém o previsto em linha separada', () => {
+    const fixture = document.createElement('div');
+    fixture.innerHTML = `
+      <span id="expensesPageTotal"></span>
+      <span id="expensesPageForecast"></span>
+      <span id="subtotalFixedLabel"></span>
+      <span id="subtotalVarLabel"></span>
+      <div id="expensesListDetailed"></div>
+    `;
+    document.body.appendChild(fixture);
+    const previousFilter = state.expenseFilter;
+    state.expenseFilter = 'all';
+    try {
+      window.GastoProExpenseListHelpers.render([
+        { id: 'paid-fixed', type: 'fixed', amount: 100, active: true, paid: true },
+        { id: 'pending-fixed', type: 'fixed', amount: 50, active: true, paid: false }
+      ], [
+        { id: 'paid-variable', type: 'variable', amount: 25, paid: true },
+        { id: 'pending-variable', type: 'variable', amount: 75, paid: false }
+      ], 150, 100, 250);
+      assertEqual(fixture.querySelector('#expensesPageTotal').textContent.replace(/\s+/g, ' '),
+        '− R$ 125,00');
+      assertEqual(fixture.querySelector('#expensesPageForecast').textContent.replace(/\s+/g, ' '),
+        '− R$ 125,00');
+    } finally {
+      state.expenseFilter = previousFilter;
+      fixture.remove();
+    }
   });
 
   it('RM-045 usa o mesmo cálculo de previsão e pago do card no relatório', () => {

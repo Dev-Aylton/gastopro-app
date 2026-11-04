@@ -421,7 +421,7 @@
               </div>
               <div class="action-text">
                 <strong>Buscar nova versão do app</strong>
-                <span>Versão v4.68</span>
+                <span>Versão v4.69</span>
               </div>
             </button>
             <div class="drawer-about-help">
@@ -620,12 +620,12 @@
                   <span>Gastos do Mês</span>
                 </span>
               </div>
-              <span class="kpi-caption">Previsão do mês</span>
-              <div class="kpi-value text-danger financial-amount financial-amount--negative" id="totalExpensesForecastDisplay">R$ 0,00</div>
+              <span class="kpi-caption">Já pago</span>
+              <div class="kpi-value text-danger financial-amount financial-amount--negative" id="totalPaidExpensesDisplay">R$ 0,00</div>
               <span class="badge badge-danger kpi-badge" id="variablePercentage">0% em variáveis</span>
               <div class="kpi-paid-summary">
-                <span>Já pago</span>
-                <strong class="financial-amount financial-amount--negative" id="totalPaidExpensesDisplay">R$ 0,00</strong>
+                <span>Previsto</span>
+                <strong class="financial-amount financial-amount--negative" id="totalExpensesForecastDisplay">R$ 0,00</strong>
               </div>
             </div>
           </div>
@@ -705,7 +705,7 @@
                 <div class="panel-icon bg-purple-soft"><i class="fa-solid fa-chart-pie"></i></div>
                 <div>
                   <h2>Composição dos Gastos do Mês</h2>
-                  <p>Distribuição de despesas por categoria</p>
+                  <p>Distribuição prevista do total de gastos do mês, pagos e a pagar</p>
                 </div>
               </div>
             </div>
@@ -913,8 +913,10 @@
               </div>
             </div>
             <div class="view-header-total">
-              <span class="total-caption">Total de Gastos:</span>
+              <span class="total-caption">Já pago:</span>
               <span class="total-big text-white financial-amount" id="expensesPageTotal">R$ 0,00</span>
+              <span class="total-caption">Previsto:</span>
+              <span class="financial-amount" id="expensesPageForecast">R$ 0,00</span>
             </div>
             <button type="button" class="btn-primary control-center-create" data-action="open-expense-entry">
               <i class="fa-solid fa-plus" aria-hidden="true"></i> Novo gasto
@@ -1333,7 +1335,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.68</span>
+          <span class="badge badge-version">v4.69</span>
         </div>
       </footer>
 
