@@ -422,7 +422,7 @@
               </div>
               <div class="action-text">
                 <strong>Buscar nova versão do app</strong>
-                <span>Versão v4.73</span>
+                <span>Versão v4.74</span>
               </div>
             </button>
             <div class="drawer-about-help">
@@ -1336,7 +1336,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.73</span>
+          <span class="badge badge-version">v4.74</span>
         </div>
       </footer>
 
@@ -2542,10 +2542,10 @@
 
         <h4>3. Preferências opcionais de privacidade</h4>
         <p>As duas opções da seção Privacidade começam desligadas e podem ser alteradas ou revogadas no painel do usuário. O estado, a versão do texto de consentimento, as datas de aceite e de revogação ficam neste aparelho e são sincronizados com a tabela <code>user_consents</code> quando ela está disponível no servidor. A versão atual do texto é <code>2026-11-01-v1</code>.</p>
-        <p><strong>Visibilidade para o administrador:</strong> se você autorizar, o administrador pode ver seu nome, e-mail, data de cadastro e último acesso. Sem essa autorização, o painel mostra somente um número de usuário e a data de cadastro. Essas informações são controladas pela opção de consentimento da tabela <code>user_consents</code>. O administrador não vê os registros individuais.</p>
+        <p><strong>Visibilidade para o administrador:</strong> se você autorizar, o administrador pode ver seu nome e e-mail na lista de usuários; a data de cadastro e o último acesso são consultados pelas colunas <code>created_at</code> e <code>last_sign_in_at</code>. Sem essa autorização, o painel mostra somente um número de usuário, sua data de cadastro e o último acesso quando disponível. Essa escolha fica na tabela <code>user_consents</code>. O painel Admin não mostra os registros individuais de lançamentos, metas ou contas.</p>
         <p><strong>Dados de uso:</strong> a telemetria só é gravada quando você a ativa. Ela registra eventos predefinidos, como telas abertas, importações concluídas e tipos de erro; não inclui textos de lançamentos, descrições ou valores. Os eventos ficam associados ao identificador da conta para calcular contagens de usuários vinculados e são removidos após até 12 meses ou quando a conta é excluída. Revogar a opção impede novos registros, mas não apaga imediatamente eventos já gravados.</p>
-        <p><strong>Registros de aviso de vencimentos:</strong> quando você ativa os avisos de vencimentos próximos no app instalado, o servidor recebe a inscrição de notificação e uma lista de datas de vencimento próximas com a quantidade de itens em cada data, sem descrições, valores ou nomes de lançamentos. O servidor guarda o usuário, o identificador e as chaves técnicas da inscrição, a data de vencimento, a quantidade de itens naquela data e o registro de envio. Ao desativar os avisos, o app desliga a preferência, remove a inscrição atual do navegador e do Supabase e limpa os vencimentos enviados pelo app.</p>
-        <p>Ao usar “Excluir meus dados”, o app apaga os dados financeiros locais e sincronizados listados nesta Política. No código atual, essa ação não inclui a remoção das tabelas de push; os registros do servidor são removidos pela exclusão da conta Auth, cujos registros associados usam exclusão em cascata. A exclusão da conta deve ser feita pelo painel do Supabase, não pelo aplicativo.</p>
+        <p><strong>Registros de aviso de vencimentos:</strong> quando você ativa os avisos de vencimentos próximos no app instalado, o servidor recebe e guarda a inscrição de push do usuário, com endpoint e chaves técnicas, além das datas futuras de vencimento e da quantidade de itens em cada data. Também guarda no registro de envios o usuário, a data do vencimento e o horário de envio. Os nomes, descrições, contas ou valores dos lançamentos não são enviados nessa lista.</p>
+        <p><strong>Desativar ou excluir:</strong> ao desativar os avisos, o app cancela a inscrição ativa do navegador, apaga as linhas do usuário nas tabelas <code>push_subscriptions</code> e <code>push_due_dates</code> e desliga a preferência local. Ao usar “Excluir meus dados”, o mesmo processo é executado antes da limpeza dos dados financeiros locais e sincronizados; falha na limpeza de avisos é informada e impede a confirmação do apagamento como concluído. O usuário não possui acesso de exclusão ao <code>push_notification_log</code>; esses registros permanecem até a exclusão da conta Auth e são removidos pelas referências em cascata. A exclusão da conta deve ser feita pelo painel do Supabase, não pelo aplicativo.</p>
         <p><strong>Registro local de diagnóstico:</strong> o painel oculto de diagnóstico guarda no próprio aparelho somente categorias e resultados técnicos predefinidos de falhas, sem textos, valores de lançamentos, descrições ou dados financeiros. Ele não envia esse registro ao servidor. Você pode ocultar o painel e limpar o registro local.</p>
         <p><strong>Confirmação de saldo:</strong> a chave local <code>gastopro_balance_checks_v1</code> guarda somente a data da última confirmação e o marcador de importação posterior por conta. Esses dados ficam apenas neste aparelho e são apagados ao limpar os dados ou excluir a conta.</p>
 

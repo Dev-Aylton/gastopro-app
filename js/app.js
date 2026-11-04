@@ -5321,7 +5321,13 @@ async function cleanupPushForUser(userId, { timeoutMs = 0, reason = 'logout' } =
     let failed = false;
     if ('serviceWorker' in navigator) {
       try {
-        const registration = await navigator.serviceWorker.ready;
+        const registration = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise((resolve, reject) => setTimeout(
+            () => reject(new Error('service-worker-ready-timeout')),
+            2000
+          ))
+        ]);
         subscription = await registration.pushManager.getSubscription();
       } catch {
         recordPushDiagnostic('failure', 'subscription-cleanup');
@@ -5332,6 +5338,7 @@ async function cleanupPushForUser(userId, { timeoutMs = 0, reason = 'logout' } =
       try {
         const { error } = await client.from('push_subscriptions')
           .delete()
+          .select('id')
           .eq('user_id', userId)
           .eq('endpoint', subscription.endpoint);
         if (error) throw new Error('subscription-delete');
@@ -5340,21 +5347,49 @@ async function cleanupPushForUser(userId, { timeoutMs = 0, reason = 'logout' } =
         failed = true;
       }
     }
-    if (client && userId && !failed) {
+    if (client && userId) {
       try {
         const { count, error } = await client.from('push_subscriptions')
           .select('id', { count: 'exact', head: true })
           .eq('user_id', userId);
         if (error) throw new Error('subscription-count');
-        if (count === 0) {
-          const { error: snapshotError } = await client.rpc(
-            'push_replace_due_dates',
-            { p_dates: [] }
-          );
-          if (snapshotError) throw new Error('snapshot-clear');
+        if (count !== 0) {
+          const { error: deleteError } = await client.from('push_subscriptions')
+            .delete()
+            .select('id')
+            .eq('user_id', userId);
+          if (deleteError) throw new Error('subscription-delete-all');
+          const { count: remaining, error: remainingError } = await client.from('push_subscriptions')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', userId);
+          if (remainingError) throw new Error('subscription-count-remaining');
+          if (remaining !== 0) failed = true;
         }
       } catch {
         recordPushDiagnostic('failure', 'subscription-count');
+        failed = true;
+      }
+    }
+    if (client && userId) {
+      try {
+        const { count, error } = await client.from('push_due_dates')
+          .select('due_date', { count: 'exact', head: true })
+          .eq('user_id', userId);
+        if (error) throw new Error('due-date-count');
+        if (count !== 0) {
+          const { error: deleteError } = await client.from('push_due_dates')
+            .delete()
+            .select('due_date')
+            .eq('user_id', userId);
+          if (deleteError) throw new Error('due-date-delete');
+          const { count: remaining, error: remainingError } = await client.from('push_due_dates')
+            .select('due_date', { count: 'exact', head: true })
+            .eq('user_id', userId);
+          if (remainingError) throw new Error('due-date-count-remaining');
+          if (remaining !== 0) failed = true;
+        }
+      } catch {
+        recordPushDiagnostic('failure', 'due-date-cleanup');
         failed = true;
       }
     }

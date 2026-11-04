@@ -4154,7 +4154,7 @@ describe('Canal Fale comigo', () => {
       'user_consents',
       '2026-11-01-v1',
       'telemetria só é gravada quando você a ativa',
-      'O administrador não vê os registros individuais'
+      'O painel Admin não mostra os registros individuais de lançamentos, metas ou contas'
     ].forEach(fragment => assertTrue(text.includes(fragment), `Política sem: ${fragment}`));
     assertFalse(/Google Fonts|cdnjs|Font Awesome/i.test(text));
   });
@@ -5696,6 +5696,55 @@ describe('FinanceData — clearAll()', () => {
 });
 
 describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
+  itAsync('aciona a limpeza de push ao excluir todos os dados', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-delete-clears-push';
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: 'Pessoa', email: 'pessoa@example.com', userId });
+    const previousAuth = window.SupabaseAuth;
+    const previousCleanup = window.cleanupPushForUser;
+    let cleanupCalls = [];
+    window.cleanupPushForUser = async (targetUserId, options) => {
+      cleanupCalls.push({ targetUserId, options });
+      return true;
+    };
+    window.SupabaseAuth = {
+      deleteAllMyData: async () => ({ success: true })
+    };
+    try {
+      const result = await FinanceData.deleteAllUserData('APAGAR DADOS');
+      assertTrue(result.success);
+      assertEqual(cleanupCalls, [{
+        targetUserId: userId,
+        options: { reason: 'account-data-deletion' }
+      }]);
+    } finally {
+      window.cleanupPushForUser = previousCleanup;
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('não relata sucesso quando a limpeza de push falha', async () => {
+    setupMockLocalStorage();
+    const userId = 'user-delete-push-failure';
+    localStorage.setItem('gastopro_last_uid', userId);
+    FinanceData.saveProfile({ name: 'Pessoa', email: 'pessoa@example.com', userId });
+    const previousAuth = window.SupabaseAuth;
+    const previousCleanup = window.cleanupPushForUser;
+    window.cleanupPushForUser = async () => false;
+    window.SupabaseAuth = {
+      deleteAllMyData: async () => ({ success: true })
+    };
+    try {
+      const result = await FinanceData.deleteAllUserData('APAGAR DADOS');
+      assertFalse(result.success);
+      assertTrue(String(result.error).includes('avisos de vencimentos não puderam ser removidos'));
+    } finally {
+      window.cleanupPushForUser = previousCleanup;
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
   itAsync('exige APAGAR DADOS antes de apagar cartões, regras ou outros dados', async () => {
     setupMockLocalStorage();
     const card = { id: crypto.randomUUID(), name: 'Cartão preservado', totalLimit: 1000 };
@@ -5748,6 +5797,8 @@ describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
 
     const deletedForUser = [];
     const previousAuth = window.SupabaseAuth;
+    const previousCleanup = window.cleanupPushForUser;
+    window.cleanupPushForUser = async () => true;
     window.SupabaseAuth = {
       deleteAllMyData: async targetUserId => {
         deletedForUser.push(targetUserId);
@@ -5773,6 +5824,7 @@ describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
       assertEqual(localStorage.getItem('gastopro_theme'), 'light');
     } finally {
       window.SupabaseAuth = previousAuth;
+      window.cleanupPushForUser = previousCleanup;
     }
   });
 
@@ -5785,6 +5837,8 @@ describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
     localStorage.setItem('gastopro_credit_cards_v1', JSON.stringify([card]));
     localStorage.setItem('gastopro_fixed_import_rules_v1', JSON.stringify(['mercado']));
     const previousAuth = window.SupabaseAuth;
+    const previousCleanup = window.cleanupPushForUser;
+    window.cleanupPushForUser = async () => true;
     window.SupabaseAuth = {
       deleteAllMyData: async () => ({ success: false, error: 'Falha de rede.' })
     };
@@ -5796,6 +5850,7 @@ describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
       assertEqual(FinanceData.getFixedImportRules(), ['mercado']);
     } finally {
       window.SupabaseAuth = previousAuth;
+      window.cleanupPushForUser = previousCleanup;
     }
   });
 });
@@ -12415,6 +12470,8 @@ describe('Layout responsivo e tipografia mobile', () => {
     localStorage.setItem(legacyKey, '25');
     localStorage.setItem(`${legacyKey}:${userId}`, '35');
     const previousAuth = window.SupabaseAuth;
+    const previousCleanup = window.cleanupPushForUser;
+    window.cleanupPushForUser = async () => true;
     window.SupabaseAuth = { deleteAllMyData: async () => ({ success: true }) };
     try {
       const deleteResult = await FinanceData.deleteAllUserData('APAGAR DADOS');
@@ -12423,6 +12480,7 @@ describe('Layout responsivo e tipografia mobile', () => {
       assertNull(localStorage.getItem(`${legacyKey}:${userId}`));
     } finally {
       window.SupabaseAuth = previousAuth;
+      window.cleanupPushForUser = previousCleanup;
     }
   });
 });
