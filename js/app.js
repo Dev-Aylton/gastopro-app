@@ -4869,7 +4869,7 @@ function buildMonthlyFinancialSummary(currentItems, previousItems) {
 
 function filterFinancialItemsByAccount(items, accounts, filter) {
   if (filter === 'all') return items;
-  const accountTypeById = new Map(accounts.map(account => [account.id, account.type]));
+  const accountTypeById = new Map((accounts || []).map(account => [account.id, account.type]));
   if (filter === 'PF' || filter === 'PJ') {
     return items.filter(item => item.accountId && accountTypeById.get(item.accountId) === filter);
   }
@@ -4878,6 +4878,91 @@ function filterFinancialItemsByAccount(items, accounts, filter) {
     return items.filter(item => item.accountId === accountId);
   }
   return items;
+}
+
+function addISODateDays(date, days) {
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    !Number.isInteger(days)) return null;
+  const dateValue = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(dateValue.getTime()) || dateValue.toISOString().slice(0, 10) !== date) return null;
+  dateValue.setUTCDate(dateValue.getUTCDate() + days);
+  return dateValue.toISOString().slice(0, 10);
+}
+
+function getDashboardDueNoticeItems({
+  monthItems = [],
+  entries = [],
+  templates = [],
+  accounts = [],
+  filter = 'all',
+  today,
+  horizonDays = 7
+}) {
+  const dueHorizon = addISODateDays(today, horizonDays);
+  if (!dueHorizon) return [];
+  const isUnpaidDue = item => item && item.type !== 'income' && item.paid !== true &&
+    item.active !== false && !item.isCardInstallment && typeof item.date === 'string';
+  const upcomingDueItems = filterFinancialItemsByAccount(monthItems, accounts, filter)
+    .filter(item => isUnpaidDue(item) && item.date >= today && item.date <= dueHorizon);
+  const overdueEntryItems = filterFinancialItemsByAccount(entries, accounts, filter)
+    .filter(item => isUnpaidDue(item) && item.date < today);
+  const overdueTemplateItems = filterFinancialItemsByAccount(
+    getLatestOverdueTemplateItems(templates, today),
+    accounts,
+    filter
+  );
+  const dueByDate = new Map();
+  [...overdueEntryItems, ...overdueTemplateItems, ...upcomingDueItems].forEach(item => {
+    dueByDate.set(`${item.id || item.desc}:${item.date}`, item);
+  });
+  return [...dueByDate.values()];
+}
+
+function getSaoPauloISODate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function buildPushDueDateSnapshot({
+  monthlyItemsByMonth = {},
+  entries = [],
+  templates = [],
+  accounts = [],
+  filter = 'all',
+  referenceDate,
+  horizonDays = 60,
+  maxItems = 100
+}) {
+  if (!addISODateDays(referenceDate, 0) || !Number.isInteger(horizonDays) || horizonDays < 0 ||
+    !Number.isInteger(maxItems) || maxItems < 1) return [];
+  const countsByDate = new Map();
+  for (let offset = 0; offset <= horizonDays; offset++) {
+    const dueDate = addISODateDays(referenceDate, offset);
+    const monthItems = monthlyItemsByMonth[dueDate.slice(0, 7)] || [];
+    getDashboardDueNoticeItems({
+      monthItems,
+      entries,
+      templates,
+      accounts,
+      filter,
+      today: dueDate,
+      horizonDays: 7
+    }).forEach(item => {
+      if (item.date === dueDate) {
+        countsByDate.set(dueDate, (countsByDate.get(dueDate) || 0) + 1);
+      }
+    });
+  }
+  return [...countsByDate.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .slice(0, Math.min(100, maxItems))
+    .map(([due_date, item_count]) => ({ due_date, item_count }));
 }
 
 const GOOGLE_SIGN_IN_ERROR_MESSAGE =
@@ -5037,6 +5122,8 @@ window.GastoProAccountFilterHelpers = Object.freeze({
 
 const NOTIFICATION_PREFERENCES_KEY = 'gastopro_notification_preferences_v1';
 const NOTIFICATION_ITEMS_KEY = 'gastopro_notifications_v1';
+const PUSH_DUE_PREFERENCE_KEY = 'gastopro_push_due_enabled_v1';
+const PUSH_DUE_SNAPSHOT_KEY_PREFIX = 'gastopro_push_due_snapshot_v1:';
 const NOTIFICATION_TYPES = Object.freeze({
   dueSoon: 'Vencimentos próximos',
   insufficientBalance: 'Saldo insuficiente',
@@ -5052,6 +5139,309 @@ const NOTIFICATION_PRIORITY_PRESENTATION = Object.freeze({
   attention: { label: 'Atenção', icon: 'fa-triangle-exclamation' },
   info: { label: 'Info', icon: 'fa-circle-info' }
 });
+const pushSnapshotTimers = new Map();
+let pushPreferenceStatusMessage = '';
+
+function recordPushDiagnostic(result, reason) {
+  if (!window.GastoProDiagnostics || typeof window.GastoProDiagnostics.record !== 'function') return;
+  window.GastoProDiagnostics.record('push-sync', {
+    phase: 'end',
+    result,
+    reason
+  });
+}
+
+function isPushFeatureAvailable() {
+  return Boolean(window.GastoProPushHelpers && window.GastoProPushHelpers.publicKey) &&
+    'serviceWorker' in navigator &&
+    typeof window.PushManager !== 'undefined' &&
+    typeof window.Notification !== 'undefined' &&
+    typeof window.Notification.requestPermission === 'function';
+}
+
+function isAppRunningStandalone() {
+  return (typeof window.matchMedia === 'function' &&
+    window.matchMedia('(display-mode: standalone)').matches) ||
+    navigator.standalone === true;
+}
+
+function getPushDuePreference() {
+  try {
+    return localStorage.getItem(PUSH_DUE_PREFERENCE_KEY) === 'true';
+  } catch {
+    recordPushDiagnostic('failure', 'preference-read');
+    return false;
+  }
+}
+
+function savePushDuePreference(enabled) {
+  localStorage.setItem(PUSH_DUE_PREFERENCE_KEY, enabled ? 'true' : 'false');
+}
+
+function setPushPreferenceStatus(message) {
+  pushPreferenceStatusMessage = message;
+  const status = document.getElementById('pushDuePreferenceStatus');
+  if (status) status.textContent = message;
+}
+
+function cancelPushSnapshotSync(userId) {
+  const timer = pushSnapshotTimers.get(userId);
+  if (timer) clearTimeout(timer);
+  pushSnapshotTimers.delete(userId);
+}
+
+function buildPushSnapshotForCurrentUser() {
+  const referenceDate = getSaoPauloISODate();
+  const monthlyItemsByMonth = {};
+  for (let offset = 0; offset <= 60; offset++) {
+    const date = addISODateDays(referenceDate, offset);
+    const month = date.slice(0, 7);
+    if (!Object.prototype.hasOwnProperty.call(monthlyItemsByMonth, month)) {
+      monthlyItemsByMonth[month] = FinanceData.getByMonth(month);
+    }
+  }
+  return buildPushDueDateSnapshot({
+    monthlyItemsByMonth,
+    entries: FinanceData.getEntries(),
+    templates: FinanceData.getActiveTemplates(),
+    accounts: FinanceData.getAccounts(),
+    filter: 'all',
+    referenceDate
+  });
+}
+
+function clearPushDueDateSnapshotCache(userId, reason) {
+  if (!window.GastoProPushHelpers ||
+    !window.GastoProPushHelpers.shouldClearPushSnapshotCache(reason)) return;
+  try {
+    if (userId) {
+      localStorage.removeItem(`${PUSH_DUE_SNAPSHOT_KEY_PREFIX}${userId}`);
+      return;
+    }
+    for (let index = localStorage.length - 1; index >= 0; index--) {
+      const key = localStorage.key(index);
+      if (key && key.startsWith(PUSH_DUE_SNAPSHOT_KEY_PREFIX)) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    recordPushDiagnostic('failure', 'snapshot-cache-clear');
+  }
+}
+
+async function syncPushDueDateSnapshot(userId, { force = false } = {}) {
+  if (!userId || !isPushFeatureAvailable() || !getPushDuePreference()) return;
+  try {
+    const client = window.SupabaseAuth && window.SupabaseAuth.client;
+    if (!client || !navigator.serviceWorker) return;
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return;
+
+    const { data: storedSubscription, error: subscriptionError } = await client
+      .from('push_subscriptions')
+      .select('endpoint')
+      .eq('user_id', userId)
+      .eq('endpoint', subscription.endpoint)
+      .maybeSingle();
+    if (subscriptionError) throw new Error('subscription-read');
+    if (!storedSubscription) return;
+
+    const snapshot = buildPushSnapshotForCurrentUser();
+    const snapshotJson = JSON.stringify(snapshot);
+    const storageKey = `${PUSH_DUE_SNAPSHOT_KEY_PREFIX}${userId}`;
+    if (!window.GastoProPushHelpers.shouldBypassPushSnapshotCache(force) &&
+      localStorage.getItem(storageKey) === snapshotJson) return;
+
+    const { error } = await client.rpc('push_replace_due_dates', { p_dates: snapshot });
+    if (error) throw new Error('snapshot-write');
+    localStorage.setItem(storageKey, snapshotJson);
+    recordPushDiagnostic('success', 'snapshot');
+  } catch {
+    recordPushDiagnostic('failure', 'snapshot');
+  }
+}
+
+function schedulePushDueDateSnapshot(userId, { force = false } = {}) {
+  if (!userId || !isPushFeatureAvailable() || !getPushDuePreference()) return;
+  cancelPushSnapshotSync(userId);
+  pushSnapshotTimers.set(userId, setTimeout(() => {
+    pushSnapshotTimers.delete(userId);
+    syncPushDueDateSnapshot(userId, { force });
+  }, 500));
+}
+
+async function cleanupPushForUser(userId, { timeoutMs = 0, reason = 'logout' } = {}) {
+  if (userId) cancelPushSnapshotSync(userId);
+  try {
+    savePushDuePreference(false);
+  } catch {
+    recordPushDiagnostic('failure', 'preference-clear');
+  }
+  clearPushDueDateSnapshotCache(userId, reason);
+  if (!window.GastoProPushHelpers || !window.GastoProPushHelpers.publicKey) return true;
+
+  const cleanup = (async () => {
+    const client = window.SupabaseAuth && window.SupabaseAuth.client;
+    let subscription = null;
+    let failed = false;
+    if ('serviceWorker' in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        subscription = await registration.pushManager.getSubscription();
+      } catch {
+        recordPushDiagnostic('failure', 'subscription-cleanup');
+        failed = true;
+      }
+    }
+    if (subscription && client && userId) {
+      try {
+        const { error } = await client.from('push_subscriptions')
+          .delete()
+          .eq('user_id', userId)
+          .eq('endpoint', subscription.endpoint);
+        if (error) throw new Error('subscription-delete');
+      } catch {
+        recordPushDiagnostic('failure', 'subscription-delete');
+        failed = true;
+      }
+    }
+    if (client && userId && !failed) {
+      try {
+        const { count, error } = await client.from('push_subscriptions')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId);
+        if (error) throw new Error('subscription-count');
+        if (count === 0) {
+          const { error: snapshotError } = await client.rpc(
+            'push_replace_due_dates',
+            { p_dates: [] }
+          );
+          if (snapshotError) throw new Error('snapshot-clear');
+        }
+      } catch {
+        recordPushDiagnostic('failure', 'subscription-count');
+        failed = true;
+      }
+    }
+    if (subscription) {
+      try {
+        await subscription.unsubscribe();
+      } catch {
+        recordPushDiagnostic('failure', 'subscription-cleanup');
+        failed = true;
+      }
+    }
+    if (failed) recordPushDiagnostic('failure', 'cleanup');
+    return !failed;
+  })();
+
+  if (!timeoutMs) return cleanup;
+  let timeoutId;
+  const timedOut = new Promise(resolve => {
+    timeoutId = setTimeout(() => resolve(false), timeoutMs);
+  });
+  const result = await Promise.race([cleanup, timedOut]);
+  clearTimeout(timeoutId);
+  if (!result) recordPushDiagnostic('failure', 'cleanup-timeout');
+  return result;
+}
+
+async function handlePushDuePreferenceChange(enabled) {
+  const toggle = document.getElementById('pushDuePreferenceToggle');
+  setPushPreferenceStatus('');
+  if (!enabled) {
+    try {
+      savePushDuePreference(false);
+    } catch {
+      recordPushDiagnostic('failure', 'preference-clear');
+    }
+    let user = null;
+    try {
+      user = window.SupabaseAuth && await window.SupabaseAuth.getSessionUser();
+    } catch {
+      recordPushDiagnostic('failure', 'session-read');
+    }
+    await cleanupPushForUser(user && user.id, { reason: 'disabled' });
+    renderNotificationCenter();
+    return;
+  }
+
+  let subscription = null;
+  let saved = false;
+  try {
+    const client = window.SupabaseAuth && window.SupabaseAuth.client;
+    const user = window.SupabaseAuth && await window.SupabaseAuth.getSessionUser();
+    if (!user || !user.id || !client) {
+      setPushPreferenceStatus('Conecte-se à sua conta para ativar os avisos push.');
+      return;
+    }
+
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const guidance = window.GastoProPushHelpers.getPushActivationGuidance(
+      isAppRunningStandalone(),
+      isIOS
+    );
+    if (guidance) {
+      setPushPreferenceStatus(guidance);
+      return;
+    }
+
+    let permission = Notification.permission;
+    if (permission !== 'granted') permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      setPushPreferenceStatus('Permissão negada. A preferência de avisos ficou desligada.');
+      return;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: window.GastoProPushHelpers.base64UrlToUint8Array(
+          window.GastoProPushHelpers.publicKey
+        )
+      });
+    }
+    const p256dh = subscription.getKey('p256dh');
+    const auth = subscription.getKey('auth');
+    if (!p256dh || !auth) throw new Error('subscription-keys');
+
+    const { error } = await client.from('push_subscriptions').insert({
+      endpoint: subscription.endpoint,
+      p256dh: window.GastoProPushHelpers.uint8ArrayToBase64Url(new Uint8Array(p256dh)),
+      auth: window.GastoProPushHelpers.uint8ArrayToBase64Url(new Uint8Array(auth))
+    });
+    if (error && error.code !== '23505') {
+      const { data: count, error: countError } = await client.rpc(
+        'push_subscription_count_for_current_user'
+      );
+      if (!countError && Number(count) >= 5) {
+        setPushPreferenceStatus('Limite de 5 aparelhos inscritos atingido. Remova um aparelho antes de ativar outro.');
+        return;
+      }
+      throw new Error('subscription-save');
+    }
+    saved = true;
+    savePushDuePreference(true);
+    clearPushDueDateSnapshotCache(user.id, 'subscription');
+    renderNotificationCenter();
+    schedulePushDueDateSnapshot(user.id, { force: true });
+  } catch {
+    recordPushDiagnostic('failure', 'subscription-enable');
+    setPushPreferenceStatus('Não foi possível ativar os avisos push neste aparelho.');
+  } finally {
+    if (subscription && !saved) {
+      try {
+        await subscription.unsubscribe();
+      } catch {
+        recordPushDiagnostic('failure', 'subscription-rollback');
+      }
+    }
+    if (!saved && toggle) toggle.checked = false;
+  }
+}
 
 function getNotificationPriority(item) {
   if (item && Object.prototype.hasOwnProperty.call(NOTIFICATION_PRIORITY_RANK, item.priority)) {
@@ -5424,13 +5814,24 @@ function renderNotificationCenter() {
     : '<p class="notifications-empty">Nenhum aviso por enquanto.</p>';
 
   const preferences = getNotificationPreferences();
-  settings.innerHTML = Object.entries(NOTIFICATION_TYPES).map(([type, label]) => `
+  const notificationSettings = Object.entries(NOTIFICATION_TYPES).map(([type, label]) => `
     <label class="notification-setting">
       <input type="checkbox" data-notification-type="${escapeHtml(type)}"
         ${preferences[type] ? 'checked' : ''}>
       <span>${escapeHtml(label)}</span>
     </label>
   `).join('');
+  const pushSetting = isPushFeatureAvailable() ? `
+    <div class="push-notification-setting">
+      <label for="pushDuePreferenceToggle">
+        <input id="pushDuePreferenceToggle" type="checkbox"
+          ${getPushDuePreference() ? 'checked' : ''}>
+        <span>Avisos de vencimentos próximos</span>
+      </label>
+      <p id="pushDuePreferenceStatus" role="status" aria-live="polite">${escapeHtml(pushPreferenceStatusMessage)}</p>
+    </div>
+  ` : '';
+  settings.innerHTML = notificationSettings + pushSetting;
 }
 
 function notificationEventPathContains(event, element) {
@@ -5538,7 +5939,10 @@ window.GastoProFinancialInsights = {
   calculateUpcomingDueWarning,
   countUncoveredDueExpenses,
   buildMonthlySummary: buildMonthlyFinancialSummary,
-  filterByAccount: filterFinancialItemsByAccount
+  filterByAccount: filterFinancialItemsByAccount,
+  getDashboardDueNoticeItems,
+  buildPushDueDateSnapshot,
+  getSaoPauloISODate
 };
 
 function getFinancialInsightAlertMarkup(key, title, content) {
@@ -5605,25 +6009,14 @@ function renderFinancialInsights() {
     }
 
     const due = calculateUpcomingDueWarning(0, pendingItems, today);
-    const dueHorizon = new Date(
-      new Date(`${today}T00:00:00Z`).getTime() + 7 * 86400000
-    ).toISOString().slice(0, 10);
-    const isUnpaidDue = item => item && item.type !== 'income' && item.paid !== true &&
-      item.active !== false && !item.isCardInstallment && typeof item.date === 'string';
-    const upcomingDueItems = pendingItems.filter(item =>
-      isUnpaidDue(item) && item.date >= today && item.date <= dueHorizon
-    );
-    const overdueEntryItems = filterFinancialItemsByAccount(
-      FinanceData.getEntries(), accounts, filter
-    ).filter(item => isUnpaidDue(item) && item.date < today);
-    const overdueTemplateItems = filterFinancialItemsByAccount(
-      getLatestOverdueTemplateItems(FinanceData.getActiveTemplates(), today), accounts, filter
-    );
-    const dueByDate = new Map();
-    [...overdueEntryItems, ...overdueTemplateItems, ...upcomingDueItems].forEach(item => {
-      dueByDate.set(`${item.id || item.desc}:${item.date}`, item);
+    const dueEventItems = getDashboardDueNoticeItems({
+      monthItems: FinanceData.getByMonth(actualMonth),
+      entries: FinanceData.getEntries(),
+      templates: FinanceData.getActiveTemplates(),
+      accounts,
+      filter,
+      today
     });
-    const dueEventItems = [...dueByDate.values()];
     const dueEventId = dueEventItems.map(item => item.id)
       .filter(id => typeof id === 'string' && id)
       .sort()[0] || 'monthly';
@@ -8620,7 +9013,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (notificationsPanel) {
     notificationsPanel.addEventListener('change', event => {
       const input = event.target;
-      if (!(input instanceof HTMLInputElement) || !input.dataset.notificationType) return;
+      if (!(input instanceof HTMLInputElement)) return;
+      if (input.id === 'pushDuePreferenceToggle') {
+        handlePushDuePreferenceChange(input.checked).catch(() => {
+          recordPushDiagnostic('failure', 'preference-change');
+        });
+        return;
+      }
+      if (!input.dataset.notificationType) return;
       const type = input.dataset.notificationType;
       try {
         saveNotificationPreferences({ [type]: input.checked });
@@ -10725,6 +11125,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderAll();
         subscribeToUserRealtime(userId);
+        schedulePushDueDateSnapshot(userId);
         return true;
       } catch (e) {
         recordSyncFailureDiagnostic('excecao', e);
@@ -11090,6 +11491,12 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         });
         return;
+      }
+
+      try {
+        await cleanupPushForUser(user.id, { timeoutMs: 1500 });
+      } catch {
+        recordPushDiagnostic('failure', 'logout-cleanup');
       }
 
       try {

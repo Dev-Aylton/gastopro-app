@@ -13,6 +13,7 @@ self.GastoProCacheAssets = Object.freeze({
     './js/importer.js',
     './js/loans.js',
     './js/onboarding.js',
+    './js/push-config.js',
     './js/app.js',
     './js/a11y.js',
     './js/xlsx-writer.js',

@@ -14852,6 +14852,18 @@ function restoreWizardStorage(storage, snapshot) {
   snapshot.forEach(([key, value]) => storage.setItem(key, value));
 }
 
+function getWizardStorageChangeMessage(before, after) {
+  const beforeValues = new Map(before);
+  const afterValues = new Map(after);
+  const added = [...afterValues.keys()].filter(key => !beforeValues.has(key));
+  const removed = [...beforeValues.keys()].filter(key => !afterValues.has(key));
+  const changed = [...afterValues.keys()].filter(key =>
+    beforeValues.has(key) && beforeValues.get(key) !== afterValues.get(key)
+  );
+  const formatKeys = keys => keys.length ? keys.join(', ') : '(nenhuma)';
+  return `Chaves adicionadas: ${formatKeys(added)}; removidas: ${formatKeys(removed)}; alteradas: ${formatKeys(changed)}.`;
+}
+
 async function withIsolatedWizard(testFn) {
   const parentStorage = window.localStorage;
   const parentStorageSnapshot = snapshotWizardStorage(parentStorage);
@@ -14931,8 +14943,9 @@ async function withIsolatedWizard(testFn) {
 
     await testFn(wizardWindow, wizardDocument);
     assertEqual(wizardWindow.__wizardNetworkRequests, [], 'O teste não deve chamar a rede ou o Supabase.');
-    assertEqual(snapshotWizardStorage(parentStorage), parentStorageSnapshot,
-      'O Wizard isolado não deve alterar o localStorage compartilhado da suite.');
+    const parentStorageAfter = snapshotWizardStorage(parentStorage);
+    assertEqual(parentStorageAfter, parentStorageSnapshot,
+      `O Wizard isolado não deve alterar o localStorage compartilhado da suite. ${getWizardStorageChangeMessage(parentStorageSnapshot, parentStorageAfter)}`);
     assertEqual(document.body.className, parentBodyClass,
       'O Wizard isolado não deve alterar as classes do DOM compartilhado da suite.');
   } finally {
@@ -15969,6 +15982,154 @@ describe('Painel do usuário e avisos', () => {
       state.expenseFilter = previousFilter;
       host.remove();
     }
+  });
+});
+
+describe('Snapshot de vencimentos push', () => {
+  const insights = window.GastoProFinancialInsights;
+  const referenceDate = '2026-11-01';
+
+  function makeSnapshot(options = {}) {
+    return insights.buildPushDueDateSnapshot({
+      referenceDate,
+      monthlyItemsByMonth: {},
+      ...options
+    });
+  }
+
+  function addDays(date, days) {
+    const result = new Date(`${date}T00:00:00Z`);
+    result.setUTCDate(result.getUTCDate() + days);
+    return result.toISOString().slice(0, 10);
+  }
+
+  function byMonth(items) {
+    return items.reduce((months, item) => {
+      const month = item.date.slice(0, 7);
+      (months[month] ||= []).push(item);
+      return months;
+    }, {});
+  }
+
+  it('converte a chave base64url VAPID em bytes e de volta', () => {
+    const push = window.GastoProPushHelpers;
+    const bytes = push.base64UrlToUint8Array('-_8');
+    assertEqual([...bytes], [251, 255]);
+    assertEqual(push.uint8ArrayToBase64Url(bytes), '-_8');
+  });
+
+  it('limpa o cache local ao desligar, sair ou inscrever o aparelho', () => {
+    const push = window.GastoProPushHelpers;
+    assertTrue(push.shouldClearPushSnapshotCache('disabled'));
+    assertTrue(push.shouldClearPushSnapshotCache('logout'));
+    assertTrue(push.shouldClearPushSnapshotCache('subscription'));
+    assertFalse(push.shouldClearPushSnapshotCache('sync'));
+  });
+
+  it('ignora a comparação do cache após inscrever o aparelho', () => {
+    const push = window.GastoProPushHelpers;
+    assertTrue(push.shouldBypassPushSnapshotCache(true));
+    assertFalse(push.shouldBypassPushSnapshotCache(false));
+  });
+
+  it('não inclui vencimento já pago', () => {
+    assertEqual(makeSnapshot({
+      monthlyItemsByMonth: byMonth([
+        { id: 'paid', type: 'fixed', date: referenceDate, paid: true }
+      ])
+    }), []);
+  });
+
+  it('não inventa vencimentos quando não há itens', () => {
+    assertEqual(makeSnapshot(), []);
+  });
+
+  it('exclui parcelas de cartão do snapshot', () => {
+    assertEqual(makeSnapshot({
+      monthlyItemsByMonth: byMonth([
+        { id: 'installment', type: 'variable', date: referenceDate,
+          paid: false, isCardInstallment: true }
+      ])
+    }), []);
+  });
+
+  it('não inclui vencimentos anteriores à data de referência', () => {
+    const overdue = { id: 'overdue', type: 'fixed', date: '2026-10-31', paid: false };
+    assertEqual(makeSnapshot({ entries: [overdue] }), []);
+  });
+
+  it('inclui despesa vencendo hoje', () => {
+    assertEqual(makeSnapshot({
+      monthlyItemsByMonth: byMonth([
+        { id: 'today', type: 'fixed', date: referenceDate, paid: false }
+      ])
+    }), [{ due_date: referenceDate, item_count: 1 }]);
+  });
+
+  it('inclui hoje mais 60 dias e exclui hoje mais 61 dias', () => {
+    const day60 = addDays(referenceDate, 60);
+    const day61 = addDays(referenceDate, 61);
+    assertEqual(makeSnapshot({
+      monthlyItemsByMonth: byMonth([
+        { id: 'day60', type: 'fixed', date: day60, paid: false },
+        { id: 'day61', type: 'fixed', date: day61, paid: false }
+      ])
+    }), [{ due_date: day60, item_count: 1 }]);
+  });
+
+  it('agrupa vários itens na mesma data sem duplicar o dia', () => {
+    assertEqual(makeSnapshot({
+      monthlyItemsByMonth: byMonth([
+        { id: 'one', type: 'fixed', date: referenceDate, paid: false },
+        { id: 'two', type: 'variable', date: referenceDate, paid: false }
+      ])
+    }), [{ due_date: referenceDate, item_count: 2 }]);
+  });
+
+  it('ordena por data e limita a 100 datas mais próximas', () => {
+    const items = Array.from({ length: 105 }, (_, index) => {
+      const date = addDays(referenceDate, index);
+      return { id: `item-${index}`, type: 'fixed', date, paid: false };
+    });
+    const snapshot = makeSnapshot({
+      horizonDays: 120,
+      monthlyItemsByMonth: byMonth(items)
+    });
+    assertEqual(snapshot.length, 100);
+    assertEqual(snapshot[0].due_date, referenceDate);
+    assertEqual(snapshot[99].due_date, addDays(referenceDate, 99));
+    assertTrue(snapshot.every(item => item.item_count >= 1));
+  });
+
+  it('inclui projeção de template exibida por FinanceData para o mês', () => {
+    const projection = {
+      id: 'template-1',
+      isTemplate: true,
+      type: 'fixed',
+      date: '2026-11-15',
+      paid: false,
+      active: true
+    };
+    assertEqual(makeSnapshot({
+      templates: [{
+        id: 'template-1',
+        active: true,
+        startMonth: '2026-11',
+        day: '15',
+        paidMonths: {}
+      }],
+      monthlyItemsByMonth: byMonth([projection])
+    }), [{ due_date: '2026-11-15', item_count: 1 }]);
+  });
+
+  it('fornece instruções de instalação fora do modo standalone', () => {
+    const push = window.GastoProPushHelpers;
+    assertEqual(push.getPushActivationGuidance(true, true), null);
+    assertTrue(push.getPushActivationGuidance(false, true).includes(
+      'Compartilhar > Adicionar à Tela de Início'
+    ));
+    assertTrue(push.getPushActivationGuidance(false, true).includes('iOS 16.4'));
+    assertTrue(push.getPushActivationGuidance(false, false).includes('Tela de Início'));
   });
 });
 
