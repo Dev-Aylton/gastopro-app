@@ -3911,6 +3911,16 @@ describe('Canal Fale comigo', () => {
     assertFalse(policyText.includes('SRI'));
   });
 
+  itAsync('informa na Política que o push envia a quantidade de itens por data', async () => {
+    const response = await fetch('../index.html');
+    assertTrue(response.ok, 'Não foi possível carregar a Política de Privacidade.');
+    const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const policy = page.querySelector('#privacyPolicyModal .privacy-body');
+    assertTrue(Boolean(policy), 'A Política de Privacidade não foi encontrada.');
+    const policyText = policy.textContent.replace(/\s+/g, ' ');
+    assertTrue(policyText.includes('quantidade de itens em cada data'), 'Política deve informar a quantidade por data.');
+  });
+
   itAsync('mantém a revogação pendente até sincronizar sem restaurar consentimento remoto antigo', async () => {
     const user = { id: '550e8400-e29b-41d4-a716-446655440077', email: 'revogacao@example.com' };
     const userKey = `gastopro_user_consents_v1:${user.id}`;
@@ -8768,6 +8778,15 @@ describe('Prioridade do login Google', () => {
     assertEqual(button.type, 'button');
     assertEqual(button.getAttribute('aria-label'), 'Fazer login com o Google');
     assertEqual(button.textContent.trim(), 'Fazer login com o Google');
+  });
+
+  itAsync('RM-091: mostra o texto visível correto no botão Google do HTML', async () => {
+    const response = await fetch('../index.html');
+    assertTrue(response.ok, 'HTML principal disponível');
+    const document = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const button = document.querySelector('#googleSignInBtn');
+    assertTrue(Boolean(button), 'Botão Google deve existir no HTML principal');
+    assertEqual(button.textContent.trim().replace(/\s+/g, ' '), 'Fazer login com o Google');
   });
 
   itAsync('RM-083: usa um G oficial local sem spans de letras e no cache offline', async () => {
