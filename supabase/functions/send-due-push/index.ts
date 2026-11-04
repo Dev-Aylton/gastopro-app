@@ -241,7 +241,6 @@ Deno.serve(async (request) => {
           { onConflict: "user_id,due_date", ignoreDuplicates: true },
         );
       if (logError) throw new Error("Could not record push delivery");
-      counts.sent++;
     } catch {
       counts.failed++;
     }
