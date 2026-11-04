@@ -74,6 +74,20 @@ function isSuccessfulStatus(status: number): boolean {
   return status >= 200 && status < 300;
 }
 
+function isAllowedPushEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    if (url.protocol !== "https:") return false;
+    const hostname = url.hostname.toLowerCase();
+    return hostname === "web.push.apple.com" ||
+      hostname === "fcm.googleapis.com" ||
+      hostname === "updates.push.services.mozilla.com" ||
+      hostname.endsWith(".notify.windows.com");
+  } catch {
+    return false;
+  }
+}
+
 function readRequiredEnvironment(name: string): string {
   const value = Deno.env.get(name);
   if (!value) throw new Error("Missing required environment configuration");
@@ -93,114 +107,136 @@ Deno.serve(async (request) => {
     return jsonResponse(401, { ...counts, failed: 1 });
   }
 
-  try {
-    const supabaseUrl = readRequiredEnvironment("SUPABASE_URL");
-    const serviceRoleKey = readRequiredEnvironment("SUPABASE_SERVICE_ROLE_KEY");
-    const vapidPublicKey = readRequiredEnvironment("VAPID_PUBLIC_KEY");
-    const vapidPrivateKey = readRequiredEnvironment("VAPID_PRIVATE_KEY");
-    const vapidSubject = readRequiredEnvironment("VAPID_SUBJECT");
+  const initialData = await (async () => {
+    try {
+      const supabaseUrl = readRequiredEnvironment("SUPABASE_URL");
+      const serviceRoleKey = readRequiredEnvironment("SUPABASE_SERVICE_ROLE_KEY");
+      const vapidPublicKey = readRequiredEnvironment("VAPID_PUBLIC_KEY");
+      const vapidPrivateKey = readRequiredEnvironment("VAPID_PRIVATE_KEY");
+      const vapidSubject = readRequiredEnvironment("VAPID_SUBJECT");
 
-    webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
-    const supabase = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+      webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
+      const supabase = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
 
-    const today = getSaoPauloDate();
-    const dates = [today, addOneDay(today)];
-    const { data: dueRows, error: dueError } = await supabase
-      .from("push_due_dates")
-      .select("user_id,due_date")
-      .in("due_date", dates)
-      .order("due_date");
-    if (dueError) throw new Error("Could not read due date snapshot");
+      const today = getSaoPauloDate();
+      const dates = [today, addOneDay(today)];
+      const { data: dueRows, error: dueError } = await supabase
+        .from("push_due_dates")
+        .select("user_id,due_date")
+        .in("due_date", dates)
+        .order("due_date");
+      if (dueError) throw new Error("Could not read due date snapshot");
 
-    const dueDates = (dueRows ?? []) as DueDateRow[];
-    counts.scanned = dueDates.length;
-    if (!dueDates.length) return jsonResponse(200, counts);
+      const dueDates = (dueRows ?? []) as DueDateRow[];
+      const { data: loggedRows, error: logReadError } = await supabase
+        .from("push_notification_log")
+        .select("user_id,due_date")
+        .in("due_date", dates);
+      if (logReadError) throw new Error("Could not read push log");
 
-    const { data: loggedRows, error: logReadError } = await supabase
-      .from("push_notification_log")
-      .select("user_id,due_date")
-      .in("due_date", dates);
-    if (logReadError) throw new Error("Could not read push log");
-
-    const logged = new Set(
-      (loggedRows ?? []).map((row) => `${row.user_id}:${row.due_date}`),
-    );
-    const subscriptionCache = new Map<string, PushSubscriptionRow[]>();
-
-    for (const due of dueDates) {
-      const eventKey = `${due.user_id}:${due.due_date}`;
-      if (logged.has(eventKey)) {
-        counts.skipped++;
-        continue;
-      }
-
-      let subscriptions = subscriptionCache.get(due.user_id);
-      if (!subscriptions) {
-        const { data, error } = await supabase
-          .from("push_subscriptions")
-          .select("endpoint,p256dh,auth")
-          .eq("user_id", due.user_id);
-        if (error) throw new Error("Could not read push subscriptions");
-        subscriptions = (data ?? []) as PushSubscriptionRow[];
-        subscriptionCache.set(due.user_id, subscriptions);
-      }
-      if (!subscriptions.length) {
-        counts.skipped++;
-        continue;
-      }
-
-      let delivered = 0;
-      for (const subscription of subscriptions) {
-        const pushSubscription: PushSubscription = {
-          endpoint: subscription.endpoint,
-          keys: { p256dh: subscription.p256dh, auth: subscription.auth },
-        };
-        try {
-          const result = await webpush.sendNotification(pushSubscription, fixedPayload);
-          const status = result.statusCode;
-          if (isSuccessfulStatus(status)) {
-            delivered++;
-            counts.sent++;
-          } else if (status === 404 || status === 410) {
-            const { error } = await supabase
-              .from("push_subscriptions")
-              .delete()
-              .eq("user_id", due.user_id)
-              .eq("endpoint", subscription.endpoint);
-            if (error) throw new Error("Could not remove expired push subscription");
-            counts.expired++;
-          } else {
-            counts.failed++;
-          }
-        } catch (error) {
-          const status = getStatusCode(error);
-          if (status === 404 || status === 410) {
-            const { error: deleteError } = await supabase
-              .from("push_subscriptions")
-              .delete()
-              .eq("user_id", due.user_id)
-              .eq("endpoint", subscription.endpoint);
-            if (deleteError) throw new Error("Could not remove expired push subscription");
-            counts.expired++;
-          } else {
-            counts.failed++;
-          }
-        }
-      }
-
-      if (delivered > 0) {
-        const { error } = await supabase
-          .from("push_notification_log")
-          .insert({ user_id: due.user_id, due_date: due.due_date });
-        if (error && error.code !== "23505") throw new Error("Could not record push delivery");
-        logged.add(eventKey);
-      }
+      return {
+        supabase,
+        dueDates,
+        logged: new Set(
+          (loggedRows ?? []).map((row) => `${row.user_id}:${row.due_date}`),
+        ),
+      };
+    } catch {
+      return null;
     }
+  })();
 
-    return jsonResponse(200, counts);
-  } catch {
+  if (!initialData) {
     return jsonResponse(500, { ...counts, failed: counts.failed + 1 });
   }
+
+  const { supabase, dueDates, logged } = initialData;
+  counts.scanned = dueDates.length;
+  const pendingByUser = new Map<string, string[]>();
+  for (const due of dueDates) {
+    const eventKey = `${due.user_id}:${due.due_date}`;
+    if (logged.has(eventKey)) {
+      counts.skipped++;
+      continue;
+    }
+    const pendingDates = pendingByUser.get(due.user_id) ?? [];
+    pendingDates.push(due.due_date);
+    pendingByUser.set(due.user_id, pendingDates);
+  }
+
+  for (const [userId, pendingDates] of pendingByUser) {
+    try {
+      const { data, error } = await supabase
+        .from("push_subscriptions")
+        .select("endpoint,p256dh,auth")
+        .eq("user_id", userId);
+      if (error) throw new Error("Could not read push subscriptions");
+
+      let selected: PushSubscriptionRow | undefined;
+      for (const subscription of (data ?? []) as PushSubscriptionRow[]) {
+        if (!isAllowedPushEndpoint(subscription.endpoint)) {
+          const { error: deleteError } = await supabase
+            .from("push_subscriptions")
+            .delete()
+            .eq("user_id", userId)
+            .eq("endpoint", subscription.endpoint);
+          if (deleteError) throw new Error("Could not remove invalid push subscription");
+          counts.expired++;
+          continue;
+        }
+        selected = subscription;
+        break;
+      }
+
+      if (!selected) {
+        counts.skipped += pendingDates.length;
+        continue;
+      }
+
+      const pushSubscription: PushSubscription = {
+        endpoint: selected.endpoint,
+        keys: { p256dh: selected.p256dh, auth: selected.auth },
+      };
+      let status: number;
+      try {
+        const result = await webpush.sendNotification(pushSubscription, fixedPayload, {
+          TTL: 86400,
+          urgency: "normal",
+          timeout: 10000,
+        });
+        status = result.statusCode;
+      } catch (error) {
+        status = getStatusCode(error) ?? 0;
+        if (status !== 404 && status !== 410) throw error;
+      }
+
+      if (status === 404 || status === 410) {
+        const { error: deleteError } = await supabase
+          .from("push_subscriptions")
+          .delete()
+          .eq("user_id", userId)
+          .eq("endpoint", selected.endpoint);
+        if (deleteError) throw new Error("Could not remove expired push subscription");
+        counts.expired++;
+        counts.skipped += pendingDates.length;
+        continue;
+      }
+      if (!isSuccessfulStatus(status)) throw new Error("Push provider rejected notification");
+
+      const { error: logError } = await supabase
+        .from("push_notification_log")
+        .upsert(
+          pendingDates.map((dueDate) => ({ user_id: userId, due_date: dueDate })),
+          { onConflict: "user_id,due_date", ignoreDuplicates: true },
+        );
+      if (logError) throw new Error("Could not record push delivery");
+      counts.sent++;
+    } catch {
+      counts.failed++;
+    }
+  }
+
+  return jsonResponse(200, counts);
 });

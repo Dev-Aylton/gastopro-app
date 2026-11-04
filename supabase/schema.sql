@@ -1587,14 +1587,14 @@ grant execute on function public.import_financial_batch(jsonb, jsonb, jsonb, uui
   to authenticated;
 
 create table if not exists public.push_subscriptions (
-  id uuid primary key default extensions.uuid_generate_v4(),
+  id uuid primary key default uuid_generate_v4(),
   user_id uuid not null default auth.uid()
     references auth.users(id) on delete cascade,
-  endpoint text not null,
-  p256dh text not null,
-  auth text not null,
+  endpoint text not null
+    check (endpoint like 'https://%' and char_length(endpoint) <= 2048),
+  p256dh text not null check (char_length(p256dh) <= 200),
+  auth text not null check (char_length(auth) <= 100),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
   constraint push_subscriptions_user_endpoint_key unique (user_id, endpoint)
 );
 
@@ -1627,6 +1627,21 @@ grant select, delete on table public.push_subscriptions to service_role;
 grant select on table public.push_due_dates to service_role;
 grant select, insert on table public.push_notification_log to service_role;
 
+create or replace function public.push_subscription_count_for_current_user()
+returns bigint
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select count(*)
+  from public.push_subscriptions
+  where user_id = (select auth.uid());
+$$;
+
+revoke all on function public.push_subscription_count_for_current_user() from public, anon, authenticated;
+grant execute on function public.push_subscription_count_for_current_user() to authenticated;
+
 drop policy if exists push_subscriptions_select_own on public.push_subscriptions;
 create policy push_subscriptions_select_own on public.push_subscriptions
   for select to authenticated
@@ -1635,7 +1650,10 @@ create policy push_subscriptions_select_own on public.push_subscriptions
 drop policy if exists push_subscriptions_insert_own on public.push_subscriptions;
 create policy push_subscriptions_insert_own on public.push_subscriptions
   for insert to authenticated
-  with check ((select auth.uid()) = user_id);
+  with check (
+    (select auth.uid()) = user_id
+    and public.push_subscription_count_for_current_user() < 5
+  );
 
 drop policy if exists push_subscriptions_delete_own on public.push_subscriptions;
 create policy push_subscriptions_delete_own on public.push_subscriptions
@@ -1690,7 +1708,7 @@ begin
     if jsonb_typeof(v_item) is distinct from 'object' then
       raise exception 'Each due date item must be an object';
     end if;
-    if jsonb_object_length(v_item) <> 2 then
+    if (select count(*) from jsonb_object_keys(v_item)) <> 2 then
       raise exception 'Each due date item must contain exactly due_date and item_count';
     end if;
     if jsonb_typeof(v_item -> 'due_date') is distinct from 'string' then
