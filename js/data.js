@@ -3451,9 +3451,9 @@ const FinanceData = {
         }
         return {
           success: false,
-          error: cloudResult && cloudResult.error
-            ? cloudResult.error
-            : 'Alguns dados não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.'
+          error: pushCleanupSucceeded
+            ? 'Os dados financeiros não foram apagados na nuvem. Os avisos de vencimentos foram desativados neste aparelho e podem ser reativados no sino.'
+            : 'Os dados financeiros não foram apagados na nuvem. Os avisos de vencimentos também não puderam ser removidos completamente neste aparelho.'
         };
       }
     }

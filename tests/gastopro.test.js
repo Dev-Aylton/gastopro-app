@@ -5695,6 +5695,150 @@ describe('FinanceData — clearAll()', () => {
   });
 });
 
+describe('cleanupPushForUser — limpeza real sem rede', () => {
+  function createPushClient(initialCounts, options = {}) {
+    const counts = {
+      push_subscriptions: initialCounts.push_subscriptions,
+      push_due_dates: initialCounts.push_due_dates
+    };
+    const operations = [];
+    return {
+      client: {
+        from(table) {
+          let mode = 'select';
+          let deleted = false;
+          const query = {
+            select(columns, queryOptions) {
+              if (queryOptions && queryOptions.head) mode = 'count';
+              else if (mode !== 'delete') mode = 'select';
+              return query;
+            },
+            delete() {
+              mode = 'delete';
+              deleted = true;
+              return query;
+            },
+            eq() {
+              return query;
+            },
+            then(resolve) {
+              if (mode === 'delete') {
+                operations.push(['delete', table]);
+                if (deleted && options.deleteError) resolve({ error: options.deleteError });
+                else {
+                  counts[table] = options.remainingCounts && options.remainingCounts[table] !== undefined
+                    ? options.remainingCounts[table]
+                    : 0;
+                  resolve({ error: null });
+                }
+                return;
+              }
+              if (mode === 'count') {
+                const count = Object.prototype.hasOwnProperty.call(options, 'nullCounts') &&
+                  options.nullCounts.includes(table) ? null : counts[table];
+                resolve({ count, error: options.countError || null });
+                return;
+              }
+              resolve({ data: [], error: null });
+            }
+          };
+          return query;
+        }
+      },
+      operations,
+      counts
+    };
+  }
+
+  async function runCleanup({ helpers = { publicKey: null }, counts = { push_subscriptions: 1, push_due_dates: 1 }, clientOptions = {}, registration = undefined } = {}) {
+    const previousHelpers = window.GastoProPushHelpers;
+    const previousAuth = window.SupabaseAuth;
+    const previousServiceWorker = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
+    const fake = createPushClient(counts, clientOptions);
+    window.GastoProPushHelpers = helpers;
+    window.SupabaseAuth = { client: fake.client };
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        getRegistration: async () => registration
+      }
+    });
+    try {
+      return await cleanupPushForUser('push-test-user');
+    } finally {
+      window.GastoProPushHelpers = previousHelpers;
+      window.SupabaseAuth = previousAuth;
+      if (previousServiceWorker) Object.defineProperty(navigator, 'serviceWorker', previousServiceWorker);
+      else delete navigator.serviceWorker;
+    }
+  }
+
+  itAsync('sem helpers ou chave pública ainda apaga subscriptions e vencimentos', async () => {
+    const fake = createPushClient({ push_subscriptions: 1, push_due_dates: 1 });
+    const previousHelpers = window.GastoProPushHelpers;
+    const previousAuth = window.SupabaseAuth;
+    window.GastoProPushHelpers = null;
+    window.SupabaseAuth = { client: fake.client };
+    try {
+      assertTrue(await cleanupPushForUser('push-test-user'));
+      assertEqual(fake.operations, [
+        ['delete', 'push_subscriptions'],
+        ['delete', 'push_due_dates']
+      ]);
+    } finally {
+      window.GastoProPushHelpers = previousHelpers;
+      window.SupabaseAuth = previousAuth;
+    }
+  });
+
+  itAsync('sem registro de service worker não considera a limpeza falha', async () => {
+    assertTrue(await runCleanup({ registration: undefined }));
+  });
+
+  itAsync('contagem restante diferente de zero faz a limpeza retornar false', async () => {
+    assertFalse(await runCleanup({
+      clientOptions: { remainingCounts: { push_subscriptions: 1, push_due_dates: 1 } }
+    }));
+  });
+
+  itAsync('erro de delete faz a limpeza retornar false', async () => {
+    assertFalse(await runCleanup({
+      clientOptions: { deleteError: new Error('delete bloqueado') }
+    }));
+  });
+
+  itAsync('contagem null faz a limpeza retornar false', async () => {
+    assertFalse(await runCleanup({
+      clientOptions: { nullCounts: ['push_subscriptions'] }
+    }));
+  });
+
+  itAsync('limpeza completa retorna true e cancela a inscrição local', async () => {
+    let unsubscribed = false;
+    const subscription = { unsubscribe: async () => { unsubscribed = true; } };
+    const registration = { pushManager: { getSubscription: async () => subscription } };
+    assertTrue(await runCleanup({
+      helpers: { publicKey: 'chave-publica-teste' },
+      registration
+    }));
+    assertTrue(unsubscribed);
+  });
+
+  itAsync('versão, cache e teste de versão ficam sincronizados em v4.75', async () => {
+    const [indexResponse, swResponse] = await Promise.all([
+      fetch('../index.html'),
+      fetch('../sw.js')
+    ]);
+    assertTrue(indexResponse.ok);
+    assertTrue(swResponse.ok);
+    const indexText = await indexResponse.text();
+    const swText = await swResponse.text();
+    assertTrue(indexText.includes('Versão v4.75'));
+    assertTrue(indexText.includes('v4.75'));
+    assertTrue(swText.includes("const CACHE_NAME = 'gastopro-v4.75';"));
+  });
+});
+
 describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
   itAsync('aciona a limpeza de push ao excluir todos os dados', async () => {
     setupMockLocalStorage();
@@ -5845,7 +5989,7 @@ describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
     try {
       const result = await FinanceData.deleteAllUserData('APAGAR DADOS');
       assertFalse(result.success);
-      assertEqual(result.error, 'Falha de rede.');
+      assertTrue(String(result.error).includes('avisos de vencimentos foram desativados neste aparelho'));
       assertEqual(FinanceData.getCreditCards(), [card]);
       assertEqual(FinanceData.getFixedImportRules(), ['mercado']);
     } finally {

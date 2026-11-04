@@ -5246,6 +5246,7 @@ function buildPushSnapshotForCurrentUser() {
 
 function clearPushDueDateSnapshotCache(userId, reason) {
   if (!window.GastoProPushHelpers ||
+    typeof window.GastoProPushHelpers.shouldClearPushSnapshotCache !== 'function' ||
     !window.GastoProPushHelpers.shouldClearPushSnapshotCache(reason)) return;
   try {
     if (userId) {
@@ -5313,22 +5314,25 @@ async function cleanupPushForUser(userId, { timeoutMs = 0, reason = 'logout' } =
     recordPushDiagnostic('failure', 'preference-clear');
   }
   clearPushDueDateSnapshotCache(userId, reason);
-  if (!window.GastoProPushHelpers || !window.GastoProPushHelpers.publicKey) return true;
-
   const cleanup = (async () => {
     const client = window.SupabaseAuth && window.SupabaseAuth.client;
     let subscription = null;
     let failed = false;
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator &&
+      window.GastoProPushHelpers &&
+      window.GastoProPushHelpers.publicKey) {
       try {
-        const registration = await Promise.race([
-          navigator.serviceWorker.ready,
-          new Promise((resolve, reject) => setTimeout(
-            () => reject(new Error('service-worker-ready-timeout')),
-            2000
-          ))
-        ]);
-        subscription = await registration.pushManager.getSubscription();
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (registration) {
+          const registeredSubscription = await Promise.race([
+            registration.pushManager.getSubscription(),
+            new Promise((resolve, reject) => setTimeout(
+              () => reject(new Error('service-worker-ready-timeout')),
+              2000
+            ))
+          ]);
+          subscription = registeredSubscription;
+        }
       } catch {
         recordPushDiagnostic('failure', 'subscription-cleanup');
         failed = true;
@@ -5353,6 +5357,7 @@ async function cleanupPushForUser(userId, { timeoutMs = 0, reason = 'logout' } =
           .select('id', { count: 'exact', head: true })
           .eq('user_id', userId);
         if (error) throw new Error('subscription-count');
+        if (typeof count !== 'number') throw new Error('subscription-count-null');
         if (count !== 0) {
           const { error: deleteError } = await client.from('push_subscriptions')
             .delete()
@@ -5376,6 +5381,7 @@ async function cleanupPushForUser(userId, { timeoutMs = 0, reason = 'logout' } =
           .select('due_date', { count: 'exact', head: true })
           .eq('user_id', userId);
         if (error) throw new Error('due-date-count');
+        if (typeof count !== 'number') throw new Error('due-date-count-null');
         if (count !== 0) {
           const { error: deleteError } = await client.from('push_due_dates')
             .delete()
