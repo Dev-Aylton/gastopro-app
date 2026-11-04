@@ -8434,6 +8434,7 @@ describe('Central de avisos local', () => {
   it('renderiza estado vazio e sete opções acessíveis de configuração', () => {
     setupMockLocalStorage();
     const host = document.createElement('div');
+    const previousPushHelpers = window.GastoProPushHelpers;
     host.innerHTML = `
       <button id="notificationsTrigger"></button>
       <span id="notificationsUnreadCount"></span>
@@ -8442,12 +8443,14 @@ describe('Central de avisos local', () => {
       <div id="notificationSettingsList"></div>`;
     document.body.appendChild(host);
     try {
+      window.GastoProPushHelpers = Object.freeze({ ...previousPushHelpers, publicKey: '' });
       notifications.render();
       assertEqual(host.querySelector('#notificationsList').textContent.trim(), 'Nenhum aviso por enquanto.');
       assertEqual(host.querySelectorAll('#notificationSettingsList input[type="checkbox"]').length, 7);
       assertTrue([...host.querySelectorAll('#notificationSettingsList input')].every(input => input.checked));
       assertTrue(host.querySelector('#notificationsUnreadCount').hidden);
     } finally {
+      window.GastoProPushHelpers = previousPushHelpers;
       host.remove();
     }
   });

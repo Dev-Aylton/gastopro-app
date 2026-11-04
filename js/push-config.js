@@ -1,6 +1,6 @@
 'use strict';
 
-const GASTOPRO_PUSH_VAPID_PUBLIC_KEY = '';
+const GASTOPRO_PUSH_VAPID_PUBLIC_KEY = 'BCvGlwsvUCT-69SGxjqBK-6POs6uRvfMYyz_o9nK4DIrPEYk4r5hTFS8EEV2t46g7cuxiNaAMxv2VRtjIArP1ps';
 
 function base64UrlToUint8Array(value) {
   if (typeof value !== 'string' || !value) {
