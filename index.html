@@ -422,7 +422,7 @@
               </div>
               <div class="action-text">
                 <strong>Buscar nova versão do app</strong>
-                <span>Versão v4.71</span>
+                <span>Versão v4.72</span>
               </div>
             </button>
             <div class="drawer-about-help">
@@ -1336,7 +1336,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.71</span>
+          <span class="badge badge-version">v4.72</span>
         </div>
       </footer>
 
@@ -1857,9 +1857,9 @@
         </button>
       </div>
 
-      <button type="button" class="btn-auth-google btn-primary" id="googleSignInBtn" aria-label="Entrar com Google">
+      <button type="button" class="btn-auth-google btn-primary" id="googleSignInBtn" aria-label="Fazer login com o Google">
         <img src="assets/google-g.svg" alt="" aria-hidden="true" />
-        Entrar com Google
+        Fazer login com o Google
       </button>
       <div class="auth-email-divider" aria-hidden="true"><span>ou</span></div>
 
@@ -2530,7 +2530,7 @@
         <button class="modal-close-btn" id="closePrivacyModalBtn" aria-label="Fechar política de privacidade">&times;</button>
       </div>
       <div class="privacy-body">
-        <p class="privacy-date"><i class="fa-regular fa-calendar"></i> Última atualização: 1 de novembro de 2026</p>
+        <p class="privacy-date"><i class="fa-regular fa-calendar"></i> Última atualização: 4 de novembro de 2026</p>
 
         <h4>1. Quem somos</h4>
         <p>O <strong>GastoPro</strong> é um aplicativo de controle financeiro pessoal desenvolvido por <strong>Aylton Alberto</strong>, responsável pelo tratamento dos dados. Não é uma empresa e não tem fins comerciais.</p>
@@ -2542,8 +2542,11 @@
 
         <h4>3. Preferências opcionais de privacidade</h4>
         <p>As duas opções da seção Privacidade começam desligadas e podem ser alteradas ou revogadas no painel do usuário. O estado, a versão do texto de consentimento, as datas de aceite e de revogação ficam neste aparelho e são sincronizados com a tabela <code>user_consents</code> quando ela está disponível no servidor. A versão atual do texto é <code>2026-11-01-v1</code>.</p>
-        <p><strong>Visibilidade para o administrador:</strong> se você permitir, o administrador pode ver seu nome, e-mail, data de cadastro, último acesso e somente a contagem de lançamentos ativos. Sem essa permissão, a lista mostra apenas um número de usuário e a data de cadastro. O administrador não vê os registros individuais, descrições, valores, contas, metas ou fotos de perfil. Os indicadores do painel mostram apenas contagens agregadas.</p>
+        <p><strong>Visibilidade para o administrador:</strong> se você permitir, o administrador pode ver seu nome, e-mail, data de cadastro, último acesso e indicadores agregados permitidos pelo painel. Sem essa permissão, a lista mostra apenas um número de usuário e a data de cadastro. O administrador não vê os registros individuais, descrições, valores, contas, metas ou fotos de perfil. Os indicadores do painel mostram apenas contagens agregadas.</p>
         <p><strong>Dados de uso:</strong> a telemetria só é gravada quando você a ativa. Ela registra eventos predefinidos, como telas abertas, importações concluídas e tipos de erro; não inclui textos de lançamentos, descrições ou valores. Os eventos ficam associados ao identificador da conta para calcular contagens de usuários vinculados e são removidos após até 12 meses ou quando a conta é excluída. Revogar a opção impede novos registros, mas não apaga imediatamente eventos já gravados.</p>
+        <p><strong>Registros de aviso de vencimentos:</strong> quando você ativa os avisos de vencimentos próximos no app instalado, o GastoPro guarda sua inscrição de notificação, os vencimentos próximos e o registro de envio no Supabase. A inscrição guarda o identificador do navegador e suas chaves técnicas; os demais registros guardam o usuário, a data do vencimento e, quando aplicável, a data e hora do envio. Ao desativar os avisos, o app solicita a remoção da inscrição; ao excluir os dados ou a conta, o app solicita a remoção dos registros associados.</p>
+        <p><strong>Registro local de diagnóstico:</strong> o painel oculto de diagnóstico guarda no próprio aparelho somente categorias e resultados técnicos predefinidos de falhas, sem textos, valores de lançamentos, descrições ou dados financeiros. Ele não envia esse registro ao servidor. Você pode ocultar o painel e limpar o registro local.</p>
+        <p><strong>Confirmação de saldo:</strong> a chave local <code>gastopro_balance_checks_v1</code> guarda somente a data da última confirmação e o marcador de importação posterior por conta. Esses dados ficam apenas neste aparelho e são apagados ao limpar os dados ou excluir a conta.</p>
 
         <h4>4. Recursos do aplicativo</h4>
         <p>Fontes e ícones são servidos por arquivos locais do GastoPro. O navegador pode armazenar dados do app e a sessão de autenticação.</p>

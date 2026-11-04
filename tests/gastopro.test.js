@@ -3894,7 +3894,7 @@ describe('Canal Fale comigo', () => {
       '8. Contato'
     ]);
     [
-      'Última atualização: 1 de novembro de 2026',
+      'Última atualização: 4 de novembro de 2026',
       'GastoPro',
       'Aylton Alberto',
       'desenvolvedor.aylton@gmail.com',
@@ -8757,8 +8757,8 @@ describe('Prioridade do login Google', () => {
     button.type = 'button';
     button.id = 'googleSignInBtn';
     button.className = 'btn-auth-google btn-primary';
-    button.setAttribute('aria-label', 'Entrar com Google');
-    button.innerHTML = '<img src="../assets/google-g.svg" alt="" aria-hidden="true">Entrar com Google';
+    button.setAttribute('aria-label', 'Fazer login com o Google');
+    button.innerHTML = '<img src="../assets/google-g.svg" alt="" aria-hidden="true">Fazer login com o Google';
     return button;
   }
 
@@ -8766,8 +8766,8 @@ describe('Prioridade do login Google', () => {
     const button = createGoogleButton();
     assertEqual(button.id, 'googleSignInBtn');
     assertEqual(button.type, 'button');
-    assertEqual(button.getAttribute('aria-label'), 'Entrar com Google');
-    assertEqual(button.textContent.trim(), 'Entrar com Google');
+    assertEqual(button.getAttribute('aria-label'), 'Fazer login com o Google');
+    assertEqual(button.textContent.trim(), 'Fazer login com o Google');
   });
 
   itAsync('RM-083: usa um G oficial local sem spans de letras e no cache offline', async () => {
@@ -8785,7 +8785,7 @@ describe('Prioridade do login Google', () => {
 
     const index = new DOMParser().parseFromString(await indexResponse.text(), 'text/html');
     const actualButton = index.querySelector('#googleSignInBtn');
-    assertEqual(actualButton.getAttribute('aria-label'), 'Entrar com Google');
+    assertEqual(actualButton.getAttribute('aria-label'), 'Fazer login com o Google');
     assertEqual(actualButton.querySelectorAll('img').length, 1);
     assertEqual(actualButton.querySelector('img').getAttribute('src'), 'assets/google-g.svg');
     assertEqual(actualButton.querySelector('img').getAttribute('alt'), '');
@@ -8865,7 +8865,7 @@ describe('Prioridade do login Google', () => {
       assertTrue(window.GastoProGoogleAuthHelpers.applyPriority(document));
       assertEqual(button.className, 'btn-auth-google btn-primary');
       assertEqual(button.type, 'button');
-      assertEqual(button.getAttribute('aria-label'), 'Entrar com Google');
+      assertEqual(button.getAttribute('aria-label'), 'Fazer login com o Google');
       assertEqual(button.querySelector('img').getAttribute('src'), '../assets/google-g.svg');
       button.disabled = true;
       assertTrue(button.disabled);
@@ -8932,11 +8932,11 @@ describe('Prioridade do login Google', () => {
     loginTab.id = 'tabLoginBtn';
     googleButton.id = 'googleSignInBtn';
     googleButton.className = 'btn-auth-google';
-    googleButton.setAttribute('aria-label', 'Entrar com Google');
+    googleButton.setAttribute('aria-label', 'Fazer login com o Google');
     googleImage.src = '../assets/google-g.svg';
     googleImage.alt = '';
     googleImage.setAttribute('aria-hidden', 'true');
-    googleButton.append(googleImage, 'Entrar com Google');
+    googleButton.append(googleImage, 'Fazer login com o Google');
     divider.className = 'auth-email-divider';
     loginSubmit.id = 'submitLoginBtn';
     loginSubmit.className = 'btn-primary';
@@ -8953,7 +8953,7 @@ describe('Prioridade do login Google', () => {
       assertTrue(googleButton.classList.contains('btn-primary'));
       assertEqual(googleButton.querySelectorAll('img').length, 1);
       assertEqual(googleButton.querySelector('img').getAttribute('alt'), '');
-      assertEqual(googleButton.textContent, 'Entrar com Google');
+      assertEqual(googleButton.textContent, 'Fazer login com o Google');
       assertEqual(googleButton.nextElementSibling, divider);
       assertEqual(divider.nextElementSibling, loginForm);
       assertEqual(loginForm.nextElementSibling, registerForm);
@@ -8974,8 +8974,8 @@ describe('Prioridade do login Google', () => {
     const button = frameDocument.createElement('button');
     button.type = 'button';
     button.className = 'btn-auth-google btn-primary';
-    button.setAttribute('aria-label', 'Entrar com Google');
-    button.innerHTML = '<img src="../assets/google-g.svg" alt="" aria-hidden="true">Entrar com Google';
+    button.setAttribute('aria-label', 'Fazer login com o Google');
+    button.innerHTML = '<img src="../assets/google-g.svg" alt="" aria-hidden="true">Fazer login com o Google';
     button.style.transition = 'none';
     wrapper.style.cssText = 'width:100%;padding:0;background:var(--bg-card);';
     wrapper.appendChild(button);

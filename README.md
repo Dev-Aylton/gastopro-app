@@ -493,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.70`. Suíte atual: **642 testes**.
+`CACHE_NAME` atual: `gastopro-v4.72`. Suíte atual: **668 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -668,7 +668,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-015 — Reset sem apagar perfil** / Descrição: reset financeiro preserva identidade da conta e perfil. / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-016 — Simulador de Cenários Futuros (“E se...”)** / Descrição: simular pagamento extra de dívida e estimar quitação; projetar amortização com gráfico de linha; simular corte de categoria (por exemplo, reduzir Alimentação em 20%); comparar antes/depois em painel lateral. / Critério de pronto: funções puras e testes automatizados aprovados; nenhuma gravação de dados. / Arquivos: `index.html`, `js/app.js`, `js/simulator.js`, `css/style.css`, `js/cache-assets.js`, `sw.js`, `tests/gastopro.test.js`.
 - [x] **RM-017 — Exportação de dados adicionais** / Descrição: exporta lançamentos filtrados por conta e período em CSV neutralizado contra fórmulas e Excel .xlsx local com planilhas de lançamentos e resumo por categoria. / Critério de pronto: teste-runner aprovado; estrutura XLSX conferida por funções puras e validação XML/ZIP. / Arquivos: `index.html`, `js/app.js`, `js/report.js`, `js/xlsx-writer.js`, `js/cache-assets.js`, `sw.js`, `tests/gastopro.test.js`, `README.md`.
-- [ ] **RM-018 — Notificações push (parte 2)** / Descrição: enviar notificações push com o app fechado via Service Worker e Edge Function agendada; reavaliar apenas se couber no plano gratuito. A central interna (parte 1) está implementada como Lote B1. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-018 — Avisos de vencimentos próximos por push** / Descrição: opção opcional de avisos de vencimentos, inscrição pelo app instalado, snapshot no servidor e entrega neutra com Service Worker e Edge Function agendada. / Critério de pronto: suíte automatizada aprovada e cadastro/ativação comprovados; entrega real em produção não aferida neste lote. / Arquivos: `index.html`, `js/app.js`, `js/push-config.js`, `sw.js`, `supabase/functions/send-due-push/index.ts`, `supabase/migrations/20261113_push_notifications.sql`, `tests/gastopro.test.js`, `README.md`.
 - [ ] **RM-019 — Offline-First aprimorado com IndexedDB** / Descrição: migrar de localStorage para IndexedDB para maior capacidade e performance; manter fila para operações offline e envio ao reconectar; exibir status de conectividade na UI. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-020 — Ampliar cobertura de testes automatizados** / Descrição: testes para o fluxo completo de quatro passos do Wizard. / Critério de pronto: a definir. / Arquivos: a definir.
 
