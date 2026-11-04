@@ -174,7 +174,8 @@ Deno.serve(async (request) => {
         .eq("user_id", userId);
       if (error) throw new Error("Could not read push subscriptions");
 
-      let selected: PushSubscriptionRow | undefined;
+      let validSubscriptionCount = 0;
+      let delivered = false;
       for (const subscription of (data ?? []) as PushSubscriptionRow[]) {
         if (!isAllowedPushEndpoint(subscription.endpoint)) {
           const { error: deleteError } = await supabase
@@ -186,44 +187,52 @@ Deno.serve(async (request) => {
           counts.expired++;
           continue;
         }
-        selected = subscription;
-        break;
+        if (validSubscriptionCount >= 5) continue;
+        validSubscriptionCount++;
+
+        try {
+          const pushSubscription: PushSubscription = {
+            endpoint: subscription.endpoint,
+            keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+          };
+          const result = await webpush.sendNotification(pushSubscription, fixedPayload, {
+            TTL: 86400,
+            urgency: "normal",
+            timeout: 10000,
+          });
+          if (!isSuccessfulStatus(result.statusCode)) {
+            throw Object.assign(new Error("Push provider rejected notification"), {
+              statusCode: result.statusCode,
+            });
+          }
+          delivered = true;
+          counts.sent++;
+        } catch (error) {
+          const status = getStatusCode(error);
+          if (status === 404 || status === 410) {
+            try {
+              const { error: deleteError } = await supabase
+                .from("push_subscriptions")
+                .delete()
+                .eq("user_id", userId)
+                .eq("endpoint", subscription.endpoint);
+              if (deleteError) throw new Error("Could not remove expired push subscription");
+              counts.expired++;
+            } catch {
+              counts.failed++;
+            }
+          } else {
+            counts.failed++;
+          }
+        }
       }
 
-      if (!selected) {
+      if (!validSubscriptionCount) {
         counts.skipped += pendingDates.length;
         continue;
       }
 
-      const pushSubscription: PushSubscription = {
-        endpoint: selected.endpoint,
-        keys: { p256dh: selected.p256dh, auth: selected.auth },
-      };
-      let status: number;
-      try {
-        const result = await webpush.sendNotification(pushSubscription, fixedPayload, {
-          TTL: 86400,
-          urgency: "normal",
-          timeout: 10000,
-        });
-        status = result.statusCode;
-      } catch (error) {
-        status = getStatusCode(error) ?? 0;
-        if (status !== 404 && status !== 410) throw error;
-      }
-
-      if (status === 404 || status === 410) {
-        const { error: deleteError } = await supabase
-          .from("push_subscriptions")
-          .delete()
-          .eq("user_id", userId)
-          .eq("endpoint", selected.endpoint);
-        if (deleteError) throw new Error("Could not remove expired push subscription");
-        counts.expired++;
-        counts.skipped += pendingDates.length;
-        continue;
-      }
-      if (!isSuccessfulStatus(status)) throw new Error("Push provider rejected notification");
+      if (!delivered) continue;
 
       const { error: logError } = await supabase
         .from("push_notification_log")
