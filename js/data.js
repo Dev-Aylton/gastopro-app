@@ -133,7 +133,9 @@ function precisaConfirmarSaldo(conta) {
 function confirmarSaldo(contaId) {
   if (!contaId) return false;
   const checks = readBalanceChecks();
+  const current = checks[contaId] && typeof checks[contaId] === 'object' ? checks[contaId] : {};
   checks[contaId] = {
+    ...current,
     lastConfirmed: getBalanceChecksDate(),
     importedAfter: false
   };
@@ -145,6 +147,7 @@ function marcarImportacao(contaId) {
   const checks = readBalanceChecks();
   const current = checks[contaId] && typeof checks[contaId] === 'object' ? checks[contaId] : {};
   checks[contaId] = {
+    ...current,
     lastConfirmed: typeof current.lastConfirmed === 'string' ? current.lastConfirmed : null,
     importedAfter: true
   };

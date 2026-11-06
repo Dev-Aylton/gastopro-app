@@ -3557,27 +3557,36 @@ button:active { transform: scale(0.98); }
 .balance-check-notice {
   display: grid;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin-top: 0;
   padding: 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  background: var(--bg-card);
   color: var(--text-main);
-  font-size: 0.875rem;
+  font-size: 1rem;
   line-height: 1.45;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
 }
 
-.balance-check-notice-dashboard {
-  width: 100%;
+.balance-check-notice-copy {
+  min-width: 0;
 }
 
 .balance-check-actions {
   display: flex;
+  min-width: 0;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
 .balance-check-actions button {
-  min-height: 44px;
+  min-width: 44px;
+  height: 45px;
+  min-height: 45px;
 }
 
 .account-item-actions {

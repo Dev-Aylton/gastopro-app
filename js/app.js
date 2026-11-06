@@ -4392,7 +4392,6 @@ function renderAccountsView() {
       </div>
       <div class="account-item-right">
         <strong class="account-balance-amount ${getFinancialAmountPresentation(FinanceData.getAccountBalance(account.id), { signed: true }).className}">${escapeHtml(getFinancialAmountPresentation(FinanceData.getAccountBalance(account.id), { signed: true }).text)}</strong>
-        ${renderBalanceCheckNotice(account.id)}
         <div class="account-item-actions">
           <button type="button" class="btn-secondary account-action-button" data-action="edit-account" data-id="${escapeHtml(account.id)}" aria-label="Editar conta ${escapeHtml(account.name)}" title="Editar">
             <i class="fa-solid fa-pen"></i><span>Editar</span>
@@ -4457,22 +4456,72 @@ function renderAccountBalancesPanel() {
   renderFinancialInsights();
 }
 
-const dismissedBalanceCheckIds = new Set();
+const closedBalanceCheckIds = new Set();
+const rejectedBalanceCheckIds = new Set();
 
-function renderBalanceCheckNotice(accountId, compact = false) {
-  if (dismissedBalanceCheckIds.has(accountId) ||
-    !window.GastoProBalanceChecks || !window.GastoProBalanceChecks.precisaConfirmarSaldo(
-      FinanceData.getAccounts().find(account => account.id === accountId)
-    )) return '';
-  return `
-    <div class="balance-check-notice${compact ? ' balance-check-notice-compact' : ''}">
-      <span>Confira se o saldo desta conta é o mesmo que aparece no seu banco.</span>
+function getBalanceCheckNoticeNextShowDate(today) {
+  return addISODateDays(today, 1);
+}
+
+function addBalanceCheckDismissal(checks, accountId, today) {
+  if (!accountId) return checks;
+  const dismissedUntil = getBalanceCheckNoticeNextShowDate(today);
+  if (!dismissedUntil) return checks;
+  const current = checks[accountId] && typeof checks[accountId] === 'object'
+    ? checks[accountId]
+    : {};
+  return { ...checks, [accountId]: { ...current, dismissedUntil } };
+}
+
+function getBalanceCheckNoticeState({
+  accountId,
+  today,
+  checks = {},
+  requiresConfirmation,
+  rejected = false,
+  closed = false
+}) {
+  if (!accountId || closed) return 'hidden';
+  if (rejected) return 'incorrect';
+  if (!requiresConfirmation) return 'hidden';
+  const dismissedUntil = checks[accountId] &&
+    typeof checks[accountId].dismissedUntil === 'string'
+    ? checks[accountId].dismissedUntil
+    : '';
+  return dismissedUntil > today ? 'hidden' : 'prompt';
+}
+
+function renderBalanceCheckNotice(accountId, noticeState) {
+  if (noticeState === 'prompt') {
+    return `
+      <div class="balance-check-notice-copy">Confira se o saldo desta conta é o mesmo que aparece no seu banco.</div>
       <div class="balance-check-actions">
         <button type="button" class="btn-secondary" data-action="confirm-balance-check" data-id="${escapeHtml(accountId)}">Confere</button>
         <button type="button" class="btn-secondary" data-action="reject-balance-check" data-id="${escapeHtml(accountId)}">Não confere</button>
         <button type="button" class="btn-secondary" data-action="dismiss-balance-check" data-id="${escapeHtml(accountId)}">Depois</button>
-      </div>
-    </div>`;
+      </div>`;
+  }
+  if (noticeState === 'incorrect') {
+    return `
+      <div class="balance-check-notice-copy">Seu saldo pode estar desatualizado. Revise o saldo inicial da conta ou os lançamentos importados.</div>
+      <div class="balance-check-actions">
+        <button type="button" class="btn-secondary" data-goto="accounts">Abrir contas</button>
+        <button type="button" class="btn-secondary" data-action="close-balance-check-notice" data-id="${escapeHtml(accountId)}">Fechar</button>
+      </div>`;
+  }
+  return '';
+}
+
+function deferBalanceCheckUntilNextDay(accountId) {
+  if (!accountId || !window.GastoProBalanceChecks) return false;
+  const checks = addBalanceCheckDismissal(
+    window.GastoProBalanceChecks.read(),
+    accountId,
+    getSaoPauloISODate()
+  );
+  if (!checks[accountId] || typeof checks[accountId].dismissedUntil !== 'string') return false;
+  localStorage.setItem(window.GastoProBalanceChecks.STORAGE_KEY, JSON.stringify(checks));
+  return true;
 }
 
 function renderDashboardBalanceCheckNotice() {
@@ -4486,10 +4535,32 @@ function renderDashboardBalanceCheckNotice() {
   } else if (state.accountBalanceFilter === 'PF' || state.accountBalanceFilter === 'PJ') {
     selectedAccounts = accounts.filter(account => account.type === state.accountBalanceFilter);
   }
-  const account = selectedAccounts.find(item => Boolean(renderBalanceCheckNotice(item.id, true)));
-  container.innerHTML = account ? renderBalanceCheckNotice(account.id, true) : '';
-  container.hidden = !account;
+  const checks = window.GastoProBalanceChecks ? window.GastoProBalanceChecks.read() : {};
+  const today = getSaoPauloISODate();
+  const notice = selectedAccounts.map(account => ({
+    account,
+    state: getBalanceCheckNoticeState({
+      accountId: account.id,
+      today,
+      checks,
+      requiresConfirmation: window.GastoProBalanceChecks &&
+        window.GastoProBalanceChecks.precisaConfirmarSaldo(account),
+      rejected: rejectedBalanceCheckIds.has(account.id),
+      closed: closedBalanceCheckIds.has(account.id)
+    })
+  })).find(item => item.state !== 'hidden');
+  container.innerHTML = notice
+    ? renderBalanceCheckNotice(notice.account.id, notice.state)
+    : '';
+  container.hidden = !notice;
 }
+
+window.GastoProBalanceCheckNotice = Object.freeze({
+  getNextShowDate: getBalanceCheckNoticeNextShowDate,
+  addDismissal: addBalanceCheckDismissal,
+  getState: getBalanceCheckNoticeState,
+  render: renderBalanceCheckNotice
+});
 
 function renderDashboardBalanceWarning(balance) {
   const warning = document.getElementById('dashboardBalanceWarning');
@@ -8613,17 +8684,30 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'confirm-balance-check':
         if (window.GastoProBalanceChecks && id) {
           window.GastoProBalanceChecks.confirmarSaldo(id);
-          dismissedBalanceCheckIds.delete(id);
+          closedBalanceCheckIds.delete(id);
+          rejectedBalanceCheckIds.delete(id);
           renderAll();
         }
         break;
       case 'reject-balance-check':
-        dismissedBalanceCheckIds.add(id);
-        openAdjustAccountModal(id);
+        rejectedBalanceCheckIds.add(id);
         renderAll();
         break;
       case 'dismiss-balance-check':
-        dismissedBalanceCheckIds.add(id);
+        try {
+          if (!deferBalanceCheckUntilNextDay(id)) {
+            throw new Error('Não foi possível calcular a data de reaparição do aviso.');
+          }
+        } catch (error) {
+          console.error('[GastoPro] Não foi possível adiar a conferência de saldo:', error);
+          showToast('Não foi possível adiar o aviso neste aparelho.', 'error');
+          break;
+        }
+        renderAll();
+        break;
+      case 'close-balance-check-notice':
+        rejectedBalanceCheckIds.delete(id);
+        closedBalanceCheckIds.add(id);
         renderAll();
         break;
       case 'open-balance-adjustment':

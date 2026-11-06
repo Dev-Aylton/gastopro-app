@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.76-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.77-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-656%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-661%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -257,6 +257,7 @@ O canal "Fale comigo" é uma consulta sob demanda entre a tela em `js/app.js` e 
 | `gastopro_profile_real_v2` | Perfil local: nome, e-mail, userId e avatar |
 | `gastopro_goals_v1` | Metas por categoria |
 | `gastopro_accounts_v1` | Contas bancárias PF/PJ |
+| `gastopro_balance_checks_v1` | Confirmação, importação posterior e adiamento por conta (`dismissedUntil`, data `YYYY-MM-DD`) |
 | `gastopro_credit_cards_v1` | Cartões de crédito |
 | `gastopro_credit_card_purchases_v1` | Compras e parcelas de cartões |
 | `gastopro_payment_method_preference_v1:<uid>:<tipo>` | Última forma de pagamento por usuário e formulário |
@@ -266,7 +267,7 @@ O canal "Fale comigo" é uma consulta sob demanda entre a tela em `js/app.js` e 
 | `gastopro_pending_sync_v1` | Fila de sincronização pendente |
 | `gastopro_sync_metadata_v1` | Versão conhecida, hora de edição e diferença de relógio por registro |
 | `gastopro_notifications_v1` | Histórico local da central de avisos |
-| `user_consents` | Consentimento de visibilidade administrativa e telemetria, versão do texto e datas no servidor |
+| `user_consents` | `admin_visibility`, `telemetry_enabled`, versão e datas do consentimento; policies SELECT/INSERT/UPDATE limitam o registro a `auth.uid()` e a inserção de eventos exige telemetria ativa |
 | `gastopro_notification_preferences_v1` | Preferências locais dos sete tipos de aviso |
 | `gastopro_usage_telemetry_enabled_v1` | Preferência local de opt-out da coleta de eventos |
 | `gastopro_last_view_v1` | Última tela principal por usuário |
@@ -493,7 +494,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.76`. Suíte atual: **656 testes**.
+`CACHE_NAME` atual: `gastopro-v4.77`. Suíte atual: **661 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -513,7 +514,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **656 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mocks do `localStorage` e do Supabase; os dados reais não são afetados.
+Suite com **661 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mocks do `localStorage` e do Supabase; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -746,7 +747,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.76 — 14/11/2026 (versão atual)
+### v4.77 — 06/11/2026 (versão atual)
+
+- O aviso de conferência de saldo foi movido para o cartão do Dashboard, com adiamento por conta até o dia seguinte em São Paulo e orientação para revisar saldo inicial ou lançamentos importados. A Política de Privacidade descreve o registro local de falhas de sincronização.
+
+### v4.76 — 06/11/2026 (versão anterior)
 
 - Removida a funcionalidade de avisos remotos de vencimentos e os recursos associados no cliente, no Service Worker e no servidor.
 

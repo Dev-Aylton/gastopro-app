@@ -58,7 +58,6 @@
         <button class="sidebar-close-btn" id="closeSidebarBtn" title="Fechar Menu" aria-label="Fechar menu de navegação">
           <i class="fa-solid fa-xmark"></i>
         </button>
-        <div id="dashboardBalanceCheckNotice" class="balance-check-notice balance-check-notice-dashboard" hidden></div>
       </div>
 
       <nav class="sidebar-nav">
@@ -422,7 +421,7 @@
               </div>
               <div class="action-text">
                 <strong>Buscar nova versão do app</strong>
-                <span>Versão v4.76</span>
+                <span>Versão v4.77</span>
               </div>
             </button>
             <div class="drawer-about-help">
@@ -534,6 +533,7 @@
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
               <span id="dashboardBalanceWarningText"></span>
             </div>
+            <div id="dashboardBalanceCheckNotice" class="balance-check-notice" role="status" aria-live="polite" hidden></div>
           </section>
 
           <section class="install-app-card" id="installAppCard" aria-labelledby="installAppTitle" hidden>
@@ -1336,7 +1336,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.76</span>
+          <span class="badge badge-version">v4.77</span>
         </div>
       </footer>
 
@@ -2530,7 +2530,7 @@
         <button class="modal-close-btn" id="closePrivacyModalBtn" aria-label="Fechar política de privacidade">&times;</button>
       </div>
       <div class="privacy-body">
-        <p class="privacy-date"><i class="fa-regular fa-calendar"></i> Última atualização: 4 de novembro de 2026</p>
+        <p class="privacy-date"><i class="fa-regular fa-calendar"></i> Última atualização: 6 de novembro de 2026</p>
 
         <h4>1. Quem somos</h4>
         <p>O <strong>GastoPro</strong> é um aplicativo de controle financeiro pessoal desenvolvido por <strong>Aylton Alberto</strong>, responsável pelo tratamento dos dados. Não é uma empresa e não tem fins comerciais.</p>
@@ -2544,7 +2544,7 @@
         <p>As duas opções da seção Privacidade começam desligadas e podem ser alteradas ou revogadas no painel do usuário. O estado, a versão do texto de consentimento, as datas de aceite e de revogação ficam neste aparelho e são sincronizados com a tabela <code>user_consents</code> quando ela está disponível no servidor. A versão atual do texto é <code>2026-11-01-v1</code>.</p>
         <p><strong>Visibilidade para o administrador:</strong> se você autorizar, o administrador pode ver seu nome e e-mail na lista de usuários; a data de cadastro e o último acesso são consultados pelas colunas <code>created_at</code> e <code>last_sign_in_at</code>. Sem essa autorização, o painel mostra somente um número de usuário, sua data de cadastro e o último acesso quando disponível. Essa escolha fica na tabela <code>user_consents</code>. O painel Admin não mostra os registros individuais de lançamentos, metas ou contas.</p>
         <p><strong>Dados de uso:</strong> a telemetria só é gravada quando você a ativa. Ela registra eventos predefinidos, como telas abertas, importações concluídas e tipos de erro; não inclui textos de lançamentos, descrições ou valores. Os eventos ficam associados ao identificador da conta para calcular contagens de usuários vinculados e são removidos após até 12 meses ou quando a conta é excluída. Revogar a opção impede novos registros, mas não apaga imediatamente eventos já gravados.</p>
-        <p><strong>Registro local de diagnóstico:</strong> o painel oculto de diagnóstico guarda no próprio aparelho somente categorias e resultados técnicos predefinidos de falhas, sem textos, valores de lançamentos, descrições ou dados financeiros. Ele não envia esse registro ao servidor. Você pode ocultar o painel e limpar o registro local.</p>
+        <p><strong>Registro local de diagnóstico:</strong> o app mantém neste aparelho um registro local de falhas de sincronização, sem valores nem mensagens. Ele é ativado com sete toques no selo de versão. O registro exibido no painel fica no aparelho; o painel pode ser ocultado e o registro apagado pelos controles de Diagnóstico.</p>
         <p><strong>Confirmação de saldo:</strong> a chave local <code>gastopro_balance_checks_v1</code> guarda somente a data da última confirmação e o marcador de importação posterior por conta. Esses dados ficam apenas neste aparelho e são apagados ao limpar os dados ou excluir a conta.</p>
 
         <h4>4. Recursos do aplicativo</h4>

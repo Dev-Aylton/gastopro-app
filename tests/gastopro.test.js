@@ -1224,6 +1224,92 @@ describe('FinanceData — Contas Bancárias', () => {
   describe('Aviso local de confirmação de saldo', () => {
     const balanceChecksKey = 'gastopro_balance_checks_v1';
 
+    it('calcula a reaparição no dia seguinte pela data de São Paulo', () => {
+      const notice = window.GastoProBalanceCheckNotice;
+      assertEqual(window.GastoProFinancialInsights.getSaoPauloISODate(
+        new Date('2026-11-14T02:30:00Z')
+      ), '2026-11-13');
+      assertEqual(notice.getNextShowDate('2026-11-13'), '2026-11-14');
+    });
+
+    it('adia o aviso somente para a conta escolhida até o dia seguinte', () => {
+      const notice = window.GastoProBalanceCheckNotice;
+      const checks = notice.addDismissal({
+        'account-deferred': { lastConfirmed: '2026-11-01', importedAfter: true },
+        'other-account': { lastConfirmed: '2026-11-02', importedAfter: false }
+      }, 'account-deferred', '2026-11-13');
+      const stateFor = (accountId, today) => notice.getState({
+        accountId,
+        today,
+        checks,
+        requiresConfirmation: true
+      });
+      assertEqual(stateFor('account-deferred', '2026-11-13'), 'hidden');
+      assertEqual(stateFor('account-deferred', '2026-11-14'), 'prompt');
+      assertEqual(stateFor('other-account', '2026-11-13'), 'prompt');
+      assertEqual(checks['account-deferred'], {
+        lastConfirmed: '2026-11-01',
+        importedAfter: true,
+        dismissedUntil: '2026-11-14'
+      });
+      assertEqual(checks['other-account'], {
+        lastConfirmed: '2026-11-02',
+        importedAfter: false
+      });
+    });
+
+    it('mantém o adiamento no read real até amanhã em São Paulo', () => {
+      setupMockLocalStorage();
+      const notice = window.GastoProBalanceCheckNotice;
+      const today = window.GastoProFinancialInsights.getSaoPauloISODate(
+        new Date('2026-11-14T02:30:00Z')
+      );
+      const nextDay = notice.getNextShowDate(today);
+      const deferred = notice.addDismissal({
+        'account-deferred-round-trip': {
+          lastConfirmed: '2026-11-01',
+          importedAfter: true
+        }
+      }, 'account-deferred-round-trip', today);
+      localStorage.setItem(balanceChecksKey, JSON.stringify(deferred));
+
+      const checks = window.GastoProBalanceChecks.read();
+      const stateFor = date => notice.getState({
+        accountId: 'account-deferred-round-trip',
+        today: date,
+        checks,
+        requiresConfirmation: true
+      });
+      assertEqual(checks['account-deferred-round-trip'].dismissedUntil, nextDay);
+      assertEqual(stateFor(today), 'hidden');
+      assertEqual(stateFor(nextDay), 'prompt');
+    });
+
+    it('mostra a orientação e a navegação ao escolher Não confere', () => {
+      const markup = window.GastoProBalanceCheckNotice.render('account-mismatch', 'incorrect');
+      assertTrue(markup.includes(
+        'Seu saldo pode estar desatualizado. Revise o saldo inicial da conta ou os lançamentos importados.'
+      ));
+      assertTrue(markup.includes('data-goto="accounts"'));
+      assertTrue(markup.includes('Abrir contas'));
+      assertTrue(markup.includes('Fechar'));
+      assertFalse(markup.includes('open-balance-adjustment'));
+    });
+
+    itAsync('mantém o aviso no fluxo do cartão de saldo do Dashboard', async () => {
+      const response = await fetch('../index.html');
+      assertTrue(response.ok);
+      const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const notice = page.getElementById('dashboardBalanceCheckNotice');
+      const balance = page.getElementById('dashboardCurrentBalance');
+      assertTrue(Boolean(notice));
+      assertTrue(Boolean(balance));
+      assertTrue(notice.closest('.dashboard-highlight-card'));
+      assertFalse(Boolean(notice.closest('.sidebar-top')));
+      assertTrue(Boolean(balance.compareDocumentPosition(notice) &
+        Node.DOCUMENT_POSITION_FOLLOWING));
+    });
+
     it('pede confirmação para conta nunca confirmada', () => {
       setupMockLocalStorage();
       assertTrue(window.GastoProBalanceChecks.precisaConfirmarSaldo({ id: 'account-never-confirmed' }));
@@ -1231,16 +1317,34 @@ describe('FinanceData — Contas Bancárias', () => {
 
     it('não pede confirmação imediatamente após confirmar a conta', () => {
       setupMockLocalStorage();
+      localStorage.setItem(balanceChecksKey, JSON.stringify({
+        'account-confirmed': {
+          lastConfirmed: '2026-11-01',
+          importedAfter: true,
+          dismissedUntil: '2026-11-14'
+        }
+      }));
       assertTrue(window.GastoProBalanceChecks.confirmarSaldo('account-confirmed'));
       assertFalse(window.GastoProBalanceChecks.precisaConfirmarSaldo({ id: 'account-confirmed' }));
+      assertEqual(window.GastoProBalanceChecks.read()['account-confirmed'].dismissedUntil, '2026-11-14');
     });
 
     it('pede confirmação quando uma importação ocorre após a confirmação', () => {
       setupMockLocalStorage();
       window.GastoProBalanceChecks.confirmarSaldo('account-imported');
+      localStorage.setItem(balanceChecksKey, JSON.stringify({
+        'account-imported': {
+          ...window.GastoProBalanceChecks.read()['account-imported'],
+          dismissedUntil: '2026-11-14'
+        }
+      }));
       window.GastoProBalanceChecks.marcarImportacao('account-imported');
       assertTrue(window.GastoProBalanceChecks.precisaConfirmarSaldo({ id: 'account-imported' }));
-      assertEqual(JSON.parse(localStorage.getItem(balanceChecksKey))['account-imported'].importedAfter, true);
+      assertEqual(window.GastoProBalanceChecks.read()['account-imported'], {
+        lastConfirmed: window.GastoProBalanceChecks.read()['account-imported'].lastConfirmed,
+        importedAfter: true,
+        dismissedUntil: '2026-11-14'
+      });
     });
 
     it('remove o registro de uma conta excluída', () => {
@@ -3900,7 +4004,7 @@ describe('Canal Fale comigo', () => {
       '8. Contato'
     ]);
     [
-      'Última atualização: 4 de novembro de 2026',
+      'Última atualização: 6 de novembro de 2026',
       'GastoPro',
       'Aylton Alberto',
       'desenvolvedor.aylton@gmail.com',
@@ -3910,6 +4014,9 @@ describe('Canal Fale comigo', () => {
       'Qualquer contato informado no texto fica visível ao administrador junto com a mensagem',
       'Fontes e ícones são servidos por arquivos locais do GastoPro.',
       'Arquivos PDF importados são lidos no próprio aparelho e não são enviados',
+      'o app mantém neste aparelho um registro local de falhas de sincronização, sem valores nem mensagens',
+      'sete toques no selo de versão',
+      'o painel pode ser ocultado e o registro apagado pelos controles de Diagnóstico',
       'perfil, mensagens, consentimentos e eventos de uso',
       '2026-11-01-v1'
     ].forEach(expected => assertTrue(policyText.includes(expected), `Política deve incluir: ${expected}`));
@@ -5692,7 +5799,7 @@ describe('FinanceData — clearAll()', () => {
 });
 
 describe('Versão do app', () => {
-  itAsync('versão, cache e teste de versão ficam sincronizados em v4.76', async () => {
+  itAsync('versão, cache e teste de versão ficam sincronizados em v4.77', async () => {
     const [indexResponse, swResponse] = await Promise.all([
       fetch('../index.html'),
       fetch('../sw.js')
@@ -5701,9 +5808,9 @@ describe('Versão do app', () => {
     assertTrue(swResponse.ok);
     const indexText = await indexResponse.text();
     const swText = await swResponse.text();
-    assertTrue(indexText.includes('Versão v4.76'));
-    assertTrue(indexText.includes('v4.76'));
-    assertTrue(swText.includes("const CACHE_NAME = 'gastopro-v4.76';"));
+    assertTrue(indexText.includes('Versão v4.77'));
+    assertTrue(indexText.includes('v4.77'));
+    assertTrue(swText.includes("const CACHE_NAME = 'gastopro-v4.77';"));
   });
 });
 
@@ -13850,6 +13957,7 @@ describe('Home unificada e formas de pagamento', () => {
                 <span class="dashboard-highlight-description">Disponível nas contas</span>
               </div>
               <div class="dashboard-balance-warning"><i></i><span>Projeção do mês atual</span></div>
+              <div class="balance-check-notice"></div>
             </section>
             <section class="panel-box financial-insights-panel">
               <button class="financial-insights-mobile-strip"><span>4 avisos</span><i></i></button>
@@ -13875,6 +13983,7 @@ describe('Home unificada e formas de pagamento', () => {
           frameDocument.body.dataset.theme = themeName;
           const dashboard = frameDocument.querySelector('#view-dashboard');
           const highlight = dashboard.querySelector('.dashboard-highlight-card');
+          const balanceCheckNotice = highlight.querySelector('.balance-check-notice');
           const strip = dashboard.querySelector('.financial-insights-mobile-strip');
           const grid = dashboard.querySelector('.kpi-grid');
           const cards = [...grid.querySelectorAll('.kpi-card')];
@@ -13886,6 +13995,36 @@ describe('Home unificada e formas de pagamento', () => {
             .filter(visible).map(title => title.textContent.trim()));
           const columns = frameWindow.getComputedStyle(grid).gridTemplateColumns.split(/\s+/).length;
           assertTrue(visible(highlight), `${width}x${height} ${themeName}: saldo visível`);
+          [
+            {
+              name: 'prompt',
+              copy: 'Confira se o saldo desta conta é o mesmo que aparece no seu banco.',
+              actions: ['Confere', 'Não confere', 'Depois']
+            },
+            {
+              name: 'incorrect',
+              copy: 'Seu saldo pode estar desatualizado. Revise o saldo inicial da conta ou os lançamentos importados.',
+              actions: ['Abrir contas', 'Fechar']
+            }
+          ].forEach(noticeState => {
+            balanceCheckNotice.innerHTML = `
+              <div class="balance-check-notice-copy">${noticeState.copy}</div>
+              <div class="balance-check-actions">
+                ${noticeState.actions.map(label => `<button class="btn-secondary">${label}</button>`).join('')}
+              </div>`;
+            const balanceCheckCopy = balanceCheckNotice.querySelector('.balance-check-notice-copy');
+            const balanceCheckButtons = [...balanceCheckNotice.querySelectorAll('button')];
+            assertTrue(visible(balanceCheckNotice),
+              `${width}x${height} ${themeName} ${noticeState.name}: aviso visível`);
+            assertTrue(balanceCheckCopy.scrollWidth <= balanceCheckCopy.clientWidth,
+              `${width}x${height} ${themeName} ${noticeState.name}: texto do aviso sem corte`);
+            assertEqual(balanceCheckButtons.length, noticeState.actions.length);
+            balanceCheckButtons.forEach(button => {
+              const buttonHeight = button.getBoundingClientRect().height;
+              assertTrue(buttonHeight >= 44,
+                `${width}x${height} ${themeName} ${noticeState.name}: alvo medido ${buttonHeight}px, esperado >= 44px`);
+            });
+          });
           assertTrue(visible(strip), `${width}x${height} ${themeName}: faixa de avisos visível`);
           assertEqual(cards.filter(visible).length, 4, `${width}x${height} ${themeName}: quatro KPIs`);
           assertEqual(titles, [['Resultado'], ['Recebido'], ['Fixos'], ['Variáveis']]);
