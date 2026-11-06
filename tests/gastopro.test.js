@@ -2542,9 +2542,15 @@ describe('FinanceData — Contas Bancárias', () => {
 
   itAsync('consolida saldos PF e PJ sem incluir movimentações sem conta', async () => {
     setupMockLocalStorage();
+    const incomeAccount = await FinanceData.addAccount({
+      name: 'Conta temporária',
+      type: 'PF',
+      initialBalance: 0
+    });
+    FinanceData.add(makeIncome({ amount: 999, paid: true }));
     const personal = await FinanceData.addAccount({ name: 'PF', type: 'PF', initialBalance: 200 });
     await FinanceData.addAccount({ name: 'PJ', type: 'PJ', initialBalance: 300 });
-    FinanceData.add(makeIncome({ amount: 999, paid: true }));
+    assertTrue((await FinanceData.deleteAccount(incomeAccount.account.id)).success);
 
     assertEqual(FinanceData.getAccountBalances(), { total: 500, PF: 200, PJ: 300 });
     assertEqual(FinanceData.getAccountBalance(personal.account.id), 200);
@@ -3909,16 +3915,6 @@ describe('Canal Fale comigo', () => {
     ].forEach(expected => assertTrue(policyText.includes(expected), `Política deve incluir: ${expected}`));
     assertEqual(window.GastoProConsent.createSignupState(false).textVersion, '2026-11-01-v1');
     assertFalse(policyText.includes('SRI'));
-  });
-
-  itAsync('informa na Política que o push envia a quantidade de itens por data', async () => {
-    const response = await fetch('../index.html');
-    assertTrue(response.ok, 'Não foi possível carregar a Política de Privacidade.');
-    const page = new DOMParser().parseFromString(await response.text(), 'text/html');
-    const policy = page.querySelector('#privacyPolicyModal .privacy-body');
-    assertTrue(Boolean(policy), 'A Política de Privacidade não foi encontrada.');
-    const policyText = policy.textContent.replace(/\s+/g, ' ');
-    assertTrue(policyText.includes('quantidade de itens em cada data'), 'Política deve informar a quantidade por data.');
   });
 
   itAsync('mantém a revogação pendente até sincronizar sem restaurar consentimento remoto antigo', async () => {
@@ -5695,136 +5691,8 @@ describe('FinanceData — clearAll()', () => {
   });
 });
 
-describe('cleanupPushForUser — limpeza real sem rede', () => {
-  function createPushClient(initialCounts, options = {}) {
-    const counts = {
-      push_subscriptions: initialCounts.push_subscriptions,
-      push_due_dates: initialCounts.push_due_dates
-    };
-    const operations = [];
-    return {
-      client: {
-        from(table) {
-          let mode = 'select';
-          let deleted = false;
-          const query = {
-            select(columns, queryOptions) {
-              if (queryOptions && queryOptions.head) mode = 'count';
-              else if (mode !== 'delete') mode = 'select';
-              return query;
-            },
-            delete() {
-              mode = 'delete';
-              deleted = true;
-              return query;
-            },
-            eq() {
-              return query;
-            },
-            then(resolve) {
-              if (mode === 'delete') {
-                operations.push(['delete', table]);
-                if (deleted && options.deleteError) resolve({ error: options.deleteError });
-                else {
-                  counts[table] = options.remainingCounts && options.remainingCounts[table] !== undefined
-                    ? options.remainingCounts[table]
-                    : 0;
-                  resolve({ error: null });
-                }
-                return;
-              }
-              if (mode === 'count') {
-                const count = Object.prototype.hasOwnProperty.call(options, 'nullCounts') &&
-                  options.nullCounts.includes(table) ? null : counts[table];
-                resolve({ count, error: options.countError || null });
-                return;
-              }
-              resolve({ data: [], error: null });
-            }
-          };
-          return query;
-        }
-      },
-      operations,
-      counts
-    };
-  }
-
-  async function runCleanup({ helpers = { publicKey: null }, counts = { push_subscriptions: 1, push_due_dates: 1 }, clientOptions = {}, registration = undefined } = {}) {
-    const previousHelpers = window.GastoProPushHelpers;
-    const previousAuth = window.SupabaseAuth;
-    const previousServiceWorker = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
-    const fake = createPushClient(counts, clientOptions);
-    window.GastoProPushHelpers = helpers;
-    window.SupabaseAuth = { client: fake.client };
-    Object.defineProperty(navigator, 'serviceWorker', {
-      configurable: true,
-      value: {
-        getRegistration: async () => registration
-      }
-    });
-    try {
-      return await cleanupPushForUser('push-test-user');
-    } finally {
-      window.GastoProPushHelpers = previousHelpers;
-      window.SupabaseAuth = previousAuth;
-      if (previousServiceWorker) Object.defineProperty(navigator, 'serviceWorker', previousServiceWorker);
-      else delete navigator.serviceWorker;
-    }
-  }
-
-  itAsync('sem helpers ou chave pública ainda apaga subscriptions e vencimentos', async () => {
-    const fake = createPushClient({ push_subscriptions: 1, push_due_dates: 1 });
-    const previousHelpers = window.GastoProPushHelpers;
-    const previousAuth = window.SupabaseAuth;
-    window.GastoProPushHelpers = null;
-    window.SupabaseAuth = { client: fake.client };
-    try {
-      assertTrue(await cleanupPushForUser('push-test-user'));
-      assertEqual(fake.operations, [
-        ['delete', 'push_subscriptions'],
-        ['delete', 'push_due_dates']
-      ]);
-    } finally {
-      window.GastoProPushHelpers = previousHelpers;
-      window.SupabaseAuth = previousAuth;
-    }
-  });
-
-  itAsync('sem registro de service worker não considera a limpeza falha', async () => {
-    assertTrue(await runCleanup({ registration: undefined }));
-  });
-
-  itAsync('contagem restante diferente de zero faz a limpeza retornar false', async () => {
-    assertFalse(await runCleanup({
-      clientOptions: { remainingCounts: { push_subscriptions: 1, push_due_dates: 1 } }
-    }));
-  });
-
-  itAsync('erro de delete faz a limpeza retornar false', async () => {
-    assertFalse(await runCleanup({
-      clientOptions: { deleteError: new Error('delete bloqueado') }
-    }));
-  });
-
-  itAsync('contagem null faz a limpeza retornar false', async () => {
-    assertFalse(await runCleanup({
-      clientOptions: { nullCounts: ['push_subscriptions'] }
-    }));
-  });
-
-  itAsync('limpeza completa retorna true e cancela a inscrição local', async () => {
-    let unsubscribed = false;
-    const subscription = { unsubscribe: async () => { unsubscribed = true; } };
-    const registration = { pushManager: { getSubscription: async () => subscription } };
-    assertTrue(await runCleanup({
-      helpers: { publicKey: 'chave-publica-teste' },
-      registration
-    }));
-    assertTrue(unsubscribed);
-  });
-
-  itAsync('versão, cache e teste de versão ficam sincronizados em v4.75', async () => {
+describe('Versão do app', () => {
+  itAsync('versão, cache e teste de versão ficam sincronizados em v4.76', async () => {
     const [indexResponse, swResponse] = await Promise.all([
       fetch('../index.html'),
       fetch('../sw.js')
@@ -5833,62 +5701,13 @@ describe('cleanupPushForUser — limpeza real sem rede', () => {
     assertTrue(swResponse.ok);
     const indexText = await indexResponse.text();
     const swText = await swResponse.text();
-    assertTrue(indexText.includes('Versão v4.75'));
-    assertTrue(indexText.includes('v4.75'));
-    assertTrue(swText.includes("const CACHE_NAME = 'gastopro-v4.75';"));
+    assertTrue(indexText.includes('Versão v4.76'));
+    assertTrue(indexText.includes('v4.76'));
+    assertTrue(swText.includes("const CACHE_NAME = 'gastopro-v4.76';"));
   });
 });
 
 describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
-  itAsync('aciona a limpeza de push ao excluir todos os dados', async () => {
-    setupMockLocalStorage();
-    const userId = 'user-delete-clears-push';
-    localStorage.setItem('gastopro_last_uid', userId);
-    FinanceData.saveProfile({ name: 'Pessoa', email: 'pessoa@example.com', userId });
-    const previousAuth = window.SupabaseAuth;
-    const previousCleanup = window.cleanupPushForUser;
-    let cleanupCalls = [];
-    window.cleanupPushForUser = async (targetUserId, options) => {
-      cleanupCalls.push({ targetUserId, options });
-      return true;
-    };
-    window.SupabaseAuth = {
-      deleteAllMyData: async () => ({ success: true })
-    };
-    try {
-      const result = await FinanceData.deleteAllUserData('APAGAR DADOS');
-      assertTrue(result.success);
-      assertEqual(cleanupCalls, [{
-        targetUserId: userId,
-        options: { reason: 'account-data-deletion' }
-      }]);
-    } finally {
-      window.cleanupPushForUser = previousCleanup;
-      window.SupabaseAuth = previousAuth;
-    }
-  });
-
-  itAsync('não relata sucesso quando a limpeza de push falha', async () => {
-    setupMockLocalStorage();
-    const userId = 'user-delete-push-failure';
-    localStorage.setItem('gastopro_last_uid', userId);
-    FinanceData.saveProfile({ name: 'Pessoa', email: 'pessoa@example.com', userId });
-    const previousAuth = window.SupabaseAuth;
-    const previousCleanup = window.cleanupPushForUser;
-    window.cleanupPushForUser = async () => false;
-    window.SupabaseAuth = {
-      deleteAllMyData: async () => ({ success: true })
-    };
-    try {
-      const result = await FinanceData.deleteAllUserData('APAGAR DADOS');
-      assertFalse(result.success);
-      assertTrue(String(result.error).includes('avisos de vencimentos não puderam ser removidos'));
-    } finally {
-      window.cleanupPushForUser = previousCleanup;
-      window.SupabaseAuth = previousAuth;
-    }
-  });
-
   itAsync('exige APAGAR DADOS antes de apagar cartões, regras ou outros dados', async () => {
     setupMockLocalStorage();
     const card = { id: crypto.randomUUID(), name: 'Cartão preservado', totalLimit: 1000 };
@@ -5941,8 +5760,6 @@ describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
 
     const deletedForUser = [];
     const previousAuth = window.SupabaseAuth;
-    const previousCleanup = window.cleanupPushForUser;
-    window.cleanupPushForUser = async () => true;
     window.SupabaseAuth = {
       deleteAllMyData: async targetUserId => {
         deletedForUser.push(targetUserId);
@@ -5968,7 +5785,6 @@ describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
       assertEqual(localStorage.getItem('gastopro_theme'), 'light');
     } finally {
       window.SupabaseAuth = previousAuth;
-      window.cleanupPushForUser = previousCleanup;
     }
   });
 
@@ -5981,20 +5797,17 @@ describe('FinanceData — exclusão de todos os dados mantendo o login', () => {
     localStorage.setItem('gastopro_credit_cards_v1', JSON.stringify([card]));
     localStorage.setItem('gastopro_fixed_import_rules_v1', JSON.stringify(['mercado']));
     const previousAuth = window.SupabaseAuth;
-    const previousCleanup = window.cleanupPushForUser;
-    window.cleanupPushForUser = async () => true;
     window.SupabaseAuth = {
       deleteAllMyData: async () => ({ success: false, error: 'Falha de rede.' })
     };
     try {
       const result = await FinanceData.deleteAllUserData('APAGAR DADOS');
       assertFalse(result.success);
-      assertTrue(String(result.error).includes('avisos de vencimentos foram desativados neste aparelho'));
+      assertTrue(String(result.error).includes('Os dados financeiros não foram apagados na nuvem'));
       assertEqual(FinanceData.getCreditCards(), [card]);
       assertEqual(FinanceData.getFixedImportRules(), ['mercado']);
     } finally {
       window.SupabaseAuth = previousAuth;
-      window.cleanupPushForUser = previousCleanup;
     }
   });
 });
@@ -8695,7 +8508,6 @@ describe('Central de avisos local', () => {
   it('renderiza estado vazio e sete opções acessíveis de configuração', () => {
     setupMockLocalStorage();
     const host = document.createElement('div');
-    const previousPushHelpers = window.GastoProPushHelpers;
     host.innerHTML = `
       <button id="notificationsTrigger"></button>
       <span id="notificationsUnreadCount"></span>
@@ -8704,14 +8516,12 @@ describe('Central de avisos local', () => {
       <div id="notificationSettingsList"></div>`;
     document.body.appendChild(host);
     try {
-      window.GastoProPushHelpers = Object.freeze({ ...previousPushHelpers, publicKey: '' });
       notifications.render();
       assertEqual(host.querySelector('#notificationsList').textContent.trim(), 'Nenhum aviso por enquanto.');
       assertEqual(host.querySelectorAll('#notificationSettingsList input[type="checkbox"]').length, 7);
       assertTrue([...host.querySelectorAll('#notificationSettingsList input')].every(input => input.checked));
       assertTrue(host.querySelector('#notificationsUnreadCount').hidden);
     } finally {
-      window.GastoProPushHelpers = previousPushHelpers;
       host.remove();
     }
   });
@@ -12614,8 +12424,6 @@ describe('Layout responsivo e tipografia mobile', () => {
     localStorage.setItem(legacyKey, '25');
     localStorage.setItem(`${legacyKey}:${userId}`, '35');
     const previousAuth = window.SupabaseAuth;
-    const previousCleanup = window.cleanupPushForUser;
-    window.cleanupPushForUser = async () => true;
     window.SupabaseAuth = { deleteAllMyData: async () => ({ success: true }) };
     try {
       const deleteResult = await FinanceData.deleteAllUserData('APAGAR DADOS');
@@ -12624,7 +12432,6 @@ describe('Layout responsivo e tipografia mobile', () => {
       assertNull(localStorage.getItem(`${legacyKey}:${userId}`));
     } finally {
       window.SupabaseAuth = previousAuth;
-      window.cleanupPushForUser = previousCleanup;
     }
   });
 });
@@ -12944,33 +12751,6 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
       assertFalse(JSON.stringify(event).includes('texto privado'));
       assertFalse(JSON.stringify(event).includes('sensível'));
       assertTrue(event.data.message.length <= 200);
-    } finally {
-      if (previousDiagnosticLog === null) localStorage.removeItem(window.GastoProDiagnostics.key);
-      else localStorage.setItem(window.GastoProDiagnostics.key, previousDiagnosticLog);
-    }
-  });
-
-  it('registra somente o resultado nos diagnósticos de push', () => {
-    const previousDiagnosticLog = localStorage.getItem(window.GastoProDiagnostics.key);
-    try {
-      window.GastoProDiagnostics.clear();
-      window.GastoProDiagnostics.record('push-sync', {
-        result: 'failure',
-        phase: 'end',
-        reason: 'endpoint privado',
-        endpoint: 'https://push.example/private',
-        p256dh: 'chave-secreta',
-        amount: 125.5,
-        userId: 'usuario-privado'
-      });
-      const entries = window.GastoProDiagnostics.list();
-      const event = entries[entries.length - 1];
-      assertEqual(event.type, 'push-sync');
-      assertEqual(event.data, { result: 'failure' });
-      assertFalse(JSON.stringify(event).includes('push.example'));
-      assertFalse(JSON.stringify(event).includes('chave-secreta'));
-      assertFalse(JSON.stringify(event).includes('usuario-privado'));
-      assertFalse(JSON.stringify(event).includes('125.5'));
     } finally {
       if (previousDiagnosticLog === null) localStorage.removeItem(window.GastoProDiagnostics.key);
       else localStorage.setItem(window.GastoProDiagnostics.key, previousDiagnosticLog);
@@ -16315,154 +16095,6 @@ describe('Painel do usuário e avisos', () => {
       state.expenseFilter = previousFilter;
       host.remove();
     }
-  });
-});
-
-describe('Snapshot de vencimentos push', () => {
-  const insights = window.GastoProFinancialInsights;
-  const referenceDate = '2026-11-01';
-
-  function makeSnapshot(options = {}) {
-    return insights.buildPushDueDateSnapshot({
-      referenceDate,
-      monthlyItemsByMonth: {},
-      ...options
-    });
-  }
-
-  function addDays(date, days) {
-    const result = new Date(`${date}T00:00:00Z`);
-    result.setUTCDate(result.getUTCDate() + days);
-    return result.toISOString().slice(0, 10);
-  }
-
-  function byMonth(items) {
-    return items.reduce((months, item) => {
-      const month = item.date.slice(0, 7);
-      (months[month] ||= []).push(item);
-      return months;
-    }, {});
-  }
-
-  it('converte a chave base64url VAPID em bytes e de volta', () => {
-    const push = window.GastoProPushHelpers;
-    const bytes = push.base64UrlToUint8Array('-_8');
-    assertEqual([...bytes], [251, 255]);
-    assertEqual(push.uint8ArrayToBase64Url(bytes), '-_8');
-  });
-
-  it('limpa o cache local ao desligar, sair ou inscrever o aparelho', () => {
-    const push = window.GastoProPushHelpers;
-    assertTrue(push.shouldClearPushSnapshotCache('disabled'));
-    assertTrue(push.shouldClearPushSnapshotCache('logout'));
-    assertTrue(push.shouldClearPushSnapshotCache('subscription'));
-    assertFalse(push.shouldClearPushSnapshotCache('sync'));
-  });
-
-  it('ignora a comparação do cache após inscrever o aparelho', () => {
-    const push = window.GastoProPushHelpers;
-    assertTrue(push.shouldBypassPushSnapshotCache(true));
-    assertFalse(push.shouldBypassPushSnapshotCache(false));
-  });
-
-  it('não inclui vencimento já pago', () => {
-    assertEqual(makeSnapshot({
-      monthlyItemsByMonth: byMonth([
-        { id: 'paid', type: 'fixed', date: referenceDate, paid: true }
-      ])
-    }), []);
-  });
-
-  it('não inventa vencimentos quando não há itens', () => {
-    assertEqual(makeSnapshot(), []);
-  });
-
-  it('exclui parcelas de cartão do snapshot', () => {
-    assertEqual(makeSnapshot({
-      monthlyItemsByMonth: byMonth([
-        { id: 'installment', type: 'variable', date: referenceDate,
-          paid: false, isCardInstallment: true }
-      ])
-    }), []);
-  });
-
-  it('não inclui vencimentos anteriores à data de referência', () => {
-    const overdue = { id: 'overdue', type: 'fixed', date: '2026-10-31', paid: false };
-    assertEqual(makeSnapshot({ entries: [overdue] }), []);
-  });
-
-  it('inclui despesa vencendo hoje', () => {
-    assertEqual(makeSnapshot({
-      monthlyItemsByMonth: byMonth([
-        { id: 'today', type: 'fixed', date: referenceDate, paid: false }
-      ])
-    }), [{ due_date: referenceDate, item_count: 1 }]);
-  });
-
-  it('inclui hoje mais 60 dias e exclui hoje mais 61 dias', () => {
-    const day60 = addDays(referenceDate, 60);
-    const day61 = addDays(referenceDate, 61);
-    assertEqual(makeSnapshot({
-      monthlyItemsByMonth: byMonth([
-        { id: 'day60', type: 'fixed', date: day60, paid: false },
-        { id: 'day61', type: 'fixed', date: day61, paid: false }
-      ])
-    }), [{ due_date: day60, item_count: 1 }]);
-  });
-
-  it('agrupa vários itens na mesma data sem duplicar o dia', () => {
-    assertEqual(makeSnapshot({
-      monthlyItemsByMonth: byMonth([
-        { id: 'one', type: 'fixed', date: referenceDate, paid: false },
-        { id: 'two', type: 'variable', date: referenceDate, paid: false }
-      ])
-    }), [{ due_date: referenceDate, item_count: 2 }]);
-  });
-
-  it('ordena por data e limita a 100 datas mais próximas', () => {
-    const items = Array.from({ length: 105 }, (_, index) => {
-      const date = addDays(referenceDate, index);
-      return { id: `item-${index}`, type: 'fixed', date, paid: false };
-    });
-    const snapshot = makeSnapshot({
-      horizonDays: 120,
-      monthlyItemsByMonth: byMonth(items)
-    });
-    assertEqual(snapshot.length, 100);
-    assertEqual(snapshot[0].due_date, referenceDate);
-    assertEqual(snapshot[99].due_date, addDays(referenceDate, 99));
-    assertTrue(snapshot.every(item => item.item_count >= 1));
-  });
-
-  it('inclui projeção de template exibida por FinanceData para o mês', () => {
-    const projection = {
-      id: 'template-1',
-      isTemplate: true,
-      type: 'fixed',
-      date: '2026-11-15',
-      paid: false,
-      active: true
-    };
-    assertEqual(makeSnapshot({
-      templates: [{
-        id: 'template-1',
-        active: true,
-        startMonth: '2026-11',
-        day: '15',
-        paidMonths: {}
-      }],
-      monthlyItemsByMonth: byMonth([projection])
-    }), [{ due_date: '2026-11-15', item_count: 1 }]);
-  });
-
-  it('fornece instruções de instalação fora do modo standalone', () => {
-    const push = window.GastoProPushHelpers;
-    assertEqual(push.getPushActivationGuidance(true, true), null);
-    assertTrue(push.getPushActivationGuidance(false, true).includes(
-      'Compartilhar > Adicionar à Tela de Início'
-    ));
-    assertTrue(push.getPushActivationGuidance(false, true).includes('iOS 16.4'));
-    assertTrue(push.getPushActivationGuidance(false, false).includes('Tela de Início'));
   });
 });
 

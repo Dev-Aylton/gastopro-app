@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.75-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.76-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-679%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-656%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -267,7 +267,7 @@ O canal "Fale comigo" é uma consulta sob demanda entre a tela em `js/app.js` e 
 | `gastopro_sync_metadata_v1` | Versão conhecida, hora de edição e diferença de relógio por registro |
 | `gastopro_notifications_v1` | Histórico local da central de avisos |
 | `user_consents` | Consentimento de visibilidade administrativa e telemetria, versão do texto e datas no servidor |
-| `gastopro_notification_preferences_v1` | Preferências locais dos cinco tipos de aviso |
+| `gastopro_notification_preferences_v1` | Preferências locais dos sete tipos de aviso |
 | `gastopro_usage_telemetry_enabled_v1` | Preferência local de opt-out da coleta de eventos |
 | `gastopro_last_view_v1` | Última tela principal por usuário |
 | `gastopro_tutorial_seen` | Estado local do tutorial |
@@ -344,11 +344,10 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 1. Etapa 4: reset e exclusões seguros, tela de aviso e testes finais.
 2. RM-016 — Simulador de Cenários Futuros.
 3. RM-017 — Exportação de dados adicionais.
-4. RM-018 — Notificações push (parte 2).
-5. RM-019 — Offline-First aprimorado com IndexedDB.
-6. RM-020 — Ampliar cobertura de testes automatizados.
-7. RM-032 — Contraste WCAG AA nas demais telas e gráficos (RM-034 cobre somente os avisos).
-8. Itens em dúvida: mapeamento de colunas do CSV, cache offline de fontes e ícones, CI/CD.
+4. RM-019 — Offline-First aprimorado com IndexedDB.
+5. RM-020 — Ampliar cobertura de testes automatizados.
+6. RM-032 — Contraste WCAG AA nas demais telas e gráficos (RM-034 cobre somente os avisos).
+7. Itens em dúvida: mapeamento de colunas do CSV, cache offline de fontes e ícones, CI/CD.
 
 ### API de SupabaseAuth
 
@@ -494,7 +493,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.75`. Suíte atual: **679 testes**.
+`CACHE_NAME` atual: `gastopro-v4.76`. Suíte atual: **656 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -514,7 +513,7 @@ Para criar um projeto Supabase, execute `supabase/schema.sql` no SQL Editor. Con
 
 ## 🧪 Testes
 
-Suite com **601 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mocks do `localStorage` e do Supabase; os dados reais não são afetados.
+Suite com **656 casos de teste** em JavaScript puro, sem frameworks. Os testes usam mocks do `localStorage` e do Supabase; os dados reais não são afetados.
 
 | Suite (`describe`) | Área coberta |
 |---|---|
@@ -602,7 +601,6 @@ Configure **Settings → Pages → Branch: main / (root) → Save**. Para enviar
 ```bash
 git add .
 git commit -m "feat: descreva a alteração"
-git push origin main
 ```
 
 > ⚠️ Adicione a URL publicada nas **Redirect URLs** do Supabase em **Authentication → URL Configuration**.
@@ -669,7 +667,6 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-015 — Reset sem apagar perfil** / Descrição: reset financeiro preserva identidade da conta e perfil. / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-016 — Simulador de Cenários Futuros (“E se...”)** / Descrição: simular pagamento extra de dívida e estimar quitação; projetar amortização com gráfico de linha; simular corte de categoria (por exemplo, reduzir Alimentação em 20%); comparar antes/depois em painel lateral. / Critério de pronto: funções puras e testes automatizados aprovados; nenhuma gravação de dados. / Arquivos: `index.html`, `js/app.js`, `js/simulator.js`, `css/style.css`, `js/cache-assets.js`, `sw.js`, `tests/gastopro.test.js`.
 - [x] **RM-017 — Exportação de dados adicionais** / Descrição: exporta lançamentos filtrados por conta e período em CSV neutralizado contra fórmulas e Excel .xlsx local com planilhas de lançamentos e resumo por categoria. / Critério de pronto: teste-runner aprovado; estrutura XLSX conferida por funções puras e validação XML/ZIP. / Arquivos: `index.html`, `js/app.js`, `js/report.js`, `js/xlsx-writer.js`, `js/cache-assets.js`, `sw.js`, `tests/gastopro.test.js`, `README.md`.
-- [x] **RM-018 — Avisos de vencimentos próximos por push** / Descrição: opção opcional de avisos de vencimentos, inscrição pelo app instalado, snapshot no servidor e entrega neutra com Service Worker e Edge Function agendada. / Critério de pronto: suíte automatizada aprovada e cadastro/ativação comprovados; entrega real em produção não aferida neste lote. / Arquivos: `index.html`, `js/app.js`, `js/push-config.js`, `sw.js`, `supabase/functions/send-due-push/index.ts`, `supabase/migrations/20261113_push_notifications.sql`, `tests/gastopro.test.js`, `README.md`.
 - [ ] **RM-019 — Offline-First aprimorado com IndexedDB** / Descrição: migrar de localStorage para IndexedDB para maior capacidade e performance; manter fila para operações offline e envio ao reconectar; exibir status de conectividade na UI. / Critério de pronto: a definir. / Arquivos: a definir.
 - [ ] **RM-020 — Ampliar cobertura de testes automatizados** / Descrição: testes para o fluxo completo de quatro passos do Wizard. / Critério de pronto: a definir. / Arquivos: a definir.
 
@@ -749,17 +746,13 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.75 — 04/11/2026 (versão atual)
+### v4.76 — 14/11/2026 (versão atual)
 
-- Corrige a limpeza central de avisos push para remover inscrições e vencimentos mesmo sem configuração local de push, evita espera indefinida sem registro de service worker e mantém falha explícita na exclusão dos dados.
-
-### v4.74 — 04/11/2026 (versão anterior)
-
-- Excluir meus dados cancela a inscrição push do navegador, remove as linhas próprias de `push_subscriptions` e `push_due_dates` e desliga o aviso local; falhas de rede são exibidas sem confirmar sucesso.
+- Removida a funcionalidade de avisos remotos de vencimentos e os recursos associados no cliente, no Service Worker e no servidor.
 
 ### v4.73 — 04/11/2026 (versão anterior)
 
-- Corrige a Política de Privacidade com base nas migrations: descreve as colunas reais de push, a quantidade de itens por data, consentimento e exclusão de dados sem afirmar remoções não implementadas pelo app. Atualiza o selo, o cache e a suíte para 670 testes aprovados.
+- Corrige a Política de Privacidade com base nas migrations, incluindo consentimento e exclusão de dados sem afirmar remoções não implementadas pelo app. Atualiza o selo, o cache e a suíte para 670 testes aprovados.
 
 ### v4.67 — 03/11/2026 (versão anterior)
 
@@ -863,7 +856,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ### v4.36 — 02/11/2026
 
-- RM-058: mensagens do Admin mostram autor numerado sem consentimento ou nome/e-mail quando `admin_visibility` permite; a resposta fica associada ao mesmo autor. O sino local alerta o Admin sobre feedback novo ainda não lido, atualiza ao autenticar/abrir o sino e mantém o contador do menu consistente. Sem Realtime, push ou polling. Criada a migration `20261107_admin_feedback_authors.sql`, ainda não aplicada. Test-runner com código real: 494 aprovados, zero falhas; aparência em tela não medida.
+- RM-058: mensagens do Admin mostram autor numerado sem consentimento ou nome/e-mail quando `admin_visibility` permite; a resposta fica associada ao mesmo autor. O sino local alerta o Admin sobre feedback novo ainda não lido, atualiza ao autenticar/abrir o sino e mantém o contador do menu consistente. Sem Realtime ou polling. Criada a migration `20261107_admin_feedback_authors.sql`, ainda não aplicada. Test-runner com código real: 494 aprovados, zero falhas; aparência em tela não medida.
 
 - RM-057: Ganhos e Gastos agora são centros mensais com tipo, valor, data/dia, conta, situação, edição/exclusão e atalhos para Lançamentos. Edição/exclusão de recorrências avisa que a ação afeta o modelo; compras parceladas de cartão avisam que afetam a compra inteira. Empréstimos recebidos não são listados como ganhos e a parcela aparece integral em Gastos. Suíte com 491 testes aprovados; teste do atalho de Ganhos usa requestAnimationFrame determinístico e ainda verifica navegação, tipo, formulário visível e foco. Medidos sete tamanhos (incluindo 844×390) e dois temas.
 

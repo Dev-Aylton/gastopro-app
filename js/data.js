@@ -3425,17 +3425,6 @@ const FinanceData = {
 
     const profile = this.getProfile();
     const userId = profile.userId || this.getActiveUserId();
-    let pushCleanupSucceeded = true;
-    if (userId && typeof window.cleanupPushForUser === 'function') {
-      try {
-        pushCleanupSucceeded = await window.cleanupPushForUser(userId, {
-          reason: 'account-data-deletion'
-        });
-      } catch (error) {
-        console.error('[GastoPro] Falha ao limpar avisos push:', error);
-        pushCleanupSucceeded = false;
-      }
-    }
     if (userId) {
       if (!window.SupabaseAuth ||
         typeof window.SupabaseAuth.deleteAllMyData !== 'function') {
@@ -3443,17 +3432,9 @@ const FinanceData = {
       }
       const cloudResult = await window.SupabaseAuth.deleteAllMyData(userId);
       if (!cloudResult || !cloudResult.success) {
-        if (!pushCleanupSucceeded) {
-          return {
-            success: false,
-            error: 'Avisos de vencimentos: não foi possível concluir a limpeza. Dados financeiros também não foram apagados na nuvem.'
-          };
-        }
         return {
           success: false,
-          error: pushCleanupSucceeded
-            ? 'Os dados financeiros não foram apagados na nuvem. Os avisos de vencimentos foram desativados neste aparelho e podem ser reativados no sino.'
-            : 'Os dados financeiros não foram apagados na nuvem. Os avisos de vencimentos também não puderam ser removidos completamente neste aparelho.'
+          error: 'Os dados financeiros não foram apagados na nuvem. Seus dados locais foram mantidos. Tente novamente.'
         };
       }
     }
@@ -3486,12 +3467,6 @@ const FinanceData = {
         avatar: null
       });
       if (!profileResult.success) throw profileResult.error;
-      if (!pushCleanupSucceeded) {
-        return {
-          success: false,
-          error: 'Dados financeiros apagados, mas os avisos de vencimentos não puderam ser removidos completamente. Tente novamente.'
-        };
-      }
       return { success: true };
     } catch (error) {
       console.error('[GastoPro] Falha ao limpar os dados locais do usuário:', error);

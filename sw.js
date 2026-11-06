@@ -5,7 +5,7 @@
 
 importScripts('./js/cache-assets.js');
 
-const CACHE_NAME = 'gastopro-v4.75';
+const CACHE_NAME = 'gastopro-v4.76';
 const ESSENTIAL_ASSETS = self.GastoProCacheAssets.essential;
 const OPTIONAL_ASSETS = self.GastoProCacheAssets.optional;
 const LOCAL_ASSETS = [...ESSENTIAL_ASSETS, ...OPTIONAL_ASSETS];
@@ -37,24 +37,6 @@ self.addEventListener('message', event => {
   if (!event.data || event.data.type !== 'GASTOPRO_GET_CACHE_NAME') return;
   const port = event.ports && event.ports[0];
   if (port) port.postMessage({ cacheName: CACHE_NAME });
-});
-
-self.addEventListener('push', event => {
-  event.waitUntil(self.registration.showNotification('GastoPro', {
-    body: 'Você tem vencimentos próximos. Abra o GastoPro.',
-    tag: 'gastopro-due-dates'
-  }));
-});
-
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  event.waitUntil((async () => {
-    const appRoot = self.registration.scope;
-    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const appClient = clients.find(client => client.url.startsWith(appRoot));
-    if (appClient) return appClient.focus();
-    return self.clients.openWindow(appRoot);
-  })());
 });
 
 self.addEventListener('fetch', event => {
