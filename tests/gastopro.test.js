@@ -5799,7 +5799,7 @@ describe('FinanceData — clearAll()', () => {
 });
 
 describe('Versão do app', () => {
-  itAsync('versão, cache e teste de versão ficam sincronizados em v4.77', async () => {
+  itAsync('versão, cache e teste de versão ficam sincronizados em v4.78', async () => {
     const [indexResponse, swResponse] = await Promise.all([
       fetch('../index.html'),
       fetch('../sw.js')
@@ -5808,9 +5808,39 @@ describe('Versão do app', () => {
     assertTrue(swResponse.ok);
     const indexText = await indexResponse.text();
     const swText = await swResponse.text();
-    assertTrue(indexText.includes('Versão v4.77'));
-    assertTrue(indexText.includes('v4.77'));
-    assertTrue(swText.includes("const CACHE_NAME = 'gastopro-v4.77';"));
+    assertTrue(indexText.includes('Versão v4.78'));
+    assertTrue(indexText.includes('v4.78'));
+    assertTrue(swText.includes("const CACHE_NAME = 'gastopro-v4.78';"));
+  });
+
+  itAsync('publica a Política sem scripts e preserva o texto do modal', async () => {
+    const [pageResponse, indexResponse, swResponse] = await Promise.all([
+      fetch('../privacidade.html'),
+      fetch('../index.html'),
+      fetch('../sw.js')
+    ]);
+    assertTrue(pageResponse.ok);
+    assertTrue(indexResponse.ok);
+    assertTrue(swResponse.ok);
+    const [pageText, indexText, swText] = await Promise.all([
+      pageResponse.text(),
+      indexResponse.text(),
+      swResponse.text()
+    ]);
+    const page = new DOMParser().parseFromString(pageText, 'text/html');
+    const index = new DOMParser().parseFromString(indexText, 'text/html');
+    const normalizeText = text => text.replace(/\s+/g, ' ').trim();
+    assertEqual(page.documentElement.lang, 'pt-BR');
+    assertEqual(page.title, 'Política de Privacidade | GastoPro');
+    assertEqual(page.querySelector('a[href="./index.html"]')?.textContent, 'Voltar ao GastoPro');
+    assertEqual(page.querySelectorAll('script, iframe, img, link[rel="stylesheet"]').length, 0);
+    assertEqual(
+      normalizeText(page.getElementById('privacyPolicyContent').textContent),
+      normalizeText(index.querySelector('#privacyPolicyModal .privacy-body').textContent)
+    );
+    assertTrue(swText.includes(
+      "requestUrl.pathname === publicPrivacyPage.pathname) return;"
+    ));
   });
 });
 

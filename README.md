@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.77-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.78-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-661%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-662%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -494,7 +494,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.77`. Suíte atual: **661 testes**.
+`CACHE_NAME` atual: `gastopro-v4.78`. Suíte atual: **662 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -747,7 +747,11 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.77 — 06/11/2026 (versão atual)
+### v4.78 — 06/11/2026 (versão atual)
+
+- Política de Privacidade disponível em página pública, sem exigir login; o Service Worker deixa essa navegação seguir a rede.
+
+### v4.77 — 06/11/2026 (versão anterior)
 
 - O aviso de conferência de saldo foi movido para o cartão do Dashboard, com adiamento por conta até o dia seguinte em São Paulo e orientação para revisar saldo inicial ou lançamentos importados. A Política de Privacidade descreve o registro local de falhas de sincronização.
 

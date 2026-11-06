@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Política de Privacidade | GastoPro</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+      background: #ffffff;
+      color: #1f2937;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        background: #111827;
+        color: #f3f4f6;
+      }
+
+      a {
+        color: #a8d1ff;
+      }
+    }
+
+    @media (prefers-color-scheme: light) {
+      a {
+        color: #005ea8;
+      }
+    }
+
+    body {
+      box-sizing: border-box;
+      max-width: 72rem;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+
+    h1 {
+      line-height: 1.25;
+    }
+
+    p,
+    li {
+      margin-block: 0 1rem;
+    }
+
+    ul {
+      padding-inline-start: 1.5rem;
+    }
+
+    a {
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Política de Privacidade</h1>
+    <p><a href="./index.html">Voltar ao GastoPro</a></p>
+  </header>
+  <main>
+    <article id="privacyPolicyContent">
+      <p>Última atualização: 6 de novembro de 2026</p>
+
+      <h2>1. Quem somos</h2>
+      <p>O <strong>GastoPro</strong> é um aplicativo de controle financeiro pessoal desenvolvido por <strong>Aylton Alberto</strong>, responsável pelo tratamento dos dados. Não é uma empresa e não tem fins comerciais.</p>
+
+      <h2>2. Dados e armazenamento</h2>
+      <p>Os lançamentos, gastos fixos, metas, contas, cartões e demais dados financeiros ficam neste aparelho. Quando você entra em uma conta, são sincronizados com o Supabase e protegidos por regras de acesso por usuário (RLS). O Supabase processa a autenticação e os dados da conta.</p>
+      <p>O e-mail é usado na autenticação do Supabase. O nome informado no cadastro fica nos metadados da conta e no perfil do app. O nome e o avatar também ficam neste aparelho e, com login, na tabela <code>profiles</code> do Supabase, protegida por RLS. Na primeira entrada com Google, se não houver avatar escolhido, o app pode guardar em <code>profiles.avatar</code> o endereço da foto fornecido pelo Google, não a imagem. O navegador busca a imagem diretamente no Google ao exibi-la. Você pode removê-la no perfil; ao removê-la, o app volta ao avatar predefinido selecionado ou ao avatar neutro padrão, e não reaplica automaticamente a foto do Google. Avatares predefinidos são identificadores e ilustrações locais. A senha é processada pelo Supabase Auth e não é salva pelo app no localStorage.</p>
+      <p>Com login, o canal Fale comigo armazena no Supabase a categoria, o texto da mensagem, a data de envio e eventuais respostas. O administrador (desenvolvedor) lê as mensagens para responder. Na tela Mensagens do painel de administração do app, não são exibidos o nome nem o e-mail associados ao remetente; o painel do Supabase pode mostrar informações adicionais. Qualquer contato informado no texto fica visível ao administrador junto com a mensagem. Você pode apagar suas mensagens na própria tela. Evite incluir senhas ou informações financeiras nas mensagens.</p>
+
+      <h2>3. Preferências opcionais de privacidade</h2>
+      <p>As duas opções da seção Privacidade começam desligadas e podem ser alteradas ou revogadas no painel do usuário. O estado, a versão do texto de consentimento, as datas de aceite e de revogação ficam neste aparelho e são sincronizados com a tabela <code>user_consents</code> quando ela está disponível no servidor. A versão atual do texto é <code>2026-11-01-v1</code>.</p>
+      <p><strong>Visibilidade para o administrador:</strong> se você autorizar, o administrador pode ver seu nome e e-mail na lista de usuários; a data de cadastro e o último acesso são consultados pelas colunas <code>created_at</code> e <code>last_sign_in_at</code>. Sem essa autorização, o painel mostra somente um número de usuário, sua data de cadastro e o último acesso quando disponível. Essa escolha fica na tabela <code>user_consents</code>. O painel Admin não mostra os registros individuais de lançamentos, metas ou contas.</p>
+      <p><strong>Dados de uso:</strong> a telemetria só é gravada quando você a ativa. Ela registra eventos predefinidos, como telas abertas, importações concluídas e tipos de erro; não inclui textos de lançamentos, descrições ou valores. Os eventos ficam associados ao identificador da conta para calcular contagens de usuários vinculados e são removidos após até 12 meses ou quando a conta é excluída. Revogar a opção impede novos registros, mas não apaga imediatamente eventos já gravados.</p>
+      <p><strong>Registro local de diagnóstico:</strong> o app mantém neste aparelho um registro local de falhas de sincronização, sem valores nem mensagens. Ele é ativado com sete toques no selo de versão. O registro exibido no painel fica no aparelho; o painel pode ser ocultado e o registro apagado pelos controles de Diagnóstico.</p>
+      <p><strong>Confirmação de saldo:</strong> a chave local <code>gastopro_balance_checks_v1</code> guarda somente a data da última confirmação e o marcador de importação posterior por conta. Esses dados ficam apenas neste aparelho e são apagados ao limpar os dados ou excluir a conta.</p>
+
+      <h2>4. Recursos do aplicativo</h2>
+      <p>Fontes e ícones são servidos por arquivos locais do GastoPro. O navegador pode armazenar dados do app e a sessão de autenticação.</p>
+      <p>Arquivos PDF importados são lidos no próprio aparelho e não são enviados nem armazenados pelo GastoPro.</p>
+
+      <h2>5. Seus direitos (LGPD — Lei 13.709/2018)</h2>
+      <ul>
+        <li><strong>Acesso e portabilidade</strong>: o backup JSON contém versão, data de exportação, lançamentos, templates, metas, contas, cartões, compras no cartão e regras de importação. A exportação completa com login também inclui as mensagens Fale comigo. Não inclui perfil, nome, foto, e-mail, UID nem sessão.</li>
+        <li><strong>Reset</strong>: apaga deste aparelho os lançamentos, templates, metas, contas, cartões, compras no cartão e regras de importação; com login, solicita também a exclusão desses dados sincronizados. Mantém o login, o perfil e as mensagens.</li>
+        <li><strong>Logout</strong>: encerra a sessão e limpa os dados financeiros e o perfil locais; os dados sincronizados na nuvem permanecem.</li>
+        <li><strong>Exclusão da conta</strong>: apaga a conta de autenticação e os dados vinculados na nuvem, incluindo perfil, mensagens, consentimentos e eventos de uso; o app também limpa os dados locais da conta. A exclusão é irreversível; recomendamos exportar um backup antes.</li>
+        <li>Você pode apagar mensagens individualmente na tela Fale comigo. Reset e Logout não apagam as mensagens da nuvem.</li>
+      </ul>
+
+      <h2>6. Compartilhamento de dados</h2>
+      <p>Os dados não são vendidos nem utilizados para publicidade. O Supabase processa a autenticação e os dados da conta quando você usa a sincronização em nuvem.</p>
+
+      <h2>7. Segurança</h2>
+      <p>O app configura Content Security Policy (CSP), restringindo scripts à origem do próprio app e bloqueando objetos incorporados. Os valores dinâmicos usados na montagem de HTML são escapados com <code>escapeHtml</code> para reduzir o risco de XSS. As bibliotecas JavaScript usadas pelo app são servidas localmente. A sessão de autenticação é mantida pelo cliente Supabase no navegador.</p>
+
+      <h2>8. Contato</h2>
+      <p>Para exercer seus direitos ou tirar dúvidas, escreva para desenvolvedor.aylton@gmail.com. Se você tem login, também pode usar o canal Fale comigo no aplicativo. Não envie dados financeiros em canais públicos.</p>
+
+      <p>Esta política pode ser atualizada. A data de última revisão está indicada no topo do documento.</p>
+    </article>
+  </main>
+</body>
+</html>

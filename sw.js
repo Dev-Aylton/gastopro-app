@@ -5,7 +5,7 @@
 
 importScripts('./js/cache-assets.js');
 
-const CACHE_NAME = 'gastopro-v4.77';
+const CACHE_NAME = 'gastopro-v4.78';
 const ESSENTIAL_ASSETS = self.GastoProCacheAssets.essential;
 const OPTIONAL_ASSETS = self.GastoProCacheAssets.optional;
 const LOCAL_ASSETS = [...ESSENTIAL_ASSETS, ...OPTIONAL_ASSETS];
@@ -46,6 +46,8 @@ self.addEventListener('fetch', event => {
   if (requestUrl.hostname === 'supabase.co' || requestUrl.hostname.endsWith('.supabase.co')) return;
 
   if (requestUrl.origin !== self.location.origin) return;
+  const publicPrivacyPage = new URL('./privacidade.html', self.registration.scope);
+  if (event.request.mode === 'navigate' && requestUrl.pathname === publicPrivacyPage.pathname) return;
 
   event.respondWith((async () => {
     const controller = new AbortController();
