@@ -66,15 +66,15 @@
             <h3 class="sidebar-group-title" id="sidebarDailyTitle">Visão geral</h3>
             <button class="nav-item active" data-view="dashboard" id="navDashboard">
               <i class="fa-solid fa-chart-pie"></i>
-              <span>Dashboard & Saúde</span>
+              <span>Visão geral</span>
             </button>
           </section>
 
           <section class="sidebar-group" aria-labelledby="sidebarMovementTitle">
             <h3 class="sidebar-group-title" id="sidebarMovementTitle">Movimentações</h3>
-            <button class="nav-item nav-item-wizard" id="sidebarWizardBtn" title="Lançamento rápido guiado em 4 passos">
-              <i class="fa-solid fa-wand-magic-sparkles"></i>
-              <span>Lançamento Rápido</span>
+            <button class="nav-item" data-view="entries" id="navEntries">
+              <i class="fa-solid fa-plus"></i>
+              <span>Lançamentos</span>
             </button>
             <button class="nav-item" data-view="incomes" id="navIncomes">
               <i class="fa-solid fa-hand-holding-dollar"></i>
@@ -86,30 +86,38 @@
               <span>Gastos do Mês</span>
               <span class="nav-badge" id="sidebarExpenseCount"></span>
             </button>
+            <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar extrato ou nota fiscal">
+              <i class="fa-solid fa-file-import"></i>
+              <span>Importar extrato</span>
+              <span class="nav-import-badge">Novo</span>
+            </button>
+            <button class="nav-item nav-item-wizard" id="sidebarWizardBtn" title="Lançamento rápido guiado em 4 passos">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>Lançamento rápido</span>
+            </button>
+          </section>
+
+          <section class="sidebar-group" aria-labelledby="sidebarMoreTitle">
+            <h3 class="sidebar-group-title" id="sidebarMoreTitle">Contas e crédito</h3>
+            <button class="nav-item" data-view="accounts" id="navAccounts">
+              <i class="fa-solid fa-building-columns"></i>
+              <span>Contas</span>
+            </button>
+            <button class="nav-item" data-view="cards" id="navCards">
+              <i class="fa-solid fa-credit-card"></i>
+              <span>Cartões</span>
+            </button>
             <button class="nav-item" data-view="loans" id="navLoans">
               <i class="fa-solid fa-hand-holding-dollar"></i>
               <span>Empréstimos</span>
             </button>
           </section>
 
-          <section class="sidebar-group" aria-labelledby="sidebarMoreTitle">
-            <h3 class="sidebar-group-title" id="sidebarMoreTitle">Organizar</h3>
-            <button class="nav-item" data-view="cards" id="navCards">
-              <i class="fa-solid fa-credit-card"></i>
-              <span>Cartões</span>
-            </button>
-            <button class="nav-item" data-view="accounts" id="navAccounts">
-              <i class="fa-solid fa-building-columns"></i>
-              <span>Contas</span>
-            </button>
+          <section class="sidebar-group" aria-labelledby="sidebarPlanningTitle">
+            <h3 class="sidebar-group-title" id="sidebarPlanningTitle">Planejamento</h3>
             <button class="nav-item" data-view="simulator" id="navSimulator">
               <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
               <span>Simulador</span>
-            </button>
-            <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar arquivo (CSV, OFX ou XML)">
-              <i class="fa-solid fa-file-import"></i>
-              <span>Importar Extrato</span>
-              <span class="nav-import-badge">Novo</span>
             </button>
           </section>
         </div>
@@ -184,6 +192,10 @@
 
         <!-- Topbar Right: Saldo + Botão Atualizar + Foto/Avatar do Usuário -->
         <div class="topbar-right">
+          <div class="connectivity-status" id="connectivityStatus" role="status" aria-live="polite">
+            <i class="fa-solid fa-circle" aria-hidden="true"></i>
+            <span>Conectando</span>
+          </div>
           <div class="topbar-summary">
             <div class="topbar-balance-content">
               <div class="topbar-balance-line">
@@ -362,6 +374,7 @@
           <section class="drawer-section drawer-data-section">
             <h4 class="drawer-section-title">Dados e cópia de segurança</h4>
             <div class="drawer-backup-controls">
+            <h5 class="drawer-subsection-title">Cópia de segurança</h5>
             <p class="user-data-description">
               A cópia serve para guardar e restaurar seus dados no app; não é feita para abrir ou ler.
               A exportação inclui lançamentos, gastos fixos, metas, contas, cartões, compras no cartão,
@@ -386,6 +399,7 @@
               </div>
             </button>
             <input type="file" id="restoreBackupFile" accept=".json,application/json" hidden />
+            <h5 class="drawer-subsection-title">Relatórios</h5>
             <button type="button" id="openReportModalBtn" class="drawer-action-btn"
               title="Relatório para ler ou imprimir (PDF)" aria-haspopup="dialog" aria-controls="reportModal">
               <div class="action-icon bg-primary-soft">
@@ -421,10 +435,11 @@
               </div>
               <div class="action-text">
                 <strong>Buscar nova versão do app</strong>
-                <span>Versão v4.78</span>
+                <span>Versão v4.81</span>
               </div>
             </button>
             <div class="drawer-about-help">
+            <h5 class="drawer-subsection-title">Ajuda e contato</h5>
             <button type="button" class="drawer-action-btn" id="reopenOnboardingBtn">
               <div class="action-icon bg-primary-soft">
                 <i class="fa-solid fa-play text-primary" aria-hidden="true"></i>
@@ -521,6 +536,11 @@
              ==================================================== -->
         <section class="view-section active" id="view-dashboard">
 
+          <div class="dashboard-intro">
+            <h2>Visão geral</h2>
+            <p>Acompanhe suas contas e o resultado do mês selecionado.</p>
+          </div>
+
           <section class="dashboard-highlight-card" aria-label="Saldo atual">
             <div class="dashboard-highlight-value">
               <span>Saldo atual</span>
@@ -567,6 +587,27 @@
             <div class="install-app-actions">
               <button type="button" class="install-app-dismiss" id="dismissInstallAppButton">Agora não</button>
               <button type="button" class="install-app-primary" id="installAppButton" hidden>Instalar</button>
+            </div>
+          </section>
+
+          <section class="panel-box financial-insights-panel" id="financialInsightsPanel" aria-label="Alertas e resumo financeiro">
+            <button type="button" class="financial-insights-mobile-strip" id="financialInsightsMobileStrip"
+              aria-label="Abrir a lista de avisos" aria-controls="notificationsPanel">
+              <span id="financialInsightsMobileSummary">Sem avisos</span>
+              <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+            </button>
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-green-soft"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i></div>
+                <div>
+                  <h2>Alertas e resumo</h2>
+                  <p>Orientações calculadas neste aparelho com seus lançamentos</p>
+                </div>
+              </div>
+            </div>
+            <div class="financial-insights-grid">
+              <div class="financial-insights-alerts" id="financialInsightsAlerts" aria-live="polite"></div>
+              <section class="financial-month-summary" id="financialMonthSummary" aria-live="polite"></section>
             </div>
           </section>
 
@@ -618,7 +659,7 @@
               <div class="kpi-header">
                 <span class="kpi-title">
                   <i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>
-                  <span>Gastos do Mês</span>
+                  <span>Gastos</span>
                 </span>
               </div>
               <span class="kpi-caption">Já pago</span>
@@ -631,26 +672,35 @@
             </div>
           </div>
 
-          <section class="panel-box financial-insights-panel" id="financialInsightsPanel" aria-label="Alertas e resumo financeiro">
-            <button type="button" class="financial-insights-mobile-strip" id="financialInsightsMobileStrip"
-              aria-label="Abrir a lista de avisos" aria-controls="notificationsPanel">
-              <span id="financialInsightsMobileSummary">Sem avisos</span>
-              <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
-            </button>
-            <div class="panel-header">
-              <div class="panel-title-group">
-                <div class="panel-icon bg-green-soft"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i></div>
-                <div>
-                  <h2>Alertas e resumo</h2>
-                  <p>Orientações calculadas neste aparelho com seus lançamentos</p>
+          <div class="panel-box account-balance-panel">
+            <div class="account-balance-navigation">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <div class="panel-icon bg-green-soft"><i class="fa-solid fa-building-columns"></i></div>
+                  <div>
+                    <h2>Saldo em contas</h2>
+                    <p id="accountBalanceFilterLabel">Saldo consolidado de todas as contas</p>
+                  </div>
                 </div>
               </div>
+              <button type="button" class="account-balance-link" data-action="open-balance-adjustment"
+                aria-label="Ajustar saldo real das contas">
+                <strong id="dashboardAccountBalance">R$ 0,00</strong>
+                <span>Ajustar saldo real <i class="fa-solid fa-scale-balanced"></i></span>
+              </button>
             </div>
-            <div class="financial-insights-grid">
-              <div class="financial-insights-alerts" id="financialInsightsAlerts" aria-live="polite"></div>
-              <section class="financial-month-summary" id="financialMonthSummary" aria-live="polite"></section>
+            <div class="form-group account-balance-filters">
+              <label for="accountBalanceView">Filtrar a home por conta</label>
+              <select id="accountBalanceView" class="form-select" aria-label="Selecionar visão do saldo das contas">
+                <option value="all">Todas as contas</option>
+                <option value="PF">Todas as contas PF</option>
+                <option value="PJ">Todas as contas PJ</option>
+              </select>
             </div>
-          </section>
+            <div class="account-balance-empty" id="dashboardAccountsEmpty" hidden></div>
+          </div>
+
+          <div id="dashboardCreditCardSummary"></div>
 
           <!-- Diagnóstico de Saúde Financeira -->
           <div class="health-banner" id="healthBanner">
@@ -738,38 +788,6 @@
             </div>
             <div id="goalsEmptyState" class="goals-empty" style="display:none;"></div>
           </div>
-
-          <div class="panel-box account-balance-panel">
-            <div class="account-balance-navigation">
-              <div class="panel-header">
-                <div class="panel-title-group">
-                  <div class="panel-icon bg-green-soft"><i class="fa-solid fa-building-columns"></i></div>
-                  <div>
-                    <h2>Saldo em contas</h2>
-                    <p id="accountBalanceFilterLabel">Saldo consolidado de todas as contas</p>
-                  </div>
-                </div>
-              </div>
-              <button type="button" class="account-balance-link" data-action="open-balance-adjustment"
-                aria-label="Ajustar saldo real das contas">
-                <strong id="dashboardAccountBalance">R$ 0,00</strong>
-                <span>Ajustar saldo real <i class="fa-solid fa-scale-balanced"></i></span>
-              </button>
-            </div>
-            <div class="form-group account-balance-filters">
-              <label for="accountBalanceView">Filtrar a home por conta</label>
-              <select id="accountBalanceView" class="form-select" aria-label="Selecionar visão do saldo das contas">
-                <option value="all">Todas as contas</option>
-                <option value="PF">Todas as contas PF</option>
-                <option value="PJ">Todas as contas PJ</option>
-              </select>
-            </div>
-            <div class="account-balance-empty" id="dashboardAccountsEmpty" hidden></div>
-          </div>
-
-          <div id="dashboardCreditCardSummary"></div>
-
-
 
         <!-- ====================================================
              TELA 2: GANHOS DO MÊS (VER, ALTERAR, EXCLUIR)
@@ -886,9 +904,33 @@
                 <div class="panel-icon bg-green-soft"><i class="fa-solid fa-list-check"></i></div>
                 <div>
                   <h3>Lista de Ganhos Registrados</h3>
-                  <p>Clique em <strong>Editar</strong> para alterar valor ou descrição</p>
+                  <p>Edite os ganhos; transferências são removidas por completo.</p>
                 </div>
               </div>
+            </div>
+
+            <div class="entry-filter-grid" aria-label="Filtros de ganhos">
+              <div>
+                <label for="incomeSearchQuery">Buscar descrição</label>
+                <input type="search" id="incomeSearchQuery" data-entry-filter="query"
+                  placeholder="Ex.: salário" autocomplete="off" />
+              </div>
+              <div>
+                <label for="incomeSearchFrom">De</label>
+                <input type="date" id="incomeSearchFrom" data-entry-filter="from" />
+              </div>
+              <div>
+                <label for="incomeSearchTo">Até</label>
+                <input type="date" id="incomeSearchTo" data-entry-filter="to" />
+              </div>
+              <div>
+                <label for="incomeSearchAccount">Conta</label>
+                <select id="incomeSearchAccount" data-entry-filter="accountId"></select>
+              </div>
+              <button type="button" class="btn-secondary entry-filter-reset" data-action="clear-entry-search">
+                Limpar filtros
+              </button>
+              <p class="entry-filter-hint">Os filtros consultam os ganhos do mês selecionado.</p>
             </div>
 
             <div class="items-cards-list" id="incomesListDetailed">
@@ -1029,6 +1071,38 @@
 
           <!-- Lista Gerenciável de Gastos -->
           <div class="panel-box">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-red-soft"><i class="fa-solid fa-list-check" aria-hidden="true"></i></div>
+                <div>
+                  <h3>Gastos registrados</h3>
+                  <p>Consulte e gerencie os gastos do mês selecionado.</p>
+                </div>
+              </div>
+            </div>
+            <div class="entry-filter-grid" aria-label="Filtros de gastos">
+              <div>
+                <label for="expenseSearchQuery">Buscar descrição</label>
+                <input type="search" id="expenseSearchQuery" data-entry-filter="query"
+                  placeholder="Ex.: mercado" autocomplete="off" />
+              </div>
+              <div>
+                <label for="expenseSearchFrom">De</label>
+                <input type="date" id="expenseSearchFrom" data-entry-filter="from" />
+              </div>
+              <div>
+                <label for="expenseSearchTo">Até</label>
+                <input type="date" id="expenseSearchTo" data-entry-filter="to" />
+              </div>
+              <div>
+                <label for="expenseSearchAccount">Conta</label>
+                <select id="expenseSearchAccount" data-entry-filter="accountId"></select>
+              </div>
+              <button type="button" class="btn-secondary entry-filter-reset" data-action="clear-entry-search">
+                Limpar filtros
+              </button>
+              <p class="entry-filter-hint">Os filtros consultam os gastos do mês selecionado.</p>
+            </div>
             <div class="items-cards-list" id="expensesListDetailed">
               <!-- Renderizado dinamicamente -->
             </div>
@@ -1186,6 +1260,56 @@
             </div>
           </div>
 
+          <div class="panel-box transfer-panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <div class="panel-icon bg-green-soft"><i class="fa-solid fa-right-left" aria-hidden="true"></i></div>
+                <div>
+                  <h3>Transferir entre contas</h3>
+                  <p>Registra a saída e a entrada juntas, sem alterar o saldo consolidado.</p>
+                </div>
+              </div>
+            </div>
+            <form id="accountTransferForm" class="transfer-form">
+              <div>
+                <label for="transferFromAccount">Conta de origem</label>
+                <select id="transferFromAccount" class="account-select" required>
+                  <option value="">Selecione uma conta</option>
+                </select>
+              </div>
+              <div>
+                <label for="transferToAccount">Conta de destino</label>
+                <select id="transferToAccount" class="account-select" required>
+                  <option value="">Selecione uma conta</option>
+                </select>
+              </div>
+              <div>
+                <label for="transferAmount">Valor (R$)</label>
+                <input type="number" id="transferAmount" min="0.01" step="0.01"
+                  inputmode="decimal" placeholder="0,00" required />
+              </div>
+              <div>
+                <label for="transferDate">Data da transferência</label>
+                <input type="date" id="transferDate" required />
+              </div>
+              <div class="transfer-description">
+                <label for="transferDescription">Descrição (opcional)</label>
+                <input type="text" id="transferDescription" maxlength="300"
+                  placeholder="Ex.: reserva mensal" />
+              </div>
+              <div class="form-btn-align">
+                <button type="submit" class="btn-primary" id="accountTransferSubmitBtn">
+                  <i class="fa-solid fa-right-left" aria-hidden="true"></i> Registrar transferência
+                </button>
+                <p class="form-submit-status" data-button-state-status role="status" aria-live="polite"></p>
+              </div>
+              <p class="form-error transfer-form-error" id="accountTransferError" role="alert" hidden></p>
+              <p class="form-hint transfer-form-hint" id="accountTransferHint">
+                Cadastre pelo menos duas contas para transferir valores entre elas.
+              </p>
+            </form>
+          </div>
+
           <div class="panel-box" id="unassignedEntriesPanel" hidden>
             <div class="panel-header">
               <div class="panel-title-group">
@@ -1336,7 +1460,7 @@
           <a href="#" id="footerPrivacyLink" class="footer-privacy-link" title="Política de Privacidade — LGPD">
             Privacidade e LGPD
           </a>
-          <span class="badge badge-version">v4.78</span>
+          <span class="badge badge-version">v4.81</span>
         </div>
       </footer>
 
@@ -2187,7 +2311,25 @@
           </h4>
           <span class="preview-count-badge" id="previewCountBadge">0 itens</span>
         </div>
-        <p class="import-ofx-statement-info" id="importOfxStatementInfo" role="status" aria-live="polite" hidden></p>
+        <div class="import-statement-info" id="importStatementInfo" hidden>
+          <p id="importStatementDetails" role="status" aria-live="polite"></p>
+          <fieldset id="importBalanceControls" class="import-balance-controls" hidden>
+            <legend>Saldo identificado no arquivo</legend>
+            <div id="importStatementBalances" class="import-statement-balances"></div>
+            <label for="importStatementBalanceDate">Data deste saldo</label>
+            <input type="date" id="importStatementBalanceDate" aria-describedby="importStatementBalanceDateHint" />
+            <p id="importStatementBalanceDateHint" class="form-hint"></p>
+            <div class="import-balance-actions">
+              <button type="button" class="btn-secondary" id="updateImportedBalanceBtn">
+                Atualizar saldo da conta
+              </button>
+              <button type="button" class="btn-secondary" id="ignoreImportedBalanceBtn">
+                Ignorar saldo
+              </button>
+            </div>
+            <p id="importStatementBalanceStatus" role="status" aria-live="polite" hidden></p>
+          </fieldset>
+        </div>
 
         <!-- Selecionar todos -->
         <div class="preview-select-all-row">

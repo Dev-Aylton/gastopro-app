@@ -278,6 +278,53 @@ describe('Tutorial de primeiro acesso', () => {
   });
 });
 
+describe('Armazenamento IndexedDB', () => {
+  itAsync('migra coleções locais e persiste alterações sem manter cópias financeiras no localStorage', async () => {
+    const values = new Map([
+      ['gastopro_entries_v4_oct', JSON.stringify([{ id: 'legacy-entry', amount: 25 }])]
+    ]);
+    const legacyStorage = {
+      getItem: key => values.has(key) ? values.get(key) : null,
+      setItem: (key, value) => values.set(key, String(value)),
+      removeItem: key => values.delete(key)
+    };
+    const databaseName = `gastopro-test-${crypto.randomUUID()}`;
+    const first = window.GastoProIndexedStorage.create({ databaseName, legacyStorage });
+    let second;
+    try {
+      const firstResult = await first.initialize();
+      assertTrue(firstResult.success, firstResult.error?.message || 'IndexedDB inicializado');
+      assertEqual(JSON.parse(first.getItem('gastopro_entries_v4_oct')), [
+        { id: 'legacy-entry', amount: 25 }
+      ]);
+      assertFalse(values.has('gastopro_entries_v4_oct'), 'cópia legada removida após migração');
+
+      await first.setItem('gastopro_entries_v4_oct', JSON.stringify([{ id: 'saved-entry', amount: 40 }]));
+      await first.flush();
+      first.close();
+      second = window.GastoProIndexedStorage.create({
+        databaseName,
+        legacyStorage: { ...legacyStorage, getItem: () => null }
+      });
+      const secondResult = await second.initialize();
+      assertTrue(secondResult.success, secondResult.error?.message || 'IndexedDB reaberto');
+      assertEqual(JSON.parse(second.getItem('gastopro_entries_v4_oct')), [
+        { id: 'saved-entry', amount: 40 }
+      ]);
+      await second.removeItem('gastopro_entries_v4_oct');
+      await second.flush();
+      assertEqual(second.getItem('gastopro_entries_v4_oct'), null);
+    } finally {
+      first.close();
+      if (second) second.close();
+      await new Promise(resolve => {
+        const request = indexedDB.deleteDatabase(databaseName);
+        request.onsuccess = request.onerror = request.onblocked = resolve;
+      });
+    }
+  });
+});
+
 // ================================================================
 // HELPERS DE TESTE
 // ================================================================
@@ -1548,6 +1595,91 @@ describe('FinanceData — Contas Bancárias', () => {
     assertEqual(FinanceData.getEntries(), []);
     assertEqual(FinanceData.getTemplates(), []);
     assertEqual(FinanceData.getAccounts().map(item => item.id), [account.account.id]);
+  });
+
+  itAsync('registra transferência em pares, mantém o saldo consolidado e exclui os dois lados juntos', async () => {
+    setupMockLocalStorage();
+    const source = await FinanceData.addAccount({
+      name: 'Conta de origem',
+      type: 'PF',
+      initialBalance: 200
+    });
+    const destination = await FinanceData.addAccount({
+      name: 'Conta de destino',
+      type: 'PF',
+      initialBalance: 30
+    });
+    const today = new Date();
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const initialTotal = FinanceData.getAccountBalances().total;
+    const result = await FinanceData.createTransfer({
+      fromAccountId: source.account.id,
+      toAccountId: destination.account.id,
+      amount: '50.25',
+      date,
+      description: 'Reserva mensal'
+    });
+
+    assertTrue(result.success);
+    assertEqual(result.entries.length, 2);
+    assertEqual(result.entries.map(entry => entry.type), ['variable', 'income']);
+    assertEqual(FinanceData.getAccountBalance(source.account.id), 149.75);
+    assertEqual(FinanceData.getAccountBalance(destination.account.id), 80.25);
+    assertEqual(FinanceData.getAccountBalances().total, initialTotal);
+    assertEqual(FinanceData.getByMonth(date.slice(0, 7)), []);
+    assertEqual(FinanceData.getByMonth(date.slice(0, 7), { includeTransfers: true }).length, 2);
+    assertNull(FinanceData.update(result.entries[0].id, { desc: 'Alteração avulsa' }));
+    FinanceData.togglePaid(result.entries[0].id);
+    assertTrue(FinanceData.getEntries().every(entry => entry.paid));
+    assertFalse((await FinanceData.deleteAccount(source.account.id)).success);
+
+    const cloudEntry = window.GastoProSyncFieldHelpers.entryToCloud(result.entries[0]);
+    const roundTrip = window.GastoProSyncFieldHelpers.entryFromCloud({
+      ...cloudEntry,
+      id: result.entries[0].id,
+      user_id: '00000000-0000-4000-8000-000000000001',
+      updated_at: new Date().toISOString(),
+      deleted_at: null,
+      import_batch_id: null
+    });
+    assertEqual(FinanceData.getTransferInfo(roundTrip), FinanceData.getTransferInfo(result.entries[0]));
+
+    const deleted = await FinanceData.delete(result.entries[0].id);
+    assertTrue(deleted.success);
+    assertEqual(FinanceData.getEntries(), []);
+    assertEqual(FinanceData.getAccountBalances().total, initialTotal);
+  });
+
+  itAsync('rejeita transferências para a mesma conta, valor inválido ou data futura', async () => {
+    setupMockLocalStorage();
+    const account = await FinanceData.addAccount({ name: 'Conta de teste', type: 'PF' });
+    const other = await FinanceData.addAccount({ name: 'Outra conta', type: 'PJ' });
+    const today = new Date();
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const sameAccount = await FinanceData.createTransfer({
+      fromAccountId: account.account.id,
+      toAccountId: account.account.id,
+      amount: 10,
+      date
+    });
+    const zeroAmount = await FinanceData.createTransfer({
+      fromAccountId: account.account.id,
+      toAccountId: other.account.id,
+      amount: 0,
+      date
+    });
+    const futureDate = new Date(today.getTime() + 86400000);
+    const future = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, '0')}-${String(futureDate.getDate()).padStart(2, '0')}`;
+    const futureTransfer = await FinanceData.createTransfer({
+      fromAccountId: account.account.id,
+      toAccountId: other.account.id,
+      amount: 10,
+      date: future
+    });
+    assertFalse(sameAccount.success);
+    assertFalse(zeroAmount.success);
+    assertFalse(futureTransfer.success);
+    assertEqual(FinanceData.getEntries(), []);
   });
 
   itAsync('migra lançamentos antigos sem conta quando não há contas e os preserva quando há contas', async () => {
@@ -5799,7 +5931,7 @@ describe('FinanceData — clearAll()', () => {
 });
 
 describe('Versão do app', () => {
-  itAsync('versão, cache e teste de versão ficam sincronizados em v4.78', async () => {
+  itAsync('versão, cache e teste de versão ficam sincronizados em v4.81', async () => {
     const [indexResponse, swResponse] = await Promise.all([
       fetch('../index.html'),
       fetch('../sw.js')
@@ -5808,9 +5940,9 @@ describe('Versão do app', () => {
     assertTrue(swResponse.ok);
     const indexText = await indexResponse.text();
     const swText = await swResponse.text();
-    assertTrue(indexText.includes('Versão v4.78'));
-    assertTrue(indexText.includes('v4.78'));
-    assertTrue(swText.includes("const CACHE_NAME = 'gastopro-v4.78';"));
+    assertTrue(indexText.includes('Versão v4.81'));
+    assertTrue(indexText.includes('v4.81'));
+    assertTrue(swText.includes("const CACHE_NAME = 'gastopro-v4.81';"));
   });
 
   itAsync('publica a Política sem scripts e preserva o texto do modal', async () => {
@@ -10566,6 +10698,61 @@ describe('GastoProImporter — importação de arquivos', () => {
     assertEqual(rows[0].desc, 'Café');
   });
 
+  it('parseCSV identifica os saldos do resumo e do último lançamento sem escolher um', () => {
+    const csv = [
+      'Extrato Conta Corrente',
+      'Período;01/11/2026 a 15/11/2026',
+      'Saldo;1.234,56',
+      'Data Lançamento;Histórico;Descrição;Valor;Saldo',
+      '15/11/2026;Pix enviado;Compra fictícia;-10,00;1.224,56'
+    ].join('\n');
+    const rows = GastoProImporter.parseCSV(csv, new Date(2026, 10, 15));
+    const statement = GastoProImporter.getLastStatementInfo();
+
+    assertEqual(rows.length, 1);
+    assertEqual(statement.balances, [
+      {
+        label: 'Saldo do resumo',
+        balance: 1234.56,
+        balanceDate: '',
+        source: 'csv-summary'
+      },
+      {
+        label: 'Saldo do último lançamento',
+        balance: 1224.56,
+        balanceDate: '2026-11-15',
+        source: 'csv-running-balance'
+      }
+    ]);
+    assertNull(GastoProImporter.getLastOFXStatementInfo());
+  });
+
+  it('parseRawText reconhece apenas o saldo disponível do resumo de um PDF', () => {
+    const rows = GastoProImporter.parseRawText([
+      'Saldo total (bloqueado + disponível)',
+      'R$ 2.000,00',
+      'Saldo disponível:',
+      'R$ 1.500,00',
+      'Saldo bloqueado:',
+      'R$ 500,00',
+      '15/11/2026 Compra fictícia -10,00'
+    ].join('\n'));
+    const statement = GastoProImporter.getLastStatementInfo();
+
+    assertEqual(rows.length, 1);
+    assertEqual(statement.balances, [{
+      label: 'Saldo disponível',
+      balance: 1500,
+      balanceDate: '',
+      source: 'pdf-available'
+    }]);
+    assertEqual(
+      GastoProImporter.parseCSV('Data;Descrição;Valor\n15/11/2026;Compra fictícia;-10,00').length,
+      1
+    );
+    assertNull(GastoProImporter.getLastStatementInfo());
+  });
+
   itAsync('parseFile interpreta OFX SGML Windows-1252 com crédito e débito', async () => {
     const ofx = 'OFXHEADER:100\nCHARSET:1252\n<OFX><BANKTRANLIST>' +
       '<STMTTRN><DTPOSTED>20261015000000<TRNAMT>1500.00<NAME>SALÁRIO' +
@@ -13227,7 +13414,7 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     const navContact = appDocument.getElementById('navContact');
     const dangerZone = appDocument.getElementById('irreversibleActions');
     const expectedIds = [
-      'navDashboard', 'sidebarWizardBtn', 'navIncomes', 'sidebarIncomeCount',
+      'navDashboard', 'navEntries', 'sidebarWizardBtn', 'navIncomes', 'sidebarIncomeCount',
       'navExpenses', 'sidebarExpenseCount', 'navCards', 'sidebarImportBtn',
       'navAccounts', 'navContact', 'navAdmin', 'adminNewCount',
       'themeToggleBtn', 'themeToggleIcon', 'themeToggleLabel',
@@ -13248,6 +13435,16 @@ describe('Rodapé compacto, assets locais e galeria de avatares', () => {
     assertEqual(appDocument.querySelectorAll('#navContact').length, 1, 'um acesso a Fale comigo');
     assertTrue(drawer.contains(navContact), 'Fale comigo dentro do painel');
     assertFalse(sidebar.contains(navContact), 'Fale comigo fora do sidebar');
+    assertEqual([...sidebar.querySelectorAll('.sidebar-group')].map(group => ({
+      title: group.querySelector('.sidebar-group-title').textContent.trim(),
+      items: [...group.querySelectorAll('.nav-item')].map(item => item.id)
+    })), [
+      { title: 'Visão geral', items: ['navDashboard'] },
+      { title: 'Movimentações', items: ['navEntries', 'navIncomes', 'navExpenses', 'sidebarImportBtn', 'sidebarWizardBtn'] },
+      { title: 'Contas e crédito', items: ['navAccounts', 'navCards', 'navLoans'] },
+      { title: 'Planejamento', items: ['navSimulator'] }
+    ]);
+    assertEqual(appDocument.getElementById('navEntries').dataset.view, 'entries');
     assertFalse(dangerZone.open, 'zona de perigo fechada inicialmente');
     assertEqual(drawerSections, [
       'Perfil', 'Conta', 'Privacidade', 'Dados e cópia de segurança', 'App', 'Avançado'
@@ -13964,6 +14161,46 @@ describe('Home unificada e formas de pagamento', () => {
       assertTrue(fixture.host.querySelector('#toast').textContent.includes('Cartão de crédito'));
     } finally {
       fixture.cleanup();
+    }
+  });
+
+  itAsync('mantém aviso oculto e controles reais sem transbordar em telas estreitas', async () => {
+    const response = await fetch('../index.html');
+    assertTrue(response.ok, 'Não foi possível carregar o HTML do app.');
+    const appDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const frame = await getResponsiveFixtureFrame(320, 800);
+    const frameDocument = frame.contentDocument;
+    const frameWindow = frame.contentWindow;
+    frameDocument.getElementById('fixtureApp').innerHTML = `
+      <main class="views-wrapper">
+        <section class="view-section active" id="view-dashboard">
+          ${appDocument.querySelector('.dashboard-highlight-card').outerHTML}
+          ${appDocument.querySelector('.kpi-grid').outerHTML}
+          ${appDocument.querySelector('#goalsDashboardPanel').outerHTML}
+        </section>
+        <section id="view-expenses">${appDocument.querySelector('.filter-tabs-row').outerHTML}</section>
+      </main>`;
+    try {
+      for (const theme of ['dark', 'light']) {
+        for (const width of [320, 360, 390]) {
+          await getResponsiveFixtureFrame(width, 800);
+          frameDocument.documentElement.dataset.theme = theme;
+          frameDocument.body.dataset.theme = theme;
+          const notice = frameDocument.querySelector('#dashboardBalanceCheckNotice');
+          assertTrue(notice.hidden);
+          assertEqual(frameWindow.getComputedStyle(notice).display, 'none');
+          notice.hidden = false;
+          assertEqual(frameWindow.getComputedStyle(notice).display, 'grid');
+          notice.hidden = true;
+          const elements = frameDocument.querySelectorAll('.kpi-title, .filter-btn, #goalsDashboardPanel .panel-header');
+          elements.forEach(element => {
+            assertTrue(element.scrollWidth <= element.clientWidth + 1,
+              `${theme} ${width}px: ${element.textContent.trim()} deve caber no espaço`);
+          });
+        }
+      }
+    } finally {
+      removeResponsiveFixtureFrame();
     }
   });
 
@@ -14716,6 +14953,25 @@ describe('Correções de formulários, cards e rodapé', () => {
 describe('Filtro de contas na home e relatório do contador', () => {
   setupMockLocalStorage();
 
+  it('filtra lançamentos por descrição sem diferenciar acentos, período e conta', () => {
+    const items = [
+      { id: 'income-current', desc: 'Salário mensal', date: '2026-11-05', accountId: 'account-a' },
+      { id: 'expense-current', desc: 'Mercado', date: '2026-11-12', accountId: 'account-b' },
+      { id: 'income-older', desc: 'Salario antigo', date: '2026-10-28', accountId: 'account-a' }
+    ];
+    const filtered = window.GastoProEntrySearchHelpers.filter(items, {
+      query: 'salario',
+      from: '2026-11-01',
+      to: '2026-11-30',
+      accountId: 'account-a'
+    });
+    assertEqual(filtered.map(item => item.id), ['income-current']);
+    assertEqual(window.GastoProEntrySearchHelpers.filter(items, {
+      from: '2026-11-30',
+      to: '2026-11-01'
+    }), []);
+  });
+
   it('filtra ganhos, gastos fixos, variáveis e totais sem alterar os lançamentos', () => {
     const accounts = [
       { id: 'pf-account', name: 'Conta PF', type: 'PF' },
@@ -14769,6 +15025,32 @@ describe('Filtro de contas na home e relatório do contador', () => {
       [withoutPendingExpenses.totalExpenses, withoutPendingExpenses.paidExpenses],
       [25, 25]
     );
+  });
+
+  it('exclui as duas pontas da transferência dos totais mensais', () => {
+    const accounts = [{ id: 'account-a', name: 'Conta A', type: 'PF' }];
+    const transfer = role => ({
+      id: `transfer-${role}`,
+      type: role === 'incoming' ? 'income' : 'variable',
+      amount: 50,
+      accountId: 'account-a',
+      debtInfo: {
+        transfer: {
+          id: 'pair-1',
+          role,
+          counterpartAccountId: 'account-b'
+        }
+      }
+    });
+    const summary = window.GastoProAccountFilterHelpers.getDashboardSummary([
+      { id: 'salary', type: 'income', amount: 100, accountId: 'account-a' },
+      { id: 'market', type: 'variable', amount: 20, accountId: 'account-a' },
+      transfer('incoming'),
+      transfer('outgoing')
+    ], accounts, 'all');
+    assertEqual(summary.totalIncome, 100);
+    assertEqual(summary.totalVariable, 20);
+    assertEqual(summary.balance, 80);
   });
 
   it('exibe como principal o pago e mantém o previsto em linha separada', () => {
@@ -15178,6 +15460,7 @@ async function withIsolatedWizard(testFn) {
             get length() { return values.size; }
           }
         });
+        window.GastoProDisableIndexedDB = true;
         window.__wizardNetworkRequests = [];
         window.fetch = input => {
           window.__wizardNetworkRequests.push(String(input && input.url || input));
@@ -15376,14 +15659,16 @@ describe('Wizard de Lançamento Rápido', () => {
 
   itAsync('fechar pelo botão ou pelo overlay descarta os dados ainda não salvos', async () => {
     await withIsolatedWizard(async (wizardWindow, wizardDocument) => {
-      const initialStorage = snapshotWizardStorage(wizardWindow.localStorage);
+      const snapshotWithoutDiagnostics = () => snapshotWizardStorage(wizardWindow.localStorage)
+        .filter(([key]) => key !== 'gastopro_diagnostic_log_v1');
+      const initialStorage = snapshotWithoutDiagnostics();
       openIsolatedWizard(wizardDocument);
       addWizardIncome(wizardDocument, 'Renda cancelada', 3000);
       wizardDocument.getElementById('closeWizardBtn').click();
       assertFalse(wizardDocument.getElementById('wizardModal').classList.contains('active'));
       assertEqual(wizardWindow.FinanceData.getEntries(), []);
       assertEqual(wizardWindow.FinanceData.getTemplates(), []);
-      assertEqual(snapshotWizardStorage(wizardWindow.localStorage), initialStorage);
+      assertEqual(snapshotWithoutDiagnostics(), initialStorage);
 
       openIsolatedWizard(wizardDocument);
       addWizardIncome(wizardDocument, 'Renda descartada', 4000);
@@ -15391,7 +15676,7 @@ describe('Wizard de Lançamento Rápido', () => {
       assertFalse(wizardDocument.getElementById('wizardModal').classList.contains('active'));
       assertEqual(wizardWindow.FinanceData.getEntries(), []);
       assertEqual(wizardWindow.FinanceData.getTemplates(), []);
-      assertEqual(snapshotWizardStorage(wizardWindow.localStorage), initialStorage);
+      assertEqual(snapshotWithoutDiagnostics(), initialStorage);
     });
   });
 });
@@ -16107,7 +16392,7 @@ describe('Painel do usuário e avisos', () => {
       ['showToast(refreshMessage', 1],
       ['showToast(GastoProImporter.UNSUPPORTED_FILE_WARNING', 2],
       ["showToast('Cole o texto do extrato antes de analisar.", 1],
-      ["showToast(message, 'error')", 2],
+      ["showToast(message, 'error')", 6],
       ["showToast('Nenhum dado foi informado para salvar.", 2]
     ];
 

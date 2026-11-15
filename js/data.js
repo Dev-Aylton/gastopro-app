@@ -81,6 +81,160 @@ const STORAGE_TUTORIAL_SEEN = 'gastopro_tutorial_seen';
 const STORAGE_ACCOUNT_SETUP_SEEN = 'gastopro_account_setup_seen';
 const MAX_ACCOUNT_BALANCE = 9999999999.99;
 const MAX_CREDIT_CARD_LIMIT = 9999999999.99;
+const FINANCE_INDEXED_DB_NAME = 'gastopro-finance';
+const FINANCE_INDEXED_DB_STORE = 'collections';
+const FINANCE_INDEXED_DB_KEYS = new Set([
+  STORAGE_ENTRIES, STORAGE_TEMPLATES, STORAGE_GOALS, STORAGE_ACCOUNTS,
+  STORAGE_CREDIT_CARDS, STORAGE_CREDIT_CARD_PURCHASES, STORAGE_FIXED_IMPORT_RULES
+]);
+
+function createFinanceStorage(options = {}) {
+  const databaseName = options.databaseName || FINANCE_INDEXED_DB_NAME;
+  const getLegacyStorage = () => options.legacyStorage || window.localStorage;
+  const onError = typeof options.onError === 'function' ? options.onError : () => {};
+  const cache = new Map();
+  let database = null;
+  let indexedDBReady = false;
+  let writeQueue = Promise.resolve();
+
+  function reportError(error, operation) {
+    console.error(`[GastoPro] IndexedDB ${operation} falhou:`, error);
+    onError(error, operation);
+  }
+
+  function openDatabase() {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error('Este navegador não oferece IndexedDB.'));
+        return;
+      }
+      const request = window.indexedDB.open(databaseName, 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains(FINANCE_INDEXED_DB_STORE)) {
+          request.result.createObjectStore(FINANCE_INDEXED_DB_STORE, { keyPath: 'key' });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('Não foi possível abrir o armazenamento local.'));
+      request.onblocked = () => reject(new Error('Feche outras abas do GastoPro para atualizar o armazenamento local.'));
+    });
+  }
+
+  function enqueueWrite(operation) {
+    const next = writeQueue.catch(() => {}).then(() => new Promise((resolve, reject) => {
+      if (!database) {
+        reject(new Error('O armazenamento IndexedDB ainda não foi inicializado.'));
+        return;
+      }
+      const transaction = database.transaction(FINANCE_INDEXED_DB_STORE, 'readwrite');
+      const store = transaction.objectStore(FINANCE_INDEXED_DB_STORE);
+      operation(store);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error || new Error('Falha ao gravar os dados locais.'));
+      transaction.onabort = () => reject(transaction.error || new Error('A gravação local foi cancelada.'));
+    }));
+    writeQueue = next;
+    next.catch(error => reportError(error, 'gravação'));
+    return next;
+  }
+
+  function initialize() {
+    return openDatabase().then(openedDatabase => new Promise((resolve, reject) => {
+      database = openedDatabase;
+      const transaction = database.transaction(FINANCE_INDEXED_DB_STORE, 'readwrite');
+      const store = transaction.objectStore(FINANCE_INDEXED_DB_STORE);
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const persisted = new Map(request.result.map(record => [record.key, record.value]));
+        FINANCE_INDEXED_DB_KEYS.forEach(key => {
+          if (persisted.has(key)) {
+            cache.set(key, persisted.get(key));
+            return;
+          }
+          const legacyValue = getLegacyStorage().getItem(key);
+          if (legacyValue !== null) {
+            cache.set(key, legacyValue);
+            store.put({ key, value: legacyValue });
+          }
+        });
+      };
+      request.onerror = () => reject(request.error || new Error('Não foi possível ler os dados financeiros locais.'));
+      transaction.oncomplete = () => {
+        FINANCE_INDEXED_DB_KEYS.forEach(key => getLegacyStorage().removeItem(key));
+        indexedDBReady = true;
+        resolve({ success: true, backend: 'IndexedDB' });
+      };
+      transaction.onerror = () => reject(transaction.error || new Error('Não foi possível migrar os dados financeiros locais.'));
+      transaction.onabort = () => reject(transaction.error || new Error('A migração local foi cancelada.'));
+    })).catch(error => {
+      database = null;
+      indexedDBReady = false;
+      reportError(error, 'inicialização');
+      return { success: false, backend: 'localStorage', error };
+    });
+  }
+
+  function getItem(key) {
+    if (FINANCE_INDEXED_DB_KEYS.has(key) && indexedDBReady) {
+      return cache.has(key) ? cache.get(key) : null;
+    }
+    return getLegacyStorage().getItem(key);
+  }
+
+  function setItem(key, value) {
+    const serialized = String(value);
+    if (!FINANCE_INDEXED_DB_KEYS.has(key) || !indexedDBReady) {
+      getLegacyStorage().setItem(key, serialized);
+      return Promise.resolve();
+    }
+    cache.set(key, serialized);
+    return enqueueWrite(store => store.put({ key, value: serialized }));
+  }
+
+  function removeItem(key) {
+    if (!FINANCE_INDEXED_DB_KEYS.has(key) || !indexedDBReady) {
+      getLegacyStorage().removeItem(key);
+      return Promise.resolve();
+    }
+    cache.delete(key);
+    return enqueueWrite(store => store.delete(key));
+  }
+
+  function clear() {
+    FINANCE_INDEXED_DB_KEYS.forEach(key => {
+      cache.delete(key);
+      getLegacyStorage().removeItem(key);
+    });
+    if (!indexedDBReady) return Promise.resolve();
+    return enqueueWrite(store => FINANCE_INDEXED_DB_KEYS.forEach(key => store.delete(key)));
+  }
+
+  return Object.freeze({
+    initialize,
+    getItem,
+    setItem,
+    removeItem,
+    clear,
+    flush: () => writeQueue,
+    isReady: () => indexedDBReady,
+    close: () => {
+      if (database) database.close();
+      database = null;
+      indexedDBReady = false;
+    }
+  });
+}
+
+const financeStorage = createFinanceStorage({
+  onError: (error, operation) => {
+    window.dispatchEvent(new CustomEvent('gastopro:storage-error', {
+      detail: { operation, message: error.message }
+    }));
+  }
+});
+
+window.GastoProIndexedStorage = Object.freeze({ create: createFinanceStorage });
+
 const CREDIT_CARD_BRANDS = [
   'Visa', 'Mastercard', 'Elo', 'American Express', 'Hipercard', 'Outra'
 ];
@@ -122,6 +276,18 @@ function writeBalanceChecks(checks) {
   } catch (error) {
     return false;
   }
+}
+
+function getTransferInfo(entry) {
+  const transfer = entry && entry.debtInfo && entry.debtInfo.transfer;
+  if (!transfer || typeof transfer.id !== 'string' || !transfer.id ||
+    !['incoming', 'outgoing'].includes(transfer.role) ||
+    typeof transfer.counterpartAccountId !== 'string' || !transfer.counterpartAccountId) return null;
+  return transfer;
+}
+
+function isTransferEntry(entry) {
+  return Boolean(getTransferInfo(entry));
 }
 
 function precisaConfirmarSaldo(conta) {
@@ -765,6 +931,18 @@ function calculatePendingOutflows(items, accountFilter = 'all', accounts = []) {
 const FinanceData = {
   requireExplicitAccount: false,
 
+  initializeStorage() {
+    return financeStorage.initialize();
+  },
+
+  waitForStorageWrites() {
+    return financeStorage.flush();
+  },
+
+  getStorageBackend() {
+    return financeStorage.isReady() ? 'IndexedDB' : 'localStorage';
+  },
+
   getSyncMetadata() {
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_SYNC_METADATA) || '{}');
@@ -921,6 +1099,7 @@ const FinanceData = {
   },
 
   clearUserData() {
+    const storageClear = financeStorage.clear();
     const keysToRemove = [];
     for (let index = 0; index < localStorage.length; index++) {
       const key = localStorage.key(index);
@@ -934,6 +1113,7 @@ const FinanceData = {
         !key.startsWith('gastopro_paid_import_review_v1:')) keysToRemove.push(key);
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
+    return storageClear;
   },
 
   getPendingSync() {
@@ -1101,7 +1281,7 @@ const FinanceData = {
       this.clearUserData();
     } else {
       this.markFullSync();
-      localStorage.removeItem(STORAGE_GOALS);
+      financeStorage.removeItem(STORAGE_GOALS);
     }
     localStorage.setItem(STORAGE_LAST_UID, userId);
     return true;
@@ -1121,16 +1301,16 @@ const FinanceData = {
     const migratedTemplates = templates.map(item => isUuid(item.id) ? item : { ...item, id: crypto.randomUUID() });
 
     if (migratedEntries.some((item, index) => item.id !== entries[index].id)) {
-      localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(migratedEntries));
+      financeStorage.setItem(STORAGE_ENTRIES, JSON.stringify(migratedEntries));
       this.queueLocalChanges('entries', entries, migratedEntries);
     }
     if (migratedTemplates.some((item, index) => item.id !== templates[index].id)) {
-      localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(migratedTemplates));
+      financeStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(migratedTemplates));
       this.queueLocalChanges('templates', templates, migratedTemplates);
     }
     const migratedAccounts = accounts.map(item => isUuid(item.id) ? item : { ...item, id: crypto.randomUUID() });
     if (migratedAccounts.some((item, index) => item.id !== accounts[index].id)) {
-      localStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify(migratedAccounts));
+      financeStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify(migratedAccounts));
       this.queueLocalChanges('accounts', accounts, migratedAccounts);
     }
 
@@ -1785,11 +1965,11 @@ const FinanceData = {
           metadata.records.fixedImportRules[userId] = { updatedAt: version || tombstone, editedAt };
         } else {
           pending.fixedImportRules = false;
-          localStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify(tombstone || known && !version ? [] : cloudFixedImportRules));
+          financeStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify(tombstone || known && !version ? [] : cloudFixedImportRules));
           metadata.records.fixedImportRules[userId] = { updatedAt: version || tombstone || null, editedAt: version || tombstone || null };
         }
       } else if (!pending.fixedImportRules) {
-        localStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify(cloudFixedImportRules));
+        financeStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify(cloudFixedImportRules));
         if (version) metadata.records.fixedImportRules[userId] = { updatedAt: version, editedAt: version };
       }
       if (tombstone && !hasLocalRules && !hasPendingRules) {
@@ -1847,8 +2027,8 @@ const FinanceData = {
       this.getTemplates(), cloudTemplates, pending.templates, pending.deletedTemplates
     );
     const accounts = this.getAccounts();
-    localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
-    localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
+    financeStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
+    financeStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
     if (cloudAccounts !== null) {
       const pendingAccounts = new Set(pending.accounts);
       const deletedAccounts = new Set(pending.deletedAccounts);
@@ -1864,7 +2044,7 @@ const FinanceData = {
           mergedAccounts.set(account.id, account);
         }
       });
-      localStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify([...mergedAccounts.values()]));
+      financeStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify([...mergedAccounts.values()]));
     }
     if (cloudCreditCards !== null) {
       const localCards = this.getCreditCards();
@@ -1880,10 +2060,10 @@ const FinanceData = {
         if (mergedCards.has(card.id) || deletedCards.has(card.id)) return;
         if (pendingCards.has(card.id) || !canRemoveCloudDeleted) mergedCards.set(card.id, card);
       });
-      localStorage.setItem(STORAGE_CREDIT_CARDS, JSON.stringify([...mergedCards.values()]));
+      financeStorage.setItem(STORAGE_CREDIT_CARDS, JSON.stringify([...mergedCards.values()]));
     }
     if (cloudCreditCardPurchases !== null) {
-      localStorage.setItem(STORAGE_CREDIT_CARD_PURCHASES, JSON.stringify(mergeById(
+      financeStorage.setItem(STORAGE_CREDIT_CARD_PURCHASES, JSON.stringify(mergeById(
         this.getCreditCardPurchases(), cloudCreditCardPurchases,
         pending.creditCardPurchases, pending.deletedCreditCardPurchases
       )));
@@ -1912,11 +2092,11 @@ const FinanceData = {
           mergedGoals.set(goal.category, goal);
         }
       });
-      localStorage.setItem(STORAGE_GOALS, JSON.stringify([...mergedGoals.values()]));
+      financeStorage.setItem(STORAGE_GOALS, JSON.stringify([...mergedGoals.values()]));
     }
     if (cloudFixedImportRules !== null) {
       if (pending.fixedImportRules) return true;
-      localStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify([...new Set(cloudFixedImportRules)]));
+      financeStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify([...new Set(cloudFixedImportRules)]));
     }
     return true;
   },
@@ -1982,7 +2162,7 @@ const FinanceData = {
    */
   getEntries() {
     try {
-      const stored = localStorage.getItem(STORAGE_ENTRIES);
+      const stored = financeStorage.getItem(STORAGE_ENTRIES);
       // Retorna array vazio para novos usuários — dados virão da nuvem após login
       if (!stored) return [];
       return JSON.parse(stored);
@@ -2000,7 +2180,7 @@ const FinanceData = {
   async saveEntries(entries, options = {}) {
     try {
       const previousEntries = this.getEntries();
-      localStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
+      await financeStorage.setItem(STORAGE_ENTRIES, JSON.stringify(entries));
       this.queueLocalChanges('entries', previousEntries, entries);
       const profile = this.getProfile();
       return options.flush === false
@@ -2023,7 +2203,7 @@ const FinanceData = {
    */
   getTemplates() {
     try {
-      const stored = localStorage.getItem(STORAGE_TEMPLATES);
+      const stored = financeStorage.getItem(STORAGE_TEMPLATES);
       // Retorna array vazio para novos usuários — dados virão da nuvem após login
       if (!stored) return [];
       return JSON.parse(stored);
@@ -2049,7 +2229,7 @@ const FinanceData = {
         if (loanError) return { success: false, error: loanError };
       }
       const previousTemplates = this.getTemplates();
-      localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
+      await financeStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates));
       this.queueLocalChanges('templates', previousTemplates, templates);
       const profile = this.getProfile();
       return options.flush === false
@@ -2063,7 +2243,7 @@ const FinanceData = {
 
   getAccounts() {
     try {
-      const stored = localStorage.getItem(STORAGE_ACCOUNTS);
+      const stored = financeStorage.getItem(STORAGE_ACCOUNTS);
       return stored ? JSON.parse(stored) : [];
     } catch (e) {
       console.error('[GastoPro] Erro ao ler contas:', e);
@@ -2073,7 +2253,7 @@ const FinanceData = {
 
   getCreditCards() {
     try {
-      const stored = localStorage.getItem(STORAGE_CREDIT_CARDS);
+      const stored = financeStorage.getItem(STORAGE_CREDIT_CARDS);
       const cards = stored ? JSON.parse(stored) : [];
       return this.migrateLegacyCreditCardPreviousSpent(cards);
     } catch (error) {
@@ -2118,7 +2298,7 @@ const FinanceData = {
 
     if (changed) {
       try {
-        localStorage.setItem(STORAGE_CREDIT_CARDS, JSON.stringify(migratedCards));
+        financeStorage.setItem(STORAGE_CREDIT_CARDS, JSON.stringify(migratedCards));
         this.queueLocalChanges('creditCards', cards, migratedCards);
       } catch (error) {
         console.error('[GastoPro] Não foi possível migrar gastos anteriores para os cartões:', error);
@@ -2141,7 +2321,7 @@ const FinanceData = {
 
   getCreditCardPurchases() {
     try {
-      const stored = localStorage.getItem(STORAGE_CREDIT_CARD_PURCHASES);
+      const stored = financeStorage.getItem(STORAGE_CREDIT_CARD_PURCHASES);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
       console.error('[GastoPro] Erro ao ler compras no cartão:', error);
@@ -2219,7 +2399,7 @@ const FinanceData = {
         });
       }
       const previous = this.getCreditCardPurchases();
-      localStorage.setItem(STORAGE_CREDIT_CARD_PURCHASES, JSON.stringify(normalized));
+      await financeStorage.setItem(STORAGE_CREDIT_CARD_PURCHASES, JSON.stringify(normalized));
       this.queueLocalChanges('creditCardPurchases', previous, normalized);
       return options.flush === false
         ? { success: true, queued: true }
@@ -2342,7 +2522,7 @@ const FinanceData = {
         normalizedCards.push(normalizedCard);
       }
       const previousCards = this.getCreditCards();
-      localStorage.setItem(STORAGE_CREDIT_CARDS, JSON.stringify(normalizedCards));
+      await financeStorage.setItem(STORAGE_CREDIT_CARDS, JSON.stringify(normalizedCards));
       this.queueLocalChanges('creditCards', previousCards, normalizedCards);
       return options.flush === false
         ? { success: true, queued: true }
@@ -2421,7 +2601,7 @@ const FinanceData = {
         balanceDate: account.balanceDate || null
       }));
       const previousAccounts = this.getAccounts();
-      localStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify(normalizedAccounts));
+      await financeStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify(normalizedAccounts));
       this.queueLocalChanges('accounts', previousAccounts, normalizedAccounts);
       const profile = this.getProfile();
       return options.flush === false
@@ -2479,6 +2659,12 @@ const FinanceData = {
     if (!accounts.some(account => account.id === id)) {
       return { success: false, error: 'Conta não encontrada.' };
     }
+    if (this.getEntries().some(entry => entry.accountId === id && isTransferEntry(entry))) {
+      return {
+        success: false,
+        error: 'Remova as transferências vinculadas a esta conta antes de excluí-la.'
+      };
+    }
     const linkedEntries = this.getEntries().filter(entry => entry.accountId === id);
     const linkedTemplates = this.getTemplates().filter(template => template.accountId === id);
     const linkedCreditCards = this.getCreditCards().filter(card => card.accountId === id);
@@ -2533,7 +2719,7 @@ const FinanceData = {
 
   getFixedImportRules() {
     try {
-      const stored = localStorage.getItem(STORAGE_FIXED_IMPORT_RULES);
+      const stored = financeStorage.getItem(STORAGE_FIXED_IMPORT_RULES);
       if (!stored) return [];
       const rules = JSON.parse(stored);
       return Array.isArray(rules)
@@ -2553,7 +2739,7 @@ const FinanceData = {
     }
     try {
       const normalizedRules = [...new Set(rules.map(rule => rule.trim()))];
-      localStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify(normalizedRules));
+      await financeStorage.setItem(STORAGE_FIXED_IMPORT_RULES, JSON.stringify(normalizedRules));
       const pending = this.getPendingSync();
       pending.fixedImportRules = true;
       this.savePendingSync(pending);
@@ -2692,6 +2878,80 @@ const FinanceData = {
     return Math.round((Number(account.initialBalance) + activity) * 100) / 100;
   },
 
+  async createTransfer({ fromAccountId, toAccountId, amount, date, description = '' } = {}) {
+    const accounts = this.getAccounts();
+    const source = accounts.find(account => account.id === fromAccountId);
+    const destination = accounts.find(account => account.id === toAccountId);
+    if (!source || !destination) {
+      return { success: false, error: 'Selecione duas contas válidas para a transferência.' };
+    }
+    if (source.id === destination.id) {
+      return { success: false, error: 'A conta de origem e a de destino devem ser diferentes.' };
+    }
+    if (typeof amount === 'boolean' || amount === '' ||
+      !window.GastoProMoneyScale.hasAtMostTwoDecimalPlaces(amount) ||
+      !Number.isFinite(Number(amount)) || Number(amount) <= 0 ||
+      Number(amount) > MAX_ACCOUNT_BALANCE) {
+      return { success: false, error: 'Informe um valor de transferência válido, maior que zero.' };
+    }
+    if (!isValidCivilDate(date) || date > getLocalDateString()) {
+      return { success: false, error: 'Informe uma data válida, hoje ou anterior.' };
+    }
+    const transferDescription = String(description || '').trim();
+    if (transferDescription.length > 300) {
+      return { success: false, error: 'A descrição deve ter no máximo 300 caracteres.' };
+    }
+
+    const transferId = crypto.randomUUID();
+    const transferAmount = Math.round(Number(amount) * 100) / 100;
+    const common = {
+      desc: transferDescription || 'Transferência entre contas',
+      amount: transferAmount,
+      category: 'Transferência',
+      date,
+      month: date.slice(0, 7),
+      paid: true,
+      active: true,
+      isDebt: false,
+      paymentMethod: 'transfer'
+    };
+    const transferEntries = [
+      {
+        ...common,
+        id: crypto.randomUUID(),
+        type: 'variable',
+        accountId: source.id,
+        debtInfo: {
+          transfer: {
+            id: transferId,
+            role: 'outgoing',
+            counterpartAccountId: destination.id
+          }
+        }
+      },
+      {
+        ...common,
+        id: crypto.randomUUID(),
+        type: 'income',
+        accountId: destination.id,
+        debtInfo: {
+          transfer: {
+            id: transferId,
+            role: 'incoming',
+            counterpartAccountId: source.id
+          }
+        }
+      }
+    ];
+    const result = await this.saveEntries([...this.getEntries(), ...transferEntries], { flush: false });
+    if (!result.success) return result;
+    const syncResult = await this.flushPendingSync(this.getProfile().userId);
+    return { success: true, transferId, entries: transferEntries, syncResult };
+  },
+
+  isTransferEntry,
+  getTransferInfo,
+
   getAccountBalances() {
     const totals = { total: 0, PF: 0, PJ: 0 };
     this.getAccounts().forEach(account => {
@@ -2788,11 +3048,11 @@ const FinanceData = {
    * const itens = FinanceData.getByMonth('2026-11');
    * const ganhos = itens.filter(i => i.type === 'income');
    */
-  getByMonth(yearMonth) {
+  getByMonth(yearMonth, options = {}) {
     // Passo 1: lançamentos pontuais deste mês (com fallback para e.date)
     const entries = this.getEntries().filter(e => {
       const itemMonth = e.month || (e.date ? String(e.date).substring(0, 7) : '');
-      return itemMonth === yearMonth;
+      return itemMonth === yearMonth && (options.includeTransfers || !isTransferEntry(e));
     }).map(entry => ({
       ...entry,
       dueDayMissing: entry.type !== 'income' && entry.paymentMethod !== 'credit_card' &&
@@ -2890,8 +3150,10 @@ const FinanceData = {
    *
    * @returns {Array<Object>} Lista de todos os itens armazenados.
    */
-  getAll() {
-    const entries   = this.getEntries();
+  getAll(options = {}) {
+    const entries   = this.getEntries().filter(entry =>
+      options.includeTransfers || !isTransferEntry(entry)
+    );
     const templates = this.getTemplates().map(t => {
       const day = Number(t.day);
       const fallbackDate = isValidCivilMonth(t.startMonth) &&
@@ -3299,6 +3561,7 @@ const FinanceData = {
     const entries = this.getEntries();
     const entryIdx = entries.findIndex(e => e.id === id);
     if (entryIdx !== -1) {
+      if (isTransferEntry(entries[entryIdx])) return null;
       if (updatedFields.type === 'fixed' || updatedFields.type === 'debt') {
         console.warn('[GastoPro] Não é possível converter um lançamento pontual em template recorrente pela edição.');
         return null;
@@ -3355,7 +3618,7 @@ const FinanceData = {
 
     const entries = this.getEntries();
     const item = entries.find(e => e.id === id);
-    if (item) {
+    if (item && !isTransferEntry(item)) {
       item.paid = !item.paid;
       this.saveEntries(entries);
     }
@@ -3414,7 +3677,13 @@ const FinanceData = {
     if (templates.some(template => template.id === id)) {
       return this.saveTemplates(templates.filter(template => template.id !== id));
     }
-    return this.saveEntries(this.getEntries().filter(entry => entry.id !== id));
+    const entries = this.getEntries();
+    const target = entries.find(entry => entry.id === id);
+    const transfer = getTransferInfo(target);
+    const removeIds = transfer
+      ? new Set(entries.filter(entry => getTransferInfo(entry)?.id === transfer.id).map(entry => entry.id))
+      : new Set([id]);
+    return this.saveEntries(entries.filter(entry => !removeIds.has(entry.id)));
   },
 
   // ================================================================
@@ -3443,6 +3712,7 @@ const FinanceData = {
     }
 
     try {
+      await financeStorage.clear();
       [
         STORAGE_ENTRIES,
         STORAGE_TEMPLATES,
@@ -3517,6 +3787,7 @@ const FinanceData = {
     await this.saveCreditCards([], { flush: false });
     this.saveGoals([]);
     await this.saveFixedImportRules([], { flush: false });
+    await financeStorage.flush();
     try {
       localStorage.removeItem(STORAGE_BALANCE_CHECKS);
     } catch (error) {
@@ -3735,7 +4006,7 @@ const FinanceData = {
    */
   getGoals() {
     try {
-      const stored = localStorage.getItem(STORAGE_GOALS);
+      const stored = financeStorage.getItem(STORAGE_GOALS);
       return stored ? JSON.parse(stored) : [];
     } catch (e) {
       console.error('[GastoPro] Erro ao ler metas:', e);
@@ -3752,7 +4023,7 @@ const FinanceData = {
     try {
       const previousGoals = this.getGoals();
       this.queueGoalChanges(previousGoals, goals);
-      localStorage.setItem(STORAGE_GOALS, JSON.stringify(goals));
+      financeStorage.setItem(STORAGE_GOALS, JSON.stringify(goals));
       return true;
     } catch (e) {
       console.error('[GastoPro] Erro ao salvar metas:', e);

@@ -363,6 +363,7 @@ const state = {
   currentYear:  _initDate.getFullYear(),  // Ano selecionado (inicializa com o ano atual)
   currentMonth: _initDate.getMonth() + 1, // Mês selecionado 1–12 (inicializa com mês atual)
   expenseFilter: 'all',                   // Filtro de gastos: 'all' | 'fixed' | 'variable'
+  entrySearch: { query: '', from: '', to: '', accountId: '' },
   accountBalanceFilter: 'all',
   dismissedInsights: loadDismissedInsights(),
   chartInstance: null                     // Instância ativa do Chart.js (para destruir antes de recriar)
@@ -1898,6 +1899,55 @@ window.GastoProAuthHelpers = {
 function getYearMonthString(year, month) {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
+
+function normalizeEntrySearchText(value) {
+  return String(value || '').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .trim();
+}
+
+function filterEntrySearchItems(items, filters = {}) {
+  const query = normalizeEntrySearchText(filters.query);
+  if (filters.from && filters.to && filters.from > filters.to) return [];
+  return (Array.isArray(items) ? items : []).filter(item => {
+    if (!item || typeof item !== 'object') return false;
+    const description = normalizeEntrySearchText(item && item.desc);
+    const date = item && typeof item.date === 'string' ? item.date : '';
+    return (!query || description.includes(query)) &&
+      (!filters.from || (date && date >= filters.from)) &&
+      (!filters.to || (date && date <= filters.to)) &&
+      (!filters.accountId || item.accountId === filters.accountId);
+  });
+}
+
+function isEntrySearchActive(filters = {}) {
+  return Boolean(filters.query || filters.from || filters.to || filters.accountId);
+}
+
+function renderEntrySearchFilters() {
+  const accounts = FinanceData.getAccounts();
+  const options = [
+    { value: '', label: 'Todas as contas' },
+    ...accounts.map(account => ({ value: account.id, label: account.name }))
+  ];
+  document.querySelectorAll('[data-entry-filter]').forEach(field => {
+    const key = field.dataset.entryFilter;
+    if (key === 'accountId') {
+      field.innerHTML = options.map(option =>
+        `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
+      ).join('');
+    }
+    if (Object.prototype.hasOwnProperty.call(state.entrySearch, key)) {
+      field.value = state.entrySearch[key];
+    }
+  });
+}
+
+window.GastoProEntrySearchHelpers = Object.freeze({
+  filter: filterEntrySearchItems,
+  normalize: normalizeEntrySearchText
+});
 
 function getAccountBalanceForFilter(balances, filter, accounts = null, getBalance = null) {
   if (filter === 'PF' || filter === 'PJ') return Number(balances[filter]) || 0;
@@ -4085,6 +4135,7 @@ bindSimulatorForms();
 function renderAll() {
   migrateLegacyAccountAssignments();
   updateAccountSelects();
+  renderEntrySearchFilters();
   updateCreditCardPurchaseFields();
   const ym         = getYearMonthString(state.currentYear, state.currentMonth);
   const monthLabel = `${MONTH_NAMES[state.currentMonth - 1]} ${state.currentYear}`;
@@ -4097,6 +4148,8 @@ function renderAll() {
 
   // Busca todos os itens financeiros do mês atual (entradas + projeções fixas)
   const entries = FinanceData.getByMonth(ym);
+  const transferEntries = FinanceData.getByMonth(ym, { includeTransfers: true })
+    .filter(FinanceData.isTransferEntry);
   const accounts = FinanceData.getAccounts();
   const dashboardSummary = getDashboardAccountSummary(
     entries, accounts, state.accountBalanceFilter
@@ -4104,6 +4157,18 @@ function renderAll() {
   const incomes = entries.filter(e => e.type === 'income');
   const allFixed = entries.filter(e => e.type === 'fixed');
   const variables = entries.filter(e => e.type === 'variable');
+  const transferInfos = new Map(transferEntries.map(entry => [
+    entry.id,
+    FinanceData.getTransferInfo(entry)
+  ]));
+  const incomeList = [
+    ...incomes,
+    ...transferEntries.filter(entry => transferInfos.get(entry.id).role === 'incoming')
+  ];
+  const variableList = [
+    ...variables,
+    ...transferEntries.filter(entry => transferInfos.get(entry.id).role === 'outgoing')
+  ];
 
   // Filtra apenas fixos ativos (ou pagos) para o cálculo de totais.
   // Fixos inativos ainda aparecem na tela de Gastos para gerenciamento,
@@ -4151,9 +4216,9 @@ function renderAll() {
     dashboardSummary.balance,
     ym
   );
-  renderIncomesView(incomes, totalIncome);
+  renderIncomesView(incomeList, totalIncome);
   // allFixed (com inativos) é passado para permitir gerenciar gastos pausados na tela de Gastos
-  renderExpensesView(allFixed, variables, totalFixed, totalVariable, totalExpenses);
+  renderExpensesView(allFixed, variableList, totalFixed, totalVariable, totalExpenses);
   renderLoansView();
   renderAccountsView();
   renderCreditCardsPanel();
@@ -4337,7 +4402,16 @@ function renderAccountsView() {
   const unassignedPanel = document.getElementById('unassignedEntriesPanel');
   const unassignedList = document.getElementById('unassignedEntriesList');
   const total = document.getElementById('accountsPageTotal');
+  const transferSubmit = document.getElementById('accountTransferSubmitBtn');
+  const transferHint = document.getElementById('accountTransferHint');
   setFinancialAmount(total, FinanceData.getAccountBalances().total, { signed: true, tone: 'inverse' });
+  if (transferSubmit) transferSubmit.disabled = accounts.length < 2;
+  if (transferHint) {
+    transferHint.hidden = accounts.length >= 2;
+    transferHint.textContent = accounts.length
+      ? 'Cadastre mais uma conta para habilitar transferências.'
+      : 'Cadastre pelo menos duas contas para transferir valores entre elas.';
+  }
   if (!list) return;
   const unassigned = FinanceData.getUnassignedAccountItems();
   if (unassignedPanel && unassignedList) {
@@ -5140,7 +5214,11 @@ window.GastoProUpdateReloadHelpers = Object.freeze({
 });
 
 function getDashboardAccountSummary(items, accounts, filter) {
-  const filteredItems = filterFinancialItemsByAccount(items, accounts, filter);
+  const filteredItems = filterFinancialItemsByAccount(
+    (items || []).filter(item => !FinanceData.isTransferEntry(item)),
+    accounts,
+    filter
+  );
   const incomes = filteredItems.filter(item => item.type === 'income');
   const fixed = filteredItems.filter(item =>
     item.type === 'fixed' && (item.active !== false || item.paid)
@@ -5169,7 +5247,7 @@ function getDashboardAccountSummary(items, accounts, filter) {
 function getDashboardExpenseSummary(fixed, debts, variables) {
   const activeFixed = (fixed || []).filter(item => item.active !== false || item.paid);
   const activeDebts = (debts || []).filter(item => item.active !== false || item.paid);
-  const variableItems = variables || [];
+  const variableItems = (variables || []).filter(item => !FinanceData.isTransferEntry(item));
   const totalFixed = activeFixed.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const totalDebts = activeDebts.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const totalVariable = variableItems.reduce((sum, item) => sum + Number(item.amount || 0), 0);
@@ -7002,8 +7080,20 @@ function renderIncomesView(incomes, totalIncome) {
 
   const container = document.getElementById('incomesListDetailed');
   if (!container) return;
+  const filteredIncomes = filterEntrySearchItems(incomes, state.entrySearch);
 
-  if (incomes.length === 0) {
+  if (filteredIncomes.length === 0) {
+    if (isEntrySearchActive(state.entrySearch)) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <p>Nenhum ganho corresponde aos filtros.</p>
+          <button type="button" class="btn-secondary empty-state-action" data-action="clear-entry-search">
+            Limpar filtros
+          </button>
+        </div>
+      `;
+      return;
+    }
     container.innerHTML = `
       <div class="empty-state">
         <i class="fa-solid fa-hand-holding-dollar" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.4;"></i>
@@ -7018,7 +7108,9 @@ function renderIncomesView(incomes, totalIncome) {
   }
 
   const accountNames = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
-  container.innerHTML = incomes.map(item => renderControlCenterItem(item, accountNames, true)).join('');
+  container.innerHTML = `${isEntrySearchActive(state.entrySearch)
+    ? `<p class="entry-search-count" role="status">Exibindo ${filteredIncomes.length} ganho(s) deste mês.</p>`
+    : ''}${filteredIncomes.map(item => renderControlCenterItem(item, accountNames, true)).join('')}`;
 }
 
 // ================================================================
@@ -7038,7 +7130,8 @@ function renderIncomesView(incomes, totalIncome) {
  * @param {number} totalExpenses - totalFixed + totalVariable.
  */
 function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalExpenses) {
-  const paidExpenses = [...(fixed || []).filter(item => item.active !== false || item.paid), ...(variables || [])]
+  const regularVariables = (variables || []).filter(item => !FinanceData.isTransferEntry(item));
+  const paidExpenses = [...(fixed || []).filter(item => item.active !== false || item.paid), ...regularVariables]
     .filter(item => item.paid === true)
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
   setFinancialAmount(document.getElementById('expensesPageTotal'), -paidExpenses, { signed: true, tone: 'inverse' });
@@ -7062,8 +7155,20 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
   } else if (state.expenseFilter === 'variable') {
     itemsToDisplay = variables;
   }
+  itemsToDisplay = filterEntrySearchItems(itemsToDisplay, state.entrySearch);
 
   if (itemsToDisplay.length === 0) {
+    if (isEntrySearchActive(state.entrySearch)) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <p>Nenhum gasto corresponde aos filtros.</p>
+          <button type="button" class="btn-secondary empty-state-action" data-action="clear-entry-search">
+            Limpar filtros
+          </button>
+        </div>
+      `;
+      return;
+    }
     container.innerHTML = `
       <div class="empty-state">
         <i class="fa-solid fa-receipt" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.4;"></i>
@@ -7078,10 +7183,16 @@ function renderExpensesView(fixed, variables, totalFixed, totalVariable, totalEx
   }
 
   const accountNames = new Map(FinanceData.getAccounts().map(account => [account.id, account.name]));
-  container.innerHTML = itemsToDisplay.map(item => renderControlCenterItem(item, accountNames, false)).join('');
+  container.innerHTML = `${isEntrySearchActive(state.entrySearch)
+    ? `<p class="entry-search-count" role="status">Exibindo ${itemsToDisplay.length} gasto(s) deste mês.</p>`
+    : ''}${itemsToDisplay.map(item => renderControlCenterItem(item, accountNames, false)).join('')}`;
 }
 
 function getControlCenterTypeLabel(item) {
+  const transfer = FinanceData.getTransferInfo(item);
+  if (transfer) return transfer.role === 'incoming'
+    ? 'Transferência recebida'
+    : 'Transferência enviada';
   if (item.type === 'income') return 'Ganho';
   if (item.isLoan || item.loanReceivedAmount != null) return 'Empréstimo';
   if (item.isCardInstallment || item.category === 'Parcelamento') return 'Parcelado';
@@ -7092,6 +7203,7 @@ function getControlCenterTypeLabel(item) {
 }
 
 function renderControlCenterItem(item, accountNames, isIncome) {
+  const transfer = FinanceData.getTransferInfo(item);
   const isCardInstallment = Boolean(item.isCardInstallment);
   const isTemplate = Boolean(item.isTemplate) ||
     FinanceData.getActiveTemplates().some(template => template.id === item.id);
@@ -7100,7 +7212,14 @@ function renderControlCenterItem(item, accountNames, isIncome) {
   const dateLabel = item.date ? formatDate(item.date) :
     item.day ? `Dia ${String(item.day).padStart(2, '0')}` : 'Não definida';
   const statusLabel = typeof item.paid === 'boolean' ? (item.paid ? 'Pago' : 'A pagar') : null;
-  const actions = isCardInstallment
+  const actions = transfer
+    ? `
+      <button type="button" class="control-center-action btn-action-delete" data-action="delete" data-id="${escapeHtml(item.id)}"
+        aria-label="Excluir transferência ${escapeHtml(item.desc)}" title="Excluir a transferência completa">
+        <i class="fa-solid fa-trash-can"></i>
+      </button>
+    `
+    : isCardInstallment
     ? `
       <button type="button" class="control-center-action btn-action-edit" data-action="edit-card-purchase"
         data-id="${escapeHtml(item.purchaseId || item.id)}" aria-label="Editar compra parcelada ${escapeHtml(item.desc)}"
@@ -7129,6 +7248,9 @@ function renderControlCenterItem(item, accountNames, isIncome) {
         <span><strong>Tipo:</strong> ${escapeHtml(getControlCenterTypeLabel(item))}</span>
         <span><strong>Data/dia:</strong> ${escapeHtml(dateLabel)}</span>
         <span><strong>Conta:</strong> ${escapeHtml(accountNames.get(item.accountId) || 'Sem conta')}</span>
+        ${transfer
+          ? `<span><strong>Outra conta:</strong> ${escapeHtml(accountNames.get(transfer.counterpartAccountId) || 'Conta não encontrada')}</span>`
+          : ''}
         ${statusLabel ? `<span class="control-center-status"><strong>Situação:</strong> ${statusLabel}</span>` : ''}
         ${item.isCardInstallment
           ? `<span><strong>Parcela:</strong> ${item.installmentNumber}/${item.installmentCount} · ${escapeHtml(item.cardName || 'Cartão')}</span>`
@@ -7138,7 +7260,7 @@ function renderControlCenterItem(item, accountNames, isIncome) {
         ${item.paymentMethod ? `<span>${renderPaymentMethodBadge(item.paymentMethod)}</span>` : ''}
       </div>
       <div class="control-center-item-actions">
-        ${!isIncome && typeof item.paid === 'boolean' ? `
+        ${!isIncome && !transfer && typeof item.paid === 'boolean' ? `
           <label class="checkbox-paid-label control-center-paid-toggle">
             <input type="checkbox" ${item.paid ? 'checked' : ''} data-action="toggle-paid" data-id="${escapeHtml(item.id)}"
               ${isCardInstallment
@@ -7614,6 +7736,12 @@ window.GastoProAccountFlow = {
 function deleteAccount(id) {
   const account = FinanceData.getAccounts().find(item => item.id === id);
   if (!account) return;
+  if (FinanceData.getEntries().some(entry =>
+    entry.accountId === id && FinanceData.isTransferEntry(entry)
+  )) {
+    showToast('Remova as transferências vinculadas antes de excluir esta conta.', 'error');
+    return;
+  }
   showConfirm({
     title: 'Excluir conta?',
     message: `Excluir "${account.name}"? Os lançamentos e gastos fixos vinculados NÃO serão apagados; apenas ficarão sem conta.`,
@@ -7751,19 +7879,25 @@ function showConfirm({
 window.deleteEntry = function(id) {
   const isFixed = FinanceData.getActiveTemplates().some(template => template.id === id);
   const isCardPurchase = FinanceData.getCreditCardPurchases().some(purchase => purchase.id === id);
+  const isTransfer = FinanceData.isTransferEntry(FinanceData.getEntries().find(entry => entry.id === id));
   showConfirm({
-    title: isCardPurchase ? 'Excluir compra parcelada?' : isFixed ? 'Excluir modelo recorrente?' : 'Excluir lançamento?',
+    title: isTransfer
+      ? 'Excluir transferência?'
+      : isCardPurchase ? 'Excluir compra parcelada?' : isFixed ? 'Excluir modelo recorrente?' : 'Excluir lançamento?',
     message: isCardPurchase
       ? 'A compra original e todas as suas parcelas, pagas ou futuras, serão removidas; não apenas este mês. Deseja excluir?'
       : isFixed
         ? 'O modelo recorrente e seu histórico mensal serão removidos, não apenas este mês. Deseja excluir?'
-        : 'Esta ação não pode ser desfeita. O item será removido permanentemente.',
+        : isTransfer
+          ? 'Os registros de saída e entrada desta transferência serão removidos juntos. Deseja continuar?'
+          : 'Esta ação não pode ser desfeita. O item será removido permanentemente.',
     iconClass: 'fa-solid fa-trash-can',
     okLabel: 'Sim, excluir',
     onConfirm: async () => {
       const result = await FinanceData.delete(id);
       renderAll();
-      if (result && result.success) showToast('Item excluído com sucesso!');
+      if (result && result.success) showToast(isTransfer ? 'Transferência excluída.' : 'Item excluído com sucesso!');
+      else showToast('Não foi possível concluir a exclusão. Tente novamente.', 'error');
     }
   });
 };
@@ -8081,7 +8215,30 @@ document.addEventListener('click', (event) => {
   if (legacyBalance && !legacyBalance.dataset.action) openAdjustAccountModal();
 });
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  if (document.getElementById('prevMonthBtn') && !window.GastoProDisableIndexedDB) {
+    const storageResult = await FinanceData.initializeStorage();
+    if (!storageResult.success) {
+      showToast('O armazenamento avançado não está disponível. O app continuará usando o armazenamento local do navegador.', 'error');
+    }
+  }
+  const connectivityStatus = document.getElementById('connectivityStatus');
+  const updateConnectivityStatus = () => {
+    if (!connectivityStatus) return;
+    const offline = navigator.onLine === false;
+    connectivityStatus.classList.toggle('is-offline', offline);
+    connectivityStatus.querySelector('span').textContent = offline ? 'Offline' : 'Conectado';
+    connectivityStatus.title = offline
+      ? 'Sem conexão com a internet. As alterações ficam neste aparelho e entram na fila para sincronização.'
+      : 'Conexão disponível. A sincronização depende da sua conta.';
+    connectivityStatus.setAttribute('aria-label', connectivityStatus.title);
+  };
+  updateConnectivityStatus();
+  window.addEventListener('online', updateConnectivityStatus);
+  window.addEventListener('offline', updateConnectivityStatus);
+  window.addEventListener('gastopro:storage-error', () => {
+    showToast('Não foi possível gravar no armazenamento avançado. Confira o espaço disponível no aparelho.', 'error');
+  });
   applyGoogleAuthPriority(document);
   const backToTopBtn = document.getElementById('backToTopBtn');
   if (backToTopBtn) {
@@ -8104,6 +8261,72 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('categoryChart')) renderAll();
   });
   if (!document.getElementById('prevMonthBtn')) return;
+
+  document.querySelectorAll('[data-entry-filter]').forEach(field => {
+    const eventName = field.tagName === 'SELECT' ? 'change' : 'input';
+    field.addEventListener(eventName, () => {
+      const key = field.dataset.entryFilter;
+      if (!Object.prototype.hasOwnProperty.call(state.entrySearch, key)) return;
+      state.entrySearch[key] = field.value;
+      renderAll();
+    });
+  });
+
+  const transferForm = document.getElementById('accountTransferForm');
+  const transferDateInput = document.getElementById('transferDate');
+  if (transferDateInput) transferDateInput.value = getTodayString();
+  if (transferForm) {
+    transferForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = document.getElementById('accountTransferSubmitBtn');
+      const error = document.getElementById('accountTransferError');
+      if (error) {
+        error.hidden = true;
+        error.textContent = '';
+      }
+      if (!beginButtonSubmission(button)) return;
+      try {
+        const result = await withSaving(button, () => FinanceData.createTransfer({
+          fromAccountId: document.getElementById('transferFromAccount').value,
+          toAccountId: document.getElementById('transferToAccount').value,
+          amount: document.getElementById('transferAmount').value,
+          date: document.getElementById('transferDate').value,
+          description: document.getElementById('transferDescription').value
+        }));
+        if (result === false) {
+          setButtonSubmissionState(button, 'error', 'outro salvamento está em andamento.');
+          return;
+        }
+        if (!result.success) {
+          const message = result.error && result.error.message || result.error ||
+            'Não foi possível registrar a transferência.';
+          if (error) {
+            error.textContent = message;
+            error.hidden = false;
+          }
+          setButtonSubmissionState(button, 'error', message);
+          return;
+        }
+        transferForm.reset();
+        if (transferDateInput) transferDateInput.value = getTodayString();
+        renderAll();
+        const synced = result.syncResult && result.syncResult.success;
+        setButtonSubmissionState(button, synced ? 'saved' : 'pending');
+        showToast(synced
+          ? 'Transferência registrada.'
+          : 'Transferência salva neste aparelho; a sincronização ficará pendente.',
+        synced ? 'success' : 'error');
+      } catch (transferError) {
+        console.error('[GastoPro] Não foi possível registrar a transferência:', transferError);
+        const message = 'Não foi possível registrar a transferência. Tente novamente.';
+        if (error) {
+          error.textContent = message;
+          error.hidden = false;
+        }
+        setButtonSubmissionState(button, 'error', message);
+      }
+    });
+  }
 
   const categoryIcons = {
     'Moradia': '🏠', 'Contas': '💡', 'Saúde': '🏥', 'Esporte': '🥋',
@@ -8557,6 +8780,10 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       case 'open-expense-entry':
         openExpenseEntryComposer();
+        break;
+      case 'clear-entry-search':
+        state.entrySearch = { query: '', from: '', to: '', accountId: '' };
+        renderAll();
         break;
       case 'new-goal':
         openGoalModal();
@@ -12021,6 +12248,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const importTargetAccount = document.getElementById('importTargetAccount');
   const createImportAccountBtn = document.getElementById('createImportAccountBtn');
   const importTargetAccountError = document.getElementById('importTargetAccountError');
+  const importStatementInfo = document.getElementById('importStatementInfo');
+  const importStatementDetails = document.getElementById('importStatementDetails');
+  const importBalanceControls = document.getElementById('importBalanceControls');
+  const importStatementBalances = document.getElementById('importStatementBalances');
+  const importStatementBalanceDate = document.getElementById('importStatementBalanceDate');
+  const importStatementBalanceDateHint = document.getElementById('importStatementBalanceDateHint');
+  const updateImportedBalanceBtn = document.getElementById('updateImportedBalanceBtn');
+  const ignoreImportedBalanceBtn = document.getElementById('ignoreImportedBalanceBtn');
+  const importStatementBalanceStatus = document.getElementById('importStatementBalanceStatus');
   const importPreviewSection= document.getElementById('importPreviewSection');
   const importPreviewTbody  = document.getElementById('importPreviewTableBody');
   const previewCountBadge   = document.getElementById('previewCountBadge');
@@ -12045,6 +12281,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let importDecisionCandidates = [];
   let importCandidateDecisions = new Map();
   let _importIgnoredRows = [];
+  let _importAppliedBalanceUpdates = [];
+  let importBalanceSaving = false;
+  let _renderedStatementBalanceKey = '';
 
   function setImportStage(stage) {
     const stages = {
@@ -12311,6 +12550,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (importPreviewSection) importPreviewSection.classList.remove('visible');
     resetImportDecisionFlow();
     _importIgnoredRows = [];
+    _importAppliedBalanceUpdates = [];
+    _renderedStatementBalanceKey = '';
+    if (importStatementInfo) importStatementInfo.hidden = true;
+    if (importStatementDetails) importStatementDetails.textContent = '';
+    if (importBalanceControls) importBalanceControls.hidden = true;
+    if (importStatementBalances) importStatementBalances.replaceChildren();
+    if (importStatementBalanceDate) importStatementBalanceDate.value = '';
+    if (importStatementBalanceDateHint) importStatementBalanceDateHint.textContent = '';
+    if (importStatementBalanceStatus) {
+      importStatementBalanceStatus.textContent = '';
+      importStatementBalanceStatus.hidden = true;
+    }
     if (importWorkflowContent) importWorkflowContent.hidden = false;
     if (importCompletionSection) importCompletionSection.hidden = true;
     const closeButton = document.getElementById('closeImportModalBtn');
@@ -12444,26 +12695,205 @@ document.addEventListener('DOMContentLoaded', () => {
       : '';
   }
 
+  function renderImportStatementInfo() {
+    if (!importStatementInfo) return;
+    const statement = GastoProImporter.getLastStatementInfo();
+    const balances = statement ? statement.balances : [];
+    const statementKey = JSON.stringify(statement
+      ? [statement.source, balances.map(balance => [
+        balance.label, balance.balance, balance.balanceDate, balance.source
+      ])]
+      : null);
+    const preserveSelection = statementKey === _renderedStatementBalanceKey;
+    const previousSelection = preserveSelection && importStatementBalances
+      ? importStatementBalances.querySelector('input[name="importStatementBalance"]:checked')
+      : null;
+    const previousIndex = previousSelection ? Number(previousSelection.value) : -1;
+    const previousDate = preserveSelection && importStatementBalanceDate
+      ? importStatementBalanceDate.value
+      : '';
+    const previousStatus = preserveSelection && importStatementBalanceStatus &&
+      !importStatementBalanceStatus.hidden
+      ? importStatementBalanceStatus.textContent
+      : '';
+    const details = [];
+    if (statement?.bank) details.push(`Banco: ${statement.bank}`);
+    if (statement?.account) details.push(`Conta: ${statement.account}`);
+    if (!details.length && balances.length) {
+      details.push('O arquivo contém saldo(s) da conta. Escolha qual deseja usar.');
+    }
+    if (importStatementDetails) importStatementDetails.textContent = details.join(' · ');
+    if (importStatementBalances) {
+      importStatementBalances.replaceChildren();
+      balances.forEach((balance, index) => {
+        const label = document.createElement('label');
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'importStatementBalance';
+        radio.value = String(index);
+        radio.checked = index === previousIndex;
+        radio.addEventListener('change', () => {
+          if (importStatementBalanceDate) {
+            importStatementBalanceDate.value = balance.balanceDate || '';
+          }
+          if (importStatementBalanceDateHint) {
+            importStatementBalanceDateHint.textContent = balance.balanceDate
+              ? `Data identificada no arquivo: ${balance.balanceDate}. Confira antes de atualizar.`
+              : 'O arquivo não informa a data deste saldo. Informe quando esse saldo era válido.';
+          }
+          if (importStatementBalanceStatus) {
+            importStatementBalanceStatus.textContent = previousStatus;
+            importStatementBalanceStatus.hidden = !previousStatus;
+          }
+        });
+        const description = document.createElement('span');
+        const amount = Number(balance.balance).toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL'
+        });
+        const date = balance.balanceDate ? ` — ${balance.balanceDate}` : '';
+        description.textContent = `${balance.label}: ${amount}${date}`;
+        label.append(radio, description);
+        importStatementBalances.appendChild(label);
+      });
+    }
+    const selectedBalance = previousIndex >= 0 ? balances[previousIndex] : null;
+    if (importStatementBalanceDate) {
+      importStatementBalanceDate.value = selectedBalance
+        ? previousDate || selectedBalance.balanceDate || ''
+        : '';
+    }
+    if (importStatementBalanceDateHint) {
+      importStatementBalanceDateHint.textContent = selectedBalance
+        ? selectedBalance.balanceDate
+          ? `Data identificada no arquivo: ${selectedBalance.balanceDate}. Confira antes de atualizar.`
+          : 'O arquivo não informa a data deste saldo. Informe quando esse saldo era válido.'
+        : '';
+    }
+    if (importStatementBalanceStatus) {
+      importStatementBalanceStatus.textContent = '';
+      importStatementBalanceStatus.hidden = true;
+    }
+    if (importBalanceControls) importBalanceControls.hidden = balances.length === 0;
+    importStatementInfo.hidden = details.length === 0 && balances.length === 0;
+    _renderedStatementBalanceKey = statementKey;
+  }
+
+  async function updateImportedAccountBalance() {
+    if (importBalanceSaving) return;
+    const selected = importStatementBalances &&
+      importStatementBalances.querySelector('input[name="importStatementBalance"]:checked');
+    const statement = GastoProImporter.getLastStatementInfo();
+    const balance = selected && statement
+      ? statement.balances[Number(selected.value)]
+      : null;
+    if (!balance) {
+      showToast('Escolha um saldo do arquivo antes de atualizar a conta.', 'error');
+      return;
+    }
+    const accountId = window.GastoProImportHelpers.getImportAccountId(
+      importTargetAccount ? importTargetAccount.value : '',
+      FinanceData.getAccounts()
+    );
+    if (!accountId) {
+      const message = 'Selecione uma conta de destino para atualizar o saldo.';
+      if (importTargetAccountError) {
+        importTargetAccountError.textContent = message;
+        importTargetAccountError.hidden = false;
+      }
+      showToast(message, 'error');
+      if (importTargetAccount) importTargetAccount.focus();
+      return;
+    }
+    const balanceDate = importStatementBalanceDate ? importStatementBalanceDate.value : '';
+    if (!balanceDate) {
+      const message = 'Informe a data em que este saldo era válido.';
+      if (importStatementBalanceDateHint) importStatementBalanceDateHint.textContent = message;
+      showToast(message, 'error');
+      if (importStatementBalanceDate) importStatementBalanceDate.focus();
+      return;
+    }
+
+    importBalanceSaving = true;
+    if (updateImportedBalanceBtn) updateImportedBalanceBtn.disabled = true;
+    try {
+      const result = await FinanceData.adjustAccountBalance(
+        accountId, balance.balance, balanceDate
+      );
+      if (!result.success) {
+        const message = result.error || 'Não foi possível atualizar o saldo da conta.';
+        if (importStatementBalanceStatus) {
+          importStatementBalanceStatus.textContent = message;
+          importStatementBalanceStatus.hidden = false;
+        }
+        showToast(message, 'error');
+        return;
+      }
+      const previousUpdateIndex = _importAppliedBalanceUpdates.findIndex(
+        update => update.accountId === accountId
+      );
+      const update = { accountId, balance: balance.balance, balanceDate };
+      if (previousUpdateIndex < 0) _importAppliedBalanceUpdates.push(update);
+      else _importAppliedBalanceUpdates[previousUpdateIndex] = update;
+      const account = FinanceData.getAccounts().find(item => item.id === accountId);
+      const message = `Saldo atualizado para ${account ? account.name : 'a conta'} em ${balanceDate}.`;
+      if (importStatementBalanceStatus) {
+        importStatementBalanceStatus.textContent = message;
+        importStatementBalanceStatus.hidden = false;
+      }
+      renderAll();
+    } catch (error) {
+      console.error('[GastoPro Importer] Não foi possível atualizar o saldo da conta:', error);
+      const message = 'Não foi possível atualizar o saldo da conta.';
+      if (importStatementBalanceStatus) {
+        importStatementBalanceStatus.textContent = message;
+        importStatementBalanceStatus.hidden = false;
+      }
+      showToast(message, 'error');
+    } finally {
+      importBalanceSaving = false;
+      if (updateImportedBalanceBtn) updateImportedBalanceBtn.disabled = false;
+    }
+  }
+
+  function ignoreImportedBalance() {
+    if (!importStatementBalanceStatus || importBalanceSaving) return;
+    importStatementBalanceStatus.textContent = _importAppliedBalanceUpdates.length
+      ? 'Saldo ignorado nesta escolha; atualizações anteriores nesta sessão permanecem.'
+      : 'Saldo ignorado. A conta não foi alterada.';
+    importStatementBalanceStatus.hidden = false;
+  }
+
+  async function reconcileImportedBalanceUpdates(accountIds) {
+    for (const update of _importAppliedBalanceUpdates) {
+      if (!accountIds.has(update.accountId)) continue;
+      try {
+        const result = await FinanceData.adjustAccountBalance(
+          update.accountId, update.balance, update.balanceDate
+        );
+        if (result.success) continue;
+        console.error('[GastoPro Importer] Lançamentos importados, mas o saldo não foi reconciliado:', result.error);
+        showToast(
+          'Os lançamentos foram importados, mas não foi possível recalcular o saldo da conta.',
+          'error'
+        );
+      } catch (error) {
+        console.error('[GastoPro Importer] Lançamentos importados, mas o saldo não foi reconciliado:', error);
+        showToast(
+          'Os lançamentos foram importados, mas não foi possível recalcular o saldo da conta.',
+          'error'
+        );
+      }
+    }
+  }
+
   /**
    * Renderiza a tabela de preview com as linhas parseadas.
    * @param {Array} rows - Resultado de parseCSV() ou parseRawText().
    */
   function renderImportPreview(rows) {
     const installmentHint = document.getElementById('importInstallmentHint');
-    const statementInfo = GastoProImporter.getLastOFXStatementInfo();
-    const statementInfoElement = document.getElementById('importOfxStatementInfo');
-    if (statementInfoElement) {
-      const details = [];
-      if (statementInfo?.bank) details.push(`Banco: ${statementInfo.bank}`);
-      if (statementInfo?.account) details.push(`Conta: ${statementInfo.account}`);
-      if (statementInfo?.balance != null && statementInfo.balanceDate) {
-        details.push(`Saldo no arquivo: ${Number(statementInfo.balance).toLocaleString('pt-BR', {
-          style: 'currency', currency: 'BRL'
-        })} em ${statementInfo.balanceDate}`);
-      }
-      statementInfoElement.textContent = details.join(' · ');
-      statementInfoElement.hidden = details.length === 0;
-    }
+    renderImportStatementInfo();
     renderImportDueDaySummary(rows);
     if (installmentHint) installmentHint.hidden = !rows || !rows.some(row => row.installment);
     if (!importPreviewTbody) return;
@@ -13011,6 +13441,11 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const result = await FinanceData.importBatch(items, payments);
         if (result.success) {
+          const affectedAccountIds = new Set(
+            items.map(item => item && item.accountId).filter(Boolean)
+          );
+          if (payments.length) affectedAccountIds.add(accountId);
+          await reconcileImportedBalanceUpdates(affectedAccountIds);
           [...new Set([...items, ...payments]
             .map(item => item && item.accountId)
             .filter(Boolean))]
@@ -13077,6 +13512,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (_importSourceRows.length) prepareImportRows(_importSourceRows);
     });
+  }
+  if (updateImportedBalanceBtn) {
+    updateImportedBalanceBtn.addEventListener('click', updateImportedAccountBalance);
+  }
+  if (ignoreImportedBalanceBtn) {
+    ignoreImportedBalanceBtn.addEventListener('click', ignoreImportedBalance);
   }
   window.addEventListener('gastopro:account-modal-closed-for-import', event => {
     updateImportAccountSelector(event.detail.accountId);

@@ -35,7 +35,7 @@ const GastoProImporter = (() => {
   const CSV_HEADER_WARNING = 'Cabeçalho CSV inválido. Use o modelo oficial para importar.';
   let lastWarnings = [];
   let lastIgnoredRows = [];
-  let lastOFXStatementInfo = null;
+  let lastStatementInfo = null;
 
   const CATEGORY_RULES = [
     { keys: ['ifood', 'rappi', 'uber eats', 'uber eat', 'delivery', 'mcdonalds', 'mc donalds',
@@ -259,6 +259,113 @@ const GastoProImporter = (() => {
     lastWarnings = [...new Set(warnings)];
   }
 
+  function normalizeStatementLabel(value) {
+    return normalize(value).replace(/[():]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function isStatementBalanceLabel(value) {
+    return /^(?:saldo(?:\s+(?:da conta|disponivel|atual|final|total|bloqueado|contabil|em conta|livre|anterior|inicial|por transacao))?|balance|available balance|current balance|closing balance)$/
+      .test(normalizeStatementLabel(value));
+  }
+
+  function parseStatementAmount(value) {
+    const text = String(value == null ? '' : value).trim();
+    if (!/\d/.test(text)) return null;
+    return parseMoneySigned(text);
+  }
+
+  function parseStatementDate(value) {
+    const match = String(value || '').match(/\b(?:em|na data de|referente a)\s*(\d{4}-\d{2}-\d{2}|\d{2}[/-]\d{2}[/-]\d{2,4})\b/i);
+    return match ? parseDate(match[1]) || '' : '';
+  }
+
+  function makeStatementBalance(label, balance, balanceDate = '', source = '') {
+    if (!Number.isFinite(balance)) return null;
+    return { label, balance, balanceDate, source };
+  }
+
+  function setStatementInfo(balances, metadata = {}) {
+    const uniqueBalances = [];
+    balances.forEach(balance => {
+      if (!balance || !Number.isFinite(balance.balance)) return;
+      if (uniqueBalances.some(existing =>
+        existing.label === balance.label &&
+        existing.balance === balance.balance &&
+        existing.balanceDate === balance.balanceDate
+      )) return;
+      uniqueBalances.push(balance);
+    });
+    if (uniqueBalances.length || metadata.bank || metadata.account) {
+      lastStatementInfo = {
+        bank: metadata.bank || '',
+        account: metadata.account || '',
+        balances: uniqueBalances,
+        balance: uniqueBalances.length === 1 ? uniqueBalances[0].balance : null,
+        balanceDate: uniqueBalances.length === 1 ? uniqueBalances[0].balanceDate : '',
+        source: metadata.source || ''
+      };
+    } else {
+      lastStatementInfo = null;
+    }
+  }
+
+  function parseCsvSummaryBalances(lines, separator) {
+    return lines.map(line => {
+      const cells = splitCSVLine(line, separator).map(cell => cell.trim().replace(/^"|"$/g, ''));
+      if (cells.length < 2 || !isStatementBalanceLabel(cells[0])) return null;
+      const amount = cells.slice(1).map(parseStatementAmount).find(value => value !== null);
+      if (amount === undefined) return null;
+      const label = normalizeStatementLabel(cells[0]) === 'saldo'
+        ? 'Saldo do resumo'
+        : cells[0];
+      return makeStatementBalance(label, amount, parseStatementDate(line), 'csv-summary');
+    }).filter(Boolean);
+  }
+
+  function parsePdfAvailableBalance(text) {
+    const lines = text.split(/\r?\n/);
+    const balances = [];
+    const availableLabel = /saldo\s+(?:disponivel|em conta|livre)|available\s+balance|available\s+funds/i;
+    const parseAmount = value => {
+      const match = String(value || '').trim().match(/(?:R\$\s*)?([+-]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:[,.]\d{2})?)\s*$/i);
+      return match ? parseStatementAmount(match[1]) : null;
+    };
+
+    lines.forEach((line, index) => {
+      const match = normalize(line).match(availableLabel);
+      if (!match) return;
+      const afterLabel = line.slice(match.index + match[0].length).replace(/^[\s:—-]*/, '');
+      let amount = parseAmount(afterLabel);
+      if (amount === null) amount = parseAmount(line.slice(0, match.index));
+      if (amount === null && index + 1 < lines.length) amount = parseAmount(lines[index + 1]);
+      if (amount === null && index > 0) amount = parseAmount(lines[index - 1]);
+      if (amount === null) return;
+      balances.push(makeStatementBalance(
+        'Saldo disponível',
+        amount,
+        parseStatementDate(line),
+        'pdf-available'
+      ));
+    });
+    return balances;
+  }
+
+  function getPdfBalanceAmountLineIndexes(lines) {
+    const indexes = new Set();
+    const summaryLabel = /saldo\s+(?:total|disponivel|bloqueado|em conta|livre)|available\s+balance|available\s+funds/i;
+    const standaloneAmount = /^\s*(?:R\$\s*)?[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:[,.]\d{2})?\s*$/i;
+    lines.forEach((line, index) => {
+      if (!summaryLabel.test(normalize(line))) return;
+      [index - 1, index + 1].forEach(adjacentIndex => {
+        if (adjacentIndex >= 0 && adjacentIndex < lines.length &&
+          standaloneAmount.test(lines[adjacentIndex])) {
+          indexes.add(adjacentIndex);
+        }
+      });
+    });
+    return indexes;
+  }
+
   function getIgnoredLineReason(line) {
     if (line.trim().startsWith('#')) return 'Comentário';
     if (/\b(?:saldo|total|limite)\b|\bfatura\s+anterior\b/.test(normalize(line))) {
@@ -330,6 +437,7 @@ const GastoProImporter = (() => {
   function parseCSV(text, today = new Date()) {
     setWarnings();
     lastIgnoredRows = [];
+    lastStatementInfo = null;
     if (!text || !text.trim()) {
       setWarnings([CSV_HEADER_WARNING]);
       return [];
@@ -345,9 +453,18 @@ const GastoProImporter = (() => {
     }
     const header = findHeader(lines);
     if (!header) {
+      const summaryBalances = parseCsvSummaryBalances(
+        lines.slice(0, 15),
+        lines.some(line => line.split(';').length > line.split(',').length) ? ';' : ','
+      );
+      setStatementInfo(summaryBalances, { source: 'csv' });
       setWarnings([...lastWarnings, CSV_HEADER_WARNING]);
       return [];
     }
+    const statementBalances = parseCsvSummaryBalances(
+      lines.slice(0, header.index),
+      header.separator
+    );
     lines.slice(0, header.index).forEach(line => {
       if (!line.trim()) return;
       const reason = line.length > MAX_LINE_CHARS
@@ -367,6 +484,7 @@ const GastoProImporter = (() => {
     const idxAmount = headers.findIndex(name =>
       /^(valor|value|amount|vlr|montante)$/.test(name)
     );
+    const idxBalance = headers.findIndex(isStatementBalanceLabel);
     const idxType = headers.findIndex(name => name === 'tipo');
     const idxStartMonth = headers.findIndex(name => name === 'mes_inicio');
     const idxEndMonth = headers.findIndex(name => name === 'mes_fim');
@@ -382,12 +500,14 @@ const GastoProImporter = (() => {
     const knownHeaders = headers.filter(header =>
       isDateHeader(header) ||
       /^(desc|description|historico|descricao|memo|estabelecimento|lancamento|detalhe|categoria|category|debito|debit|credito|credit|valor|value|amount|vlr|montante|tipo|mes_inicio|mes_fim|dia_venc|dia_vencimento|ativo)$/.test(header)
+      || isStatementBalanceLabel(header)
     );
     const extraColumnCount = headers.length - knownHeaders.length;
     if (extraColumnCount > 0) {
       warnings.push(`${extraColumnCount} coluna(s) extra(s) ignorada(s).`);
     }
     let inactiveCount = 0;
+    let lastBalanceColumn = null;
     const lastLine = Math.min(lines.length, header.index + 1 + MAX_ROWS);
     for (let index = header.index + 1; index < lastLine; index++) {
       const line = lines[index].trim();
@@ -431,6 +551,17 @@ const GastoProImporter = (() => {
         continue;
       }
       const date = parseDate(rawDate, today);
+      if (idxBalance >= 0 && date) {
+        const balance = parseStatementAmount(valueAt(idxBalance));
+        if (balance !== null) {
+          lastBalanceColumn = makeStatementBalance(
+            'Saldo do último lançamento',
+            balance,
+            date,
+            'csv-running-balance'
+          );
+        }
+      }
       const rawCategory = idxCategory >= 0 ? valueAt(idxCategory) : '';
       const normalizedCategory = normalize(rawCategory);
       const canonicalCategory = [
@@ -479,6 +610,8 @@ const GastoProImporter = (() => {
     }
     if (lines.length > lastLine) warnings.push('O extrato excede o limite de 2.000 linhas; as linhas excedentes foram ignoradas.');
     if (inactiveCount) warnings.push(`${inactiveCount} linhas inativas foram ignoradas.`);
+    if (lastBalanceColumn) statementBalances.push(lastBalanceColumn);
+    setStatementInfo(statementBalances, { source: 'csv' });
     applyDefaultTypes(defaultTypeRows);
     applyInstallments(defaultTypeRows);
     const todayString = formatIsoDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
@@ -704,7 +837,7 @@ const GastoProImporter = (() => {
 
   async function parseFile(file, today = new Date()) {
     lastIgnoredRows = [];
-    lastOFXStatementInfo = null;
+    lastStatementInfo = null;
     const extension = getFileExtension(file);
     if (!SUPPORTED_FILE_EXTENSIONS.has(extension)) {
       setWarnings([UNSUPPORTED_FILE_WARNING]);
@@ -743,7 +876,7 @@ const GastoProImporter = (() => {
   function parseOFX(text) {
     setWarnings();
     lastIgnoredRows = [];
-    lastOFXStatementInfo = null;
+    lastStatementInfo = null;
     if (text.length > MAX_CSV_CHARS) {
       setWarnings(['O extrato OFX excede 1 MB; reduza o arquivo e tente novamente.']);
       return [];
@@ -762,14 +895,14 @@ const GastoProImporter = (() => {
       Number(balanceDateRaw[0].slice(6, 8))
     ) ? `${balanceDateRaw[0].slice(0, 4)}-${balanceDateRaw[0].slice(4, 6)}-${balanceDateRaw[0].slice(6, 8)}` : '';
     const parsedBalance = balanceAmount ? parseMoneySigned(balanceAmount) : Number.NaN;
-    if (bank || accountId || Number.isFinite(parsedBalance) && balanceDate) {
-      lastOFXStatementInfo = {
-        bank,
-        account: accountId ? `••••${accountId.slice(-4)}` : '',
-        balance: Number.isFinite(parsedBalance) && balanceDate ? parsedBalance : null,
-        balanceDate: Number.isFinite(parsedBalance) && balanceDate ? balanceDate : ''
-      };
-    }
+    const balances = Number.isFinite(parsedBalance) && balanceDate
+      ? [makeStatementBalance('Saldo no extrato', parsedBalance, balanceDate, 'ofx')]
+      : [];
+    setStatementInfo(balances, {
+      bank,
+      account: accountId ? `••••${accountId.slice(-4)}` : '',
+      source: 'ofx'
+    });
     const warnings = [];
     const rows = [];
     const blocks = [...text.matchAll(/<STMTTRN\b([\s\S]*?)(?=<\/STMTTRN\b|<STMTTRN\b|<\/BANKTRANLIST\b|$)(?:<\/STMTTRN\b[^>]*>)?/gi)];
@@ -891,12 +1024,14 @@ const GastoProImporter = (() => {
   function parseRawText(text) {
     setWarnings();
     lastIgnoredRows = [];
+    lastStatementInfo = null;
     if (!text || !text.trim()) return [];
     if (text.length > MAX_RAW_CHARS) {
       setWarnings(['O texto colado excede 200.000 caracteres.']);
       return [];
     }
 
+    setStatementInfo(parsePdfAvailableBalance(text), { source: 'pdf' });
     const trimmedText = text.trim();
     if (trimmedText.startsWith('000201') && trimmedText.toUpperCase().includes('BR.GOV.BCB.PIX')) {
       return parsePixPayload(trimmedText);
@@ -905,6 +1040,7 @@ const GastoProImporter = (() => {
     if (/^\d{47,48}$/.test(boletoDigits)) return parseBoletoLine(boletoDigits);
 
     const lines = text.split(/\r?\n/);
+    const balanceAmountLineIndexes = getPdfBalanceAmountLineIndexes(lines);
     const result = [];
     const warnings = [];
     const amountPattern = '([+-]?\\s*(?:R\\$\\s*)?(?:\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:[,.]\\d+)?)';
@@ -913,12 +1049,16 @@ const GastoProImporter = (() => {
     const endDate = new RegExp(`^${amountPattern}\\s+(.+?)\\s+${datePattern}$`);
     const noDate = new RegExp(`^(.+?)\\s+${amountPattern}$`);
 
-    for (const originalLine of lines.slice(0, MAX_ROWS)) {
+    for (const [lineIndex, originalLine] of lines.slice(0, MAX_ROWS).entries()) {
       const line = originalLine.trim();
       if (!line) continue;
       if (line.length > MAX_LINE_CHARS) {
         warnings.push('Linhas com mais de 500 caracteres foram ignoradas.');
         recordIgnoredLine(line, 'Linha longa');
+        continue;
+      }
+      if (balanceAmountLineIndexes.has(lineIndex)) {
+        recordIgnoredLine(line, 'Saldo do extrato');
         continue;
       }
       const ignoredReason = getIgnoredLineReason(line);
@@ -1215,7 +1355,21 @@ const GastoProImporter = (() => {
   }
 
   function getLastOFXStatementInfo() {
-    return lastOFXStatementInfo ? { ...lastOFXStatementInfo } : null;
+    if (!lastStatementInfo || lastStatementInfo.source !== 'ofx') return null;
+    return {
+      bank: lastStatementInfo.bank,
+      account: lastStatementInfo.account,
+      balance: lastStatementInfo.balance,
+      balanceDate: lastStatementInfo.balanceDate
+    };
+  }
+
+  function getLastStatementInfo() {
+    if (!lastStatementInfo) return null;
+    return {
+      ...lastStatementInfo,
+      balances: lastStatementInfo.balances.map(balance => ({ ...balance }))
+    };
   }
 
   // ================================================================
@@ -1226,7 +1380,7 @@ const GastoProImporter = (() => {
     autoDetectCategory, buildEntry, parseMoney, parseMoneySigned,
     parseDate, markDuplicates, isTemplateDuplicate, getLastWarnings, getLastIgnoredRows, shiftMonth, detectInstallment, detectCsvInstallment, matchDebtTemplate,
     buildInstallmentDebt, parseFile, isSupportedFile, UNSUPPORTED_FILE_WARNING, createCSVTemplate,
-    getLastOFXStatementInfo, REVIEW_MOVEMENT_TERMS
+    getLastOFXStatementInfo, getLastStatementInfo, REVIEW_MOVEMENT_TERMS
   };
 
 })();

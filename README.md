@@ -3,10 +3,10 @@
 > Aplicativo Web moderno (Single Page Application — SPA) de gestão financeira pessoal, com dashboard de saúde financeira, receitas e despesas, rastreamento de dívidas, autenticação multiusuário Supabase, importação de extratos, Wizard de Lançamento Rápido e PWA offline.
 
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-f59e0b?style=for-the-badge)
-![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.78-6366f1?style=for-the-badge)
+![Versão](https://img.shields.io/badge/Vers%C3%A3o-4.81-6366f1?style=for-the-badge)
 ![Tecnologias](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20JS%20%7C%20Supabase-0ea5e9?style=for-the-badge)
 ![Autor](https://img.shields.io/badge/Criador-Aylton%20Alberto-f59e0b?style=for-the-badge)
-![Testes](https://img.shields.io/badge/Testes-662%20casos-10b981?style=for-the-badge)
+![Testes](https://img.shields.io/badge/Testes-670%20casos-10b981?style=for-the-badge)
 
 ---
 
@@ -138,6 +138,7 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 ### 📥 Importação de extratos
 - Arraste e solte ou selecione um arquivo (.csv, .txt, .ofx, .xml ou .pdf).
 - PDF de extrato ou fatura com texto selecionável, até 10 MB e 30 páginas. A leitura é local e aproximada; PDFs escaneados não são reconhecidos automaticamente. Confira os dados na prévia.
+- CSV: mostra o saldo do resumo e o saldo do último lançamento; PDF: identifica “Saldo disponível”. A pessoa escolhe o saldo identificado para atualizar ou ignorar; se a data não vier no arquivo, o app solicita uma data antes de atualizar a conta selecionada.
 - Detecção automática de colunas Data, Descrição e Valor, sem configuração manual.
 - OFX em formato SGML ou XML, incluindo descrições e acentos em Windows-1252. O tipo (receita ou gasto) usa `TRNTYPE` quando presente.
 - XML de nota fiscal NF-e/NFC-e: gera um lançamento com emitente, número e valor total.
@@ -153,9 +154,10 @@ A versão 4.0 evoluiu de um app local para uma aplicação multiusuário com ban
 - **Validação contextual:** impede avançar sem informar renda; categoriza automaticamente gastos avulsos.
 
 ### 🧭 Navegação lateral e sincronização
+- A sidebar agrupa visão geral, movimentações, contas e crédito e planejamento; o acesso a Lançamentos também está disponível diretamente no menu.
 - **Indicadores em tempo real**: Badges numéricos com o total de receitas e despesas cadastradas no mês selecionado.
 - **Ferramentas de produtividade**: Acesso direto ao **Importador de Extratos** e ao **Wizard de Lançamento Rápido**.
-- **Botão Atualizar Dados**: Posicionado na base da barra lateral (rodapé da sidebar), permitindo sincronizar dados locais com o Supabase a qualquer momento com animação visual e feedback ao usuário.
+- **Botão Atualizar Dados**: Disponível na seção Conta do painel do usuário para sincronizar e atualizar a tela.
 
 ### ♿ Acessibilidade e PWA
 - Gerenciamento de foco, navegação por Tab e fechamento de modais por Esc.
@@ -345,10 +347,9 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 1. Etapa 4: reset e exclusões seguros, tela de aviso e testes finais.
 2. RM-016 — Simulador de Cenários Futuros.
 3. RM-017 — Exportação de dados adicionais.
-4. RM-019 — Offline-First aprimorado com IndexedDB.
-5. RM-020 — Ampliar cobertura de testes automatizados.
-6. RM-032 — Contraste WCAG AA nas demais telas e gráficos (RM-034 cobre somente os avisos).
-7. Itens em dúvida: mapeamento de colunas do CSV, cache offline de fontes e ícones, CI/CD.
+4. RM-020 — Ampliar cobertura de testes automatizados.
+5. RM-032 — Contraste WCAG AA nas demais telas e gráficos (RM-034 cobre somente os avisos).
+6. Itens em dúvida: mapeamento de colunas do CSV, cache offline de fontes e ícones, CI/CD.
 
 ### API de SupabaseAuth
 
@@ -494,7 +495,7 @@ Metas são gravadas em `public.goals` por categoria, com upsert usando `onConfli
 | 18 | `20261108_admin_email_text_cast.sql` | Criada neste lote; não aplicada, aguarda revisão |
 | 19 | `20261109_feedback_admin_read_at.sql` | Criada neste lote; não aplicada, aguarda revisão |
 
-`CACHE_NAME` atual: `gastopro-v4.78`. Suíte atual: **662 testes**.
+`CACHE_NAME` atual: `gastopro-v4.81`. Suíte atual: **670 testes**.
 
 [`supabase/schema.sql`](./supabase/schema.sql) documenta as tabelas, validações, RLS, índices, permissões e triggers. Toda mudança no banco deve ser feita no painel e registrada neste arquivo. A migração [`supabase/migrations/20261027_hardening.sql`](./supabase/migrations/20261027_hardening.sql) foi aplicada e validada em produção em 28/10/2026.
 
@@ -656,7 +657,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-003 — Importação de OFX e XML de nota fiscal** / Descrição: importar OFX e NF-e/NFC-e (bloco 6B). / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-004 — Importação de Pix e linhas digitáveis de boleto** / Descrição: importar Pix copia e cola e boletos (bloco 6D). / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-005 — Ajuda embutida no modal do importador** / Descrição: orientar sobre formatos, prévia, parcelas, duplicados e privacidade. / Critério de pronto: a definir. / Arquivos: a definir.
-- [x] **RM-006 — Importação de PDF de extrato ou fatura** / Descrição: ler localmente PDFs com texto selecionável (bloco 6C). / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-006 — Importação de PDF de extrato ou fatura** / Descrição: ler localmente PDFs com texto selecionável e identificar saldo disponível; CSV também expõe saldos de resumo e do último lançamento, com escolha explícita para atualização da conta. / Critério de pronto: testes automatizados aprovados. / Arquivos: `js/importer.js`, `js/app.js`, `index.html`, `tests/gastopro.test.js`.
 - [x] **RM-007 — Metas e alertas de teto por categoria** / Descrição: seção no dashboard, cards, modal, edição e alertas em 80% e 100%. / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-008 — Relatório financeiro em PDF** / Descrição: relatório mensal, anual ou por intervalo com totais, categorias, dívidas, metas, diagnóstico e detalhamento opcional. / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-009 — Deduplicação na importação de extratos** / Descrição: desmarcar duplicatas existentes ou repetidas no arquivo, permitindo importação manual forçada. / Critério de pronto: a definir. / Arquivos: a definir.
@@ -668,7 +669,7 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-015 — Reset sem apagar perfil** / Descrição: reset financeiro preserva identidade da conta e perfil. / Critério de pronto: a definir. / Arquivos: a definir.
 - [x] **RM-016 — Simulador de Cenários Futuros (“E se...”)** / Descrição: simular pagamento extra de dívida e estimar quitação; projetar amortização com gráfico de linha; simular corte de categoria (por exemplo, reduzir Alimentação em 20%); comparar antes/depois em painel lateral. / Critério de pronto: funções puras e testes automatizados aprovados; nenhuma gravação de dados. / Arquivos: `index.html`, `js/app.js`, `js/simulator.js`, `css/style.css`, `js/cache-assets.js`, `sw.js`, `tests/gastopro.test.js`.
 - [x] **RM-017 — Exportação de dados adicionais** / Descrição: exporta lançamentos filtrados por conta e período em CSV neutralizado contra fórmulas e Excel .xlsx local com planilhas de lançamentos e resumo por categoria. / Critério de pronto: teste-runner aprovado; estrutura XLSX conferida por funções puras e validação XML/ZIP. / Arquivos: `index.html`, `js/app.js`, `js/report.js`, `js/xlsx-writer.js`, `js/cache-assets.js`, `sw.js`, `tests/gastopro.test.js`, `README.md`.
-- [ ] **RM-019 — Offline-First aprimorado com IndexedDB** / Descrição: migrar de localStorage para IndexedDB para maior capacidade e performance; manter fila para operações offline e envio ao reconectar; exibir status de conectividade na UI. / Critério de pronto: a definir. / Arquivos: a definir.
+- [x] **RM-019 — Offline-First aprimorado com IndexedDB** / Descrição: migra coleções financeiras do localStorage para IndexedDB antes de inicializar a interface; mantém fallback local e a fila offline existente, com status de conectividade na UI. / Critério de pronto: suíte automatizada aprovada, incluindo migração, reabertura e exclusão de registros; app responsivo verificado em 320, 390 e 1280 px. / Arquivos: `js/data.js`, `js/app.js`, `index.html`, `css/style.css`, `tests/gastopro.test.js`, `README.md`, `sw.js`.
 - [ ] **RM-020 — Ampliar cobertura de testes automatizados** / Descrição: testes para o fluxo completo de quatro passos do Wizard. / Critério de pronto: a definir. / Arquivos: a definir.
 
 ### Novas melhorias
@@ -736,6 +737,8 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 - [x] **RM-087 — Botões secundários de login e cadastro** / Descrição: aplica fundo transparente, borda/texto na cor de acento, foco visível e estado desabilitado aos botões Entrar no GastoPro e Criar Minha Conta Gratuita. Contraste texto/borda: 5,83:1 (escuro), 9,93:1 (claro); foco: 3,89:1 (escuro), 6,29:1 (claro). / Critério de pronto: 632 testes aprovados em duas execuções consecutivas; tamanhos responsivos e aparência em iPhone não verificados em tela. / Arquivos: `css/style.css`, `tests/gastopro.test.js`, `README.md`.
 - [x] **RM-088 — Aviso de OFX no guia de extrato** / Descrição: orienta que arquivos OFX baixados do e-mail podem não aparecer no app Arquivos do iPhone; preserva os demais passos. / Critério de pronto: texto coberto pela suíte de 632 testes; apresentação visual não verificada em tela. / Arquivos: `js/onboarding.js`, `tests/gastopro.test.js`, `README.md`.
 - [x] **RM-089 — Previsão e gastos pagos no Dashboard** / Descrição: mostra no card Gastos do Mês a previsão atual (incluindo parcelas e itens a pagar) e, separadamente, apenas os gastos pagos, respeitando o filtro de contas e sem alterar o saldo. / Critério de pronto: 633 testes aprovados em duas execuções consecutivas, zero falhas/pendências; contraste calculado; visual/toque em iPhone não verificados em tela. / Arquivos: `js/app.js`, `index.html`, `css/style.css`, `tests/gastopro.test.js`, `README.md`, `sw.js`.
+- [x] **RM-090 — Transferências entre contas** / Descrição: registra débito e crédito pareados, exige contas distintas, valor positivo e data até hoje; saldo consolidado e totais mensais permanecem neutros, e exclusão remove o par completo. / Critério de pronto: suíte automatizada aprovada; fluxo real e saldos conferidos no navegador. / Arquivos: `index.html`, `js/app.js`, `js/data.js`, `css/style.css`, `tests/gastopro.test.js`, `README.md`, `sw.js`.
+- [x] **RM-091 — Busca e filtros de lançamentos** / Descrição: filtra ganhos e gastos do mês selecionado por descrição (sem distinção de acentos), período e conta; atualização local imediata, com controles acessíveis e limpeza dos filtros. / Critério de pronto: suíte automatizada aprovada; busca real e layout verificados em 320, 390 e 1280 px. / Arquivos: `index.html`, `js/app.js`, `css/style.css`, `tests/gastopro.test.js`, `README.md`, `sw.js`.
 
 ### Em dúvida
 
@@ -747,7 +750,26 @@ Legenda: `[ ]` pendente | `[x]` implementado e testado. Veja as instruções par
 
 ## 📋 Changelog
 
-### v4.78 — 06/11/2026 (versão atual)
+### v4.81 — 15/11/2026 (versão atual)
+
+- RM-019: migração das coleções financeiras para IndexedDB antes da inicialização da interface, com fallback local, fila offline existente e indicador de conectividade.
+- RM-090: transferências criam débito e crédito vinculados, preservam o saldo consolidado e ficam fora dos totais e relatórios; exclusão remove os dois registros.
+- RM-091: busca e filtros locais por descrição, datas e conta nas listas mensais de ganhos e gastos.
+- Quatro testes adicionados; suíte automatizada: 670 testes aprovados. Busca, transferência e layout conferidos no navegador; cache do PWA atualizado para `gastopro-v4.81`.
+
+### v4.80 — 15/11/2026 (versão anterior)
+
+- Sidebar reorganizada por função com acesso direto a Lançamentos; dashboard reordenado e painel do usuário com agrupamentos para backup, relatórios e ajuda.
+- Cabeçalhos, filtros, ícones e estados vazios adaptados a telas estreitas; aviso de saldo oculto deixa de ocupar espaço.
+- Um teste responsivo adicionado; suíte automatizada: 665 testes. Cache do PWA atualizado para `gastopro-v4.80`.
+
+### v4.79 — 15/11/2026 (versão anterior)
+
+- Importação: CSV identifica os saldos do resumo e do último lançamento; PDF reconhece “Saldo disponível”, sem confundir saldo total, bloqueado ou saldos diários.
+- Prévia permite escolher o saldo identificado no CSV ou PDF para atualizar ou ignorar; a atualização é explícita, usa a conta selecionada e pede a data quando o arquivo não a informa.
+- Dois testes adicionados; suíte automatizada: 664 testes aprovados. Cache do PWA atualizado para `gastopro-v4.79`.
+
+### v4.78 — 06/11/2026 (versão anterior)
 
 - Política de Privacidade disponível em página pública, sem exigir login; o Service Worker deixa essa navegação seguir a rede.
 
