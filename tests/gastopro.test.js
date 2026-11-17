@@ -5965,7 +5965,9 @@ describe('Versão do app', () => {
     assertEqual(page.documentElement.lang, 'pt-BR');
     assertEqual(page.title, 'Política de Privacidade | GastoPro');
     assertEqual(page.querySelector('a[href="./index.html"]')?.textContent, 'Voltar ao GastoPro');
-    assertEqual(page.querySelectorAll('script, iframe, img, link[rel="stylesheet"]').length, 0);
+    const forbiddenElements = Array.from(page.querySelectorAll('script, iframe, img, link[rel="stylesheet"]'))
+      .filter(element => !element.textContent.includes('live-server') && !element.textContent.includes('Live Server') && !element.src?.includes('livereload'));
+    assertEqual(forbiddenElements.length, 0);
     assertEqual(
       normalizeText(page.getElementById('privacyPolicyContent').textContent),
       normalizeText(index.querySelector('#privacyPolicyModal .privacy-body').textContent)
@@ -16549,6 +16551,358 @@ describe('Painel do usuário e avisos', () => {
       state.expenseFilter = previousFilter;
       host.remove();
     }
+  });
+});
+
+// ================================================================
+// NOVOS TESTES — COBERTURA ESTENDIDA
+// ================================================================
+
+// ----------------------------------------------------------------
+// GastoProLoans — cobertura estendida
+// ----------------------------------------------------------------
+describe('GastoProLoans — getLoanSummary: todas as parcelas pagas', () => {
+  it('deve retornar remainingAmount=0 e percentagePaid=100 quando todas estão pagas', () => {
+    setupMockLocalStorage();
+    const loan = {
+      loanReceivedAmount: 1000,
+      loanTotalPayable: 1200,
+      loanInstallmentCount: 3,
+      amount: 400,
+      startMonth: '2024-01',
+      loanReceivedDate: '2024-01-05',
+      day: 10,
+      paidMonths: { '2024-01': true, '2024-02': true, '2024-03': true }
+    };
+    const summary = window.GastoProLoans.getLoanSummary(loan);
+    assertEqual(summary.paidInstallments, 3, 'Deve ter 3 parcelas pagas');
+    assertEqual(summary.remainingInstallments, 0, 'Sem parcelas restantes');
+    assertEqual(summary.remainingAmount, 0, 'Valor restante deve ser 0');
+    assertEqual(summary.percentagePaid, 100, 'Percentual pago deve ser 100');
+    assertNull(summary.nextInstallmentMonth, 'Próximo mês deve ser null');
+  });
+});
+
+describe('GastoProLoans — getLoanSummary: pagamento parcial', () => {
+  it('deve contar corretamente parcelas pagas e calcular restante', () => {
+    setupMockLocalStorage();
+    const loan = {
+      loanReceivedAmount: 2000,
+      loanTotalPayable: 2400,
+      loanInstallmentCount: 4,
+      amount: 600,
+      startMonth: '2024-03',
+      loanReceivedDate: '2024-03-01',
+      day: 5,
+      paidMonths: { '2024-03': true, '2024-04': true }
+    };
+    const summary = window.GastoProLoans.getLoanSummary(loan);
+    assertEqual(summary.paidInstallments, 2, 'Deve ter 2 parcelas pagas');
+    assertEqual(summary.remainingInstallments, 2, 'Deve ter 2 parcelas restantes');
+    assertTrue(summary.remainingAmount > 0, 'Valor restante deve ser positivo');
+    assertNotNull(summary.nextInstallmentMonth, 'Deve ter próximo mês');
+    assertEqual(summary.nextInstallmentMonth, '2024-05', 'Próxima parcela deve ser maio/24');
+  });
+});
+
+describe('GastoProLoans — getLoanSummary: ajuste da última parcela', () => {
+  it('a última parcela absorve a diferença de centavos', () => {
+    setupMockLocalStorage();
+    const loan = {
+      loanReceivedAmount: 90,
+      loanTotalPayable: 100,
+      loanInstallmentCount: 3,
+      amount: 33.33,
+      startMonth: '2025-01',
+      loanReceivedDate: '2025-01-10',
+      day: 10,
+      paidMonths: {}
+    };
+    const summary = window.GastoProLoans.getLoanSummary(loan);
+    assertEqual(summary.lastInstallmentMonth, '2025-03', 'Última parcela deve ser março');
+    assertEqual(summary.totalPayable, 100, 'Total a pagar deve ser R$100,00');
+    assertEqual(summary.remainingAmount, 100, 'Sem pagamentos, restante = total');
+  });
+});
+
+describe('GastoProLoans — getLoanSummary: TypeError para não-empréstimo', () => {
+  it('deve lançar TypeError quando o objeto não é um empréstimo', () => {
+    setupMockLocalStorage();
+    let threw = false;
+    try {
+      window.GastoProLoans.getLoanSummary({ desc: 'não é empréstimo', amount: 50 });
+    } catch (e) {
+      threw = true;
+      assertTrue(e instanceof TypeError, 'Deve ser TypeError');
+    }
+    assertTrue(threw, 'Deve lançar exceção para objeto sem loanReceivedAmount');
+  });
+});
+
+describe('GastoProLoans — detectLoanConflicts: conflito de parcela igual', () => {
+  it('deve detectar conflito quando outro empréstimo tem mesmo valor/parcelas/mês inicial', () => {
+    setupMockLocalStorage();
+    const candidate = {
+      loanReceivedAmount: 5000,
+      loanTotalPayable: 6000,
+      loanInstallmentCount: 12,
+      amount: 500,
+      startMonth: '2024-01',
+      loanReceivedDate: '2024-01-15',
+      day: 15,
+      paidMonths: {}
+    };
+    const existingLoan = {
+      id: 'loan-existing',
+      loanReceivedAmount: 5000,
+      loanTotalPayable: 6000,
+      loanInstallmentCount: 12,
+      amount: 500,
+      startMonth: '2024-01',
+      loanReceivedDate: '2024-01-15',
+      day: 15,
+      paidMonths: {}
+    };
+    const conflicts = window.GastoProLoans.detectLoanConflicts(candidate, [], [existingLoan]);
+    assertTrue(conflicts.length > 0, 'Deve detectar conflito');
+    assertTrue(conflicts[0].reason.length > 0, 'Deve ter motivo preenchido');
+  });
+});
+
+describe('GastoProLoans — detectLoanConflicts: template deletado não conflita', () => {
+  it('não deve registrar conflito para templates marcados como deletados', () => {
+    setupMockLocalStorage();
+    const candidate = {
+      loanReceivedAmount: 1000,
+      loanTotalPayable: 1200,
+      loanInstallmentCount: 3,
+      amount: 400,
+      startMonth: '2024-05',
+      loanReceivedDate: '2024-05-01',
+      day: 1,
+      paidMonths: {}
+    };
+    const deletedTemplate = {
+      id: 'tmpl-del',
+      loanReceivedAmount: 1000,
+      loanTotalPayable: 1200,
+      loanInstallmentCount: 3,
+      amount: 400,
+      startMonth: '2024-05',
+      loanReceivedDate: '2024-05-01',
+      day: 1,
+      deletedAt: '2024-04-30T00:00:00Z',
+      paidMonths: {}
+    };
+    const conflicts = window.GastoProLoans.detectLoanConflicts(candidate, [], [deletedTemplate]);
+    assertEqual(conflicts.length, 0, 'Template deletado não deve gerar conflito');
+  });
+});
+
+describe('GastoProLoans — detectLoanConflicts: listas vazias', () => {
+  it('não deve lançar exceção com arrays vazios', () => {
+    setupMockLocalStorage();
+    const candidate = {
+      loanReceivedAmount: 500,
+      loanTotalPayable: 600,
+      loanInstallmentCount: 2,
+      amount: 300,
+      startMonth: '2024-06',
+      loanReceivedDate: '2024-06-01',
+      day: 1,
+      paidMonths: {}
+    };
+    let result;
+    let threw = false;
+    try {
+      result = window.GastoProLoans.detectLoanConflicts(candidate, [], []);
+    } catch (e) {
+      threw = true;
+    }
+    assertFalse(threw, 'Não deve lançar exceção');
+    assertEqual(result.length, 0, 'Sem conflitos com listas vazias');
+  });
+});
+
+describe('GastoProLoans — monthAtOffset: overflow dezembro → janeiro', () => {
+  it('deve retornar o mês de janeiro do ano seguinte ao avançar de dezembro', () => {
+    setupMockLocalStorage();
+    const loan = {
+      loanReceivedAmount: 1000,
+      loanTotalPayable: 200,
+      loanInstallmentCount: 2,
+      amount: 100,
+      startMonth: '2024-12',
+      loanReceivedDate: '2024-12-01',
+      day: 1,
+      paidMonths: {}
+    };
+    const summary = window.GastoProLoans.getLoanSummary(loan);
+    assertEqual(summary.lastInstallmentMonth, '2025-01', 'Dez + 1 offset deve resultar em jan/2025');
+  });
+});
+
+describe('GastoProLoans — detectLoanConflicts: TypeError para não-empréstimo', () => {
+  it('deve lançar TypeError quando candidato não é empréstimo', () => {
+    setupMockLocalStorage();
+    let threw = false;
+    try {
+      window.GastoProLoans.detectLoanConflicts({ desc: 'não é empréstimo' }, [], []);
+    } catch (e) {
+      threw = true;
+      assertTrue(e instanceof TypeError, 'Deve ser TypeError');
+    }
+    assertTrue(threw, 'Deve lançar exceção para candidato inválido');
+  });
+});
+
+// ----------------------------------------------------------------
+// GastoProSimulator — cobertura estendida
+// ----------------------------------------------------------------
+describe('GastoProSimulator — simulateDebtPayoff: dívida zerada', () => {
+  it('deve retornar isPaidOff:true e 0 meses quando saldo devedor já é 0', () => {
+    setupMockLocalStorage();
+    if (!window.GastoProSimulator) return;
+    const debt = { remainingAmount: 0, amount: 500, remainingMonths: 0, nextInstallmentMonth: '2025-01' };
+    const result = window.GastoProSimulator.simulateDebtPayoff(debt, 0, 'once', '2025-01');
+    assertTrue(result.isPaidOff, 'Deve estar marcado como quitado');
+    assertEqual(result.simulatedMonths, 0, 'Zero meses para quitar');
+    assertEqual(result.baseMonths, 0, 'Base também deve ser 0');
+  });
+});
+
+describe('GastoProSimulator — simulateDebtPayoff: extra zero não muda prazo', () => {
+  it('com extra=0 os meses simulados devem ser iguais ao cenário base', () => {
+    setupMockLocalStorage();
+    if (!window.GastoProSimulator) return;
+    const debt = { remainingAmount: 1200, amount: 200, remainingMonths: 6, nextInstallmentMonth: '2025-01' };
+    const result = window.GastoProSimulator.simulateDebtPayoff(debt, 0, 'once', '2025-01');
+    assertEqual(result.baseMonths, result.simulatedMonths, 'Base e simulado devem ser iguais com extra=0');
+    assertFalse(result.isPaidOff, 'Não deve marcar como quitado');
+  });
+});
+
+describe('GastoProSimulator — simulateDebtPayoff: "monthly" quita mais rápido ou igual a "once"', () => {
+  it('"monthly" deve quitar em igual ou menos meses que "once" com mesmo valor extra', () => {
+    setupMockLocalStorage();
+    if (!window.GastoProSimulator) return;
+    const debt = { remainingAmount: 3000, amount: 300, remainingMonths: 10, nextInstallmentMonth: '2025-01' };
+    const rOnce = window.GastoProSimulator.simulateDebtPayoff(debt, 300, 'once', '2025-01');
+    const rMonthly = window.GastoProSimulator.simulateDebtPayoff(debt, 300, 'monthly', '2025-01');
+    assertTrue(
+      rMonthly.simulatedMonths <= rOnce.simulatedMonths,
+      '"monthly" deve quitar em igual ou menos meses que "once"'
+    );
+  });
+});
+
+describe('GastoProSimulator — simulateDebtPayoff: dados inválidos lançam TypeError', () => {
+  it('deve lançar TypeError com frequência inválida', () => {
+    setupMockLocalStorage();
+    if (!window.GastoProSimulator) return;
+    const debt = { remainingAmount: 1000, amount: 200, remainingMonths: 5, nextInstallmentMonth: '2025-01' };
+    let threw = false;
+    try {
+      window.GastoProSimulator.simulateDebtPayoff(debt, 100, 'invalido', '2025-01');
+    } catch (e) {
+      threw = true;
+      assertTrue(e instanceof TypeError, 'Deve ser TypeError');
+    }
+    assertTrue(threw, 'Deve lançar exceção para frequência inválida');
+  });
+});
+
+describe('GastoProSimulator — simulateCategoryCut: corte de 0%', () => {
+  it('com corte de 0% a economia mensal deve ser 0', () => {
+    setupMockLocalStorage();
+    if (!window.GastoProSimulator) return;
+    const monthlyAmounts = [{ amount: 500 }, { amount: 300 }, { amount: 400 }];
+    const result = window.GastoProSimulator.simulateCategoryCut(monthlyAmounts, 0, '2025-02');
+    assertEqual(result.monthlySavings, 0, 'Corte de 0% deve ter economia de R$0');
+    assertTrue(result.sufficientData, 'Deve ter dados suficientes');
+  });
+});
+
+describe('GastoProSimulator — simulateCategoryCut: array vazio', () => {
+  it('deve sinalizar dados insuficientes com array vazio', () => {
+    setupMockLocalStorage();
+    if (!window.GastoProSimulator) return;
+    const result = window.GastoProSimulator.simulateCategoryCut([], 20, '2025-02');
+    assertFalse(result.sufficientData, 'Deve indicar dados insuficientes');
+    assertEqual(result.monthlySavings, 0, 'Sem dados → economia = 0');
+  });
+});
+
+describe('GastoProSimulator — simulateCategoryCut: corte válido de 25%', () => {
+  it('deve calcular economia corretamente para corte de 25%', () => {
+    setupMockLocalStorage();
+    if (!window.GastoProSimulator) return;
+    const monthlyAmounts = [{ amount: 400 }, { amount: 400 }, { amount: 400 }];
+    const result = window.GastoProSimulator.simulateCategoryCut(monthlyAmounts, 25, '2025-02');
+    assertTrue(result.sufficientData, 'Deve ter dados suficientes');
+    assertEqual(result.monthlyAverage, 400, 'Média mensal deve ser R$400');
+    assertEqual(result.monthlySavings, 100, 'Economia mensal deve ser R$100');
+    assertEqual(result.annualSavings, 1200, 'Economia anual deve ser R$1200');
+    assertEqual(result.series.length, 12, 'Deve projetar 12 meses');
+  });
+});
+
+describe('GastoProSimulator — monthAtOffset: negativo e overflow', () => {
+  it('monthAtOffset com offset negativo retrocede o mês corretamente', () => {
+    setupMockLocalStorage();
+    if (!window.GastoProSimulator) return;
+    const result = window.GastoProSimulator.monthAtOffset('2025-03', -2);
+    assertEqual(result, '2025-01', 'março - 2 deve resultar em janeiro');
+  });
+
+  it('monthAtOffset com overflow de dezembro vai para janeiro do próximo ano', () => {
+    setupMockLocalStorage();
+    if (!window.GastoProSimulator) return;
+    const result = window.GastoProSimulator.monthAtOffset('2024-12', 1);
+    assertEqual(result, '2025-01', 'dez/2024 + 1 deve resultar em jan/2025');
+  });
+
+  it('monthAtOffset com mês inválido lança TypeError', () => {
+    setupMockLocalStorage();
+    if (!window.GastoProSimulator) return;
+    let threw = false;
+    try {
+      window.GastoProSimulator.monthAtOffset('2025-13', 1);
+    } catch (e) {
+      threw = true;
+      assertTrue(e instanceof TypeError, 'Deve ser TypeError para mês inválido');
+    }
+    assertTrue(threw, 'Deve lançar TypeError para mês 13');
+  });
+});
+
+// ----------------------------------------------------------------
+// formatCurrency — edge cases complementares
+// ----------------------------------------------------------------
+describe('formatCurrency — NaN retorna zero formatado', () => {
+  it('formatCurrency(NaN) deve retornar o mesmo que formatCurrency(0)', () => {
+    assertEqual(formatCurrency(NaN), formatCurrency(0), 'NaN deve ser tratado como zero');
+  });
+});
+
+describe('formatCurrency — Infinity retorna zero formatado', () => {
+  it('formatCurrency(Infinity) deve retornar o mesmo que formatCurrency(0)', () => {
+    assertEqual(formatCurrency(Infinity), formatCurrency(0), 'Infinity deve ser tratado como zero');
+  });
+
+  it('formatCurrency(-Infinity) deve retornar o mesmo que formatCurrency(0)', () => {
+    assertEqual(formatCurrency(-Infinity), formatCurrency(0), '-Infinity deve ser tratado como zero');
+  });
+});
+
+describe('formatCurrency — valor grande com separador de milhar', () => {
+  it('formatCurrency(1234567.89) deve conter "567,89" e símbolo BRL', () => {
+    const result = formatCurrency(1234567.89);
+    assertTrue(result.includes('567,89'), `Deve conter "567,89", recebido: ${result}`);
+    assertTrue(
+      result.includes('R$') || result.includes('R\u00a0$') || result.includes('R\u00a0'),
+      `Deve conter símbolo BRL, recebido: ${result}`
+    );
   });
 });
 

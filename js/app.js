@@ -440,7 +440,7 @@ const MONTH_NAMES = [
 
 /** Títulos exibidos na topbar de acordo com a tela ativa. */
 const VIEW_TITLES = {
-  dashboard: 'Dashboard & Saúde Financeira',
+  dashboard: 'Visão geral',
   entries:   'Lançamentos',
   incomes:   'Gerenciador de Ganhos do Mês',
   expenses:  'Gerenciador de Gastos do Mês',
@@ -1211,9 +1211,7 @@ window.GastoProConsent = {
 
 function isFutureImportDate(date) {
   if (!date) return false;
-  const today = new Date();
-  const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  return date >= todayString;
+  return date >= getLocalDateString();
 }
 
 function cleanRecurringImportDescription(description) {
@@ -1330,9 +1328,7 @@ function requiresImportPaymentReview(row, category = row && row.category) {
 }
 
 function getImportPaidValue(row) {
-  const today = new Date();
-  const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  return Boolean(row && row.date) && row.date < todayString;
+  return Boolean(row && row.date) && row.date < getLocalDateString();
 }
 
 function isValidImportDueDay(value) {
@@ -1759,7 +1755,9 @@ window.GastoProReloadState = {
  * @returns {string} String formatada. Ex: "R$\xa01.350,00"
  */
 function formatCurrency(val) {
-  return (val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const num = Number(val);
+  return (Number.isFinite(num) ? num : 0)
+    .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
 function isValidPassword(password) {
@@ -1767,11 +1765,13 @@ function isValidPassword(password) {
 }
 
 let savingInProgress = false;
+const savingInProgressButtons = new WeakSet();
 const protectedActionsInProgress = new WeakSet();
 
 async function withSaving(button, action, timeoutMs = 15000) {
-  if (savingInProgress) return false;
+  if (savingInProgress || (button && savingInProgressButtons.has(button))) return false;
   savingInProgress = true;
+  if (button) savingInProgressButtons.add(button);
 
   const originalHtml = button.innerHTML;
   const originalDisabled = button.disabled;
@@ -1792,6 +1792,7 @@ async function withSaving(button, action, timeoutMs = 15000) {
     button.disabled = originalDisabled;
     if (originalAriaBusy === null) button.removeAttribute('aria-busy');
     else button.setAttribute('aria-busy', originalAriaBusy);
+    if (button) savingInProgressButtons.delete(button);
     savingInProgress = false;
   }
 }

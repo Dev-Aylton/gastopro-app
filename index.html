@@ -84,7 +84,7 @@
             <button class="nav-item" data-view="expenses" id="navExpenses">
               <i class="fa-solid fa-receipt"></i>
               <span>Gastos do Mês</span>
-              <span class="nav-badge" id="sidebarExpenseCount"></span>
+              <span class="nav-badge" id="sidebarExpenseCount" hidden></span>
             </button>
             <button class="nav-item nav-item-import" id="sidebarImportBtn" title="Importar extrato ou nota fiscal">
               <i class="fa-solid fa-file-import"></i>
@@ -108,7 +108,7 @@
               <span>Cartões</span>
             </button>
             <button class="nav-item" data-view="loans" id="navLoans">
-              <i class="fa-solid fa-hand-holding-dollar"></i>
+              <i class="fa-solid fa-file-invoice-dollar"></i>
               <span>Empréstimos</span>
             </button>
           </section>
@@ -148,7 +148,7 @@
           <button class="menu-toggle-btn" id="menuToggleBtn" title="Alternar Menu" aria-label="Abrir menu de navegação" aria-expanded="false">
             <i class="fa-solid fa-bars"></i>
           </button>
-          <h1 class="view-title" id="currentViewTitle">Dashboard Geral</h1>
+          <h1 class="view-title" id="currentViewTitle">Visão geral</h1>
         </div>
 
         <button type="button" class="mobile-brand" data-goto="dashboard" aria-label="GastoPro — início">
@@ -240,8 +240,8 @@
           <i class="fa-solid fa-credit-card" aria-hidden="true"></i><span>Cartões</span>
         </button>
         <button type="button" class="mobile-bottom-nav-item" data-action="mobile-nav"
-          data-destination="goals" aria-label="Metas">
-          <i class="fa-solid fa-bullseye" aria-hidden="true"></i><span>Metas</span>
+          data-destination="simulator" aria-label="Simulador">
+          <i class="fa-solid fa-chart-line" aria-hidden="true"></i><span>Simulador</span>
         </button>
         <button type="button" class="mobile-bottom-nav-item" data-action="mobile-nav"
           data-destination="more" aria-label="Mais opções">

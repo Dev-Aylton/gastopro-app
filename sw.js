@@ -68,6 +68,8 @@ self.addEventListener('fetch', event => {
       if (response.ok) {
         const cache = await caches.open(CACHE_NAME);
         await cache.put(event.request, response.clone());
+      } else {
+        console.warn('[GastoPro SW] Resposta não-ok:', response.status, event.request.url);
       }
       return response;
     } catch {

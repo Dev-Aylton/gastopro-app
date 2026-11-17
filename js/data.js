@@ -498,10 +498,9 @@ function getNextCreditCardDueDate(card, fromDate = new Date()) {
 
   const today = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
   for (let offset = 0; offset < 2; offset++) {
-    const year = today.getFullYear();
-    const month = today.getMonth() + offset;
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const dueDate = new Date(year, month, Math.min(dueDay, daysInMonth));
+    const candidate = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+    const daysInMonth = new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate();
+    const dueDate = new Date(candidate.getFullYear(), candidate.getMonth(), Math.min(dueDay, daysInMonth));
     if (dueDate < today) continue;
     return `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`;
   }
@@ -589,13 +588,21 @@ function validateBackupText(text) {
     fixedImportRules.some(rule => typeof rule !== 'string' || !rule.trim() || rule.length > 300)) {
     return { error: 'A coleção fixedImportRules precisa conter regras textuais válidas.' };
   }
-  const seenIds = new Set();
+  const seenIds = {
+    accounts: new Set(),
+    creditCards: new Set(),
+    creditCardPurchases: new Set(),
+    entries: new Set(),
+    templates: new Set(),
+    goals: new Set()
+  };
   const checkId = (kind, item) => {
     if (item.id == null || item.id === '') return null;
     const rawId = String(item.id);
     const key = kind === 'goals' ? rawId.replace(/^goal-/, '') : rawId;
-    if (seenIds.has(key)) return recordError(kind, item, 'ID duplicado na cópia de segurança.');
-    seenIds.add(key);
+    const bucket = seenIds[kind] || seenIds.entries;
+    if (bucket.has(key)) return recordError(kind, item, 'ID duplicado na cópia de segurança.');
+    bucket.add(key);
     return null;
   };
   const accountIds = new Map();

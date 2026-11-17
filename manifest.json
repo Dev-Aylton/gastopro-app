@@ -30,5 +30,35 @@
       "purpose": "maskable"
     }
   ],
-  "categories": ["finance", "productivity"]
+  "categories": ["finance", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Novo lançamento",
+      "short_name": "Lançamento",
+      "description": "Abrir a tela de lançamentos",
+      "url": "./index.html#entries",
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Ganhos do mês",
+      "short_name": "Ganhos",
+      "description": "Ver ganhos do mês",
+      "url": "./index.html#incomes",
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Gastos do mês",
+      "short_name": "Gastos",
+      "description": "Ver gastos do mês",
+      "url": "./index.html#expenses",
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Simulador",
+      "short_name": "Simulador",
+      "description": "Abrir o simulador de cenários",
+      "url": "./index.html#simulator",
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
 }

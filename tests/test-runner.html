@@ -117,6 +117,32 @@
 
     .loading-msg { color: #64748b; font-style: italic; }
   </style>
+  <script>
+    (function() {
+      const origLog = console.log;
+      const origErr = console.error;
+      function send(type, args) {
+        try {
+          const text = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+          fetch('/log?type=' + encodeURIComponent(type), { method: 'POST', body: text }).catch(() => {});
+        } catch {}
+      }
+      console.log = function(...args) {
+        origLog.apply(console, args);
+        send('log', args);
+      };
+      console.error = function(...args) {
+        origErr.apply(console, args);
+        send('error', args);
+      };
+      window.addEventListener('error', e => {
+        send('uncaught', [e.message, e.filename + ':' + e.lineno]);
+      });
+      window.addEventListener('unhandledrejection', e => {
+        send('unhandledrejection', [e.reason ? e.reason.message || e.reason : 'unknown']);
+      });
+    })();
+  </script>
 </head>
 <body>
 

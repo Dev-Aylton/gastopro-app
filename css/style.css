@@ -4490,7 +4490,9 @@ button:active { transform: scale(0.98); }
   box-shadow: var(--shadow-lg);
   transform: translateY(100px);
   opacity: 0;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s;
   z-index: var(--layer-toast);
   display: flex;
   align-items: center;
@@ -4508,6 +4510,8 @@ button:active { transform: scale(0.98); }
 .toast.show {
   transform: translateY(0);
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .back-to-top-btn {
@@ -10093,5 +10097,368 @@ input[type="month"] {
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
+  }
+}
+
+/* ================================================================
+   MELHORIAS DE DESIGN — Adicionadas em 2026-11
+   ================================================================ */
+
+/* ----------------------------------------------------------------
+   SKELETON LOADING — Efeito shimmer para estados de carregamento
+   ---------------------------------------------------------------- */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton {
+  display: inline-block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-card) 25%,
+    var(--bg-card-hover) 50%,
+    var(--bg-card) 75%
+  );
+  background-size: 800px 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  color: transparent !important;
+  pointer-events: none;
+  user-select: none;
+}
+
+.skeleton-text  { height: 1em; width: 100%; border-radius: 4px; }
+.skeleton-text.w-50 { width: 50%; }
+.skeleton-text.w-70 { width: 70%; }
+.skeleton-text.w-30 { width: 30%; }
+.skeleton-value { height: 2em; width: 70%; border-radius: 4px; }
+.skeleton-card  { height: 90px; width: 100%; border-radius: var(--radius-md); }
+.skeleton-row   { height: 56px; width: 100%; border-radius: var(--radius-sm); }
+
+/* ----------------------------------------------------------------
+   EMPTY STATE — Visual aprimorado para listas sem dados
+   ---------------------------------------------------------------- */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1.5rem;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(
+    135deg,
+    rgba(var(--primary-rgb), 0.02),
+    transparent 60%
+  );
+  transition: border-color 0.2s;
+}
+
+.empty-state:hover {
+  border-color: rgba(var(--primary-rgb), 0.3);
+}
+
+.empty-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1rem;
+  border-radius: 50%;
+  background: var(--bg-card-hover);
+  font-size: 1.5rem;
+  color: var(--text-muted);
+}
+
+.empty-state h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.empty-state p {
+  line-height: 1.55;
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+/* ----------------------------------------------------------------
+   SCROLL SUAVE GLOBAL
+   ---------------------------------------------------------------- */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ----------------------------------------------------------------
+   FOCUS VISIBLE GLOBAL — garante foco acessível em todos elementos
+   ---------------------------------------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* Remove outline para mouse mas mantém para teclado */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ----------------------------------------------------------------
+   SCROLL FINO — aparência do scrollbar em desktop
+   ---------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* ----------------------------------------------------------------
+   SELEÇÃO DE TEXTO
+   ---------------------------------------------------------------- */
+::selection {
+  background: rgba(var(--primary-rgb), 0.25);
+  color: var(--text-main);
+}
+
+/* ----------------------------------------------------------------
+   MELHORIAS DE TRANSIÇÃO — cards, botões, itens de lista
+   ---------------------------------------------------------------- */
+.manage-item-card,
+.transaction-item-card,
+.account-balance-link,
+.dashboard-card-summary,
+.nav-item {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.manage-item-card:hover,
+.transaction-item-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+
+/* ----------------------------------------------------------------
+   HOVER SUAVE NOS CARDS DE CONTA/DASHBOARD
+   ---------------------------------------------------------------- */
+.account-balance-link:hover,
+.dashboard-card-summary:hover {
+  border-color: rgba(var(--primary-rgb), 0.35);
+  background: var(--bg-card-hover);
+}
+
+/* ----------------------------------------------------------------
+   BARRA DE PROGRESSO — transição suave
+   ---------------------------------------------------------------- */
+.progress-bar-fill,
+[class*="progress-bar"] {
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ----------------------------------------------------------------
+   TOAST DE FEEDBACK — entrada animada (apenas quando ativo .show)
+   ---------------------------------------------------------------- */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(1.5rem) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.toast.show {
+  animation: toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ----------------------------------------------------------------
+   ANIMAÇÃO DE ENTRADA PARA MODAIS (apenas quando overlay ativo)
+   ---------------------------------------------------------------- */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-overlay.active .modal-content {
+  animation: modal-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ----------------------------------------------------------------
+   BADGES DE CATEGORIA — tags de tipo de lançamento
+   ---------------------------------------------------------------- */
+.category-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.category-badge.income  { background: var(--success-bg); color: var(--success); }
+.category-badge.expense { background: var(--danger-bg);  color: var(--danger-text); }
+.category-badge.fixed   { background: var(--warning-bg); color: var(--warning); }
+.category-badge.card    { background: var(--primary-bg); color: var(--primary-text); }
+
+/* ----------------------------------------------------------------
+   STATUS BADGE — pago / pendente / atrasado
+   ---------------------------------------------------------------- */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.status-badge.paid     { background: var(--success-bg); color: var(--success); }
+.status-badge.pending  { background: var(--warning-bg); color: var(--warning); }
+.status-badge.overdue  { background: var(--danger-bg);  color: var(--danger-text); }
+
+/* ----------------------------------------------------------------
+   MELHORIAS DE FORMULÁRIO — input focus mais pronunciado
+   ---------------------------------------------------------------- */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--border-focus) !important;
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.15);
+}
+
+/* Campo com erro */
+input.is-invalid,
+select.is-invalid,
+textarea.is-invalid {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 3px rgba(var(--danger-rgb), 0.15);
+}
+
+/* Campo válido */
+input.is-valid,
+select.is-valid,
+textarea.is-valid {
+  border-color: var(--success) !important;
+  box-shadow: 0 0 0 3px rgba(var(--success-rgb), 0.1);
+}
+
+/* Mensagem de erro inline */
+.field-error {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--danger-text);
+  font-weight: 500;
+}
+
+[data-theme="light"] .field-error {
+  color: var(--danger);
+}
+
+/* ----------------------------------------------------------------
+   MÉDIA DE IMPRESSÃO — relatórios
+   ---------------------------------------------------------------- */
+@media print {
+  /* Oculta elementos de navegação e UI */
+  .sidebar,
+  .mobile-bottom-nav,
+  .topbar,
+  .profile-drawer,
+  .profile-drawer-overlay,
+  .notifications-panel,
+  .onboarding-modal,
+  [class*="modal"],
+  [class*="toast"],
+  .btn-add,
+  .skip-link,
+  .theme-toggle-btn,
+  .user-avatar-btn,
+  .import-trigger,
+  .wizard-trigger,
+  [class*="close-btn"] {
+    display: none !important;
+  }
+
+  /* Ajusta o layout para impressão */
+  .main-content {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+
+  .app-shell {
+    display: block !important;
+  }
+
+  /* Fundo branco e texto preto para impressão */
+  body,
+  .app-shell,
+  .main-content,
+  [class*="card"],
+  [class*="bg-"] {
+    background: #fff !important;
+    color: #111 !important;
+    box-shadow: none !important;
+  }
+
+  /* Bordas visíveis */
+  [class*="card"],
+  [class*="border"] {
+    border-color: #ccc !important;
+  }
+
+  /* Quebras de página inteligentes */
+  .view-section,
+  [class*="section-"] {
+    break-inside: avoid;
+  }
+
+  h2, h3 {
+    break-after: avoid;
+  }
+
+  /* Links visíveis */
+  a[href]::after {
+    content: none;
+  }
+
+  /* Tamanho de fonte adequado */
+  body {
+    font-size: 12pt;
+    line-height: 1.4;
   }
 }
