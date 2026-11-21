@@ -305,6 +305,7 @@ O GastoPro é uma **Single Page Application (SPA)** em Vanilla JS — sem framew
 ```
 gastopro-app/
 ├── index.html                 # SPA Shell — estrutura, views, modais, sidebar
+├── 404.html                   # Página apresentada para endereços não encontrados
 ├── manifest.json              # PWA — nome, ícones, cores, categorias
 ├── sw.js                      # Service Worker — cache offline, atualização
 ├── privacidade.html           # Política de Privacidade

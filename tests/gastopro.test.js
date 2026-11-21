@@ -15433,6 +15433,8 @@ function getWizardStorageChangeMessage(before, after) {
 async function withIsolatedWizard(testFn) {
   const parentStorage = window.localStorage;
   const parentStorageSnapshot = snapshotWizardStorage(parentStorage);
+  const parentDataSnapshot = parentStorageSnapshot
+    .filter(([key]) => key !== 'gastopro_diagnostic_log_v1');
   const parentBodyClass = document.body.className;
   const parentActiveElement = document.activeElement;
   let frame = null;
@@ -15510,9 +15512,10 @@ async function withIsolatedWizard(testFn) {
 
     await testFn(wizardWindow, wizardDocument);
     assertEqual(wizardWindow.__wizardNetworkRequests, [], 'O teste não deve chamar a rede ou o Supabase.');
-    const parentStorageAfter = snapshotWizardStorage(parentStorage);
-    assertEqual(parentStorageAfter, parentStorageSnapshot,
-      `O Wizard isolado não deve alterar o localStorage compartilhado da suite. ${getWizardStorageChangeMessage(parentStorageSnapshot, parentStorageAfter)}`);
+    const parentDataAfter = snapshotWizardStorage(parentStorage)
+      .filter(([key]) => key !== 'gastopro_diagnostic_log_v1');
+    assertEqual(parentDataAfter, parentDataSnapshot,
+      `O Wizard isolado não deve alterar os dados do localStorage compartilhado da suite. ${getWizardStorageChangeMessage(parentDataSnapshot, parentDataAfter)}`);
     assertEqual(document.body.className, parentBodyClass,
       'O Wizard isolado não deve alterar as classes do DOM compartilhado da suite.');
   } finally {

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b0e14" />
+  <meta name="description" content="A página que você procurou não foi encontrada no GastoPro." />
+  <title>Página não encontrada — GastoPro</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0b0e14;
+      color: #e2e8f0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      display: grid;
+      min-height: 100vh;
+      margin: 0;
+      padding: 1.5rem;
+      place-items: center;
+      background:
+        radial-gradient(ellipse at 50% 35%, rgba(99, 102, 241, 0.16), transparent 55%),
+        #0b0e14;
+    }
+
+    main {
+      width: min(100%, 34rem);
+      padding: clamp(2rem, 7vw, 3.5rem);
+      border: 1px solid #263044;
+      border-radius: 1.25rem;
+      background: rgba(21, 26, 38, 0.92);
+      text-align: center;
+      box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.3);
+    }
+
+    .code {
+      margin: 0;
+      color: #818cf8;
+      font-size: clamp(4.5rem, 20vw, 7rem);
+      font-weight: 800;
+      letter-spacing: -0.08em;
+      line-height: 1;
+    }
+
+    h1 {
+      margin: 1.25rem 0 0.75rem;
+      font-size: clamp(1.35rem, 5vw, 1.75rem);
+    }
+
+    p {
+      margin: 0;
+      color: #a7b2c5;
+      line-height: 1.65;
+    }
+
+    a {
+      display: inline-flex;
+      min-height: 2.875rem;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1.75rem;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.65rem;
+      background: #6366f1;
+      color: #fff;
+      font-weight: 700;
+      text-decoration: none;
+      transition: background-color 150ms ease, transform 150ms ease;
+    }
+
+    a:hover {
+      transform: translateY(-1px);
+      background: #4f46e5;
+    }
+
+    a:focus-visible {
+      outline: 3px solid #c7d2fe;
+      outline-offset: 3px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      a {
+        transition: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main aria-labelledby="pageTitle">
+    <p class="code" aria-hidden="true">404</p>
+    <h1 id="pageTitle">Página não encontrada</h1>
+    <p>O endereço pode estar incorreto ou a página não está mais disponível.</p>
+    <a id="homeLink" href="/">Voltar para o GastoPro</a>
+  </main>
+  <script>
+    const homePath = location.hostname.endsWith('.github.io') ? '/gastopro-app/' : '/';
+    document.getElementById('homeLink').href = homePath;
+  </script>
+</body>
+</html>
